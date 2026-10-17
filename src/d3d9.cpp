@@ -1,4 +1,4 @@
-// Darkness2VR v0.1.9 — D3D9/D3D9Ex proxy + OpenXR (world-anchored cinema / head-locked / projection + delay-load XInput hook).
+// Darkness2VR v0.3.0 — D3D9/D3D9Ex proxy + OpenXR (In-Game 6DoF + Stereo 3D + World-Anchored Cinema + XInput + Crash VEH Logger).
 // Log: %LOCALAPPDATA%\Darkness2VR\d3d9.log
 // Config: %LOCALAPPDATA%\Darkness2VR\Darkness2VR.ini or beside DarknessII.exe
 
@@ -37,21 +37,41 @@ bool g_logReady = false;
 // Config / Modes
 // TestMode: 0 = Normal Game Capture, 1 = Solid Bright Green, 2 = Checkerboard
 int g_testMode = 0;
-// SubmitMode:
-//   0 = QUAD_WORLD_ANCHOR (world-anchored cinema screen in LOCAL space, recenter with F8 or L3+R3)
-//   1 = QUAD_HEAD_LOCKED  (v0.1.3 cinema screen following head center)
-//   2 = PROJECTION_MONO   (v0.1.2 full-FOV stereo projection layer)
-int g_submitMode = 0;
+// SubmitMode (F10):
+//   0 = VR_6DOF_SYNC      (In-Game 6DoF Head Rotation + Position + Stereo Convergence; both eyes updated every frame -> zero eye desync!)
+//   1 = VR_6DOF_AFR       (In-Game 6DoF + Alternating-Eye Stereo 3D)
+//   2 = QUAD_WORLD_ANCHOR (v0.1.9 world-anchored cinema screen in LOCAL space)
+//   3 = QUAD_HEAD_LOCKED  (v0.1.3 cinema screen following head center)
+int g_submitMode = 1;
+// TrackingSubMode (F9):
+//   0 = Full 6DoF (Position + Rotation) + Native Game Proj (safest for deferred lighting/post-FX)
+//   1 = Full 6DoF (Position + Rotation) + OpenXR FOV Override
+//   2 = 3DoF (Rotation only) + Native Game Proj
+int g_trackingSubMode = 0;
+
+float g_worldScale = 1.0f;     // Meters -> Evolution Engine units (1.0 = 1m)
+float g_stereoStrength = 1.0f; // Multiplier on stereo separation (F11 cycles 1.0, 1.5, 2.0, 0.5, 0.0)
 float g_cinemaDistanceM = 2.0f;
 float g_cinemaWidthM = 2.1f;
 int g_enableVRGamepad = 1;
 int g_remapPhysical = 1;
-int g_forceWindowedReset = 0; // 0 = match v0.1.3 (do not mutate pp in Hook_Reset)
+int g_forceWindowedReset = 0;
 
-// World anchor state for SubmitMode 0
+// World anchor state for Cinema (SubmitMode 2 or 2D menu fallback)
 bool g_anchorValid = false;
 XrPosef g_anchorPose{};
 XrVector3f g_anchorHeadOrigin{};
+
+// 6DoF Reference Pose in OpenXR LOCAL space (recentered via F8 or L3+R3)
+bool g_vrRefValid = false;
+XrVector3f g_vrRefPos{ 0.f, 0.f, 0.f };
+float g_vrRefYaw = 0.f;
+
+// Render thread & diagnostic state
+volatile DWORD g_renderThreadId = 0;
+volatile LONG g_dumpNextFrame = 0;
+volatile LONG g_lastStage = 0;
+PVOID g_vehHandle = nullptr;
 
 void LogInit() {
     InitializeCriticalSection(&g_logLock);
@@ -64,7 +84,7 @@ void LogInit() {
 
         FILE* f = nullptr;
         if (fopen_s(&f, g_logPath, "w") == 0 && f) {
-            fprintf(f, "=== Darkness2VR d3d9.log ===\n");
+            fprintf(f, "=== Darkness2VR v0.3.0 d3d9.log ===\n");
             fclose(f);
         }
         g_logReady = true;
@@ -81,9 +101,69 @@ void Log(const char* fmt, ...) {
         vfprintf(f, fmt, ap);
         va_end(ap);
         fputc('\n', f);
+        fflush(f);
         fclose(f);
     }
     LeaveCriticalSection(&g_logLock);
+}
+
+// First-chance Vectored Exception Handler to log exact crash address, registers, and call stack
+LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
+    if (!ep || !ep->ExceptionRecord || !ep->ContextRecord) return EXCEPTION_CONTINUE_SEARCH;
+    const DWORD code = ep->ExceptionRecord->ExceptionCode;
+    if (code != EXCEPTION_ACCESS_VIOLATION &&
+        code != EXCEPTION_ILLEGAL_INSTRUCTION &&
+        code != EXCEPTION_PRIV_INSTRUCTION &&
+        code != EXCEPTION_STACK_OVERFLOW &&
+        code != EXCEPTION_INT_DIVIDE_BY_ZERO) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    static volatile LONG s_crashLogged = 0;
+    if (InterlockedIncrement(&s_crashLogged) <= 3) {
+        void* addr = ep->ExceptionRecord->ExceptionAddress;
+        HMODULE mod = nullptr;
+        char modName[MAX_PATH] = "<unknown>";
+        uintptr_t modBase = 0;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCSTR>(addr), &mod) && mod) {
+            GetModuleFileNameA(mod, modName, MAX_PATH);
+            modBase = reinterpret_cast<uintptr_t>(mod);
+        }
+        const CONTEXT* c = ep->ContextRecord;
+        Log("!!! CRASH EXCEPTION 0x%08lX at %p (%s + 0x%lX) | tid=%lu renderTid=%lu stage=%ld !!!",
+            code, addr, modName, (unsigned long)((uintptr_t)addr - modBase),
+            GetCurrentThreadId(), g_renderThreadId, g_lastStage);
+        if (code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2) {
+            Log("  AccessViolation type=%lu targetAddr=%p",
+                (unsigned long)ep->ExceptionRecord->ExceptionInformation[0],
+                reinterpret_cast<void*>(ep->ExceptionRecord->ExceptionInformation[1]));
+        }
+        Log("  EAX=%08lX EBX=%08lX ECX=%08lX EDX=%08lX ESI=%08lX EDI=%08lX EBP=%08lX ESP=%08lX EIP=%08lX",
+            c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp, c->Eip);
+
+        const uintptr_t* stack = reinterpret_cast<const uintptr_t*>(c->Esp);
+        Log("  Call Stack (ESP=%p):", stack);
+        for (int i = 0; i < 32; ++i) {
+            __try {
+                uintptr_t retVal = stack[i];
+                HMODULE retMod = nullptr;
+                char retModName[MAX_PATH] = "";
+                uintptr_t retModBase = 0;
+                if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                       reinterpret_cast<LPCSTR>(retVal), &retMod) && retMod) {
+                    GetModuleFileNameA(retMod, retModName, MAX_PATH);
+                    retModBase = reinterpret_cast<uintptr_t>(retMod);
+                    Log("    [%02d] %08lX (%s + 0x%lX)", i, (unsigned long)retVal, retModName, (unsigned long)(retVal - retModBase));
+                } else if (retVal > 0x10000) {
+                    Log("    [%02d] %08lX", i, (unsigned long)retVal);
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                break;
+            }
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
 }
 
 void LoadConfig() {
@@ -92,22 +172,22 @@ void LoadConfig() {
     if (GetFileAttributesA(localIni) != INVALID_FILE_ATTRIBUTES) {
         chosenIni = localIni;
     } else {
-        // Always ensure g_iniPath exists; if missing, write default config
         if (GetFileAttributesA(g_iniPath) == INVALID_FILE_ATTRIBUTES) {
             FILE* f = nullptr;
             if (fopen_s(&f, g_iniPath, "w") == 0 && f) {
                 fprintf(f, "[Render]\n");
-                fprintf(f, "; TestMode: 0 = Real Game Capture (default), 1 = Solid Bright Green, 2 = Checkerboard\n");
                 fprintf(f, "TestMode=0\n");
-                fprintf(f, "; SubmitMode: 0 = QUAD_WORLD_ANCHOR (cinema with world anchor), 1 = QUAD_HEAD_LOCKED (v0.1.3 cinema), 2 = PROJECTION_MONO (v0.1.2 stereo projection)\n");
+                fprintf(f, "; SubmitMode: 0 = VR_6DOF_SYNC (default), 1 = VR_6DOF_AFR, 2 = QUAD_WORLD_ANCHOR (Cinema), 3 = QUAD_HEAD_LOCKED\n");
                 fprintf(f, "SubmitMode=0\n");
+                fprintf(f, "; TrackingSubMode: 0 = 6DoF + Native Game FOV, 1 = 6DoF + OpenXR FOV, 2 = 3DoF + Native Game FOV\n");
+                fprintf(f, "TrackingSubMode=0\n");
+                fprintf(f, "WorldScale=1.0\n");
+                fprintf(f, "StereoStrength=1.0\n");
                 fprintf(f, "DistanceM=2.0\n");
                 fprintf(f, "WidthM=2.1\n");
                 fprintf(f, "ForceWindowedReset=0\n\n");
                 fprintf(f, "[Input]\n");
-                fprintf(f, "; EnableVRGamepad: 1 = map VR motion controllers to virtual Xbox gamepad on port 0\n");
                 fprintf(f, "EnableVRGamepad=1\n");
-                fprintf(f, "; RemapPhysicalPorts: 1 = remap physical Xbox pad on port 1..3 to port 0 if port 0 is empty\n");
                 fprintf(f, "RemapPhysicalPorts=1\n");
                 fclose(f);
             }
@@ -115,9 +195,21 @@ void LoadConfig() {
     }
 
     g_testMode = GetPrivateProfileIntA("Render", "TestMode", 0, chosenIni);
-    g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
+    g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 1, chosenIni);
+    if (g_submitMode < 0 || g_submitMode > 3) g_submitMode = 1;
+    g_trackingSubMode = GetPrivateProfileIntA("Render", "TrackingSubMode", 0, chosenIni);
+    if (g_trackingSubMode < 0 || g_trackingSubMode > 2) g_trackingSubMode = 0;
     g_forceWindowedReset = GetPrivateProfileIntA("Render", "ForceWindowedReset", 0, chosenIni);
+
     char buf[64]{};
+    if (GetPrivateProfileStringA("Render", "WorldScale", "1.0", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.01f && v <= 500.0f) g_worldScale = v;
+    }
+    if (GetPrivateProfileStringA("Render", "StereoStrength", "1.0", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.0f && v <= 5.0f) g_stereoStrength = v;
+    }
     if (GetPrivateProfileStringA("Render", "DistanceM", "2.0", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v > 0.5f && v < 20.0f) g_cinemaDistanceM = v;
@@ -130,13 +222,21 @@ void LoadConfig() {
     g_remapPhysical = GetPrivateProfileIntA("Input", "RemapPhysicalPorts", 1, chosenIni);
 
     Log("Config loaded from: %s", chosenIni);
-    Log("  Render: TestMode=%d SubmitMode=%d Distance=%.2fm Width=%.2fm ForceWindowedReset=%d",
-        g_testMode, g_submitMode, g_cinemaDistanceM, g_cinemaWidthM, g_forceWindowedReset);
+    Log("  Render: SubmitMode=%d TrackingSubMode=%d WorldScale=%.2f StereoStrength=%.2f Distance=%.2fm Width=%.2fm",
+        g_submitMode, g_trackingSubMode, g_worldScale, g_stereoStrength, g_cinemaDistanceM, g_cinemaWidthM);
     Log("  Input: EnableVRGamepad=%d RemapPhysicalPorts=%d", g_enableVRGamepad, g_remapPhysical);
-    Log("  Hotkeys: F8 = Recenter Cinema Anchor | F9 = cycle TestMode (0,1,2) | F10 = cycle SubmitMode (0,1,2) | F11 = cycle Distance (1.5-3.0m)");
+    Log("  Hotkeys: F7 = Dump Camera Matrices | F8 (or L3+R3) = Recenter VR | F9 = Cycle 6DoF/FOV SubMode | F10 = Cycle VR Mode | F11 = Cycle Stereo/Distance");
+}
+
+void RequestRecenter(const char* source) {
+    g_anchorValid = false;
+    g_vrRefValid = false;
+    Beep(1000, 50);
+    Log(">>> [%s] VR 6DoF + Cinema World Anchor recenter requested <<<", source);
 }
 
 void PollHotkeys() {
+    static DWORD s_lastF7 = 0;
     static DWORD s_lastF8 = 0;
     static DWORD s_lastF9 = 0;
     static DWORD s_lastF10 = 0;
@@ -144,44 +244,64 @@ void PollHotkeys() {
 
     DWORD now = GetTickCount();
 
+    if ((GetAsyncKeyState(VK_F7) & 0x8000) && (now - s_lastF7 > 400)) {
+        s_lastF7 = now;
+        InterlockedExchange(&g_dumpNextFrame, 1);
+        Beep(1200, 40);
+        Log(">>> [HOTKEY F7] Diagnostic Camera & Matrix Dump requested for next frame <<<");
+    }
+
     if ((GetAsyncKeyState(VK_F8) & 0x8000) && (now - s_lastF8 > 400)) {
         s_lastF8 = now;
-        g_anchorValid = false;
-        Beep(1000, 50);
-        Log(">>> [HOTKEY F8] Cinema World Anchor recenter requested <<<");
+        RequestRecenter("HOTKEY F8");
     }
 
     if ((GetAsyncKeyState(VK_F9) & 0x8000) && (now - s_lastF9 > 400)) {
         s_lastF9 = now;
-        g_testMode = (g_testMode + 1) % 3;
-        Beep(700 + g_testMode * 200, 50);
-        const char* names[] = { "0 (Real Game Capture)", "1 (Solid Bright Green)", "2 (Checkerboard)" };
-        Log(">>> [HOTKEY F9] TestMode changed to: %s <<<", names[g_testMode]);
+        g_trackingSubMode = (g_trackingSubMode + 1) % 3;
+        Beep(700 + g_trackingSubMode * 200, 50);
+        const char* names[] = {
+            "0 (Full 6DoF + Native Game FOV)",
+            "1 (Full 6DoF + OpenXR FOV Override)",
+            "2 (3DoF Rotation Only + Native Game FOV)"
+        };
+        Log(">>> [HOTKEY F9] TrackingSubMode changed to: %s <<<", names[g_trackingSubMode]);
     }
 
     if ((GetAsyncKeyState(VK_F10) & 0x8000) && (now - s_lastF10 > 400)) {
         s_lastF10 = now;
-        g_submitMode = (g_submitMode + 1) % 3;
+        g_submitMode = (g_submitMode + 1) % 4;
         g_anchorValid = false;
-        Beep(600 + g_submitMode * 200, 50);
+        Beep(600 + g_submitMode * 150, 50);
         const char* names[] = {
-            "0 (QUAD_WORLD_ANCHOR - Anchored Cinema)",
-            "1 (QUAD_HEAD_LOCKED - v0.1.3 Cinema)",
-            "2 (PROJECTION_MONO - v0.1.2 Stereo Projection)"
+            "0 (VR_6DOF_SYNC - Synchronized Both-Eyes 6DoF VR)",
+            "1 (VR_6DOF_AFR - Alternating-Eye Stereo 3D)",
+            "2 (QUAD_WORLD_ANCHOR - World-Anchored Cinema)",
+            "3 (QUAD_HEAD_LOCKED - Head-Locked Cinema)"
         };
         Log(">>> [HOTKEY F10] SubmitMode changed to: %s <<<", names[g_submitMode]);
     }
 
     if ((GetAsyncKeyState(VK_F11) & 0x8000) && (now - s_lastF11 > 400)) {
         s_lastF11 = now;
-        g_cinemaDistanceM = (g_cinemaDistanceM >= 3.0f) ? 1.5f : (g_cinemaDistanceM + 0.5f);
-        g_anchorValid = false;
-        Beep(900, 50);
-        Log(">>> [HOTKEY F11] Cinema Distance changed to: %.1fm <<<", g_cinemaDistanceM);
+        if (g_submitMode <= 1) {
+            if (g_stereoStrength < 0.25f) g_stereoStrength = 0.5f;
+            else if (g_stereoStrength < 0.75f) g_stereoStrength = 1.0f;
+            else if (g_stereoStrength < 1.25f) g_stereoStrength = 1.5f;
+            else if (g_stereoStrength < 1.75f) g_stereoStrength = 2.0f;
+            else g_stereoStrength = 0.0f;
+            Beep(800 + (int)(g_stereoStrength * 200.f), 50);
+            Log(">>> [HOTKEY F11] Stereo IPD Strength changed to: %.2fx <<<", g_stereoStrength);
+        } else {
+            g_cinemaDistanceM = (g_cinemaDistanceM >= 3.0f) ? 1.5f : (g_cinemaDistanceM + 0.5f);
+            g_anchorValid = false;
+            Beep(900, 50);
+            Log(">>> [HOTKEY F11] Cinema Distance changed to: %.1fm <<<", g_cinemaDistanceM);
+        }
     }
 }
 
-// ---------------------------------------------------------------- OpenXR
+// ---------------------------------------------------------------- OpenXR & Math
 XrInstance g_xrInstance = XR_NULL_HANDLE;
 XrSession g_xrSession = XR_NULL_HANDLE;
 XrSpace g_xrSpace = XR_NULL_HANDLE;      // LOCAL space
@@ -192,10 +312,15 @@ ID3D11DeviceContext* g_ctx11 = nullptr;
 bool g_xrReady = false;
 bool g_xrRunning = false;
 
-XrSwapchain g_swapchain = XR_NULL_HANDLE;
+XrSwapchain g_swapchain[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
 uint32_t g_scW = 0, g_scH = 0;
-ID3D11Texture2D** g_scImages = nullptr;
-uint32_t g_scCount = 0;
+ID3D11Texture2D** g_scImages[2] = { nullptr, nullptr };
+uint32_t g_scCount[2] = { 0, 0 };
+
+ID3D11Texture2D* g_eyeCache[2] = { nullptr, nullptr };
+bool g_eyeCacheValid[2] = { false, false };
+XrPosef g_eyeCachePose[2]{};
+XrFovf g_eyeCacheFov[2]{};
 
 IDirect3DSurface9* g_sysmem = nullptr;
 ID3D11Texture2D* g_upload = nullptr;
@@ -208,6 +333,25 @@ bool g_haveViews = false;
 int g_frames = 0;
 volatile LONG g_xrInitTried = 0;
 
+int g_activeEye = 0;
+XrPosef g_renderEyePose[2]{};
+XrFovf g_renderEyeFov[2]{};
+bool g_renderHaveViews = false;
+bool g_had3DCameraThisFrame = false;
+int g_3dCamCallsThisFrame = 0;
+int g_consecutive3DFrames = 0;
+int g_consecutive2DFrames = 0;
+bool g_in3DGameplayMode = false;
+
+static XrQuaternionf QuatMul(const XrQuaternionf& a, const XrQuaternionf& b) {
+    return {
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
+    };
+}
+
 static XrVector3f RotVec(const XrQuaternionf& q, float x, float y, float z) {
     const float qx = q.x, qy = q.y, qz = q.z, qw = q.w;
     const float tx = 2.f * (qy * z - qz * y);
@@ -217,13 +361,11 @@ static XrVector3f RotVec(const XrQuaternionf& q, float x, float y, float z) {
              z + qw * tz + (qx * ty - qy * tx) };
 }
 
-static XrPosef HeadCenterPose(const XrView* views, uint32_t n) {
-    XrPosef c = views[0].pose;
-    if (n >= 2) {
-        c.position.x = (views[0].pose.position.x + views[1].pose.position.x) * 0.5f;
-        c.position.y = (views[0].pose.position.y + views[1].pose.position.y) * 0.5f;
-        c.position.z = (views[0].pose.position.z + views[1].pose.position.z) * 0.5f;
-    }
+static XrPosef HeadCenterPose(const XrPosef& p0, const XrPosef& p1) {
+    XrPosef c = p0;
+    c.position.x = (p0.position.x + p1.position.x) * 0.5f;
+    c.position.y = (p0.position.y + p1.position.y) * 0.5f;
+    c.position.z = (p0.position.z + p1.position.z) * 0.5f;
     return c;
 }
 
@@ -236,8 +378,15 @@ static XrPosef CinemaQuadPose(const XrPosef& head) {
     return p;
 }
 
-// Computes a horizon-level world-anchored cinema pose in LOCAL space from the current head pose.
-// Keeps only horizontal Yaw so the cinema screen is never tilted by head pitch/roll.
+static float ComputeHorizontalYaw(const XrQuaternionf& q) {
+    const XrVector3f fwd = RotVec(q, 0.f, 0.f, -1.f);
+    float fx = fwd.x;
+    float fz = fwd.z;
+    float len = std::sqrt(fx * fx + fz * fz);
+    if (len < 1e-4f) return 0.f;
+    return std::atan2(-fx / len, -fz / len);
+}
+
 static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
     const XrVector3f fwd = RotVec(head.orientation, 0.f, 0.f, -1.f);
     float fx = fwd.x;
@@ -246,7 +395,6 @@ static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
     if (len < 1e-4f) {
         fx = 0.f;
         fz = -1.f;
-        len = 1.f;
     } else {
         fx /= len;
         fz /= len;
@@ -263,12 +411,224 @@ static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
     return p;
 }
 
+// ---------------------------------------------------------------- Matrix Math (Row-Major 4x4, matching DarknessII.exe 0x00C02F50 & 0x00D46710)
+static void MulMatrix4x4RowMajor(float out[16], const float A[16], const float B[16]) {
+    float tmp[16];
+    for (int r = 0; r < 4; ++r) {
+        const float a0 = A[r * 4 + 0];
+        const float a1 = A[r * 4 + 1];
+        const float a2 = A[r * 4 + 2];
+        const float a3 = A[r * 4 + 3];
+        for (int c = 0; c < 4; ++c) {
+            tmp[r * 4 + c] = a0 * B[0 * 4 + c] +
+                             a1 * B[1 * 4 + c] +
+                             a2 * B[2 * 4 + c] +
+                             a3 * B[3 * 4 + c];
+        }
+    }
+    memcpy(out, tmp, sizeof(tmp));
+}
+
+static void InvertOrthonormalMatrix4x4(float out[16], const float M[16]) {
+    float tmp[16]{};
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            tmp[r * 4 + c] = M[c * 4 + r];
+        }
+        tmp[r * 4 + 3] = M[r * 4 + 3];
+    }
+    const float tx = M[12], ty = M[13], tz = M[14];
+    tmp[12] = -(tx * tmp[0] + ty * tmp[4] + tz * tmp[8]);
+    tmp[13] = -(tx * tmp[1] + ty * tmp[5] + tz * tmp[9]);
+    tmp[14] = -(tx * tmp[2] + ty * tmp[6] + tz * tmp[10]);
+    tmp[15] = M[15];
+    memcpy(out, tmp, sizeof(tmp));
+}
+
+// ---------------------------------------------------------------- SetVertexShaderConstantF Hook (Slot 94)
+// Slot 94 on IDirect3DDevice9 vtable.
+// Zero modifications to DarknessII.exe's .text section (immune to Steam CEG integrity checks).
+typedef HRESULT(STDMETHODCALLTYPE* PFN_SetVertexShaderConstantF)(IDirect3DDevice9*, UINT, const float*, UINT);
+PFN_SetVertexShaderConstantF g_origSetVertexShaderConstantF = nullptr;
+
+static void LogMatrix4x4(const char* label, const float M[16]) {
+    Log("  %s:", label);
+    Log("    [%8.4f %8.4f %8.4f %8.4f]", M[0],  M[1],  M[2],  M[3]);
+    Log("    [%8.4f %8.4f %8.4f %8.4f]", M[4],  M[5],  M[6],  M[7]);
+    Log("    [%8.4f %8.4f %8.4f %8.4f]", M[8],  M[9],  M[10], M[11]);
+    Log("    [%8.4f %8.4f %8.4f %8.4f]", M[12], M[13], M[14], M[15]);
+}
+
+HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
+    IDirect3DDevice9* dev,
+    UINT StartRegister,
+    const float* pConstantData,
+    UINT Vector4fCount)
+{
+    // Fast path: ignore uploads above register 64 or small uploads (< 4 registers)
+    if (!pConstantData || Vector4fCount < 4 || StartRegister > 64) {
+        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    }
+
+    float scratch[256 * 4];
+    const UINT maxVecs = (Vector4fCount <= 256) ? Vector4fCount : 256;
+    bool modified = false;
+
+    // Scan for 4-register 3D perspective camera matrix windows
+    for (UINT j = 0; j + 4 <= maxVecs; ++j) {
+        // 4x4 matrix must start on a 4-register aligned boundary (e.g. c0, c4)
+        if (((StartRegister + j) % 4) != 0) continue;
+
+        const float* M = pConstantData + j * 4;
+
+        // Geometric invariant of D3D9 row-major perspective camera matrices:
+        // Col 3 = (M[3], M[7], M[11]) is the forward vector, length ~ 1.0f
+        // Col 0 = (M[0], M[4], M[8]) is Right * Proj_x, length ~ Proj_x
+        // Col 1 = (M[1], M[5], M[9]) is Up * Proj_y, length ~ Proj_y
+        // M[15] is clip.w for camera position, near 0 in translated-world space
+        const float lenCol3 = std::sqrt(M[3] * M[3] + M[7] * M[7] + M[11] * M[11]);
+        if (lenCol3 < 0.7f || lenCol3 > 1.4f) continue;
+
+        const float lenCol0 = std::sqrt(M[0] * M[0] + M[4] * M[4] + M[8] * M[8]);
+        const float lenCol1 = std::sqrt(M[1] * M[1] + M[5] * M[5] + M[9] * M[9]);
+        if (lenCol0 < 0.3f || lenCol0 > 6.0f || lenCol1 < 0.3f || lenCol1 > 6.0f) continue;
+
+        if (std::fabs(M[15]) > 100.0f) continue;
+
+        const float aspect = (lenCol0 > 1e-4f) ? (lenCol1 / lenCol0) : 0.f;
+        if (aspect < 1.1f || aspect > 2.8f) continue;
+
+        // Filter out static main menu camera (at origin with y = -1.7508)
+        const bool isMainMenu = (std::fabs(M[12]) < 0.05f && std::fabs(M[13] + 1.7508f) < 0.1f && std::fabs(M[14]) < 0.05f);
+
+        static int s_loggedVS = 0;
+        const bool f7Dump = (InterlockedCompareExchange(&g_dumpNextFrame, 0, 0) != 0);
+        if (s_loggedVS < 25 || f7Dump) {
+            if (!f7Dump) ++s_loggedVS;
+            Log("[VSConstF] Found 3D ViewProj at c%u (j=%u in count=%u) %s | aspect=%.3f lenCol3=%.3f lenCol0=%.3f lenCol1=%.3f",
+                StartRegister + j, j, Vector4fCount, isMainMenu ? "[MAIN_MENU]" : "[GAME_3D]",
+                aspect, lenCol3, lenCol0, lenCol1);
+            if (s_loggedVS <= 5 || f7Dump) {
+                LogMatrix4x4("ViewProj Matrix", M);
+            }
+        }
+
+        if (isMainMenu) continue;
+
+        g_had3DCameraThisFrame = true;
+        ++g_3dCamCallsThisFrame;
+
+        // Apply 6DoF + Stereo AFR transformation when in sustained 3D gameplay mode
+        if (g_in3DGameplayMode && g_renderHaveViews && (g_submitMode == 0 || g_submitMode == 1)) {
+            if (!modified) {
+                memcpy(scratch, pConstantData, maxVecs * 4 * sizeof(float));
+                modified = true;
+            }
+            float* targetM = scratch + j * 4;
+
+            const XrPosef headCenter = HeadCenterPose(g_renderEyePose[0], g_renderEyePose[1]);
+            if (!g_vrRefValid) {
+                g_vrRefPos = headCenter.position;
+                g_vrRefYaw = ComputeHorizontalYaw(headCenter.orientation);
+                g_vrRefValid = true;
+                Log("VR 6DoF Reference latched: pos=(%.3f, %.3f, %.3f) yaw=%.2f deg",
+                    g_vrRefPos.x, g_vrRefPos.y, g_vrRefPos.z, g_vrRefYaw * (180.f / 3.14159265f));
+            }
+
+            const int eye = (g_submitMode == 1) ? (g_activeEye & 1) : 0;
+            const XrFovf& eyeFov = g_renderEyeFov[eye];
+
+            // Extract true camera orthonormal basis in world space from matrix columns:
+            // Col 0: Right * Proj_x
+            // Col 1: Up * Proj_y
+            // Col 3: Forward (unit length)
+            const float Px = lenCol0;
+            const float Py = lenCol1;
+            const float camRight[3] = { M[0] / Px, M[4] / Px, M[8] / Px };
+            const float camUp[3]    = { M[1] / Py, M[5] / Py, M[9] / Py };
+            const float camFwd[3]   = { M[3] / lenCol3, M[7] / lenCol3, M[11] / lenCol3 };
+
+            // 1. Stereo separation along Camera Right:
+            // Left eye: -IPD/2, Right eye: +IPD/2
+            const float stereoMult = (g_submitMode == 1) ? g_stereoStrength : 0.f;
+            const float eyeSign = (eye == 0) ? -1.0f : 1.0f;
+            float dx = eyeSign * (0.035f * stereoMult);
+            float dy = 0.0f;
+            float dz = 0.0f;
+
+            // 2. Add 6DoF positional head tracking (in camera view coordinates)
+            if (g_trackingSubMode != 2) {
+                const float rawDx = headCenter.position.x - g_vrRefPos.x;
+                const float rawDy = headCenter.position.y - g_vrRefPos.y;
+                const float rawDz = headCenter.position.z - g_vrRefPos.z;
+
+                const float relYaw = ComputeHorizontalYaw(headCenter.orientation) - g_vrRefYaw;
+                const float cYaw = std::cos(relYaw);
+                const float sYaw = std::sin(relYaw);
+
+                const float roomDx = (cYaw * rawDx - sYaw * rawDz) * g_worldScale;
+                const float roomDy = rawDy * g_worldScale;
+                const float roomDz = -(sYaw * rawDx + cYaw * rawDz) * g_worldScale;
+
+                dx += roomDx;
+                dy += roomDy;
+                dz += roomDz;
+            }
+
+            // 3. Convert view displacement (dx, dy, dz) to world-space offset vector o
+            const float o[3] = {
+                dx * camRight[0] + dy * camUp[0] + dz * camFwd[0],
+                dx * camRight[1] + dy * camUp[1] + dz * camFwd[1],
+                dx * camRight[2] + dy * camUp[2] + dz * camFwd[2]
+            };
+
+            // 4. Translate Row 3 by world offset vector o
+            // D3D9 row-major clip translation: Row 3 -= o.x*Row 0 + o.y*Row 1 + o.z*Row 2
+            // Guarantees: delta clip.x = -dx*Px, delta clip.y = -dy*Py, delta clip.w = -dz
+            for (int k = 0; k < 4; ++k) {
+                targetM[3 * 4 + k] -= (o[0] * targetM[0 * 4 + k] +
+                                       o[1] * targetM[1 * 4 + k] +
+                                       o[2] * targetM[2 * 4 + k]);
+            }
+
+            // 5. OpenXR FOV override if TrackingSubMode == 1
+            if (g_trackingSubMode == 1) {
+                const float tanL = std::tan(eyeFov.angleLeft);
+                const float tanR = std::tan(eyeFov.angleRight);
+                const float tanU = std::tan(eyeFov.angleUp);
+                const float tanD = std::tan(eyeFov.angleDown);
+                const float wFov = tanR - tanL;
+                const float hFov = tanU - tanD;
+                if (wFov > 1e-4f && hFov > 1e-4f && Px > 1e-4f && Py > 1e-4f) {
+                    const float xrM00 = 2.0f / wFov;
+                    const float xrM11 = 2.0f / hFov;
+                    const float sx = xrM00 / Px;
+                    const float sy = xrM11 / Py;
+                    for (int r = 0; r < 4; ++r) {
+                        targetM[r * 4 + 0] *= sx;
+                        targetM[r * 4 + 1] *= sy;
+                    }
+                }
+            }
+        }
+
+        // Advance past the 4 registers of this matrix so overlapping windows never match
+        j += 3;
+    }
+
+    if (modified) {
+        return g_origSetVertexShaderConstantF(dev, StartRegister, scratch, Vector4fCount);
+    }
+    return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+}
+
+
+// ---------------------------------------------------------------- XInput & OpenXR Gamepad
 HWND g_gameHwnd = nullptr;
 XINPUT_STATE g_cachedXrPad{};
 XINPUT_GAMEPAD g_lastGamepadState{};
 volatile LONG g_cachedXrPadValid = 0;
 
-// OpenXR → virtual Xbox pad (VR controllers)
 XrActionSet g_padActionSet = XR_NULL_HANDLE;
 XrAction g_actLeftStick = XR_NULL_HANDLE;
 XrAction g_actRightStick = XR_NULL_HANDLE;
@@ -355,7 +715,6 @@ bool InitXrGamepadActions() {
         return false;
     }
 
-    // Oculus Touch & SteamVR PSVR2 controller profile
     const char* touch = "/interaction_profiles/oculus/touch_controller";
     XrActionSuggestedBinding touchB[] = {
         { g_actLeftStick,  XrPathFrom("/user/hand/left/input/thumbstick") },
@@ -372,7 +731,6 @@ bool InitXrGamepadActions() {
     };
     SuggestBindings(touch, touchB, static_cast<uint32_t>(sizeof(touchB) / sizeof(touchB[0])));
 
-    // Valve Index
     const char* index = "/interaction_profiles/valve/index_controller";
     XrActionSuggestedBinding indexB[] = {
         { g_actLeftStick,  XrPathFrom("/user/hand/left/input/thumbstick") },
@@ -388,11 +746,9 @@ bool InitXrGamepadActions() {
     };
     SuggestBindings(index, indexB, static_cast<uint32_t>(sizeof(indexB) / sizeof(indexB[0])));
 
-    // HP WMR
     const char* wmr = "/interaction_profiles/hp/mixed_reality_controller";
     SuggestBindings(wmr, touchB, static_cast<uint32_t>(sizeof(touchB) / sizeof(touchB[0])));
 
-    // Simple Controller
     const char* simple = "/interaction_profiles/khr/simple_controller";
     XrActionSuggestedBinding simpleB[] = {
         { g_actLeftTrig,   XrPathFrom("/user/hand/left/input/select/click") },
@@ -477,15 +833,12 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if (ReadBool(g_actStickL, g_pathHandLeft)) gp.wButtons |= XINPUT_GAMEPAD_LEFT_THUMB;
     if (ReadBool(g_actStickR, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
 
-    // L3 + R3 combo on VR controllers recenters the cinema world anchor
     static DWORD s_lastPadRecenter = 0;
     if ((gp.wButtons & XINPUT_GAMEPAD_LEFT_THUMB) && (gp.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)) {
         DWORD now = GetTickCount();
         if (now - s_lastPadRecenter > 600) {
             s_lastPadRecenter = now;
-            g_anchorValid = false;
-            Beep(1000, 50);
-            Log(">>> [VR PAD L3+R3] Cinema World Anchor recenter requested <<<");
+            RequestRecenter("VR PAD L3+R3");
         }
     }
 
@@ -547,6 +900,17 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
                     break;
                 }
             }
+        }
+    }
+
+    if (r == ERROR_SUCCESS &&
+        (real.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_THUMB) &&
+        (real.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)) {
+        static DWORD s_lastPhysRecenter = 0;
+        DWORD now = GetTickCount();
+        if (now - s_lastPhysRecenter > 600) {
+            s_lastPhysRecenter = now;
+            RequestRecenter("PHYSICAL PAD L3+R3");
         }
     }
 
@@ -787,7 +1151,9 @@ void PumpXR() {
                 if (XR_SUCCEEDED(xrBeginSession(g_xrSession, &bi))) {
                     g_xrRunning = true;
                     g_anchorValid = false;
-                    Log("XR session running (TestMode=%d SubmitMode=%d)", g_testMode, g_submitMode);
+                    g_vrRefValid = false;
+                    Log("XR session running (TestMode=%d SubmitMode=%d TrackingSubMode=%d)",
+                        g_testMode, g_submitMode, g_trackingSubMode);
                 }
             } else if (s->state == XR_SESSION_STATE_STOPPING) {
                 xrEndSession(g_xrSession);
@@ -798,15 +1164,22 @@ void PumpXR() {
     }
 }
 
-bool EnsureSwapchain(UINT w, UINT h) {
-    if (g_swapchain && w == g_scW && h == g_scH) return true;
-    if (g_swapchain) {
-        xrDestroySwapchain(g_swapchain);
-        g_swapchain = XR_NULL_HANDLE;
-    }
-    if (g_scImages) {
-        delete[] g_scImages;
-        g_scImages = nullptr;
+bool EnsureSwapchains(UINT w, UINT h) {
+    if (g_swapchain[0] && g_swapchain[1] && w == g_scW && h == g_scH) return true;
+    for (int e = 0; e < 2; ++e) {
+        if (g_swapchain[e]) {
+            xrDestroySwapchain(g_swapchain[e]);
+            g_swapchain[e] = XR_NULL_HANDLE;
+        }
+        if (g_scImages[e]) {
+            delete[] g_scImages[e];
+            g_scImages[e] = nullptr;
+        }
+        if (g_eyeCache[e]) {
+            g_eyeCache[e]->Release();
+            g_eyeCache[e] = nullptr;
+        }
+        g_eyeCacheValid[e] = false;
     }
 
     uint32_t nfmt = 0;
@@ -824,28 +1197,45 @@ bool EnsureSwapchain(UINT w, UINT h) {
     delete[] fmts;
     Log("Chosen swapchain format: %lld (0x%llX)", (long long)fmt, (long long)fmt);
 
-    XrSwapchainCreateInfo sci{ XR_TYPE_SWAPCHAIN_CREATE_INFO };
-    sci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-    sci.format = fmt;
-    sci.sampleCount = 1;
-    sci.width = w;
-    sci.height = h;
-    sci.faceCount = 1;
-    sci.arraySize = 1;
-    sci.mipCount = 1;
-    if (XR_FAILED(xrCreateSwapchain(g_xrSession, &sci, &g_swapchain))) return false;
+    for (int e = 0; e < 2; ++e) {
+        XrSwapchainCreateInfo sci{ XR_TYPE_SWAPCHAIN_CREATE_INFO };
+        sci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+        sci.format = fmt;
+        sci.sampleCount = 1;
+        sci.width = w;
+        sci.height = h;
+        sci.faceCount = 1;
+        sci.arraySize = 1;
+        sci.mipCount = 1;
+        if (XR_FAILED(xrCreateSwapchain(g_xrSession, &sci, &g_swapchain[e]))) return false;
 
-    xrEnumerateSwapchainImages(g_swapchain, 0, &g_scCount, nullptr);
-    auto* imgs = new XrSwapchainImageD3D11KHR[g_scCount];
-    for (uint32_t i = 0; i < g_scCount; ++i) imgs[i] = { XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR };
-    xrEnumerateSwapchainImages(g_swapchain, g_scCount, &g_scCount,
-                               reinterpret_cast<XrSwapchainImageBaseHeader*>(imgs));
-    g_scImages = new ID3D11Texture2D*[g_scCount];
-    for (uint32_t i = 0; i < g_scCount; ++i) g_scImages[i] = imgs[i].texture;
-    delete[] imgs;
+        xrEnumerateSwapchainImages(g_swapchain[e], 0, &g_scCount[e], nullptr);
+        auto* imgs = new XrSwapchainImageD3D11KHR[g_scCount[e]];
+        for (uint32_t i = 0; i < g_scCount[e]; ++i) imgs[i] = { XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR };
+        xrEnumerateSwapchainImages(g_swapchain[e], g_scCount[e], &g_scCount[e],
+                                   reinterpret_cast<XrSwapchainImageBaseHeader*>(imgs));
+        g_scImages[e] = new ID3D11Texture2D*[g_scCount[e]];
+        for (uint32_t i = 0; i < g_scCount[e]; ++i) g_scImages[e][i] = imgs[i].texture;
+        delete[] imgs;
+
+        D3D11_TEXTURE2D_DESC td{};
+        td.Width = w;
+        td.Height = h;
+        td.MipLevels = 1;
+        td.ArraySize = 1;
+        td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        td.SampleDesc.Count = 1;
+        td.Usage = D3D11_USAGE_DEFAULT;
+        td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        if (FAILED(g_dev11->CreateTexture2D(&td, nullptr, &g_eyeCache[e]))) {
+            Log("CreateTexture2D for eyeCache[%d] failed", e);
+            return false;
+        }
+    }
+
     g_scW = w;
     g_scH = h;
-    Log("Swapchain created %ux%u count=%u", w, h, g_scCount);
+    Log("Stereo swapchains [0,1] created %ux%u count=(%u,%u)", w, h, g_scCount[0], g_scCount[1]);
     return true;
 }
 
@@ -899,7 +1289,7 @@ bool FillTestPattern(UINT w, UINT h, int mode) {
         uint32_t* row = reinterpret_cast<uint32_t*>(d + (size_t)y * ms.RowPitch);
         for (UINT x = 0; x < w; ++x) {
             if (mode == 1) {
-                row[x] = 0xFF00FF00; // Solid Bright Green
+                row[x] = 0xFF00FF00;
             } else {
                 bool check = (((x / 64) ^ (y / 64)) & 1) != 0;
                 if (x < 16 || x >= w - 16 || y < 16 || y >= h - 16 ||
@@ -972,7 +1362,6 @@ bool CopyFrame(IDirect3DDevice9* dev) {
     uint8_t avgR = 0, avgG = 0, avgB = 0, maxR = 0, maxG = 0, maxB = 0;
     SampleSurfaceStats(lr, sd.Width, sd.Height, &avgR, &avgG, &avgB, &maxR, &maxG, &maxB);
 
-    // If BackBuffer(0) is 100% pitch black, check if RenderTarget(0) is a separate active surface with pixels!
     if (maxR == 0 && maxG == 0 && maxB == 0) {
         g_sysmem->UnlockRect();
         IDirect3DSurface9* rt0 = nullptr;
@@ -1001,13 +1390,10 @@ bool CopyFrame(IDirect3DDevice9* dev) {
 
 have_locked_rect:
     static int s_statCounter = 0;
-    if (++s_statCounter % 60 == 0) {
-        Log("capture stats [frame %d]: %ux%u (via %s) mean RGB=(%u,%u,%u) max RGB=(%u,%u,%u)",
+    if (++s_statCounter % 120 == 0) {
+        Log("capture stats [frame %d]: %ux%u (via %s) mean RGB=(%u,%u,%u) max RGB=(%u,%u,%u) 3dCams=%d 3dMode=%d eye=%d",
             s_statCounter, sd.Width, sd.Height, srcMethod,
-            avgR, avgG, avgB, maxR, maxG, maxB);
-        if (maxR == 0 && maxG == 0 && maxB == 0) {
-            Log("WARNING: captured surface is 100%% pitch black (all samples 0)!");
-        }
+            avgR, avgG, avgB, maxR, maxG, maxB, g_3dCamCallsThisFrame, (int)g_in3DGameplayMode, g_activeEye);
     }
 
     D3D11_MAPPED_SUBRESOURCE ms{};
@@ -1026,7 +1412,25 @@ have_locked_rect:
     return true;
 }
 
+static bool WriteTextureToSwapchain(XrSwapchain sc, ID3D11Texture2D** scImages, ID3D11Texture2D* srcTex) {
+    uint32_t idx = 0;
+    XrSwapchainImageAcquireInfo ai{ XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+    if (XR_FAILED(xrAcquireSwapchainImage(sc, &ai, &idx))) return false;
+    XrSwapchainImageWaitInfo wi{ XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+    wi.timeout = XR_INFINITE_DURATION;
+    bool ok = false;
+    if (XR_SUCCEEDED(xrWaitSwapchainImage(sc, &wi))) {
+        g_ctx11->CopyResource(scImages[idx], srcTex);
+        ok = true;
+    }
+    XrSwapchainImageReleaseInfo ri{ XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+    xrReleaseSwapchainImage(sc, &ri);
+    return ok;
+}
+
 void SubmitXR(IDirect3DDevice9* dev) {
+    g_lastStage = 20;
+
     if (!g_xrReady) return;
     PumpXR();
     if (!g_xrRunning) return;
@@ -1054,6 +1458,30 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
     UpdateCachedXrPad();
 
+    // Hysteresis filter: require 45 consecutive 3D frames (~0.75s) before switching from Cinema to 3D VR Projection
+    // so short Main Menu transition swoops stay smoothly on the Cinema screen without eye-mismatch flashes.
+    if (g_had3DCameraThisFrame) {
+        ++g_consecutive3DFrames;
+        g_consecutive2DFrames = 0;
+        if (!g_in3DGameplayMode && g_consecutive3DFrames >= 45) {
+            g_in3DGameplayMode = true;
+            g_vrRefValid = false; // Auto-recenter 6DoF origin when entering 3D gameplay
+            g_eyeCacheValid[0] = false;
+            g_eyeCacheValid[1] = false;
+            Log(">>> Entered sustained 3D Gameplay VR mode (consecutive3DFrames=%d) <<<", g_consecutive3DFrames);
+        }
+    } else {
+        ++g_consecutive2DFrames;
+        g_consecutive3DFrames = 0;
+        if (g_in3DGameplayMode && g_consecutive2DFrames >= 3) {
+            g_in3DGameplayMode = false;
+            g_eyeCacheValid[0] = false;
+            g_eyeCacheValid[1] = false;
+            g_anchorValid = false;
+            Log(">>> Returned to 2D Cinema mode (consecutive2DFrames=%d) <<<", g_consecutive2DFrames);
+        }
+    }
+
     const XrCompositionLayerBaseHeader* layers[1] = { nullptr };
     uint32_t layerCount = 0;
     XrCompositionLayerQuad quad{ XR_TYPE_COMPOSITION_LAYER_QUAD };
@@ -1065,34 +1493,73 @@ void SubmitXR(IDirect3DDevice9* dev) {
         if (g_testMode > 0) {
             UINT tw = g_srcW ? g_srcW : 1920;
             UINT th = g_srcH ? g_srcH : 1080;
-            havePixels = FillTestPattern(tw, th, g_testMode) && EnsureSwapchain(tw, th);
+            havePixels = FillTestPattern(tw, th, g_testMode) && EnsureSwapchains(tw, th);
         } else if (dev) {
-            havePixels = CopyFrame(dev) && EnsureSwapchain(g_srcW, g_srcH);
+            havePixels = CopyFrame(dev) && EnsureSwapchains(g_srcW, g_srcH);
         }
     }
 
     if (havePixels) {
-        uint32_t idx = 0;
-        XrSwapchainImageAcquireInfo ai{ XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
-        if (XR_SUCCEEDED(xrAcquireSwapchainImage(g_swapchain, &ai, &idx))) {
-            XrSwapchainImageWaitInfo wi{ XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
-            wi.timeout = XR_INFINITE_DURATION;
-            if (XR_SUCCEEDED(xrWaitSwapchainImage(g_swapchain, &wi))) {
-                g_ctx11->CopyResource(g_scImages[idx], g_upload);
-                XrSwapchainImageReleaseInfo ri{ XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-                xrReleaseSwapchainImage(g_swapchain, &ri);
+        const float aspect = g_scH ? (float)g_scW / (float)g_scH : (16.f / 9.f);
+        const XrPosef head = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
 
-                const float aspect = g_scH ? (float)g_scW / (float)g_scH : (16.f / 9.f);
-                XrView vcopy[2] = { { XR_TYPE_VIEW }, { XR_TYPE_VIEW } };
-                for (int i = 0; i < 2; ++i) {
-                    vcopy[i].pose = g_eyePose[i];
-                    vcopy[i].fov = g_eyeFov[i];
+        const bool use3DProjection = (g_submitMode == 0 || g_submitMode == 1) && g_in3DGameplayMode && g_had3DCameraThisFrame;
+
+        if (use3DProjection) {
+            if (g_submitMode == 0) {
+                // SubmitMode 0 (VR_6DOF_SYNC): Both eyes receive the current frame simultaneously (zero temporal eye mismatch!)
+                g_ctx11->CopyResource(g_eyeCache[0], g_upload);
+                g_ctx11->CopyResource(g_eyeCache[1], g_upload);
+                g_eyeCachePose[0] = g_eyePose[0];
+                g_eyeCachePose[1] = g_eyePose[1];
+                g_eyeCacheFov[0] = g_eyeFov[0];
+                g_eyeCacheFov[1] = g_eyeFov[1];
+                g_eyeCacheValid[0] = true;
+                g_eyeCacheValid[1] = true;
+            } else {
+                // SubmitMode 1 (VR_6DOF_AFR): Alternating-Eye Stereo 3D
+                const int curEye = g_activeEye & 1;
+                const int otherEye = 1 - curEye;
+                g_ctx11->CopyResource(g_eyeCache[curEye], g_upload);
+                g_eyeCachePose[curEye] = g_renderHaveViews ? g_renderEyePose[curEye] : g_eyePose[curEye];
+                g_eyeCacheFov[curEye] = g_renderHaveViews ? g_renderEyeFov[curEye] : g_eyeFov[curEye];
+                g_eyeCacheValid[curEye] = true;
+
+                if (!g_eyeCacheValid[otherEye]) {
+                    g_ctx11->CopyResource(g_eyeCache[otherEye], g_upload);
+                    g_eyeCachePose[otherEye] = g_renderHaveViews ? g_renderEyePose[otherEye] : g_eyePose[otherEye];
+                    g_eyeCacheFov[otherEye] = g_renderHaveViews ? g_renderEyeFov[otherEye] : g_eyeFov[otherEye];
+                    g_eyeCacheValid[otherEye] = true;
                 }
-                const XrPosef head = HeadCenterPose(vcopy, 2);
+            }
 
-                if (g_submitMode == 0) {
-                    // 0: QUAD_WORLD_ANCHOR (horizon-level world-anchored cinema screen in LOCAL space)
-                    // Re-latch on initial warmup frames (0, 30, 120) or if head moved >1.2m from anchor origin
+            if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0]) &&
+                WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[1])) {
+                // In SubmitMode 0, apply subtle horizontal stereo crop offset so both eyes have comfortable stereo depth from the same frame
+                const int32_t cropPx = (g_submitMode == 0 && g_stereoStrength > 0.01f)
+                    ? static_cast<int32_t>((float)g_scW * 0.012f * g_stereoStrength)
+                    : 0;
+                const int32_t subW = (int32_t)g_scW - cropPx;
+
+                for (int e = 0; e < 2; ++e) {
+                    projViews[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
+                    projViews[e].pose = g_eyePose[e];
+                    projViews[e].fov = g_eyeFov[e];
+                    projViews[e].subImage.swapchain = g_swapchain[e];
+                    projViews[e].subImage.imageRect.offset = { (e == 0) ? 0 : cropPx, 0 };
+                    projViews[e].subImage.imageRect.extent = { subW, (int32_t)g_scH };
+                }
+                proj.layerFlags = 0;
+                proj.space = g_xrSpace;
+                proj.viewCount = 2;
+                proj.views = projViews;
+                layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
+                layerCount = 1;
+            }
+        } else {
+            g_ctx11->CopyResource(g_eyeCache[0], g_upload);
+            if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0])) {
+                if (g_submitMode != 3) {
                     float dx = head.position.x - g_anchorHeadOrigin.x;
                     float dy = head.position.y - g_anchorHeadOrigin.y;
                     float dz = head.position.z - g_anchorHeadOrigin.z;
@@ -1101,65 +1568,33 @@ void SubmitXR(IDirect3DDevice9* dev) {
                         g_anchorPose = ComputeLevelWorldAnchorPose(head);
                         g_anchorHeadOrigin = head.position;
                         g_anchorValid = true;
-                        Log("Cinema World Anchor latched at pos=(%.2f, %.2f, %.2f) orient=(%.2f, %.2f, %.2f, %.2f) (frame=%d)",
-                            g_anchorPose.position.x, g_anchorPose.position.y, g_anchorPose.position.z,
-                            g_anchorPose.orientation.x, g_anchorPose.orientation.y,
-                            g_anchorPose.orientation.z, g_anchorPose.orientation.w, g_frames);
+                        Log("Cinema World Anchor latched at pos=(%.2f, %.2f, %.2f) (frame=%d)",
+                            g_anchorPose.position.x, g_anchorPose.position.y, g_anchorPose.position.z, g_frames);
                     }
-
-                    quad.layerFlags = 0;
-                    quad.space = g_xrSpace;
-                    quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-                    quad.subImage.swapchain = g_swapchain;
-                    quad.subImage.imageRect.offset = { 0, 0 };
-                    quad.subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
                     quad.pose = g_anchorPose;
-                    quad.size = { g_cinemaWidthM, g_cinemaWidthM / aspect };
-                    layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
-                    layerCount = 1;
-                } else if (g_submitMode == 1) {
-                    // 1: QUAD_HEAD_LOCKED (exact v0.1.3 style: quad in LOCAL space tracking head center)
-                    quad.layerFlags = 0;
-                    quad.space = g_xrSpace;
-                    quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-                    quad.subImage.swapchain = g_swapchain;
-                    quad.subImage.imageRect.offset = { 0, 0 };
-                    quad.subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
-                    quad.pose = CinemaQuadPose(head);
-                    quad.size = { g_cinemaWidthM, g_cinemaWidthM / aspect };
-                    layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
-                    layerCount = 1;
                 } else {
-                    // 2: PROJECTION_MONO (exact v0.1.2 style: full projection layer)
-                    for (int i = 0; i < 2; ++i) {
-                        projViews[i] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-                        projViews[i].pose = g_eyePose[i];
-                        projViews[i].fov = g_eyeFov[i];
-                        projViews[i].subImage.swapchain = g_swapchain;
-                        projViews[i].subImage.imageRect.offset = { 0, 0 };
-                        projViews[i].subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
-                    }
-                    proj.layerFlags = 0;
-                    proj.space = g_xrSpace;
-                    proj.viewCount = 2;
-                    proj.views = projViews;
-                    layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
-                    layerCount = 1;
+                    quad.pose = CinemaQuadPose(head);
                 }
-
-                if (g_frames == 0) {
-                    Log("*** FIRST FRAME SUBMITTED *** mode=%d (test=%d) distance=%.1fm size=%.2fx%.2fm",
-                        g_submitMode, g_testMode, g_cinemaDistanceM, g_cinemaWidthM, g_cinemaWidthM / aspect);
-                }
-                ++g_frames;
-                if ((g_frames % 600) == 0) {
-                    Log("xr submit ok frames=%d shouldRender=%d layers=%u (mode=%d test=%d)",
-                        g_frames, (int)fs.shouldRender, layerCount, g_submitMode, g_testMode);
-                }
-            } else {
-                XrSwapchainImageReleaseInfo ri{ XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-                xrReleaseSwapchainImage(g_swapchain, &ri);
+                quad.layerFlags = 0;
+                quad.space = g_xrSpace;
+                quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+                quad.subImage.swapchain = g_swapchain[0];
+                quad.subImage.imageRect.offset = { 0, 0 };
+                quad.subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
+                quad.size = { g_cinemaWidthM, g_cinemaWidthM / aspect };
+                layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
+                layerCount = 1;
             }
+        }
+
+        if (g_frames == 0 && layerCount > 0) {
+            Log("*** FIRST FRAME SUBMITTED *** mode=%d 3dProjection=%d size=%ux%u",
+                g_submitMode, (int)use3DProjection, g_scW, g_scH);
+        }
+        ++g_frames;
+        if ((g_frames % 600) == 0) {
+            Log("xr submit ok frames=%d shouldRender=%d layers=%u (mode=%d subMode=%d 3dCams=%d 3dGameplay=%d)",
+                g_frames, (int)fs.shouldRender, layerCount, g_submitMode, g_trackingSubMode, g_3dCamCallsThisFrame, (int)g_in3DGameplayMode);
         }
     }
 
@@ -1171,6 +1606,22 @@ void SubmitXR(IDirect3DDevice9* dev) {
     const XrResult endR = xrEndFrame(g_xrSession, &fei);
     static int endFail = 0;
     if (XR_FAILED(endR) && endFail++ < 5) Log("xrEndFrame failed %d", (int)endR);
+
+    if (g_submitMode == 1 && g_in3DGameplayMode && g_had3DCameraThisFrame) {
+        g_activeEye ^= 1;
+    } else {
+        g_activeEye = 0;
+    }
+    if (g_haveViews) {
+        g_renderEyePose[0] = g_eyePose[0];
+        g_renderEyePose[1] = g_eyePose[1];
+        g_renderEyeFov[0] = g_eyeFov[0];
+        g_renderEyeFov[1] = g_eyeFov[1];
+        g_renderHaveViews = true;
+    }
+    g_had3DCameraThisFrame = false;
+    g_3dCamCallsThisFrame = 0;
+    g_lastStage = 21;
 }
 
 // ---------------------------------------------------------------- D3D9 Proxy Hooks
@@ -1217,9 +1668,6 @@ void* PatchVTable(void* obj, int index, void* repl) {
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
-    // CRITICAL (proven from v0.1.3 vs v0.1.4..v0.1.8 & DarknessII.exe 0x00B3DD90 disassembly):
-    // Do NOT mutate pp->Windowed in Hook_Reset by default! DarknessII.exe checks this->presentParams.Windowed
-    // at 0x00B3E05E immediately after Reset() returns and configures its fullscreen swapchain state from it.
     if (g_forceWindowedReset && pp) {
         TweakPresentParams(pp);
     }
@@ -1253,6 +1701,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
 }
 
 static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
+    g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     TryInstallXInputHook();
 
@@ -1266,7 +1715,7 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
 
     static int frameLogs = 0;
     if (frameLogs++ < 15) {
-        Log("VrFrame called by %s (frameId=%ld)", caller, id);
+        Log("VrFrame called by %s (frameId=%ld tid=%lu)", caller, id, g_renderThreadId);
     }
 
     if (InterlockedCompareExchange(&g_xrInitTried, 1, 0) == 0) InitXR();
@@ -1274,6 +1723,7 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
 }
 
 HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
+    g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     InterlockedIncrement(&g_frameId);
     return g_origBeginScene(dev);
@@ -1282,7 +1732,6 @@ HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
 HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
     PollHotkeys();
     HRESULT hr = g_origEndScene(dev);
-    // Only capture in EndScene if Present/PresentEx is not being called directly on the device
     if (InterlockedCompareExchange(&g_presentSeen, 0, 0) == 0) {
         VrFrame(dev, "EndScene@42");
     }
@@ -1312,6 +1761,7 @@ HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a,
 }
 
 void HookDevice(IDirect3DDevice9* dev) {
+    g_renderThreadId = GetCurrentThreadId();
     if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;
     g_origPresent = reinterpret_cast<PFN_Present>(PatchVTable(dev, 17, reinterpret_cast<void*>(&Hook_Present)));
     g_origReset = reinterpret_cast<PFN_Reset>(PatchVTable(dev, 16, reinterpret_cast<void*>(&Hook_Reset)));
@@ -1320,14 +1770,17 @@ void HookDevice(IDirect3DDevice9* dev) {
     g_origEndScene =
         reinterpret_cast<PFN_EndScene>(PatchVTable(dev, 42, reinterpret_cast<void*>(&Hook_EndScene)));
 
-    // Also hook PresentEx (slot 121) and ResetEx (slot 132) for IDirect3DDevice9Ex
     g_origPresentEx = reinterpret_cast<PFN_PresentEx>(
         PatchVTable(dev, 121, reinterpret_cast<void*>(&Hook_PresentEx)));
     g_origResetEx = reinterpret_cast<PFN_ResetEx>(
         PatchVTable(dev, 132, reinterpret_cast<void*>(&Hook_ResetEx)));
 
-    Log("Present@17, Reset@16, BeginScene@41, EndScene@42, PresentEx@121, ResetEx@132 hooked on device %p (origPresentEx=%p)",
-        dev, g_origPresentEx);
+    // Hook SetVertexShaderConstantF (slot 94) for clean, non-invasive 6DoF & Stereo matrix transformation
+    g_origSetVertexShaderConstantF = reinterpret_cast<PFN_SetVertexShaderConstantF>(
+        PatchVTable(dev, 94, reinterpret_cast<void*>(&Hook_SetVertexShaderConstantF)));
+
+    Log("Present@17, Reset@16, BeginScene@41, EndScene@42, SetVSConstF@94, PresentEx@121, ResetEx@132 hooked on device %p (origPresentEx=%p origSetVS=%p renderTid=%lu)",
+        dev, g_origPresentEx, g_origSetVertexShaderConstantF, g_renderThreadId);
 }
 
 static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp) {
@@ -1367,7 +1820,6 @@ void HookFactory(IDirect3D9* d3d) {
     if (InterlockedCompareExchange(&g_factoryHooked, 1, 0) != 0) return;
     g_origCreateDevice = reinterpret_cast<PFN_CreateDevice>(
         PatchVTable(d3d, 16, reinterpret_cast<void*>(&Hook_CreateDevice)));
-    // IDirect3D9Ex vtable: CreateDeviceEx is slot 20
     g_origCreateDeviceEx = reinterpret_cast<PFN_CreateDeviceEx>(
         PatchVTable(d3d, 20, reinterpret_cast<void*>(&Hook_CreateDeviceEx)));
     Log("Factory hooked %p CreateDevice@%p CreateDeviceEx@%p", d3d, g_origCreateDevice,
@@ -1473,13 +1925,20 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(mod);
         LogInit();
+        g_vehHandle = AddVectoredExceptionHandler(1, &CrashVehHandler);
         LoadConfig();
-        Log("Darkness2VR v0.1.9 attached (pid=%lu)", GetCurrentProcessId());
+        Log("Darkness2VR v0.3.0 attached (pid=%lu)", GetCurrentProcessId());
         if (!LoadReal()) {
             Log("FATAL: could not load system d3d9.dll");
             return FALSE;
         }
         TryInstallXInputHook();
+    } else if (reason == DLL_PROCESS_DETACH) {
+        Log("Darkness2VR detaching (pid=%lu)", GetCurrentProcessId());
+        if (g_vehHandle) {
+            RemoveVectoredExceptionHandler(g_vehHandle);
+            g_vehHandle = nullptr;
+        }
     }
     return TRUE;
 }
