@@ -1,0 +1,9 @@
+*.obj
+*.exp
+*.lib
+*.pdb
+*.ilk
+*.dll
+*.bak*
+test_vt.cpp
+TheDarkness2VR/
