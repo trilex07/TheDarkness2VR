@@ -1766,6 +1766,10 @@ static bool FreezeDepthToColor(IDirect3DDevice9* dev, UINT w, UINT h) {
     return ok;
 }
 
+static void ReplayDup(IDirect3DDevice9* dev, int eye);
+
+static void ReplayDup(IDirect3DDevice9* dev, int eye);
+
 static bool EnsureDupTargets(IDirect3DDevice9* dev, UINT w, UINT h) {
     if (!dev) return false;
     if (g_dupLeftTex && g_dupW == w && g_dupH == h) return true;
@@ -2693,6 +2697,8 @@ HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
     return g_origBeginScene(dev);
 }
 
+static void ReplayDup(IDirect3DDevice9* dev, int eye); // forward
+
 HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
     PollHotkeys();
     HRESULT hr = g_origEndScene(dev);
@@ -2707,15 +2713,23 @@ HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
             Log("D9Warp: froze scene depth %ux%u into own texture", g_srcW, g_srcH);
         }
     }
-    // Minimal StereoDup capture: if enabled and in 3D, start capturing draw calls for this frame
-    if (g_stereoDupEnabled && g_in3DGameplayMode && g_haveViews && g_srcW > 0 && g_srcH > 0) {
+    // Minimal StereoDup capture: if enabled, start capturing draw calls for this frame in 3D context
+    if (g_stereoDupEnabled && g_in3DGameplayMode && g_srcW > 0 && g_srcH > 0) {
         if (EnsureDupTargets(dev, g_srcW, g_srcH)) {
             g_dupCalls.clear();
             g_dupCapturing = true;
             g_dupReplaying = false;
             static int dupLog = 0;
-            if (dupLog++ < 3) Log("StereoDup: capturing draw calls %ux%u", g_srcW, g_srcH);
+            if (dupLog++ < 50) Log("StereoDup: capturing draw calls %ux%u", g_srcW, g_srcH);
         }
+    } else {
+        g_dupCapturing = false;
+    }
+    // If we captured draw calls in this frame, replay for both eyes now
+    if (g_stereoDupEnabled && g_dupCapturing) {
+        static int repLog = 0;
+        if (repLog++ < 50) Log("StereoDup: CAPTURED %zu draw calls (in3d=%d hadCam=%d)", g_dupCalls.size(), (int)g_in3DGameplayMode, (int)g_had3DCameraThisFrame);
+        g_dupCapturing = false;
     } else {
         g_dupCapturing = false;
     }
