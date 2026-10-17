@@ -195,8 +195,8 @@ void LoadConfig() {
     }
 
     g_testMode = GetPrivateProfileIntA("Render", "TestMode", 0, chosenIni);
-    g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 1, chosenIni);
-    if (g_submitMode < 0 || g_submitMode > 3) g_submitMode = 1;
+    g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
+    if (g_submitMode < 0 || g_submitMode > 3) g_submitMode = 0;
     g_trackingSubMode = GetPrivateProfileIntA("Render", "TrackingSubMode", 0, chosenIni);
     if (g_trackingSubMode < 0 || g_trackingSubMode > 2) g_trackingSubMode = 0;
     g_forceWindowedReset = GetPrivateProfileIntA("Render", "ForceWindowedReset", 0, chosenIni);
@@ -274,8 +274,8 @@ void PollHotkeys() {
         g_anchorValid = false;
         Beep(600 + g_submitMode * 150, 50);
         const char* names[] = {
-            "0 (VR_6DOF_SYNC - Synchronized Both-Eyes 6DoF VR)",
-            "1 (VR_6DOF_AFR - Alternating-Eye Stereo 3D)",
+            "0 (VR_STEREO_3D - True Stereoscopic 3D VR + 6DoF)",
+            "1 (VR_STEREO_SWAP - True Stereoscopic 3D with Swapped Eyes)",
             "2 (QUAD_WORLD_ANCHOR - World-Anchored Cinema)",
             "3 (QUAD_HEAD_LOCKED - Head-Locked Cinema)"
         };
@@ -465,160 +465,160 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     const float* pConstantData,
     UINT Vector4fCount)
 {
-    // Fast path: ignore uploads above register 64 or small uploads (< 4 registers)
-    if (!pConstantData || Vector4fCount < 4 || StartRegister > 64) {
+    // Fast path: camera ViewProjection matrix in Evolution Engine is always at StartRegister == 0 (c0..c3).
+    // Never scan or mutate skeletal bone palettes or object constant registers (registers > 0).
+    if (!pConstantData || Vector4fCount < 4 || StartRegister != 0) {
         return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
     }
 
-    float scratch[256 * 4];
-    const UINT maxVecs = (Vector4fCount <= 256) ? Vector4fCount : 256;
-    bool modified = false;
+    const float* M = pConstantData; // c0..c3
 
-    // Scan for 4-register 3D perspective camera matrix windows
-    for (UINT j = 0; j + 4 <= maxVecs; ++j) {
-        // 4x4 matrix must start on a 4-register aligned boundary (e.g. c0, c4)
-        if (((StartRegister + j) % 4) != 0) continue;
+    // Geometric invariant of D3D9 row-major perspective camera matrices:
+    // Col 3 = (M[3], M[7], M[11]) is the forward vector, length ~ 1.0f
+    // Col 0 = (M[0], M[4], M[8]) is Right * Proj_x, length ~ 2.5f
+    // Col 1 = (M[1], M[5], M[9]) is Up * Proj_y, length ~ 4.5f
+    // Aspect = Col 1 / Col 0 ~ 1.778 (16:9)
+    const float lenCol3 = std::sqrt(M[3] * M[3] + M[7] * M[7] + M[11] * M[11]);
+    if (lenCol3 < 0.7f || lenCol3 > 1.3f) {
+        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    }
 
-        const float* M = pConstantData + j * 4;
+    const float lenCol0 = std::sqrt(M[0] * M[0] + M[4] * M[4] + M[8] * M[8]);
+    const float lenCol1 = std::sqrt(M[1] * M[1] + M[5] * M[5] + M[9] * M[9]);
+    if (lenCol0 < 1.5f || lenCol0 > 4.5f || lenCol1 < 2.5f || lenCol1 > 7.0f) {
+        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    }
 
-        // Geometric invariant of D3D9 row-major perspective camera matrices:
-        // Col 3 = (M[3], M[7], M[11]) is the forward vector, length ~ 1.0f
-        // Col 0 = (M[0], M[4], M[8]) is Right * Proj_x, length ~ Proj_x
-        // Col 1 = (M[1], M[5], M[9]) is Up * Proj_y, length ~ Proj_y
-        // M[15] is clip.w for camera position, near 0 in translated-world space
-        const float lenCol3 = std::sqrt(M[3] * M[3] + M[7] * M[7] + M[11] * M[11]);
-        if (lenCol3 < 0.7f || lenCol3 > 1.4f) continue;
+    if (std::fabs(M[15]) > 100.0f) {
+        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    }
 
-        const float lenCol0 = std::sqrt(M[0] * M[0] + M[4] * M[4] + M[8] * M[8]);
-        const float lenCol1 = std::sqrt(M[1] * M[1] + M[5] * M[5] + M[9] * M[9]);
-        if (lenCol0 < 0.3f || lenCol0 > 6.0f || lenCol1 < 0.3f || lenCol1 > 6.0f) continue;
+    const float aspect = (lenCol0 > 1e-4f) ? (lenCol1 / lenCol0) : 0.f;
+    if (aspect < 1.4f || aspect > 2.2f) {
+        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    }
 
-        if (std::fabs(M[15]) > 100.0f) continue;
+    // Filter out static main menu camera (at origin with y = -1.7508)
+    const bool isMainMenu = (std::fabs(M[12]) < 0.05f && std::fabs(M[13] + 1.7508f) < 0.1f && std::fabs(M[14]) < 0.05f);
 
-        const float aspect = (lenCol0 > 1e-4f) ? (lenCol1 / lenCol0) : 0.f;
-        if (aspect < 1.1f || aspect > 2.8f) continue;
+    static int s_loggedVS = 0;
+    const bool f7Dump = (InterlockedCompareExchange(&g_dumpNextFrame, 0, 0) != 0);
+    if (s_loggedVS < 25 || f7Dump) {
+        if (!f7Dump) ++s_loggedVS;
+        Log("[VSConstF] Found 3D ViewProj at c0 (count=%u) %s | aspect=%.3f lenCol3=%.3f lenCol0=%.3f lenCol1=%.3f",
+            Vector4fCount, isMainMenu ? "[MAIN_MENU]" : "[GAME_3D]",
+            aspect, lenCol3, lenCol0, lenCol1);
+        if (s_loggedVS <= 5 || f7Dump) {
+            LogMatrix4x4("ViewProj Matrix", M);
+        }
+    }
 
-        // Filter out static main menu camera (at origin with y = -1.7508)
-        const bool isMainMenu = (std::fabs(M[12]) < 0.05f && std::fabs(M[13] + 1.7508f) < 0.1f && std::fabs(M[14]) < 0.05f);
+    if (isMainMenu) {
+        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    }
 
-        static int s_loggedVS = 0;
-        const bool f7Dump = (InterlockedCompareExchange(&g_dumpNextFrame, 0, 0) != 0);
-        if (s_loggedVS < 25 || f7Dump) {
-            if (!f7Dump) ++s_loggedVS;
-            Log("[VSConstF] Found 3D ViewProj at c%u (j=%u in count=%u) %s | aspect=%.3f lenCol3=%.3f lenCol0=%.3f lenCol1=%.3f",
-                StartRegister + j, j, Vector4fCount, isMainMenu ? "[MAIN_MENU]" : "[GAME_3D]",
-                aspect, lenCol3, lenCol0, lenCol1);
-            if (s_loggedVS <= 5 || f7Dump) {
-                LogMatrix4x4("ViewProj Matrix", M);
-            }
+    g_had3DCameraThisFrame = true;
+    ++g_3dCamCallsThisFrame;
+
+    // Apply 6DoF + Stereo AFR transformation when in sustained 3D gameplay mode
+    if (g_in3DGameplayMode && g_renderHaveViews && (g_submitMode == 0 || g_submitMode == 1)) {
+        float scratch[256 * 4];
+        const UINT maxVecs = (Vector4fCount <= 256) ? Vector4fCount : 256;
+        memcpy(scratch, pConstantData, maxVecs * 4 * sizeof(float));
+        float* targetM = scratch;
+
+        const XrPosef headCenter = HeadCenterPose(g_renderEyePose[0], g_renderEyePose[1]);
+        if (!g_vrRefValid) {
+            g_vrRefPos = headCenter.position;
+            g_vrRefYaw = ComputeHorizontalYaw(headCenter.orientation);
+            g_vrRefValid = true;
+            Log("VR 6DoF Reference latched: pos=(%.3f, %.3f, %.3f) yaw=%.2f deg",
+                g_vrRefPos.x, g_vrRefPos.y, g_vrRefPos.z, g_vrRefYaw * (180.f / 3.14159265f));
         }
 
-        if (isMainMenu) continue;
+        // Mode 0: Standard Stereo | Mode 1: Swapped Stereo
+        const bool swapEyes = (g_submitMode == 1);
+        int eye = (g_activeEye & 1);
+        if (swapEyes) eye ^= 1;
 
-        g_had3DCameraThisFrame = true;
-        ++g_3dCamCallsThisFrame;
+        const XrFovf& eyeFov = g_renderEyeFov[eye];
 
-        // Apply 6DoF + Stereo AFR transformation when in sustained 3D gameplay mode
-        if (g_in3DGameplayMode && g_renderHaveViews && (g_submitMode == 0 || g_submitMode == 1)) {
-            if (!modified) {
-                memcpy(scratch, pConstantData, maxVecs * 4 * sizeof(float));
-                modified = true;
-            }
-            float* targetM = scratch + j * 4;
+        // Extract true camera orthonormal basis in world space from matrix columns:
+        // Col 0: Right * Proj_x
+        // Col 1: Up * Proj_y
+        // Col 3: Forward (unit length)
+        const float Px = lenCol0;
+        const float Py = lenCol1;
+        const float camRight[3] = { M[0] / Px, M[4] / Px, M[8] / Px };
+        const float camUp[3]    = { M[1] / Py, M[5] / Py, M[9] / Py };
+        const float camFwd[3]   = { M[3] / lenCol3, M[7] / lenCol3, M[11] / lenCol3 };
 
-            const XrPosef headCenter = HeadCenterPose(g_renderEyePose[0], g_renderEyePose[1]);
-            if (!g_vrRefValid) {
-                g_vrRefPos = headCenter.position;
-                g_vrRefYaw = ComputeHorizontalYaw(headCenter.orientation);
-                g_vrRefValid = true;
-                Log("VR 6DoF Reference latched: pos=(%.3f, %.3f, %.3f) yaw=%.2f deg",
-                    g_vrRefPos.x, g_vrRefPos.y, g_vrRefPos.z, g_vrRefYaw * (180.f / 3.14159265f));
-            }
+        // 1. Stereo separation along Camera Right:
+        // Left eye: -IPD/2, Right eye: +IPD/2
+        const float stereoMult = g_stereoStrength;
+        const float eyeSign = (eye == 0) ? -1.0f : 1.0f;
+        float dx = eyeSign * (0.035f * stereoMult);
+        float dy = 0.0f;
+        float dz = 0.0f;
 
-            const int eye = (g_submitMode == 1) ? (g_activeEye & 1) : 0;
-            const XrFovf& eyeFov = g_renderEyeFov[eye];
+        // 2. Add 6DoF positional head tracking (in camera view coordinates)
+        if (g_trackingSubMode != 2) {
+            const float rawDx = headCenter.position.x - g_vrRefPos.x;
+            const float rawDy = headCenter.position.y - g_vrRefPos.y;
+            const float rawDz = headCenter.position.z - g_vrRefPos.z;
 
-            // Extract true camera orthonormal basis in world space from matrix columns:
-            // Col 0: Right * Proj_x
-            // Col 1: Up * Proj_y
-            // Col 3: Forward (unit length)
-            const float Px = lenCol0;
-            const float Py = lenCol1;
-            const float camRight[3] = { M[0] / Px, M[4] / Px, M[8] / Px };
-            const float camUp[3]    = { M[1] / Py, M[5] / Py, M[9] / Py };
-            const float camFwd[3]   = { M[3] / lenCol3, M[7] / lenCol3, M[11] / lenCol3 };
+            const float relYaw = ComputeHorizontalYaw(headCenter.orientation) - g_vrRefYaw;
+            const float cYaw = std::cos(relYaw);
+            const float sYaw = std::sin(relYaw);
 
-            // 1. Stereo separation along Camera Right:
-            // Left eye: -IPD/2, Right eye: +IPD/2
-            const float stereoMult = (g_submitMode == 1) ? g_stereoStrength : 0.f;
-            const float eyeSign = (eye == 0) ? -1.0f : 1.0f;
-            float dx = eyeSign * (0.035f * stereoMult);
-            float dy = 0.0f;
-            float dz = 0.0f;
+            const float roomDx = (cYaw * rawDx - sYaw * rawDz) * g_worldScale;
+            const float roomDy = rawDy * g_worldScale;
+            const float roomDz = -(sYaw * rawDx + cYaw * rawDz) * g_worldScale;
 
-            // 2. Add 6DoF positional head tracking (in camera view coordinates)
-            if (g_trackingSubMode != 2) {
-                const float rawDx = headCenter.position.x - g_vrRefPos.x;
-                const float rawDy = headCenter.position.y - g_vrRefPos.y;
-                const float rawDz = headCenter.position.z - g_vrRefPos.z;
+            dx += roomDx;
+            dy += roomDy;
+            dz += roomDz;
+        }
 
-                const float relYaw = ComputeHorizontalYaw(headCenter.orientation) - g_vrRefYaw;
-                const float cYaw = std::cos(relYaw);
-                const float sYaw = std::sin(relYaw);
+        // 3. Convert view displacement (dx, dy, dz) to world-space offset vector o
+        const float o[3] = {
+            dx * camRight[0] + dy * camUp[0] + dz * camFwd[0],
+            dx * camRight[1] + dy * camUp[1] + dz * camFwd[1],
+            dx * camRight[2] + dy * camUp[2] + dz * camFwd[2]
+        };
 
-                const float roomDx = (cYaw * rawDx - sYaw * rawDz) * g_worldScale;
-                const float roomDy = rawDy * g_worldScale;
-                const float roomDz = -(sYaw * rawDx + cYaw * rawDz) * g_worldScale;
+        // 4. Translate Row 3 by world offset vector o
+        // D3D9 row-major clip translation: Row 3 -= o.x*Row 0 + o.y*Row 1 + o.z*Row 2
+        // Guarantees: delta clip.x = -dx*Px, delta clip.y = -dy*Py, delta clip.w = -dz
+        for (int k = 0; k < 4; ++k) {
+            targetM[3 * 4 + k] -= (o[0] * targetM[0 * 4 + k] +
+                                   o[1] * targetM[1 * 4 + k] +
+                                   o[2] * targetM[2 * 4 + k]);
+        }
 
-                dx += roomDx;
-                dy += roomDy;
-                dz += roomDz;
-            }
-
-            // 3. Convert view displacement (dx, dy, dz) to world-space offset vector o
-            const float o[3] = {
-                dx * camRight[0] + dy * camUp[0] + dz * camFwd[0],
-                dx * camRight[1] + dy * camUp[1] + dz * camFwd[1],
-                dx * camRight[2] + dy * camUp[2] + dz * camFwd[2]
-            };
-
-            // 4. Translate Row 3 by world offset vector o
-            // D3D9 row-major clip translation: Row 3 -= o.x*Row 0 + o.y*Row 1 + o.z*Row 2
-            // Guarantees: delta clip.x = -dx*Px, delta clip.y = -dy*Py, delta clip.w = -dz
-            for (int k = 0; k < 4; ++k) {
-                targetM[3 * 4 + k] -= (o[0] * targetM[0 * 4 + k] +
-                                       o[1] * targetM[1 * 4 + k] +
-                                       o[2] * targetM[2 * 4 + k]);
-            }
-
-            // 5. OpenXR FOV override if TrackingSubMode == 1
-            if (g_trackingSubMode == 1) {
-                const float tanL = std::tan(eyeFov.angleLeft);
-                const float tanR = std::tan(eyeFov.angleRight);
-                const float tanU = std::tan(eyeFov.angleUp);
-                const float tanD = std::tan(eyeFov.angleDown);
-                const float wFov = tanR - tanL;
-                const float hFov = tanU - tanD;
-                if (wFov > 1e-4f && hFov > 1e-4f && Px > 1e-4f && Py > 1e-4f) {
-                    const float xrM00 = 2.0f / wFov;
-                    const float xrM11 = 2.0f / hFov;
-                    const float sx = xrM00 / Px;
-                    const float sy = xrM11 / Py;
-                    for (int r = 0; r < 4; ++r) {
-                        targetM[r * 4 + 0] *= sx;
-                        targetM[r * 4 + 1] *= sy;
-                    }
+        // 5. OpenXR FOV override if TrackingSubMode == 1
+        if (g_trackingSubMode == 1) {
+            const float tanL = std::tan(eyeFov.angleLeft);
+            const float tanR = std::tan(eyeFov.angleRight);
+            const float tanU = std::tan(eyeFov.angleUp);
+            const float tanD = std::tan(eyeFov.angleDown);
+            const float wFov = tanR - tanL;
+            const float hFov = tanU - tanD;
+            if (wFov > 1e-4f && hFov > 1e-4f && Px > 1e-4f && Py > 1e-4f) {
+                const float xrM00 = 2.0f / wFov;
+                const float xrM11 = 2.0f / hFov;
+                const float sx = xrM00 / Px;
+                const float sy = xrM11 / Py;
+                for (int r = 0; r < 4; ++r) {
+                    targetM[r * 4 + 0] *= sx;
+                    targetM[r * 4 + 1] *= sy;
                 }
             }
         }
 
-        // Advance past the 4 registers of this matrix so overlapping windows never match
-        j += 3;
-    }
-
-    if (modified) {
         return g_origSetVertexShaderConstantF(dev, StartRegister, scratch, Vector4fCount);
     }
+
     return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
 }
 
@@ -1506,48 +1506,31 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const bool use3DProjection = (g_submitMode == 0 || g_submitMode == 1) && g_in3DGameplayMode && g_had3DCameraThisFrame;
 
         if (use3DProjection) {
-            if (g_submitMode == 0) {
-                // SubmitMode 0 (VR_6DOF_SYNC): Both eyes receive the current frame simultaneously (zero temporal eye mismatch!)
-                g_ctx11->CopyResource(g_eyeCache[0], g_upload);
-                g_ctx11->CopyResource(g_eyeCache[1], g_upload);
-                g_eyeCachePose[0] = g_eyePose[0];
-                g_eyeCachePose[1] = g_eyePose[1];
-                g_eyeCacheFov[0] = g_eyeFov[0];
-                g_eyeCacheFov[1] = g_eyeFov[1];
-                g_eyeCacheValid[0] = true;
-                g_eyeCacheValid[1] = true;
-            } else {
-                // SubmitMode 1 (VR_6DOF_AFR): Alternating-Eye Stereo 3D
-                const int curEye = g_activeEye & 1;
-                const int otherEye = 1 - curEye;
-                g_ctx11->CopyResource(g_eyeCache[curEye], g_upload);
-                g_eyeCachePose[curEye] = g_renderHaveViews ? g_renderEyePose[curEye] : g_eyePose[curEye];
-                g_eyeCacheFov[curEye] = g_renderHaveViews ? g_renderEyeFov[curEye] : g_eyeFov[curEye];
-                g_eyeCacheValid[curEye] = true;
+            // Mode 0 (Standard Stereo) & Mode 1 (Swapped Stereo) both use AFR cache
+            const int curEye = g_activeEye & 1;
+            const int otherEye = 1 - curEye;
+            g_ctx11->CopyResource(g_eyeCache[curEye], g_upload);
+            g_eyeCachePose[curEye] = g_renderHaveViews ? g_renderEyePose[curEye] : g_eyePose[curEye];
+            g_eyeCacheFov[curEye] = g_renderHaveViews ? g_renderEyeFov[curEye] : g_eyeFov[curEye];
+            g_eyeCacheValid[curEye] = true;
 
-                if (!g_eyeCacheValid[otherEye]) {
-                    g_ctx11->CopyResource(g_eyeCache[otherEye], g_upload);
-                    g_eyeCachePose[otherEye] = g_renderHaveViews ? g_renderEyePose[otherEye] : g_eyePose[otherEye];
-                    g_eyeCacheFov[otherEye] = g_renderHaveViews ? g_renderEyeFov[otherEye] : g_eyeFov[otherEye];
-                    g_eyeCacheValid[otherEye] = true;
-                }
+            if (!g_eyeCacheValid[otherEye]) {
+                g_ctx11->CopyResource(g_eyeCache[otherEye], g_upload);
+                g_eyeCachePose[otherEye] = g_renderHaveViews ? g_renderEyePose[otherEye] : g_eyePose[otherEye];
+                g_eyeCacheFov[otherEye] = g_renderHaveViews ? g_renderEyeFov[otherEye] : g_eyeFov[otherEye];
+                g_eyeCacheValid[otherEye] = true;
             }
 
             if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0]) &&
                 WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[1])) {
-                // In SubmitMode 0, apply subtle horizontal stereo crop offset so both eyes have comfortable stereo depth from the same frame
-                const int32_t cropPx = (g_submitMode == 0 && g_stereoStrength > 0.01f)
-                    ? static_cast<int32_t>((float)g_scW * 0.012f * g_stereoStrength)
-                    : 0;
-                const int32_t subW = (int32_t)g_scW - cropPx;
 
                 for (int e = 0; e < 2; ++e) {
                     projViews[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-                    projViews[e].pose = g_eyePose[e];
-                    projViews[e].fov = g_eyeFov[e];
+                    projViews[e].pose = g_eyeCachePose[e];
+                    projViews[e].fov = g_eyeCacheFov[e];
                     projViews[e].subImage.swapchain = g_swapchain[e];
-                    projViews[e].subImage.imageRect.offset = { (e == 0) ? 0 : cropPx, 0 };
-                    projViews[e].subImage.imageRect.extent = { subW, (int32_t)g_scH };
+                    projViews[e].subImage.imageRect.offset = { 0, 0 };
+                    projViews[e].subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
                 }
                 proj.layerFlags = 0;
                 proj.space = g_xrSpace;
@@ -1607,7 +1590,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
     static int endFail = 0;
     if (XR_FAILED(endR) && endFail++ < 5) Log("xrEndFrame failed %d", (int)endR);
 
-    if (g_submitMode == 1 && g_in3DGameplayMode && g_had3DCameraThisFrame) {
+    if ((g_submitMode == 0 || g_submitMode == 1) && g_in3DGameplayMode && g_had3DCameraThisFrame) {
         g_activeEye ^= 1;
     } else {
         g_activeEye = 0;
