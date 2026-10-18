@@ -12,6 +12,7 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <vector>
+#include <unordered_map>
 #include <algorithm>
 
 #define XR_USE_PLATFORM_WIN32
@@ -45,7 +46,25 @@ int g_testMode = 0;
 //   1 = VR_STEREO_SWAP    (Method 2: Same-Frame Stereo Shift with Swapped Eye Sign)
 //   2 = QUAD_WORLD_ANCHOR (World-anchored cinema screen in LOCAL space)
 //   3 = QUAD_HEAD_LOCKED  (Head-locked cinema screen)
+//   4 = VR_NATIVE_STEREO  (TRUE same-frame dual-eye geometry stereo, draw replay + matrix shear)
 int g_submitMode = 0;
+
+// True stereo (SubmitMode 4): frame-record/replay dual-eye rendering
+// StereoMode: 0 = off (mono live pass), 1 = dual-eye (live = eye0 + replay = eye1),
+//             2 = validation replay with zero shift (image must match live pass)
+int g_stereoMode = 1;
+int g_hookMask = 15;               // bit0=record hooks, bit1=swapchain hook, bit2=vs analysis, bit3=constF extras
+float g_stereoSep = 0.020f;      // shear coefficient per eye (screen-space)
+float g_stereoConv = 2.0f;       // convergence distance in clip-w (world) units
+int g_stereoPolarity = 0;        // 0 = left eye +shift, 1 = swapped
+// Game camera frustum (radians, half-angles) used for OpenXR per-view fov.
+// Measured from engine ViewProj matrices: Px=1.347 Py=2.414 (16:9, FOV slider mid).
+float g_gameHalfFovX = 0.637f;
+float g_gameHalfFovY = 0.393f;
+float g_fovOverrideDeg = 100.0f;   // native engine vertical FOV override (0 = disabled)
+volatile LONG g_trueStereoFrames = 0;
+int g_blitPass = 0;                // 1 = RenderStereoEyeD11 does a 1:1 blit (true-stereo mode)
+bool g_eyePairReady = false;       // both eye images captured this frame (SubmitMode 4)
 
 // TrackingSubMode (F9):
 //   0 = Balanced 16:9 FOV (halfTanX = 0.88, full HUD visible + 6DoF parallax)
@@ -97,6 +116,7 @@ float g_vrRefYaw = 0.f;
 volatile DWORD g_renderThreadId = 0;
 volatile LONG g_dumpNextFrame = 0;
 volatile LONG g_lastStage = 0;
+volatile LONG g_lastHookId = 0;   // diagnostics: last hook entered (for crash reports)
 PVOID g_vehHandle = nullptr;
 
 void LogInit() {
@@ -137,11 +157,12 @@ void Log(const char* fmt, ...) {
 LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
     if (!ep || !ep->ExceptionRecord || !ep->ContextRecord) return EXCEPTION_CONTINUE_SEARCH;
     const DWORD code = ep->ExceptionRecord->ExceptionCode;
-    if (code != EXCEPTION_ACCESS_VIOLATION &&
-        code != EXCEPTION_ILLEGAL_INSTRUCTION &&
-        code != EXCEPTION_PRIV_INSTRUCTION &&
-        code != EXCEPTION_STACK_OVERFLOW &&
-        code != EXCEPTION_INT_DIVIDE_BY_ZERO) {
+    // Log all serious exceptions (>= 0xC0000000). Benign first-chance codes
+    // (thread name 0x406D1388, MSVC C++ 0xE06D7363, DBG_*) are below that.
+    if (code < 0xC0000000) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    if (code == 0xC0000420 /* DBG_PRINTEXCEPTION_C */) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
 
@@ -157,9 +178,10 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
             modBase = reinterpret_cast<uintptr_t>(mod);
         }
         const CONTEXT* c = ep->ContextRecord;
-        Log("!!! CRASH EXCEPTION 0x%08lX at %p (%s + 0x%lX) | tid=%lu renderTid=%lu stage=%ld !!!",
+        Log("!!! EXCEPTION 0x%08lX at %p (%s + 0x%lX) | tid=%lu renderTid=%lu stage=%ld lastHook=%ld !!!",
             code, addr, modName, (unsigned long)((uintptr_t)addr - modBase),
-            GetCurrentThreadId(), g_renderThreadId, g_lastStage);
+            GetCurrentThreadId(), g_renderThreadId, g_lastStage, g_lastHookId);
+        Log("  (first-chance: may be handled by our SEH guards - game continues)");
         if (code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2) {
             Log("  AccessViolation type=%lu targetAddr=%p",
                 (unsigned long)ep->ExceptionRecord->ExceptionInformation[0],
@@ -225,12 +247,38 @@ void LoadConfig() {
 
     g_testMode = GetPrivateProfileIntA("Render", "TestMode", 0, chosenIni);
     g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
-    if (g_submitMode < 0 || g_submitMode > 3) g_submitMode = 0;
+    if (g_submitMode < 0 || g_submitMode > 4) g_submitMode = 0;
     g_trackingSubMode = GetPrivateProfileIntA("Render", "TrackingSubMode", 0, chosenIni);
     if (g_trackingSubMode < 0 || g_trackingSubMode > 2) g_trackingSubMode = 0;
     g_forceWindowedReset = GetPrivateProfileIntA("Render", "ForceWindowedReset", 0, chosenIni);
+    g_stereoMode = GetPrivateProfileIntA("Render", "StereoMode", 1, chosenIni);
+    if (g_stereoMode < 0 || g_stereoMode > 2) g_stereoMode = 1;
+    g_stereoPolarity = GetPrivateProfileIntA("Render", "StereoPolarity", 0, chosenIni) ? 1 : 0;
+    g_hookMask = GetPrivateProfileIntA("Render", "HookMask", 15, chosenIni);
+    if (g_hookMask < 0 || g_hookMask > 15) g_hookMask = 15;
 
     char buf[64]{};
+    if (GetPrivateProfileStringA("Render", "StereoSep", "0.020", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.0f && v <= 0.25f) g_stereoSep = v;
+    }
+    if (GetPrivateProfileStringA("Render", "StereoConv", "2.0", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.1f && v <= 100.0f) g_stereoConv = v;
+    }
+    if (GetPrivateProfileStringA("Render", "FovOverride", "100.0", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.0f && v <= 160.0f) g_fovOverrideDeg = v;
+    }
+    {
+        float fovX = 0.f, fovY = 0.f;
+        if (GetPrivateProfileStringA("Render", "GameFovX", "73.2", buf, sizeof(buf), chosenIni))
+            fovX = (float)atof(buf);
+        if (GetPrivateProfileStringA("Render", "GameFovY", "44.9", buf, sizeof(buf), chosenIni))
+            fovY = (float)atof(buf);
+        if (fovX >= 20.0f && fovX <= 170.0f) g_gameHalfFovX = fovX * 3.14159265f / 360.0f;
+        if (fovY >= 10.0f && fovY <= 170.0f) g_gameHalfFovY = fovY * 3.14159265f / 360.0f;
+    }
     if (GetPrivateProfileStringA("Render", "WorldScale", "1.0", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.01f && v <= 500.0f) g_worldScale = v;
@@ -370,13 +418,24 @@ void PollHotkeys() {
 
     if ((GetAsyncKeyState(VK_F6) & 0x8000) && (now - s_lastF6 > 400)) {
         s_lastF6 = now;
-        if (g_stereoBaseShift < 0.0050f) g_stereoBaseShift = 0.0075f;
-        else if (g_stereoBaseShift < 0.0090f) g_stereoBaseShift = 0.0110f;
-        else if (g_stereoBaseShift < 0.0130f) g_stereoBaseShift = 0.0145f;
-        else if (g_stereoBaseShift < 0.0165f) g_stereoBaseShift = 0.0180f;
-        else g_stereoBaseShift = 0.0040f;
-        Beep(750 + (int)(g_stereoBaseShift * 40000.f), 50);
-        Log(">>> [HOTKEY F6] Stereo Base Shift changed to: %.4f <<<", g_stereoBaseShift);
+        if (g_submitMode == 4) {
+            // True-stereo shear separation
+            if (g_stereoSep < 0.012f) g_stereoSep = 0.012f;
+            else if (g_stereoSep < 0.022f) g_stereoSep = 0.022f;
+            else if (g_stereoSep < 0.035f) g_stereoSep = 0.035f;
+            else if (g_stereoSep < 0.055f) g_stereoSep = 0.055f;
+            else g_stereoSep = 0.004f;
+            Beep(750 + (int)(g_stereoSep * 20000.f), 50);
+            Log(">>> [HOTKEY F6] TrueStereo Separation changed to: %.4f <<<", g_stereoSep);
+        } else {
+            if (g_stereoBaseShift < 0.0050f) g_stereoBaseShift = 0.0075f;
+            else if (g_stereoBaseShift < 0.0090f) g_stereoBaseShift = 0.0110f;
+            else if (g_stereoBaseShift < 0.0130f) g_stereoBaseShift = 0.0145f;
+            else if (g_stereoBaseShift < 0.0165f) g_stereoBaseShift = 0.0180f;
+            else g_stereoBaseShift = 0.0040f;
+            Beep(750 + (int)(g_stereoBaseShift * 40000.f), 50);
+            Log(">>> [HOTKEY F6] Stereo Base Shift changed to: %.4f <<<", g_stereoBaseShift);
+        }
     }
 
     if ((GetAsyncKeyState(VK_F7) & 0x8000) && (now - s_lastF7 > 400)) {
@@ -406,21 +465,31 @@ void PollHotkeys() {
 
     if ((GetAsyncKeyState(VK_F10) & 0x8000) && (now - s_lastF10 > 400)) {
         s_lastF10 = now;
-        g_submitMode = (g_submitMode + 1) % 4;
+        g_submitMode = (g_submitMode + 1) % 5;
         g_anchorValid = false;
         Beep(600 + g_submitMode * 150, 50);
         const char* names[] = {
             "0 (VR_STEREO_3D - Method 2 Same-Frame Stereo Shift)",
             "1 (VR_STEREO_SWAP - Method 2 Swapped Eye Sign)",
             "2 (QUAD_WORLD_ANCHOR - World-Anchored Cinema)",
-            "3 (QUAD_HEAD_LOCKED - Head-Locked Cinema)"
+            "3 (QUAD_HEAD_LOCKED - Head-Locked Cinema)",
+            "4 (VR_NATIVE_STEREO - True dual-eye geometry stereo, draw replay)"
         };
         Log(">>> [HOTKEY F10] SubmitMode changed to: %s <<<", names[g_submitMode]);
     }
 
     if ((GetAsyncKeyState(VK_F11) & 0x8000) && (now - s_lastF11 > 400)) {
         s_lastF11 = now;
-        if (g_submitMode <= 1) {
+        if (g_submitMode == 4) {
+            // True-stereo convergence (zero-disparity distance in world units)
+            if (g_stereoConv < 1.2f) g_stereoConv = 1.2f;
+            else if (g_stereoConv < 1.8f) g_stereoConv = 1.8f;
+            else if (g_stereoConv < 2.5f) g_stereoConv = 2.5f;
+            else if (g_stereoConv < 4.0f) g_stereoConv = 4.0f;
+            else g_stereoConv = 8.0f;
+            Beep(800 + (int)(g_stereoConv * 100.f), 50);
+            Log(">>> [HOTKEY F11] TrueStereo Convergence changed to: %.2f (world units) <<<", g_stereoConv);
+        } else if (g_submitMode <= 1) {
             if (g_stereoStrength < 0.15f) g_stereoStrength = 0.25f;
             else if (g_stereoStrength < 0.40f) g_stereoStrength = 0.5f;
             else if (g_stereoStrength < 0.75f) g_stereoStrength = 1.0f;
@@ -586,6 +655,21 @@ static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
     return p;
 }
 
+// ---------------------------------------------------------------- True stereo core (analysis + record/replay)
+void* PatchVTable(void* obj, int index, void* repl);
+#include "stereo_replay.inl"
+
+// Builds the per-eye shear parameters. Eye sign: left eye positive shift by default.
+static d2vr_replay::StereoParams MakeEyeParams(int eye) {
+    d2vr_replay::StereoParams sp;
+    sp.mode = 0;
+    float sign = (g_stereoPolarity == 0) ? ((eye == 0) ? +1.0f : -1.0f)
+                                         : ((eye == 0) ? -1.0f : +1.0f);
+    sp.separation = sign * g_stereoSep;
+    sp.convergence = g_stereoConv;
+    return sp;
+}
+
 // ---------------------------------------------------------------- SetVertexShaderConstantF Hook (Slot 94 - Read-Only 3D Detector)
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SetVertexShaderConstantF)(IDirect3DDevice9*, UINT, const float*, UINT);
 PFN_SetVertexShaderConstantF g_origSetVertexShaderConstantF = nullptr;
@@ -630,6 +714,26 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
                     }
                 }
             }
+        }
+    }
+
+    // ---- True stereo: record original data for frame replay ----
+    if ((g_hookMask & 8) && d2vr_replay::g_recActive && pConstantData && Vector4fCount) {
+        d2vr_replay::RecEmitData(d2vr_replay::OP_SetVSConstF, pConstantData,
+                                 sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount);
+    }
+
+    // ---- True stereo: live pass renders eye 0 (eye 1 comes from the replay pass) ----
+    if ((g_hookMask & 8) && g_submitMode == 4 && g_stereoMode >= 1 &&
+        d2vr_replay::g_replayEye < 0 && pConstantData && Vector4fCount <= 68) {
+        static thread_local float s_tmpConst[68 * 4];
+        d2vr_replay::StereoParams sp = MakeEyeParams(0);
+        if (g_stereoMode == 2) sp.separation = 0.0f;
+        if (d2vr_replay::ApplyShiftToUpload(s_tmpConst, pConstantData, StartRegister,
+                                            Vector4fCount, d2vr_replay::g_activeVs, sp)) {
+            pConstantData = s_tmpConst;
+            g_had3DCameraThisFrame = true;
+            ++g_3dCamCallsThisFrame;
         }
     }
     return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
@@ -743,6 +847,13 @@ static bool EnsureDepthTexture11() {
 static void CaptureIntzDepthToD11(IDirect3DDevice9* dev) {
     if (!dev || !g_intzTex9 || !g_dev11 || !g_ctx11) return;
     if (!EnsureDepthFreezeResources(dev) || !EnsureDepthTexture11()) return;
+
+    // Do not record our own diagnostic draws into the frame replay stream
+    struct RecGuard {
+        bool was;
+        explicit RecGuard(bool a) : was(a) { d2vr_replay::g_recActive = false; }
+        ~RecGuard() { d2vr_replay::g_recActive = was; }
+    } recGuard(d2vr_replay::g_recActive);
 
     // Save complete D3D9 state
     IDirect3DSurface9* oldRT = nullptr; dev->GetRenderTarget(0, &oldRT);
@@ -882,6 +993,9 @@ static void CaptureIntzDepthToD11(IDirect3DDevice9* dev) {
 }
 
 HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDirect3DSurface9* pNewZStencil) {
+    if (d2vr_replay::g_recActive) {
+        d2vr_replay::RecEmit(d2vr_replay::OP_SetDepthStencilSurface, 0, (uint32_t)(uintptr_t)pNewZStencil);
+    }
     if (pNewZStencil) {
         D3DSURFACE_DESC sd{};
         if (SUCCEEDED(pNewZStencil->GetDesc(&sd))) {
@@ -910,6 +1024,9 @@ HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDi
 // Evolution Engine binds INTZ to sampler s0 (SetTexture(0, intzTex)) during deferred lighting/shadows
 // right after the opaque 3D geometry pass completes (see PixelShaders/C891DB74.txt & 3FF3A68C.txt).
 HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* dev, DWORD Stage, IDirect3DBaseTexture9* pTexture) {
+    if (d2vr_replay::g_recActive) {
+        d2vr_replay::RecEmit(d2vr_replay::OP_SetTexture, 0, Stage, (uint32_t)(uintptr_t)pTexture);
+    }
     if (Stage == 0 && pTexture && !g_intzTex9) {
         if (pTexture->GetType() == D3DRTYPE_TEXTURE) {
             auto* tex2d = static_cast<IDirect3DTexture9*>(pTexture);
@@ -969,6 +1086,10 @@ static bool EnsureD11StereoPipeline() {
         "    float2 uv  : TEXCOORD0;\n"
         "};\n"
         "float4 main(PSIn i) : SV_Target {\n"
+        "    if (posCfg.y > 2.5) {\n"
+        "        // True-stereo blit: image already rendered per eye, pass through 1:1\n"
+        "        return colorTex.SampleLevel(linSamp, i.uv, 0);\n"
+        "    }\n"
         "    float tx = lerp(fovTan.x, fovTan.y, i.uv.x);\n"
         "    float ty = lerp(fovTan.z, fovTan.w, i.uv.y);\n"
         "    float2 baseUV;\n"
@@ -1094,7 +1215,7 @@ static bool RenderStereoEyeD11(
     cb->extraCfg[3] = posOffsetX;
 
     cb->posCfg[0] = posOffsetY;
-    cb->posCfg[1] = (float)g_trackingSubMode;
+    cb->posCfg[1] = (g_blitPass != 0) ? 3.0f : (float)g_trackingSubMode;
     cb->posCfg[2] = 0.0f;
     cb->posCfg[3] = 0.0f;
     g_ctx11->Unmap(g_stereoCB11, 0);
@@ -1127,6 +1248,134 @@ static bool RenderStereoEyeD11(
     ID3D11RenderTargetView* nullRtv = nullptr;
     g_ctx11->OMSetRenderTargets(1, &nullRtv, nullptr);
     return true;
+}
+
+// ---------------------------------------------------------------- Native engine FOV override
+// (RE map: ENGINE_REVERSE_ENGINEERING.md - no ASLR, fixed addresses)
+// BaseAvatar Lua thunks in .data: SetView 0x10b9804, GetView 0x10b9808+4, GetFOV at pair 0x10b9820
+// Region::GetPlayerAvatar(int) = 0x00b73ee0, BaseAvatar::SetBaseFovOverride(float) = 0x00dbdb90
+// BaseAvatar::GetFOV() = 0x00dc4740 (Lua thunk).
+typedef float(__thiscall* PFN_AvatarGetFov)(void* self);
+typedef void(__thiscall* PFN_AvatarSetBaseFov)(void* self, float fov);
+typedef void*(__thiscall* PFN_GetPlayerAvatar)(void* region, int idx);
+
+static void* g_playerAvatar = nullptr;
+
+static bool SafeReadPtr(uintptr_t addr, uintptr_t* out) {
+    __try {
+        *out = *(uintptr_t*)addr;
+        return true;
+    } __except (1) {
+        return false;
+    }
+}
+
+static void TryApplyEngineFovOverride() {
+    if (g_fovOverrideDeg <= 0.0f) return;
+    static bool s_done = false;
+    if (s_done) return;
+
+    // 1) locate the Region singleton by structure scan: [region+0xac]=avatar array start,
+    //    [region+0xb0]=end (ENGINE_REVERSE_ENGINEERING.md). Scan .data pointers.
+    const uintptr_t dataStart = 0x0109A000;
+    const uintptr_t dataEnd = 0x01123B44;
+    void* avatar = nullptr;
+    for (uintptr_t p = dataStart; p < dataEnd && !avatar; p += 4) {
+        uintptr_t region = 0;
+        if (!SafeReadPtr(p, &region)) continue;
+        if (region < 0x00100000 || region > 0x70000000) continue;
+        uintptr_t arrBeg = 0, arrEnd = 0;
+        if (!SafeReadPtr(region + 0xac, &arrBeg)) continue;
+        if (!SafeReadPtr(region + 0xb0, &arrEnd)) continue;
+        if (arrBeg < 0x00100000 || arrEnd < 0x00100000) continue;
+        if (arrEnd <= arrBeg || (arrEnd - arrBeg) > 0x1000) continue;
+        uintptr_t cand = 0;
+        if (!SafeReadPtr(arrBeg, &cand)) continue;
+        if (cand < 0x00100000) continue;
+        // 2) validate candidate via GetFOV thunk (sane FOV range proves it's an avatar)
+        __try {
+            float fov = ((PFN_AvatarGetFov)0x00DC4740)((void*)cand);
+            if (fov > 10.0f && fov < 150.0f) {
+                avatar = (void*)cand;
+                Log("[FovRE] Region candidate at %p (array %p..%p), avatar %p, GetFOV=%.2f",
+                    (void*)region, (void*)arrBeg, (void*)arrEnd, (void*)cand, fov);
+            }
+        } __except (1) {
+        }
+    }
+    if (!avatar) {
+        Log("[FovRE] avatar not found in .data scan - will retry later");
+        return;
+    }
+    g_playerAvatar = avatar;
+
+    __try {
+        // 3) apply the override and verify with GetFOV
+        ((PFN_AvatarSetBaseFov)0x00DBDB90)(avatar, g_fovOverrideDeg);
+        float newFov = ((PFN_AvatarGetFov)0x00DC4740)(avatar);
+        Log("[FovRE] SetBaseFovOverride(%.1f) -> GetFOV=%.2f (vertical FOV degrees)", g_fovOverrideDeg, newFov);
+
+        // 4) derive the eye frustum for OpenXR submission from the engine FOV (vertical degrees)
+        if (newFov > 10.0f && newFov < 175.0f) {
+            const float halfY = newFov * 3.14159265f / 360.0f;
+            const float aspect = (g_srcW && g_srcH) ? ((float)g_srcW / (float)g_srcH) : (16.f / 9.f);
+            g_gameHalfFovY = halfY;
+            g_gameHalfFovX = std::atan(std::tan(halfY) * aspect);
+            Log("[FovRE] eye frustum updated: halfFovX=%.1f deg halfFovY=%.1f deg",
+                g_gameHalfFovX * 57.29578f, g_gameHalfFovY * 57.29578f);
+        }
+        s_done = true;
+    } __except (1) {
+        Log("[FovRE] exception during FOV override - disabled");
+        s_done = true;
+    }
+}
+
+// ---------------------------------------------------------------- True stereo eye pair (live pass + replay pass)
+// Eye 0 is the live game pass (already in the backbuffer), eye 1 is produced by
+// replaying the recorded device call stream with the opposite eye shift.
+bool CopyFrame(IDirect3DDevice9* dev);
+bool EnsureSwapchains(UINT w, UINT h);
+
+static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
+    static int s_logged = 0;
+    const size_t recCount = d2vr_replay::g_rec.size();
+    const size_t recBytes = d2vr_replay::g_recData.size();
+
+    UINT targetW = g_steamVrRecW ? g_steamVrRecW : (g_srcW ? g_srcW : 1920);
+    UINT targetH = g_steamVrRecH ? g_steamVrRecH : (g_srcH ? g_srcH : 1080);
+    if (!EnsureSwapchains(targetW, targetH)) {
+        d2vr_replay::g_recActive = false;
+        return;
+    }
+
+    g_blitPass = 1;
+    bool eye0Ok = CopyFrame(dev);
+    if (eye0Ok) eye0Ok = RenderStereoEyeD11(0, g_eyeFov[0], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
+
+    d2vr_replay::StereoParams sp1 = MakeEyeParams(1);
+    if (g_stereoMode == 2) sp1.separation = 0.0f;   // validation replay: must match live pass
+    d2vr_replay::ReplayStream(dev, 1, sp1);
+
+    bool eye1Ok = CopyFrame(dev);
+    if (eye1Ok) eye1Ok = RenderStereoEyeD11(1, g_eyeFov[1], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
+    g_blitPass = 0;
+
+    d2vr_replay::g_recActive = false;
+    g_eyePairReady = eye0Ok && eye1Ok;
+    ++g_trueStereoFrames;
+
+    if (s_logged < 10 || (g_trueStereoFrames % 600) == 0) {
+        ++s_logged;
+        Log("[TrueStereo] frame %d: records=%zu data=%zuKB overflow=%d eye0=%d eye1=%d shifts=%ld vsKnown=%zu",
+            (int)g_trueStereoFrames, recCount, recBytes / 1024,
+            (int)d2vr_replay::g_recOverflow, (int)eye0Ok, (int)eye1Ok,
+            (long)InterlockedExchange(&d2vr_replay::g_shiftCount, 0),
+            d2vr_replay::g_vsInfo.size());
+    }
+    if (d2vr_replay::g_recOverflow && s_logged < 20) {
+        Log("[TrueStereo] WARNING: record overflow - replay skipped this frame");
+    }
 }
 
 // ---------------------------------------------------------------- XInput & OpenXR Gamepad
@@ -2040,7 +2289,11 @@ void SubmitXR(IDirect3DDevice9* dev) {
     if (fs.shouldRender && g_haveViews) {
         UINT targetW = g_steamVrRecW ? g_steamVrRecW : (g_srcW ? g_srcW : 1920);
         UINT targetH = g_steamVrRecH ? g_steamVrRecH : (g_srcH ? g_srcH : 1080);
-        if (g_testMode > 0) {
+        if (g_submitMode == 4) {
+            // TRUE same-frame stereo: both eyes captured during Present (live pass + replay pass)
+            havePixels = g_eyePairReady && EnsureSwapchains(targetW, targetH);
+            g_eyePairReady = false;
+        } else if (g_testMode > 0) {
             havePixels = FillTestPattern(targetW, targetH, g_testMode) && EnsureSwapchains(targetW, targetH);
         } else if (dev) {
             havePixels = CopyFrame(dev) && EnsureSwapchains(targetW, targetH);
@@ -2124,6 +2377,32 @@ void SubmitXR(IDirect3DDevice9* dev) {
             InterlockedExchange(&g_headStickY, 0);
         }
 
+        // ---------------- TRUE same-frame stereo (SubmitMode 4): dual-eye geometry render ----------------
+        if (g_submitMode == 4) {
+            if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0]) &&
+                WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[1])) {
+                // Both eye images were rendered from the SAME game frame with per-eye
+                // matrix shear; submit one shared pose and the game's own frustum so the
+                // OpenXR compositor maps each image exactly onto the eye view.
+                for (int e = 0; e < 2; ++e) {
+                    projViews[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
+                    projViews[e].pose = head;
+                    projViews[e].fov.angleLeft = -g_gameHalfFovX;
+                    projViews[e].fov.angleRight = +g_gameHalfFovX;
+                    projViews[e].fov.angleUp = +g_gameHalfFovY;
+                    projViews[e].fov.angleDown = -g_gameHalfFovY;
+                    projViews[e].subImage.swapchain = g_swapchain[e];
+                    projViews[e].subImage.imageRect.offset = { 0, 0 };
+                    projViews[e].subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
+                }
+                proj.layerFlags = 0;
+                proj.space = g_xrSpace;
+                proj.viewCount = 2;
+                proj.views = projViews;
+                layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
+                layerCount = 1;
+            }
+        } else
         // Method 2 Stereo Projection is used whenever SubmitMode is 0 or 1.
         // Using the same frustum-aligned projection in both menus and gameplay prevents any jarring
         // transition flashes between Cinema Quad and Stereo Projection!
@@ -2408,6 +2687,27 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
     }
 
     if (InterlockedCompareExchange(&g_xrInitTried, 1, 0) == 0) InitXR();
+
+    // True stereo: build the eye pair from the recorded frame stream BEFORE submitting.
+    // Runs once per frame thanks to the g_submittedFrameId dedupe above.
+    if (g_submitMode == 4 && g_stereoMode >= 1 && d2vr_replay::g_recActive) {
+        RenderEyePairFromReplay(dev);
+    }
+    if (g_submitMode == 4 && g_stereoMode >= 1) {
+        d2vr_replay::RecBeginFrame();   // open the recording window for the next frame
+    } else if (d2vr_replay::g_recActive) {
+        d2vr_replay::g_recActive = false;
+        d2vr_replay::g_rec.clear();
+        d2vr_replay::g_recData.clear();
+    }
+
+    // Native engine FOV override: the avatar only exists once a level is loaded - retry.
+    {
+        static LONG s_fovTick = 0;
+        if (g_fovOverrideDeg > 0.0f && !g_playerAvatar && (InterlockedIncrement(&s_fovTick) % 300) == 1) {
+            TryApplyEngineFovOverride();
+        }
+    }
     SubmitXR(dev);
 }
 
@@ -2415,16 +2715,25 @@ HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     InterlockedIncrement(&g_frameId);
-    return g_origBeginScene(dev);
+    if (g_submitMode == 4 && g_stereoMode >= 1) {
+        d2vr_replay::RecEmit(d2vr_replay::OP_BeginScene, 0);
+    }
+    HRESULT hrBS = g_origBeginScene(dev);
+    if (FAILED(hrBS)) Log("!!! BeginScene FAILED hr=0x%08lX (game may stop rendering)", hrBS);
+    return hrBS;
 }
 
 HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
     PollHotkeys();
+    if (g_submitMode == 4 && g_stereoMode >= 1) {
+        d2vr_replay::RecEmit(d2vr_replay::OP_EndScene, 0);
+    }
     // Snapshot INTZ depth before EndScene completes while scene depth is still intact
     if (g_intzTex9 && g_had3DCameraThisFrame && !g_depthCapturedThisFrame) {
         CaptureIntzDepthToD11(dev);
     }
     HRESULT hr = g_origEndScene(dev);
+    if (FAILED(hr)) Log("!!! EndScene FAILED hr=0x%08lX", hr);
     if (InterlockedCompareExchange(&g_presentSeen, 0, 0) == 0) {
         VrFrame(dev, "EndScene@42");
     }
@@ -2453,6 +2762,16 @@ HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a,
     return g_origPresentEx ? g_origPresentEx(dev, a, b, w, r, flags) : D3D_OK;
 }
 
+// The game presents through IDirect3DSwapChain9::Present (not the device) - evidence only.
+typedef HRESULT(STDMETHODCALLTYPE* PFN_SwapChainPresent)(IDirect3DSwapChain9*, const RECT*, const RECT*, HWND, const RGNDATA*, DWORD);
+PFN_SwapChainPresent g_origSwapChainPresent = nullptr;
+HRESULT STDMETHODCALLTYPE Hook_SwapChainPresent(IDirect3DSwapChain9* sc, const RECT* a, const RECT* b, HWND w,
+                                                const RGNDATA* r, DWORD flags) {
+    static int s_logged = 0;
+    if (s_logged++ < 3) Log("SwapChain::Present detected (presentation path confirmed)");
+    return g_origSwapChainPresent ? g_origSwapChainPresent(sc, a, b, w, r, flags) : D3D_OK;
+}
+
 void HookDevice(IDirect3DDevice9* dev) {
     g_renderThreadId = GetCurrentThreadId();
     if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;
@@ -2475,8 +2794,32 @@ void HookDevice(IDirect3DDevice9* dev) {
     g_origSetTexture = reinterpret_cast<PFN_SetTexture>(
         PatchVTable(dev, 65, reinterpret_cast<void*>(&Hook_SetTexture)));
 
+    // True stereo: draw/state record + replay hooks (frame duplication for dual-eye render)
+    d2vr_replay::g_orig.SetDepthStencilSurface = g_origSetDepthStencilSurface;
+    d2vr_replay::g_orig.SetTexture = g_origSetTexture;
+    d2vr_replay::g_orig.BeginScene = g_origBeginScene;
+    d2vr_replay::g_orig.EndScene = g_origEndScene;
+    d2vr_replay::g_orig.SetVertexShaderConstantF = g_origSetVertexShaderConstantF;
+    d2vr_replay::InstallReplayHooks(dev);
+
+    // NOTE: the game presents through IDirect3DSwapChain9, but the runtime swapchain
+    // vtable layout does not match the SDK header (hooking slot 3 corrupts the game's
+    // present result). Frame capture is driven from EndScene (VrFrame) instead.
+    if ((g_hookMask & 2) == 0) {
+        // swapchain hook disabled by default
+    }
+
     Log("Method 2 Hooks active on device %p: Present@17, Reset@16, SetDSS@39, BeginScene@41, EndScene@42, SetTex@65, SetVSConstF@94, PresentEx@121, ResetEx@132",
         dev);
+
+    // Evidence check of the RE map (ENGINE_REVERSE_ENGINEERING.md): engine D3D9 device global
+    __try {
+        uintptr_t devGlobal = *(uintptr_t*)(0x010dee84 + 0x0c);
+        Log("[FovRE] engine device global @0x010DEE90 = %p (hooked device = %p) -> %s",
+            (void*)devGlobal, dev, (devGlobal == (uintptr_t)dev) ? "MATCH" : "mismatch");
+    } __except (1) {
+        Log("[FovRE] engine device global not readable");
+    }
 }
 
 static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp) {
