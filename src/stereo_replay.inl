@@ -279,7 +279,7 @@ enum RecOp : uint16_t {
     OP_SetStreamSource, OP_SetStreamSourceFreq, OP_SetIndices,
     OP_SetPixelShader, OP_SetPSConstF, OP_SetPSConstI, OP_SetPSConstB,
     OP_StretchRect, OP_ColorFill, OP_UpdateSurface, OP_UpdateTexture,
-    OP_SetClipStatus, OP_PresentMarker
+    OP_SetClipStatus, OP_PresentMarker, OP_ApplyStateBlock
 };
 
 struct Rec {
@@ -287,6 +287,15 @@ struct Rec {
     uint32_t n;      // generic arg count / data length
     uint32_t a[6];
 };
+
+// State blocks: the engine binds shaders/state via IDirect3DStateBlock9::Apply (that is why
+// SetVertexShader never hits our device hook - histogram VS=0). Without recording them the
+// replay executes draws with stale state -> jumping grey triangles. Apply is replayed as-is.
+typedef HRESULT(STDMETHODCALLTYPE* PFN_SBApply)(IDirect3DStateBlock9*);
+typedef HRESULT(STDMETHODCALLTYPE* PFN_SBCapture)(IDirect3DStateBlock9*);
+static PFN_SBApply g_origSBApply = nullptr;
+static PFN_SBCapture g_origSBCapture = nullptr;
+static int g_sbHooked = 0;
 
 static std::vector<Rec> g_rec;
 static std::vector<uint8_t> g_recData;
@@ -901,6 +910,15 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         case OP_UpdateTexture:
             break;
+        case OP_ApplyStateBlock: {
+            HOOK_MARK(900 + r.op);
+            IDirect3DStateBlock9* sb = (IDirect3DStateBlock9*)(uintptr_t)r.a[0];
+            // call the ORIGINAL Apply: the vtable points at our hook which would try to
+            // record while the record lock is held here -> deadlock
+            if (sb && g_origSBApply) g_origSBApply(sb);
+            HOOK_MARK(1900 + r.op);
+            break;
+        }
         default:
             break;
         }
@@ -918,6 +936,42 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     g_replayEye = -1;
 }
 
+// ------------------------------------------------------------- state block hooks
+static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
+    if (g_recActive) RecEmit(OP_ApplyStateBlock, 0, (uint32_t)(uintptr_t)sb);
+    return g_origSBApply ? g_origSBApply(sb) : D3D_OK;
+}
+
+static void PatchStateBlock(IDirect3DStateBlock9* sb) {
+    if (!sb || g_sbHooked || !g_stateBlockHookEnabled) return;
+    void** vt = *reinterpret_cast<void***>(sb);
+    DWORD old = 0;
+    if (VirtualProtect(&vt[5], sizeof(void*), PAGE_READWRITE, &old)) {
+        g_origSBApply = reinterpret_cast<PFN_SBApply>(vt[5]);
+        vt[5] = reinterpret_cast<void*>(&Hook_SBApply);
+        VirtualProtect(&vt[5], sizeof(void*), old, &old);
+        g_sbHooked = 1;
+        Log("[StateBlock] Apply@5 hooked (orig=%p) - shader/state binds now recorded", g_origSBApply);
+    }
+}
+
+typedef HRESULT(STDMETHODCALLTYPE* PFN_CreateStateBlock)(IDirect3DDevice9*, D3DSTATEBLOCKTYPE, IDirect3DStateBlock9**);
+typedef HRESULT(STDMETHODCALLTYPE* PFN_EndStateBlock)(IDirect3DDevice9*, IDirect3DStateBlock9**);
+static PFN_CreateStateBlock g_origCreateStateBlock = nullptr;
+static PFN_EndStateBlock g_origEndStateBlock = nullptr;
+
+static HRESULT STDMETHODCALLTYPE Hook_CreateStateBlock(IDirect3DDevice9* dev, D3DSTATEBLOCKTYPE t,
+                                                       IDirect3DStateBlock9** out) {
+    HRESULT hr = g_origCreateStateBlock(dev, t, out);
+    if (SUCCEEDED(hr) && out && *out) PatchStateBlock(*out);
+    return hr;
+}
+static HRESULT STDMETHODCALLTYPE Hook_EndStateBlock(IDirect3DDevice9* dev, IDirect3DStateBlock9** out) {
+    HRESULT hr = g_origEndStateBlock(dev, out);
+    if (SUCCEEDED(hr) && out && *out) PatchStateBlock(*out);
+    return hr;
+}
+
 // ------------------------------------------------------------- hook installation
 static bool InstallReplayHooks(void* dev) {
     struct Slot { int idx; void** dst; void* hook; const char* name; };
@@ -932,6 +986,8 @@ static bool InstallReplayHooks(void* dev) {
         { 44, ORIG(SetTransform), (void*)&Hook_SetTransform, "SetTransform@44" },
         { 47, ORIG(SetViewport), (void*)&Hook_SetViewport, "SetViewport@47" },
         { 57, ORIG(SetRenderState), (void*)&Hook_SetRenderState, "SetRS@57" },
+        { 59, (void**)&g_origCreateStateBlock, (void*)&Hook_CreateStateBlock, "CreateStateBlock@59" },
+        { 61, (void**)&g_origEndStateBlock, (void*)&Hook_EndStateBlock, "EndStateBlock@61" },
         { 67, ORIG(SetTextureStageState), (void*)&Hook_SetTextureStageState, "SetTSS@67" },
         { 69, ORIG(SetSamplerState), (void*)&Hook_SetSamplerState, "SetSamp@69" },
         { 75, ORIG(SetScissorRect), (void*)&Hook_SetScissorRect, "SetScissor@75" },

@@ -58,7 +58,10 @@ float g_stereoSep = 0.020f;      // shear coefficient per eye (screen-space) - s
 float g_stereoConv = 2.0f;       // convergence distance in clip-w (world) units - shift mode 1
 int g_stereoShiftMode = 0;       // 0 = translation (VR-correct), 1 = shear (HelixMod)
 float g_stereoIPD = 0.065f;      // full interpupillary distance in world units - shift mode 0
-float g_fovWiden = 2.5f;         // rendered FOV multiplier on tan(FOV/2)
+float g_fovWiden = 2.5f;         // rendered FOV multiplier on tan(FOV/2) (manual, F11)
+float g_fovWidenX = 2.5f;        // effective per-axis widen (auto from the HMD frustum)
+float g_fovWidenY = 2.5f;
+int g_autoFovWiden = 1;          // 1 = derive the widen from xrLocateViews FOV (exact coverage)
 int g_stereoPolarity = 0;        // 0 = left eye +shift, 1 = swapped
 // Game camera frustum (radians, half-angles) used for OpenXR per-view fov.
 // Measured from engine ViewProj matrices: Px=1.347 Py=2.414 (16:9, FOV slider mid).
@@ -75,6 +78,10 @@ bool g_eyePairReady = false;       // both eye images captured this frame (Submi
 int g_dumpEyeFrames = 0;           // F12: dump N eye pairs to test-output/*.bmp for offline analysis
 int g_dumpDelay = 300;             // wait this many frames before dumping (skip black startup)
 int g_zeroCopyEnabled = 0;         // Config: Render.ZeroCopy (0 = CPU CopyFrame, 1 = D3D9Ex shared texture)
+int g_renderW = 2560;              // Config: Render.RenderWidth (VR backbuffer forced size)
+int g_renderH = 1440;              // Config: Render.RenderHeight
+bool g_stateBlockHookEnabled = false; // Config: Render.StateBlockHook (OFF: runtime vtable layout
+                                      // of IDirect3DStateBlock9 differs from the SDK header)
 bool g_replayTestClear = false;    // Config: Render.ReplayTestClear (diagnostic: flood RT before replay)
 
 // TrackingSubMode (F9):
@@ -272,7 +279,13 @@ void LoadConfig() {
     g_dumpDelay = GetPrivateProfileIntA("Render", "DumpDelay", 300, chosenIni);
     if (g_dumpDelay < 0 || g_dumpDelay > 100000) g_dumpDelay = 300;
     g_replayTestClear = GetPrivateProfileIntA("Render", "ReplayTestClear", 0, chosenIni) != 0;
+    g_autoFovWiden = GetPrivateProfileIntA("Render", "AutoFovWiden", 1, chosenIni) ? 1 : 0;
     g_zeroCopyEnabled = GetPrivateProfileIntA("Render", "ZeroCopy", 0, chosenIni) ? 1 : 0;
+    g_renderW = GetPrivateProfileIntA("Render", "RenderWidth", 2560, chosenIni);
+    g_renderH = GetPrivateProfileIntA("Render", "RenderHeight", 1440, chosenIni);
+    g_stateBlockHookEnabled = GetPrivateProfileIntA("Render", "StateBlockHook", 0, chosenIni) != 0;
+    if (g_renderW < 1280 || g_renderW > 4096) g_renderW = 2560;
+    if (g_renderH < 720 || g_renderH > 2160) g_renderH = 1440;
 
     char buf[64]{};
     if (GetPrivateProfileStringA("Render", "StereoSep", "0.020", buf, sizeof(buf), chosenIni)) {
@@ -728,18 +741,32 @@ static d2vr_replay::StereoParams MakeEyeParams(int eye) {
     sp.convergence = g_stereoConv;
     sp.transX = sign * 0.5f * g_stereoIPD;
     sp.transY = 0.0f;
-    sp.fovScaleX = (g_fovWiden > 1.0f) ? (1.0f / g_fovWiden) : 1.0f;
-    sp.fovScaleY = sp.fovScaleX;
+    sp.fovScaleX = (g_fovWidenX > 1.0f) ? (1.0f / g_fovWidenX) : 1.0f;
+    sp.fovScaleY = (g_fovWidenY > 1.0f) ? (1.0f / g_fovWidenY) : 1.0f;
     return sp;
 }
 
 // Updates the OpenXR per-view frustum from the projection measured in the matrix uploads:
 // tan(halfFov) = 1/Px ; after the FOV-widen scaling tan' = FovWiden/Px.
+// For exact coverage the widen is derived FROM the HMD frustum (xrLocateViews) so the
+// rendered image matches the declared per-eye FOV 1:1 (no zoom/offset mismatch).
 static void UpdateSubmissionFovFromMatrices() {
     if (InterlockedCompareExchange(&g_estValid, 0, 0) == 0) return;
-    const float wx = (g_fovWiden > 1.0f) ? g_fovWiden : 1.0f;
-    g_gameHalfFovX = std::atan(wx / g_estPx);
-    g_gameHalfFovY = std::atan(wx / g_estPy);
+    if (g_autoFovWiden && g_haveViews) {
+        // widen the render to cover the HMD's widest half-angles (auto coverage)
+        const float hx = std::max(std::fabs(g_eyeFov[0].angleLeft), std::fabs(g_eyeFov[0].angleRight));
+        const float hy = std::max(std::fabs(g_eyeFov[0].angleUp), std::fabs(g_eyeFov[0].angleDown));
+        g_fovWidenX = g_estPx * std::tan(hx);
+        g_fovWidenY = g_estPy * std::tan(hy);
+    } else {
+        const float w = (g_fovWiden > 1.0f) ? g_fovWiden : 1.0f;
+        g_fovWidenX = w;
+        g_fovWidenY = w;
+    }
+    // the image is rendered with a SYMMETRIC widened frustum, so the declared FOV must be
+    // symmetric too (declaring the HMD's asymmetric frustum shifts/distorts the content)
+    g_gameHalfFovX = std::atan(g_fovWidenX / g_estPx);
+    g_gameHalfFovY = std::atan(g_fovWidenY / g_estPy);
 }
 
 // ---------------------------------------------------------------- SetVertexShaderConstantF Hook (Slot 94 - Read-Only 3D Detector)
@@ -1662,8 +1689,10 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
             (long)InterlockedExchange(&d2vr_replay::g_shiftCount, 0),
             d2vr_replay::g_vsInfo.size(), (int)zeroCopy, (int)g_replayTestClear);
         const uint64_t* c = d2vr_replay::g_recCounts;
-        Log("[TrueStereo] ops: Begin=%llu End=%llu Clear=%llu RT=%llu DSS=%llu Draw=%llu DIP=%llu DPUP=%llu DIPUP=%llu VS=%llu VSCF=%llu Tex=%llu RS=%llu TSS=%llu Smp=%llu VP=%llu",
-            c[3], c[4], c[5], c[1], c[2], c[13], c[14], c[15], c[16], c[19], c[20], c[9], c[8], c[10], c[11], c[7]);
+        Log("[TrueStereo] ops: Begin=%llu End=%llu Clear=%llu RT=%llu DSS=%llu Draw=%llu DIP=%llu DPUP=%llu DIPUP=%llu VS=%llu VSCF=%llu Tex=%llu RS=%llu TSS=%llu Smp=%llu VP=%llu SB=%llu",
+            c[3], c[4], c[5], c[1], c[2], c[13], c[14], c[15], c[16], c[19], c[20], c[9], c[8], c[10], c[11], c[7], c[36]);
+        Log("[TrueStereo] cfg: IPD=%.3f widenX=%.2f widenY=%.2f autoFov=%d shiftMode=%d polarity=%d",
+            g_stereoIPD, g_fovWidenX, g_fovWidenY, g_autoFovWiden, g_stereoShiftMode, g_stereoPolarity);
     }
     if (d2vr_replay::g_recOverflow && s_logged < 20) {
         Log("[TrueStereo] WARNING: record overflow - replay skipped this frame");
@@ -2916,6 +2945,12 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     if (g_forceWindowedReset && pp) {
         TweakPresentParams(pp);
     }
+    if (pp) {
+        // keep the VR render resolution: the game resets to its own size otherwise
+        if (pp->BackBufferWidth < (UINT)g_renderW) pp->BackBufferWidth = g_renderW;
+        if (pp->BackBufferHeight < (UINT)g_renderH) pp->BackBufferHeight = g_renderH;
+        pp->Windowed = TRUE;
+    }
     if (g_sysmem) {
         g_sysmem->Release();
         g_sysmem = nullptr;
@@ -2936,6 +2971,12 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     if (g_forceWindowedReset && pp) {
         TweakPresentParams(pp);
         dm = nullptr;
+    }
+    if (pp) {
+        // keep the VR render resolution: the game resets to its own size otherwise
+        if (pp->BackBufferWidth < (UINT)g_renderW) pp->BackBufferWidth = g_renderW;
+        if (pp->BackBufferHeight < (UINT)g_renderH) pp->BackBufferHeight = g_renderH;
+        pp->Windowed = TRUE;
     }
     if (g_sysmem) {
         g_sysmem->Release();
@@ -3112,8 +3153,10 @@ static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp) {
     if (!pp) return;
     pp->Windowed = TRUE;
     pp->FullScreen_RefreshRateInHz = 0;
-    if (pp->BackBufferWidth < 1280) pp->BackBufferWidth = 1280;
-    if (pp->BackBufferHeight < 720) pp->BackBufferHeight = 720;
+    // VR needs pixels: render the game bigger than its native 16:9 request (the eye images
+    // are stretched over a ~100x100 deg frustum, every pixel counts).
+    if (pp->BackBufferWidth < (UINT)g_renderW) pp->BackBufferWidth = g_renderW;
+    if (pp->BackBufferHeight < (UINT)g_renderH) pp->BackBufferHeight = g_renderH;
 }
 
 HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT ad, D3DDEVTYPE type, HWND hwnd,
