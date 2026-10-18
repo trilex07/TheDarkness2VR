@@ -54,10 +54,11 @@ int g_submitMode = 0;
 int g_trackingSubMode = 0;
 
 float g_worldScale = 1.0f;       // Meters -> 6DoF parallax scale
+float g_viewScale = 1.25f;        // FOV view scale / pull-back factor (F4 cycles: 1.15x, 1.25x, 1.40x, 1.00x)
 float g_stereoStrength = 1.0f;   // Multiplier on stereo shift (F11 cycles 1.0, 1.5, 2.0, 0.5, 0.25, 0.0)
-float g_stereoBaseShift = 0.0035f; // Base per-eye horizontal shift in UV (F6 cycles)
-float g_stereoDepthScale = 0.0105f; // Depth-modulated per-eye shift in UV
-float g_stereoMaxDisp = 0.020f;  // Hard safety clamp on per-eye UV shift
+float g_stereoBaseShift = 0.0055f; // Base per-eye horizontal shift in UV (F6 cycles)
+float g_stereoDepthScale = 0.0145f; // Depth-modulated per-eye shift in UV
+float g_stereoMaxDisp = 0.026f;  // Hard safety clamp on per-eye UV shift
 int g_depthViz = 0;              // F5 toggles live depth map visualization
 float g_cinemaDistanceM = 2.0f;
 float g_cinemaWidthM = 2.1f;
@@ -219,19 +220,23 @@ void LoadConfig() {
         float v = (float)atof(buf);
         if (v >= 0.01f && v <= 500.0f) g_worldScale = v;
     }
+    if (GetPrivateProfileStringA("Render", "ViewScale", "1.25", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.5f && v <= 3.0f) g_viewScale = v;
+    }
     if (GetPrivateProfileStringA("Render", "StereoStrength", "1.0", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 5.0f) g_stereoStrength = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoBaseShift", "0.0035", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoBaseShift", "0.0055", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 0.05f) g_stereoBaseShift = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoDepthScale", "0.0105", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoDepthScale", "0.0145", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 0.05f) g_stereoDepthScale = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoMaxDisparity", "0.020", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoMaxDisparity", "0.026", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.002f && v <= 0.08f) g_stereoMaxDisp = v;
     }
@@ -247,10 +252,10 @@ void LoadConfig() {
     g_remapPhysical = GetPrivateProfileIntA("Input", "RemapPhysicalPorts", 1, chosenIni);
 
     Log("Config loaded from: %s", chosenIni);
-    Log("  Render: SubmitMode=%d TrackingSubMode=%d StereoStrength=%.2f BaseShift=%.4f DepthScale=%.4f MaxDisp=%.4f",
-        g_submitMode, g_trackingSubMode, g_stereoStrength, g_stereoBaseShift, g_stereoDepthScale, g_stereoMaxDisp);
+    Log("  Render: SubmitMode=%d TrackingSubMode=%d ViewScale=%.2f StereoStrength=%.2f BaseShift=%.4f DepthScale=%.4f MaxDisp=%.4f",
+        g_submitMode, g_trackingSubMode, g_viewScale, g_stereoStrength, g_stereoBaseShift, g_stereoDepthScale, g_stereoMaxDisp);
     Log("  Input: EnableVRGamepad=%d RemapPhysicalPorts=%d", g_enableVRGamepad, g_remapPhysical);
-    Log("  Hotkeys: F5=DepthViz | F6=Cycle BaseShift | F7=Dump Matrices | F8 (or L3+R3)=Recenter | F9=Cycle FOV Scale | F10=Cycle VR Mode | F11=Cycle Stereo Strength");
+    Log("  Hotkeys: F4=ViewScale | F5=DepthViz | F6=Cycle BaseShift | F7=Dump Matrices | F8 (or L3+R3)=Recenter | F9=Cycle FOV Scale | F10=Cycle VR Mode | F11=Cycle Stereo Strength");
 }
 
 void RequestRecenter(const char* source) {
@@ -262,6 +267,7 @@ void RequestRecenter(const char* source) {
 }
 
 void PollHotkeys() {
+    static DWORD s_lastF4 = 0;
     static DWORD s_lastF5 = 0;
     static DWORD s_lastF6 = 0;
     static DWORD s_lastF7 = 0;
@@ -272,6 +278,17 @@ void PollHotkeys() {
 
     DWORD now = GetTickCount();
 
+    if ((GetAsyncKeyState(VK_F4) & 0x8000) && (now - s_lastF4 > 400)) {
+        s_lastF4 = now;
+        if (g_viewScale < 1.10f) g_viewScale = 1.15f;
+        else if (g_viewScale < 1.20f) g_viewScale = 1.25f;
+        else if (g_viewScale < 1.32f) g_viewScale = 1.40f;
+        else if (g_viewScale < 1.48f) g_viewScale = 1.00f;
+        else g_viewScale = 1.15f;
+        Beep(700 + (int)(g_viewScale * 300.f), 50);
+        Log(">>> [HOTKEY F4] ViewScale (Oddalenie / Rozmiar Elementow) changed to: %.2fx <<<", g_viewScale);
+    }
+
     if ((GetAsyncKeyState(VK_F5) & 0x8000) && (now - s_lastF5 > 400)) {
         s_lastF5 = now;
         g_depthViz = !g_depthViz;
@@ -281,11 +298,11 @@ void PollHotkeys() {
 
     if ((GetAsyncKeyState(VK_F6) & 0x8000) && (now - s_lastF6 > 400)) {
         s_lastF6 = now;
-        if (g_stereoBaseShift < 0.001f) g_stereoBaseShift = 0.0020f;
-        else if (g_stereoBaseShift < 0.0028f) g_stereoBaseShift = 0.0035f;
-        else if (g_stereoBaseShift < 0.0048f) g_stereoBaseShift = 0.0060f;
-        else if (g_stereoBaseShift < 0.0075f) g_stereoBaseShift = 0.0090f;
-        else g_stereoBaseShift = 0.0f;
+        if (g_stereoBaseShift < 0.0030f) g_stereoBaseShift = 0.0035f;
+        else if (g_stereoBaseShift < 0.0050f) g_stereoBaseShift = 0.0055f;
+        else if (g_stereoBaseShift < 0.0070f) g_stereoBaseShift = 0.0075f;
+        else if (g_stereoBaseShift < 0.0090f) g_stereoBaseShift = 0.0095f;
+        else g_stereoBaseShift = 0.0020f;
         Beep(750 + (int)(g_stereoBaseShift * 50000.f), 50);
         Log(">>> [HOTKEY F6] Stereo Base Shift changed to: %.4f <<<", g_stereoBaseShift);
     }
@@ -1935,15 +1952,16 @@ void SubmitXR(IDirect3DDevice9* dev) {
             // Mode 0: Immersive VR Dome 150° (Obraz Dookoła - room-anchored head tracking)
             // Mode 1: Ultra-Szeroka Panorama 180° (Pełne Otoczenie VR)
             // Mode 2: Ekran Kinowy 3D (Framed 3D Cinema Screen)
-            float invTwoHalfTanX = 0.5f / 1.309f;
+            // g_viewScale (F4) scales the FOV span: higher = smaller on-screen elements, pulled back view, more HUD visible
+            float invTwoHalfTanX = (0.5f / 1.309f) * g_viewScale;
             float invTwoHalfTanY = invTwoHalfTanX * aspect;
             if (g_trackingSubMode == 1) {
                 // 180° cylindrical panorama (halfAngleX = pi / 2 = 1.570796 rad)
-                invTwoHalfTanX = 0.5f / 1.5707963f;
+                invTwoHalfTanX = (0.5f / 1.5707963f) * g_viewScale;
                 invTwoHalfTanY = invTwoHalfTanX * aspect;
             } else if (g_trackingSubMode == 2) {
                 // Framed cinema screen (planar tangent projection)
-                const float halfTanX = 0.88f;
+                const float halfTanX = 0.88f / g_viewScale;
                 const float halfTanY = halfTanX / aspect;
                 invTwoHalfTanX = 1.0f / (2.0f * halfTanX);
                 invTwoHalfTanY = 1.0f / (2.0f * halfTanY);
