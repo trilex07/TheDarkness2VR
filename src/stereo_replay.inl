@@ -945,6 +945,30 @@ static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
 static void PatchStateBlock(IDirect3DStateBlock9* sb) {
     if (!sb || g_sbHooked || !g_stateBlockHookEnabled) return;
     void** vt = *reinterpret_cast<void***>(sb);
+    // The runtime object layout can differ from the SDK header (we were burned twice).
+    // Classify the tiny methods by their epilogue: "ret" (0xC3) = 0 stack args (Capture/Apply),
+    // "ret 4" (0xC2 0x04 0x00) = 1 stack arg (GetDevice). Only hook when slots 4 and 5 are
+    // BOTH 0-arg methods, which matches the documented Capture(4)/Apply(5) order.
+    auto argcOf = [](void* fn) -> int {
+        if (!fn) return -1;
+        const uint8_t* p = (const uint8_t*)fn;
+        __try {
+            for (int i = 0; i < 96; ++i) {
+                if (p[i] == 0xC2) return (p[i + 1] == 0x04 && p[i + 2] == 0x00) ? 1 : -2;
+                if (p[i] == 0xC3) return 0;
+            }
+        } __except (1) {
+            return -1;
+        }
+        return -1;
+    };
+    const int a4 = argcOf(vt[4]);
+    const int a5 = argcOf(vt[5]);
+    if (a4 != 0 || a5 != 0) {
+        Log("[StateBlock] vtable layout unexpected (slot4 argc=%d slot5 argc=%d) - hook skipped", a4, a5);
+        g_sbHooked = -1;   // do not retry
+        return;
+    }
     DWORD old = 0;
     if (VirtualProtect(&vt[5], sizeof(void*), PAGE_READWRITE, &old)) {
         g_origSBApply = reinterpret_cast<PFN_SBApply>(vt[5]);

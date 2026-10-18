@@ -62,6 +62,7 @@ float g_fovWiden = 2.5f;         // rendered FOV multiplier on tan(FOV/2) (manua
 float g_fovWidenX = 2.5f;        // effective per-axis widen (auto from the HMD frustum)
 float g_fovWidenY = 2.5f;
 int g_autoFovWiden = 1;          // 1 = derive the widen from xrLocateViews FOV (exact coverage)
+float g_viewOffsetX = 0.0f;      // horizontal view centering (F5): radians of frustum rotation
 int g_stereoPolarity = 0;        // 0 = left eye +shift, 1 = swapped
 // Game camera frustum (radians, half-angles) used for OpenXR per-view fov.
 // Measured from engine ViewProj matrices: Px=1.347 Py=2.414 (16:9, FOV slider mid).
@@ -288,6 +289,10 @@ void LoadConfig() {
     if (g_renderH < 720 || g_renderH > 2160) g_renderH = 1440;
 
     char buf[64]{};
+    if (GetPrivateProfileStringA("Render", "ViewOffsetX", "0.0", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= -1.0f && v <= 1.0f) g_viewOffsetX = v;
+    }
     if (GetPrivateProfileStringA("Render", "StereoSep", "0.020", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 0.25f) g_stereoSep = v;
@@ -458,9 +463,19 @@ void PollHotkeys() {
 
     if ((GetAsyncKeyState(VK_F5) & 0x8000) && (now - s_lastF5 > 400)) {
         s_lastF5 = now;
-        g_depthViz = !g_depthViz;
-        Beep(g_depthViz ? 1300 : 700, 50);
-        Log(">>> [HOTKEY F5] Depth Visualization toggled: %d <<<", g_depthViz);
+        if (g_submitMode == 4) {
+            // horizontal view centering
+            if (g_viewOffsetX < -0.15f) g_viewOffsetX = -0.10f;
+            else if (g_viewOffsetX < -0.05f) g_viewOffsetX = 0.0f;
+            else if (g_viewOffsetX < 0.10f) g_viewOffsetX = 0.10f;
+            else g_viewOffsetX = -0.20f;
+            Beep(900 + (int)(g_viewOffsetX * 3000.f), 50);
+            Log(">>> [HOTKEY F5] View Offset X changed to: %.3f rad <<<", g_viewOffsetX);
+        } else {
+            g_depthViz = !g_depthViz;
+            Beep(g_depthViz ? 1300 : 700, 50);
+            Log(">>> [HOTKEY F5] Depth Visualization toggled: %d <<<", g_depthViz);
+        }
     }
 
     if ((GetAsyncKeyState(VK_F6) & 0x8000) && (now - s_lastF6 > 400)) {
@@ -2708,8 +2723,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
                 for (int e = 0; e < 2; ++e) {
                     projViews[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
                     projViews[e].pose = head;
-                    projViews[e].fov.angleLeft = -g_gameHalfFovX;
-                    projViews[e].fov.angleRight = +g_gameHalfFovX;
+                    projViews[e].fov.angleLeft = -g_gameHalfFovX + g_viewOffsetX;
+                    projViews[e].fov.angleRight = +g_gameHalfFovX + g_viewOffsetX;
                     projViews[e].fov.angleUp = +g_gameHalfFovY;
                     projViews[e].fov.angleDown = -g_gameHalfFovY;
                     projViews[e].subImage.swapchain = g_swapchain[e];
