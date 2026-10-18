@@ -56,9 +56,9 @@ int g_trackingSubMode = 0;
 float g_worldScale = 1.0f;       // Meters -> 6DoF parallax scale
 float g_viewScale = 1.45f;        // FOV view scale / pull-back factor (F4 cycles: 1.30x, 1.45x, 1.60x, 1.75x, 1.15x, 1.00x)
 float g_stereoStrength = 1.0f;   // Multiplier on stereo shift (F11 cycles 1.0, 1.5, 2.0, 0.5, 0.25, 0.0)
-float g_stereoBaseShift = 0.0075f; // Base per-eye horizontal shift in UV (F6 cycles)
-float g_stereoDepthScale = 0.0150f; // Depth-modulated per-eye shift in UV
-float g_stereoMaxDisp = 0.028f;  // Hard safety clamp on per-eye UV shift
+float g_stereoBaseShift = 0.0110f; // Base per-eye horizontal shift in UV (F6 cycles)
+float g_stereoDepthScale = 0.0220f; // Depth-modulated per-eye shift in UV (+47% boost)
+float g_stereoMaxDisp = 0.038f;  // Hard safety clamp on per-eye UV shift
 int g_depthViz = 0;              // F5 toggles live depth map visualization
 float g_cinemaDistanceM = 2.0f;
 float g_cinemaWidthM = 2.1f;
@@ -66,9 +66,15 @@ int g_enableVRGamepad = 1;
 int g_remapPhysical = 1;
 int g_forceWindowedReset = 0;
 
+// SteamVR / OpenXR recommended view resolution (native headset resolution per eye)
+uint32_t g_steamVrRecW = 0;
+uint32_t g_steamVrRecH = 0;
+
 // Head-Look camera rotation (turning head turns in-game camera)
 // Mode: 1 = Mouse deltas (1:1 smooth camera rotation), 2 = Gamepad right stick, 3 = Both, 0 = Disabled
 int g_headLookMode = 1;
+int g_headLookInvertYaw = 1;   // 1 = Inverted (standard: turning head left turns camera left)
+int g_headLookInvertPitch = 0; // 0 = Normal (looking up looks up)
 float g_headLookSensitivityYaw = 750.0f;
 float g_headLookSensitivityPitch = 600.0f;
 volatile LONG g_headStickX = 0;
@@ -237,15 +243,15 @@ void LoadConfig() {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 5.0f) g_stereoStrength = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoBaseShift", "0.0075", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoBaseShift", "0.0110", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 0.05f) g_stereoBaseShift = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoDepthScale", "0.0150", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoDepthScale", "0.0220", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 0.05f) g_stereoDepthScale = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoMaxDisparity", "0.028", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoMaxDisparity", "0.038", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.002f && v <= 0.08f) g_stereoMaxDisp = v;
     }
@@ -261,6 +267,8 @@ void LoadConfig() {
     g_remapPhysical = GetPrivateProfileIntA("Input", "RemapPhysicalPorts", 1, chosenIni);
     g_headLookMode = GetPrivateProfileIntA("Input", "HeadLookMode", 1, chosenIni);
     if (g_headLookMode < 0 || g_headLookMode > 3) g_headLookMode = 1;
+    g_headLookInvertYaw = GetPrivateProfileIntA("Input", "HeadLookInvertYaw", 1, chosenIni);
+    g_headLookInvertPitch = GetPrivateProfileIntA("Input", "HeadLookInvertPitch", 0, chosenIni);
 
     if (GetPrivateProfileStringA("Input", "HeadLookSensitivityYaw", "750.0", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
@@ -274,9 +282,9 @@ void LoadConfig() {
     Log("Config loaded from: %s", chosenIni);
     Log("  Render: SubmitMode=%d TrackingSubMode=%d ViewScale=%.2f StereoStrength=%.2f BaseShift=%.4f DepthScale=%.4f MaxDisp=%.4f",
         g_submitMode, g_trackingSubMode, g_viewScale, g_stereoStrength, g_stereoBaseShift, g_stereoDepthScale, g_stereoMaxDisp);
-    Log("  Input: EnableVRGamepad=%d RemapPhysicalPorts=%d HeadLookMode=%d (SensYaw=%.1f SensPitch=%.1f)",
-        g_enableVRGamepad, g_remapPhysical, g_headLookMode, g_headLookSensitivityYaw, g_headLookSensitivityPitch);
-    Log("  Hotkeys: F3=HeadLook | F4=ViewScale | F5=DepthViz | F6=Cycle BaseShift | F7=Dump Matrices | F8 (or L3+R3)=Recenter | F9=Cycle FOV Scale | F10=Cycle VR Mode | F11=Cycle Stereo Strength");
+    Log("  Input: EnableVRGamepad=%d RemapPhysicalPorts=%d HeadLookMode=%d (SensYaw=%.1f SensPitch=%.1f InvertYaw=%d InvertPitch=%d)",
+        g_enableVRGamepad, g_remapPhysical, g_headLookMode, g_headLookSensitivityYaw, g_headLookSensitivityPitch, g_headLookInvertYaw, g_headLookInvertPitch);
+    Log("  Hotkeys: F2=InvertYaw | F3=HeadLook | F4=ViewScale | F5=DepthViz | F6=Cycle BaseShift | F7=Dump Matrices | F8 (or L3+R3)=Recenter | F9=Cycle FOV Scale | F10=Cycle VR Mode | F11=Cycle Stereo Strength");
 }
 
 void RequestRecenter(const char* source) {
@@ -289,6 +297,7 @@ void RequestRecenter(const char* source) {
 }
 
 void PollHotkeys() {
+    static DWORD s_lastF2 = 0;
     static DWORD s_lastF3 = 0;
     static DWORD s_lastF4 = 0;
     static DWORD s_lastF5 = 0;
@@ -300,6 +309,13 @@ void PollHotkeys() {
     static DWORD s_lastF11 = 0;
 
     DWORD now = GetTickCount();
+
+    if ((GetAsyncKeyState(VK_F2) & 0x8000) && (now - s_lastF2 > 400)) {
+        s_lastF2 = now;
+        g_headLookInvertYaw = !g_headLookInvertYaw;
+        Beep(g_headLookInvertYaw ? 1100 : 800, 50);
+        Log(">>> [HOTKEY F2] HeadLook Invert Yaw toggled: %d (1 = lewo->lewo, 0 = odwrotnie) <<<", g_headLookInvertYaw);
+    }
 
     if ((GetAsyncKeyState(VK_F3) & 0x8000) && (now - s_lastF3 > 400)) {
         s_lastF3 = now;
@@ -354,12 +370,12 @@ void PollHotkeys() {
 
     if ((GetAsyncKeyState(VK_F6) & 0x8000) && (now - s_lastF6 > 400)) {
         s_lastF6 = now;
-        if (g_stereoBaseShift < 0.0030f) g_stereoBaseShift = 0.0035f;
-        else if (g_stereoBaseShift < 0.0050f) g_stereoBaseShift = 0.0055f;
-        else if (g_stereoBaseShift < 0.0070f) g_stereoBaseShift = 0.0075f;
-        else if (g_stereoBaseShift < 0.0090f) g_stereoBaseShift = 0.0095f;
-        else g_stereoBaseShift = 0.0020f;
-        Beep(750 + (int)(g_stereoBaseShift * 50000.f), 50);
+        if (g_stereoBaseShift < 0.0050f) g_stereoBaseShift = 0.0075f;
+        else if (g_stereoBaseShift < 0.0090f) g_stereoBaseShift = 0.0110f;
+        else if (g_stereoBaseShift < 0.0130f) g_stereoBaseShift = 0.0145f;
+        else if (g_stereoBaseShift < 0.0165f) g_stereoBaseShift = 0.0180f;
+        else g_stereoBaseShift = 0.0040f;
+        Beep(750 + (int)(g_stereoBaseShift * 40000.f), 50);
         Log(">>> [HOTKEY F6] Stereo Base Shift changed to: %.4f <<<", g_stereoBaseShift);
     }
 
@@ -1639,6 +1655,19 @@ bool InitXR() {
 
     InitXrGamepadActions();
 
+    uint32_t viewConfigCount = 0;
+    if (XR_SUCCEEDED(xrEnumerateViewConfigurationViews(g_xrInstance, g_xrSystem,
+            XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &viewConfigCount, nullptr)) && viewConfigCount >= 2) {
+        std::vector<XrViewConfigurationView> vcv(viewConfigCount, { XR_TYPE_VIEW_CONFIGURATION_VIEW });
+        if (XR_SUCCEEDED(xrEnumerateViewConfigurationViews(g_xrInstance, g_xrSystem,
+                XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, viewConfigCount, &viewConfigCount, vcv.data()))) {
+            g_steamVrRecW = vcv[0].recommendedImageRectWidth;
+            g_steamVrRecH = vcv[0].recommendedImageRectHeight;
+            Log("SteamVR / OpenXR recommended view resolution: %ux%u per eye (max: %ux%u)",
+                g_steamVrRecW, g_steamVrRecH, vcv[0].maxImageRectWidth, vcv[0].maxImageRectHeight);
+        }
+    }
+
     Log("OpenXR session ready (LOCAL + VIEW spaces initialized)");
     g_xrReady = true;
     return true;
@@ -2009,17 +2038,17 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
     bool havePixels = false;
     if (fs.shouldRender && g_haveViews) {
+        UINT targetW = g_steamVrRecW ? g_steamVrRecW : (g_srcW ? g_srcW : 1920);
+        UINT targetH = g_steamVrRecH ? g_steamVrRecH : (g_srcH ? g_srcH : 1080);
         if (g_testMode > 0) {
-            UINT tw = g_srcW ? g_srcW : 1920;
-            UINT th = g_srcH ? g_srcH : 1080;
-            havePixels = FillTestPattern(tw, th, g_testMode) && EnsureSwapchains(tw, th);
+            havePixels = FillTestPattern(targetW, targetH, g_testMode) && EnsureSwapchains(targetW, targetH);
         } else if (dev) {
-            havePixels = CopyFrame(dev) && EnsureSwapchains(g_srcW, g_srcH);
+            havePixels = CopyFrame(dev) && EnsureSwapchains(targetW, targetH);
         }
     }
 
     if (havePixels) {
-        const float aspect = g_scH ? (float)g_scW / (float)g_scH : (16.f / 9.f);
+        const float aspect = (g_srcW && g_srcH) ? ((float)g_srcW / (float)g_srcH) : (16.f / 9.f);
         const XrPosef head = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
 
         // ---------------- Head-Look Camera Rotation (Turning Head Rotates In-Game Camera) ----------------
@@ -2063,8 +2092,10 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
                 // 1. Mouse Injection (1:1 smooth camera rotation)
                 if (g_headLookMode == 1 || g_headLookMode == 3) {
-                    int mouseDx = (int)(dYaw * g_headLookSensitivityYaw);
-                    int mouseDy = (int)(-dPitch * g_headLookSensitivityPitch);
+                    float yawSign = g_headLookInvertYaw ? -1.0f : 1.0f;
+                    float pitchSign = g_headLookInvertPitch ? 1.0f : -1.0f;
+                    int mouseDx = (int)(dYaw * g_headLookSensitivityYaw * yawSign);
+                    int mouseDy = (int)(dPitch * g_headLookSensitivityPitch * pitchSign);
                     if (mouseDx != 0 || mouseDy != 0) {
                         mouse_event(MOUSEEVENTF_MOVE, mouseDx, mouseDy, 0, 0);
                     }
@@ -2072,8 +2103,10 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
                 // 2. Gamepad Right Stick Injection
                 if (g_headLookMode == 2 || g_headLookMode == 3) {
-                    float yawRate = dYaw / dt;     // rad/sec
-                    float pitchRate = dPitch / dt; // rad/sec
+                    float yawSign = g_headLookInvertYaw ? -1.0f : 1.0f;
+                    float pitchSign = g_headLookInvertPitch ? 1.0f : -1.0f;
+                    float yawRate = (dYaw / dt) * yawSign;
+                    float pitchRate = (dPitch / dt) * (-pitchSign);
                     int stickX = (int)(yawRate * 10000.0f);
                     int stickY = (int)(pitchRate * 10000.0f);
                     stickX = std::max(-32000, std::min(32000, stickX));

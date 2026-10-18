@@ -45,6 +45,7 @@ try {
         }
         Copy-Item (Join-Path $here "d3d9.dll") $target -Force
         Copy-Item (Join-Path $binDir "openxr_loader.dll") $GameDir -Force
+        Copy-Item (Join-Path $here "Darkness2VR.ini") $GameDir -Force
         Write-Host "Installed to: $GameDir"
     }
 } finally {
