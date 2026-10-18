@@ -83,16 +83,17 @@ def parse(data):
     if len(data) < 4:
         return None
     words = list(struct.unpack("<%dI" % (len(data) // 4), data[:len(data) // 4 * 4]))
-    if (words[0] & 0xFFFE) != 0xFFFE:  # version token 0xFFFE/0xFFFF
+    ver = (words[0] >> 16) & 0xFFFF
+    if ver != 0xFFFE and ver != 0xFFFF:  # version token: 0xFFFE=vs, 0xFFFF=ps (top word)
         return None
     major = (words[0] >> 8) & 0xFF
     minor = words[0] & 0xFF
-    kind = "vs" if (words[0] >> 16) == 0xFFFE and (words[0] & 0xFFFF0000) else "ps"
-    kind = "ps" if (words[0] & 0xFFFF0000) == 0xFFFF0000 else "vs"
+    kind = "ps" if ver == 0xFFFF else "vs"
     out = []
     i = 1
     defs = []
     instrs = []
+    ctab = []
     while i < len(words):
         tok = words[i]
         op = tok & 0xFFFF
@@ -102,6 +103,8 @@ def parse(data):
             cstr = b""
             for w in body:
                 cstr += struct.pack("<I", w)
+            if cstr[:4] == b"CTAB":
+                ctab = parse_ctab(cstr)
             try:
                 cstr = cstr.split(b"\x00")[0].decode("ascii", "replace")
             except Exception:
@@ -124,7 +127,31 @@ def parse(data):
             defs.append((reg_name(args[0], False), vals))
         i += 1 + oplen
     return {"version": "%s_%d_%d" % (kind, major, minor), "items": out,
-            "instrs": instrs, "defs": defs, "words": words}
+            "instrs": instrs, "defs": defs, "words": words, "ctab": ctab}
+
+def parse_ctab(blob):
+    """D3DXSHADER_CONSTANTTABLE (after the 4-byte 'CTAB' tag) -> [(name, regset, regidx, regcount)]"""
+    try:
+        size, creator, ver, nconst, cinfo = struct.unpack_from("<5I", blob, 4)
+    except Exception:
+        return []
+    regs = []
+    RS = {0: "b", 1: "i", 2: "c", 3: "s"}
+    base = 4  # offsets are relative to the D3DXSHADER_CONSTANTTABLE start (after 'CTAB')
+    for k in range(min(nconst, 64)):
+        off = base + cinfo + k * 24
+        try:
+            name, regset, regidx, regcnt, _res, _ti, _dv, _fl = struct.unpack_from("<IHHHHIII", blob, off)
+        except Exception:
+            continue
+        npos = base + name
+        try:
+            end = blob.find(b"\x00", npos)
+            nm = blob[npos:end].decode("ascii", "replace")
+        except Exception:
+            nm = "?"
+        regs.append((nm, RS.get(regset, "?"), regidx, regcnt))
+    return regs
 
 def analyze(path):
     with open(path, "rb") as f:
@@ -135,6 +162,10 @@ def analyze(path):
         return
     print("=" * 78)
     print("%s  [%s]  %d bytes" % (os.path.basename(path), sh["version"], len(data)))
+    if sh.get("ctab"):
+        print("  -- CTAB constant semantics --")
+        for nm, rs, idx, cnt in sh["ctab"]:
+            print("     %-42s %s%d..%d" % (nm, rs, idx, idx + cnt - 1))
     for name, vals in sh["defs"]:
         print("  DEF %-8s (%g, %g, %g, %g)" % (name, *vals))
 

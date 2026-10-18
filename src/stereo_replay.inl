@@ -309,10 +309,19 @@ static void RecBeginFrame() {
     RecLockGuard lock;
     g_rec.clear();
     g_recData.clear();
+    if (g_rec.capacity() < 200000) g_rec.reserve(200000);
+    if (g_recData.capacity() < (4u << 20)) g_recData.reserve(4u << 20);
     g_recOverflow = false;
     g_recActive = true;
 }
 // Crash-safe data capture: never let diagnostic recording kill the game.
+static inline bool RecOnRenderThread() {
+    // The engine records from a worker thread (texture uploads). Those calls are texture
+    // *content* updates which the replay deliberately skips, so dropping them entirely
+    // removes the last cross-thread access to the record stream.
+    return GetCurrentThreadId() == g_renderThreadId;
+}
+
 static size_t ClampReadableBytes(const void* p, size_t bytes) {
     const uint8_t* b = (const uint8_t*)p;
     size_t done = 0;
@@ -334,6 +343,7 @@ static void SafeMemcpy(void* dst, const void* src, size_t bytes) {
         memset(dst, 0, bytes);
     }
 }
+
 static inline uint32_t RecPush(const void* data, size_t bytes) {
     RecLockGuard lock;
     if (bytes > (size_t)8 * 1024 * 1024) bytes = 0;   // sanity clamp
@@ -344,13 +354,14 @@ static inline uint32_t RecPush(const void* data, size_t bytes) {
         if (readable < bytes) {
             // game passed a smaller buffer than the draw parameters imply - copy what exists
             memset(g_recData.data() + off, 0, bytes);
-            if (readable) memcpy(g_recData.data() + off, data, readable);
+            if (readable) SafeMemcpy(g_recData.data() + off, data, readable);
         } else {
             SafeMemcpy(g_recData.data() + off, data, bytes);
         }
     }
     return off;
 }
+
 static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
                            uint32_t a2 = 0, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
     if (!g_recActive || g_recOverflow) return;
@@ -426,18 +437,37 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         size_t n = SafeShaderTokenCount(fn);
         if (n == 0) return hr;
         uint32_t h = HashBytes(fn, (n + 1) * 4);
-        auto it = g_vsInfo.find(*out);
-        if (it == g_vsInfo.end()) {
-            VsInfo vi;
-            vi.hash = h;
-            AnalyzeVsTokenStream(fn, vi);
-            g_vsInfo[*out] = vi;
-            static int s_logged = 0;
-            if (s_logged < 15 || ((vi.wvpBase >= 0 || vi.stpBase >= 0) && s_logged < 40)) {
-                ++s_logged;
-                Log("[VS %08X] wvpBase=c%d stpBase=c%d depthOnly=%d bones=%d",
-                    h, vi.wvpBase, vi.stpBase, (int)vi.depthOnly, (int)vi.hasBones);
+        VsInfo vi;
+        vi.hash = h;
+        AnalyzeVsTokenStream(fn, vi);
+        bool isNew = false;
+        {
+            RecLockGuard lock;   // shader map is shared - the engine creates shaders off-thread
+            isNew = (g_vsInfo.find(*out) == g_vsInfo.end());
+            if (isNew) g_vsInfo[*out] = vi;
+        }
+        // Diagnostic: dump raw shader bytecode for offline pattern analysis
+        {
+            static int s_dumpedShaders = 0;
+            if (s_dumpedShaders < 8 && n > 0) {
+                char spath[MAX_PATH];
+                sprintf_s(spath, "test-output\\shaders\\vs_%04d_%08X.bin", s_dumpedShaders, h);
+                CreateDirectoryA("test-output", nullptr);
+                CreateDirectoryA("test-output\\shaders", nullptr);
+                FILE* sf = nullptr;
+                if (fopen_s(&sf, spath, "wb") == 0 && sf) {
+                    fwrite(fn, 4, n + 1, sf);
+                    fclose(sf);
+                    Log("[ShaderDump] %s (%zu tokens)", spath, n + 1);
+                }
+                ++s_dumpedShaders;
             }
+        }
+        static int s_logged = 0;
+        if (isNew && (s_logged < 15 || ((vi.wvpBase >= 0 || vi.stpBase >= 0) && s_logged < 40))) {
+            ++s_logged;
+            Log("[VS %08X] wvpBase=c%d stpBase=c%d depthOnly=%d bones=%d",
+                h, vi.wvpBase, vi.stpBase, (int)vi.depthOnly, (int)vi.hasBones);
         }
     }
     return hr;
@@ -445,6 +475,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
 
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDirect3DVertexShader9* sh) {
     if (sh) {
+        RecLockGuard lock;
         auto it = g_vsInfo.find(sh);
         g_activeVs = (it != g_vsInfo.end()) ? &it->second : nullptr;
     } else {
@@ -489,6 +520,20 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
         if (!modified) {
             memcpy(dst, src, sizeof(float) * 4 * count);
             modified = true;
+        }
+        {
+            static int s_shiftLog = 0;
+            if (s_shiftLog < 6) {
+                ++s_shiftLog;
+                float* q = dst + (b - (int)start) * 4;
+                const float* q0 = src + (b - (int)start) * 4;
+                const float l0 = std::sqrt(q0[0] * q0[0] + q0[4] * q0[4] + q0[8] * q0[8]);
+                const float lw = std::sqrt(q0[3] * q0[3] + q0[7] * q0[7] + q0[11] * q0[11]);
+                Log("[ShiftDbg] c%d start=%u count=%u | l0=%.3f lw=%.3f px=%.3f | c3.x %.4f -> will add %.4f | sp mode=%d transX=%.3f",
+                    b, start, count, l0, lw, (lw > 1e-5f) ? l0 / lw : 0.0f,
+                    q0[12], ((lw > 1e-5f) ? l0 / lw : 1.0f) * sp.transX, sp.mode, sp.transX);
+                (void)q;
+            }
         }
         ApplyEyeShiftToMatrix(dst + (b - (int)start) * 4, 4, sp);
         ++g_shiftCount;
@@ -600,15 +645,23 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
         UINT idxCount = (t == D3DPT_TRIANGLELIST) ? pc * 3 :
                         (t == D3DPT_TRIANGLESTRIP || t == D3DPT_TRIANGLEFAN) ? pc + 2 :
                         (t == D3DPT_LINELIST) ? pc * 2 : pc + 1;
+        // Single atomic record: aux fields live in the data arena (no adjacent-record pairing,
+        // which breaks when the engine records from a second thread between two RecEmit calls).
+        struct DipAux { uint32_t vbOff, stride, ibOff, idxCount, idxSize; };
+        DipAux aux{};
+        aux.stride = stride;
+        aux.idxCount = idxCount;
+        aux.idxSize = idxSize;
         if (verts < (1u << 20) && vb && ib) {
-            uint32_t vbOff = RecPush(vb, (size_t)stride * verts);
-            uint32_t ibOff = RecPush(ib, (size_t)idxSize * idxCount);
-            RecEmit(OP_DrawIndexedPrimitiveUP, 0, t, mvi, nv, pc, (uint32_t)fmt, vbOff);
-            RecEmit(OP_END, 0, stride, ibOff, idxCount, idxSize); // auxiliary slot
+            aux.vbOff = RecPush(vb, (size_t)stride * verts);
+            aux.ibOff = RecPush(ib, (size_t)idxSize * idxCount);
         } else {
-            RecEmit(OP_DrawIndexedPrimitiveUP, 1, t, mvi, nv, pc, (uint32_t)fmt, (uint32_t)(uintptr_t)vb);
-            RecEmit(OP_END, 1, stride, (uint32_t)(uintptr_t)ib);
+            aux.vbOff = (uint32_t)(uintptr_t)vb;
+            aux.ibOff = (uint32_t)(uintptr_t)ib;
+            aux.stride |= 0x80000000u;   // mark: pointers are live, not arena offsets
         }
+        uint32_t auxOff = RecPush(&aux, sizeof(aux));
+        RecEmit(OP_DrawIndexedPrimitiveUP, 0, t, mvi, nv, pc, (uint32_t)fmt, auxOff);
     }
     return g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
 }
@@ -692,10 +745,18 @@ static HRESULT STDMETHODCALLTYPE Hook_UpdateTexture(IDirect3DDevice9* dev, IDire
 // ------------------------------------------------------------- replay executor
 static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp) {
     g_replayEye = eye;
-    const uint8_t* dataBase = g_recData.data();
     static int s_dumpFrames = 0;
     const bool dump = (s_dumpFrames < 3);
     if (dump) ++s_dumpFrames;
+    // Hold the record lock for the whole replay: the engine records from a second thread
+    // (texture uploads) and a concurrent push_back would invalidate g_rec references here.
+    while (InterlockedCompareExchange(&g_recLock, 1, 0) != 0) { Sleep(0); }
+    const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)
+    if (g_replayTestClear) {
+        // diagnostic: flood the current render target magenta before replaying; if the eye1
+        // capture does not turn magenta, the replay never reaches the captured surface.
+        g_orig.Clear(dev, 0, nullptr, D3DCLEAR_TARGET, 0x00FF00FF, 1.0f, 0);
+    }
     for (size_t i = 0; i < g_rec.size(); ++i) {
         const Rec& r = g_rec[i];
         if (dump) {
@@ -760,11 +821,15 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         }
         case OP_DrawIndexedPrimitiveUP: {
             HOOK_MARK(900 + r.op);
-            const Rec& aux = g_rec[++i];
-            const void* vb = (r.n == 1) ? (const void*)(uintptr_t)r.a[5] : (const void*)(dataBase + r.a[5]);
-            const void* ib = (aux.n == 1) ? (const void*)(uintptr_t)aux.a[1] : (const void*)(dataBase + aux.a[1]);
+            struct DipAux { uint32_t vbOff, stride, ibOff, idxCount, idxSize; };
+            const DipAux* aux = (const DipAux*)(dataBase + r.a[5]);
+            const bool livePtrs = (aux->stride & 0x80000000u) != 0;
+            const UINT stride = aux->stride & 0x7FFFFFFFu;
+            const void* vb = livePtrs ? (const void*)(uintptr_t)aux->vbOff : (const void*)(dataBase + aux->vbOff);
+            const void* ib = livePtrs ? (const void*)(uintptr_t)aux->ibOff : (const void*)(dataBase + aux->ibOff);
             g_orig.DrawIndexedPrimitiveUP(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
-                                         ib, (D3DFORMAT)r.a[4], vb, aux.a[0]);
+                                         ib, (D3DFORMAT)r.a[4], vb, stride);
+            HOOK_MARK(1900 + r.op);
             break;
         }
         case OP_SetVertexDeclaration:
@@ -782,7 +847,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         }
         case OP_SetVSConstF: {
             const float* src = (const float*)(dataBase + r.a[4]);
-            float tmp[17 * 4];
+            // MUST hold Vector4fCount vectors of 4 floats each (bone palettes upload up to
+            // 68 vectors = 272 floats). The old size (17*4) overflowed the stack -> fail-fast.
+            float tmp[68 * 4];
             if (eye >= 0 && r.a[1] <= 68) {
                 if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, sp)) src = tmp;
             }
@@ -828,14 +895,11 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                             r.n ? (const RECT*)(dataBase + r.a[2]) : nullptr, (D3DCOLOR)r.a[1]);
             break;
         case OP_UpdateSurface:
-            g_orig.UpdateSurface(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0],
-                                (r.n & 1) ? (const RECT*)(dataBase + r.a[2]) : nullptr,
-                                (IDirect3DSurface9*)(uintptr_t)r.a[1],
-                                (r.n & 2) ? (const POINT*)(dataBase + r.a[3]) : nullptr);
+            // Texture *content* updates are shared between both eyes and the replay runs
+            // after the live pass - the target already holds the data. Replaying them is
+            // redundant AND dangerous (the game releases temp textures within the frame).
             break;
         case OP_UpdateTexture:
-            g_orig.UpdateTexture(dev, (IDirect3DBaseTexture9*)(uintptr_t)r.a[0],
-                                (IDirect3DBaseTexture9*)(uintptr_t)r.a[1]);
             break;
         default:
             break;
@@ -850,6 +914,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             }
         }
     }
+    InterlockedExchange(&g_recLock, 0);
     g_replayEye = -1;
 }
 
