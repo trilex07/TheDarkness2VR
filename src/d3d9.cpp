@@ -54,17 +54,26 @@ int g_submitMode = 0;
 int g_trackingSubMode = 0;
 
 float g_worldScale = 1.0f;       // Meters -> 6DoF parallax scale
-float g_viewScale = 1.25f;        // FOV view scale / pull-back factor (F4 cycles: 1.15x, 1.25x, 1.40x, 1.00x)
+float g_viewScale = 1.45f;        // FOV view scale / pull-back factor (F4 cycles: 1.30x, 1.45x, 1.60x, 1.75x, 1.15x, 1.00x)
 float g_stereoStrength = 1.0f;   // Multiplier on stereo shift (F11 cycles 1.0, 1.5, 2.0, 0.5, 0.25, 0.0)
-float g_stereoBaseShift = 0.0055f; // Base per-eye horizontal shift in UV (F6 cycles)
-float g_stereoDepthScale = 0.0145f; // Depth-modulated per-eye shift in UV
-float g_stereoMaxDisp = 0.026f;  // Hard safety clamp on per-eye UV shift
+float g_stereoBaseShift = 0.0075f; // Base per-eye horizontal shift in UV (F6 cycles)
+float g_stereoDepthScale = 0.0150f; // Depth-modulated per-eye shift in UV
+float g_stereoMaxDisp = 0.028f;  // Hard safety clamp on per-eye UV shift
 int g_depthViz = 0;              // F5 toggles live depth map visualization
 float g_cinemaDistanceM = 2.0f;
 float g_cinemaWidthM = 2.1f;
 int g_enableVRGamepad = 1;
 int g_remapPhysical = 1;
 int g_forceWindowedReset = 0;
+
+// Head-Look camera rotation (turning head turns in-game camera)
+// Mode: 1 = Mouse deltas (1:1 smooth camera rotation), 2 = Gamepad right stick, 3 = Both, 0 = Disabled
+int g_headLookMode = 1;
+float g_headLookSensitivityYaw = 750.0f;
+float g_headLookSensitivityPitch = 600.0f;
+volatile LONG g_headStickX = 0;
+volatile LONG g_headStickY = 0;
+bool g_headLookReset = true;
 
 // World anchor state for Cinema & Immersive VR (SubmitMode 2 or World-Anchored VR)
 bool g_anchorValid = false;
@@ -220,7 +229,7 @@ void LoadConfig() {
         float v = (float)atof(buf);
         if (v >= 0.01f && v <= 500.0f) g_worldScale = v;
     }
-    if (GetPrivateProfileStringA("Render", "ViewScale", "1.25", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "ViewScale", "1.45", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.5f && v <= 3.0f) g_viewScale = v;
     }
@@ -228,15 +237,15 @@ void LoadConfig() {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 5.0f) g_stereoStrength = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoBaseShift", "0.0055", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoBaseShift", "0.0075", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 0.05f) g_stereoBaseShift = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoDepthScale", "0.0145", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoDepthScale", "0.0150", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 0.05f) g_stereoDepthScale = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoMaxDisparity", "0.026", buf, sizeof(buf), chosenIni)) {
+    if (GetPrivateProfileStringA("Render", "StereoMaxDisparity", "0.028", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.002f && v <= 0.08f) g_stereoMaxDisp = v;
     }
@@ -250,23 +259,37 @@ void LoadConfig() {
     }
     g_enableVRGamepad = GetPrivateProfileIntA("Input", "EnableVRGamepad", 1, chosenIni);
     g_remapPhysical = GetPrivateProfileIntA("Input", "RemapPhysicalPorts", 1, chosenIni);
+    g_headLookMode = GetPrivateProfileIntA("Input", "HeadLookMode", 1, chosenIni);
+    if (g_headLookMode < 0 || g_headLookMode > 3) g_headLookMode = 1;
+
+    if (GetPrivateProfileStringA("Input", "HeadLookSensitivityYaw", "750.0", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 50.0f && v <= 5000.0f) g_headLookSensitivityYaw = v;
+    }
+    if (GetPrivateProfileStringA("Input", "HeadLookSensitivityPitch", "600.0", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 50.0f && v <= 5000.0f) g_headLookSensitivityPitch = v;
+    }
 
     Log("Config loaded from: %s", chosenIni);
     Log("  Render: SubmitMode=%d TrackingSubMode=%d ViewScale=%.2f StereoStrength=%.2f BaseShift=%.4f DepthScale=%.4f MaxDisp=%.4f",
         g_submitMode, g_trackingSubMode, g_viewScale, g_stereoStrength, g_stereoBaseShift, g_stereoDepthScale, g_stereoMaxDisp);
-    Log("  Input: EnableVRGamepad=%d RemapPhysicalPorts=%d", g_enableVRGamepad, g_remapPhysical);
-    Log("  Hotkeys: F4=ViewScale | F5=DepthViz | F6=Cycle BaseShift | F7=Dump Matrices | F8 (or L3+R3)=Recenter | F9=Cycle FOV Scale | F10=Cycle VR Mode | F11=Cycle Stereo Strength");
+    Log("  Input: EnableVRGamepad=%d RemapPhysicalPorts=%d HeadLookMode=%d (SensYaw=%.1f SensPitch=%.1f)",
+        g_enableVRGamepad, g_remapPhysical, g_headLookMode, g_headLookSensitivityYaw, g_headLookSensitivityPitch);
+    Log("  Hotkeys: F3=HeadLook | F4=ViewScale | F5=DepthViz | F6=Cycle BaseShift | F7=Dump Matrices | F8 (or L3+R3)=Recenter | F9=Cycle FOV Scale | F10=Cycle VR Mode | F11=Cycle Stereo Strength");
 }
 
 void RequestRecenter(const char* source) {
     g_anchorValid = false;
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
+    g_headLookReset = true;
     Beep(1000, 50);
-    Log(">>> [%s] VR Recenter requested (World Anchor + 6DoF Reference) <<<", source);
+    Log(">>> [%s] VR Recenter requested (World Anchor + 6DoF Reference + HeadLook) <<<", source);
 }
 
 void PollHotkeys() {
+    static DWORD s_lastF3 = 0;
     static DWORD s_lastF4 = 0;
     static DWORD s_lastF5 = 0;
     static DWORD s_lastF6 = 0;
@@ -278,13 +301,46 @@ void PollHotkeys() {
 
     DWORD now = GetTickCount();
 
+    if ((GetAsyncKeyState(VK_F3) & 0x8000) && (now - s_lastF3 > 400)) {
+        s_lastF3 = now;
+        if (g_headLookMode == 0) {
+            g_headLookMode = 1;
+            g_headLookSensitivityYaw = 750.0f;
+            g_headLookSensitivityPitch = 600.0f;
+        } else if (g_headLookMode == 1 && g_headLookSensitivityYaw < 900.0f) {
+            g_headLookMode = 1;
+            g_headLookSensitivityYaw = 1050.0f;
+            g_headLookSensitivityPitch = 850.0f;
+        } else if (g_headLookMode == 1) {
+            g_headLookMode = 2; // Gamepad Stick
+        } else if (g_headLookMode == 2) {
+            g_headLookMode = 3; // Hybrid
+        } else {
+            g_headLookMode = 0; // Disabled
+        }
+        g_headLookReset = true;
+        Beep(700 + g_headLookMode * 200, 50);
+        const char* hlNames[] = {
+            "0 (Wylaczone / Manual)",
+            "1 (Mysz 1:1 - standardowa czulosc 750)",
+            "2 (Prawy Stick Pad / XInput)",
+            "3 (Hybrydowy - Mysz + Stick)"
+        };
+        const char* name = (g_headLookMode >= 0 && g_headLookMode <= 3) ? hlNames[g_headLookMode] : "Unknown";
+        if (g_headLookMode == 1 && g_headLookSensitivityYaw > 900.0f) {
+            name = "1 (Mysz Szybka - podwyzszona czulosc 1050)";
+        }
+        Log(">>> [HOTKEY F3] HeadLook Mode changed to: %s <<<", name);
+    }
+
     if ((GetAsyncKeyState(VK_F4) & 0x8000) && (now - s_lastF4 > 400)) {
         s_lastF4 = now;
-        if (g_viewScale < 1.10f) g_viewScale = 1.15f;
-        else if (g_viewScale < 1.20f) g_viewScale = 1.25f;
-        else if (g_viewScale < 1.32f) g_viewScale = 1.40f;
-        else if (g_viewScale < 1.48f) g_viewScale = 1.00f;
-        else g_viewScale = 1.15f;
+        if (g_viewScale < 1.28f) g_viewScale = 1.35f;
+        else if (g_viewScale < 1.42f) g_viewScale = 1.45f;
+        else if (g_viewScale < 1.55f) g_viewScale = 1.60f;
+        else if (g_viewScale < 1.70f) g_viewScale = 1.75f;
+        else if (g_viewScale < 1.85f) g_viewScale = 1.15f;
+        else g_viewScale = 1.00f;
         Beep(700 + (int)(g_viewScale * 300.f), 50);
         Log(">>> [HOTKEY F4] ViewScale (Oddalenie / Rozmiar Elementow) changed to: %.2fx <<<", g_viewScale);
     }
@@ -475,6 +531,19 @@ static float ComputeHorizontalYaw(const XrQuaternionf& q) {
     float len = std::sqrt(fx * fx + fz * fz);
     if (len < 1e-4f) return 0.f;
     return std::atan2(-fx / len, -fz / len);
+}
+
+static void ComputeHeadEuler(const XrQuaternionf& q, float* outYaw, float* outPitch) {
+    const XrVector3f fwd = RotVec(q, 0.f, 0.f, -1.f);
+    if (outYaw) {
+        float lenH = std::sqrt(fwd.x * fwd.x + fwd.z * fwd.z);
+        if (lenH < 1e-4f) *outYaw = 0.f;
+        else *outYaw = std::atan2(-fwd.x, -fwd.z);
+    }
+    if (outPitch) {
+        float lenH = std::sqrt(fwd.x * fwd.x + fwd.z * fwd.z);
+        *outPitch = std::atan2(fwd.y, std::max(1e-4f, lenH));
+    }
 }
 
 static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
@@ -1335,17 +1404,31 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
         }
     }
 
+    DWORD res = ERROR_DEVICE_NOT_CONNECTED;
     if (g_enableVRGamepad && userIndex == 0 && InterlockedCompareExchange(&g_cachedXrPadValid, 0, 0)) {
         if (r == ERROR_SUCCESS && PadHasInput(real.Gamepad)) {
             *state = real;
-            return ERROR_SUCCESS;
+            res = ERROR_SUCCESS;
+        } else {
+            *state = g_cachedXrPad;
+            res = ERROR_SUCCESS;
         }
-        *state = g_cachedXrPad;
-        return ERROR_SUCCESS;
+    } else if (r == ERROR_SUCCESS) {
+        *state = real;
+        res = ERROR_SUCCESS;
     }
 
-    if (r == ERROR_SUCCESS) {
-        *state = real;
+    if (res == ERROR_SUCCESS) {
+        if ((g_headLookMode == 2 || g_headLookMode == 3) && g_in3DGameplayMode && userIndex == 0) {
+            int addX = (int)InterlockedCompareExchange(&g_headStickX, 0, 0);
+            int addY = (int)InterlockedCompareExchange(&g_headStickY, 0, 0);
+            if (addX != 0 || addY != 0) {
+                int newRX = (int)state->Gamepad.sThumbRX + addX;
+                int newRY = (int)state->Gamepad.sThumbRY + addY;
+                state->Gamepad.sThumbRX = (SHORT)std::max(-32767, std::min(32767, newRX));
+                state->Gamepad.sThumbRY = (SHORT)std::max(-32767, std::min(32767, newRY));
+            }
+        }
         return ERROR_SUCCESS;
     }
     return r;
@@ -1939,6 +2022,75 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const float aspect = g_scH ? (float)g_scW / (float)g_scH : (16.f / 9.f);
         const XrPosef head = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
 
+        // ---------------- Head-Look Camera Rotation (Turning Head Rotates In-Game Camera) ----------------
+        if (g_headLookMode > 0 && g_in3DGameplayMode) {
+            static float s_lastHeadYaw = 0.0f;
+            static float s_lastHeadPitch = 0.0f;
+            static DWORD s_lastHeadTime = 0;
+            DWORD nowMs = GetTickCount();
+
+            float curYaw = 0.0f, curPitch = 0.0f;
+            ComputeHeadEuler(head.orientation, &curYaw, &curPitch);
+
+            if (g_headLookReset) {
+                s_lastHeadYaw = curYaw;
+                s_lastHeadPitch = curPitch;
+                s_lastHeadTime = nowMs;
+                g_headLookReset = false;
+                InterlockedExchange(&g_headStickX, 0);
+                InterlockedExchange(&g_headStickY, 0);
+            } else {
+                float dYaw = curYaw - s_lastHeadYaw;
+                while (dYaw > 3.14159265f) dYaw -= 6.2831853f;
+                while (dYaw < -3.14159265f) dYaw += 6.2831853f;
+
+                float dPitch = curPitch - s_lastHeadPitch;
+                while (dPitch > 3.14159265f) dPitch -= 6.2831853f;
+                while (dPitch < -3.14159265f) dPitch += 6.2831853f;
+
+                s_lastHeadYaw = curYaw;
+                s_lastHeadPitch = curPitch;
+
+                float dt = (nowMs > s_lastHeadTime) ? (float)(nowMs - s_lastHeadTime) * 0.001f : 0.011f;
+                s_lastHeadTime = nowMs;
+                if (dt < 0.002f) dt = 0.002f;
+                if (dt > 0.100f) dt = 0.100f;
+
+                // Micro-deadzone to suppress sensor tracking noise jitter (~0.05 deg)
+                const float noiseFloor = 0.00087f;
+                if (std::abs(dYaw) < noiseFloor) dYaw = 0.0f;
+                if (std::abs(dPitch) < noiseFloor) dPitch = 0.0f;
+
+                // 1. Mouse Injection (1:1 smooth camera rotation)
+                if (g_headLookMode == 1 || g_headLookMode == 3) {
+                    int mouseDx = (int)(dYaw * g_headLookSensitivityYaw);
+                    int mouseDy = (int)(-dPitch * g_headLookSensitivityPitch);
+                    if (mouseDx != 0 || mouseDy != 0) {
+                        mouse_event(MOUSEEVENTF_MOVE, mouseDx, mouseDy, 0, 0);
+                    }
+                }
+
+                // 2. Gamepad Right Stick Injection
+                if (g_headLookMode == 2 || g_headLookMode == 3) {
+                    float yawRate = dYaw / dt;     // rad/sec
+                    float pitchRate = dPitch / dt; // rad/sec
+                    int stickX = (int)(yawRate * 10000.0f);
+                    int stickY = (int)(pitchRate * 10000.0f);
+                    stickX = std::max(-32000, std::min(32000, stickX));
+                    stickY = std::max(-32000, std::min(32000, stickY));
+                    InterlockedExchange(&g_headStickX, stickX);
+                    InterlockedExchange(&g_headStickY, stickY);
+                } else {
+                    InterlockedExchange(&g_headStickX, 0);
+                    InterlockedExchange(&g_headStickY, 0);
+                }
+            }
+        } else {
+            g_headLookReset = true;
+            InterlockedExchange(&g_headStickX, 0);
+            InterlockedExchange(&g_headStickY, 0);
+        }
+
         // Method 2 Stereo Projection is used whenever SubmitMode is 0 or 1.
         // Using the same frustum-aligned projection in both menus and gameplay prevents any jarring
         // transition flashes between Cinema Quad and Stereo Projection!
@@ -1997,7 +2149,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
                 // SubMode 1: Ultra-Wide 180° Panorama following head orientation directly
                 // SubMode 2: 3D Cinema Screen
                 XrPosef viewPose = head;
-                if (g_trackingSubMode == 0) {
+                if (g_trackingSubMode == 0 && g_headLookMode == 0) {
                     if (!g_vrWorldAnchorValid) {
                         g_vrWorldAnchor = head;
                         const float initYaw = ComputeHorizontalYaw(head.orientation);
