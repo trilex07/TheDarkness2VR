@@ -65,12 +65,14 @@ int g_enableVRGamepad = 1;
 int g_remapPhysical = 1;
 int g_forceWindowedReset = 0;
 
-// World anchor state for Cinema (SubmitMode 2)
+// World anchor state for Cinema & Immersive VR (SubmitMode 2 or World-Anchored VR)
 bool g_anchorValid = false;
 XrPosef g_anchorPose{};
 XrVector3f g_anchorHeadOrigin{};
 
-// 6DoF Reference Pose in OpenXR LOCAL space (recentered via F8 or L3+R3)
+// Immersive VR World Anchor in OpenXR LOCAL space (re-centered via F8 or L3+R3)
+bool g_vrWorldAnchorValid = false;
+XrPosef g_vrWorldAnchor{};
 bool g_vrRefValid = false;
 XrVector3f g_vrRefPos{ 0.f, 0.f, 0.f };
 float g_vrRefYaw = 0.f;
@@ -253,9 +255,10 @@ void LoadConfig() {
 
 void RequestRecenter(const char* source) {
     g_anchorValid = false;
+    g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     Beep(1000, 50);
-    Log(">>> [%s] VR 6DoF + Cinema World Anchor recenter requested <<<", source);
+    Log(">>> [%s] VR Recenter requested (World Anchor + 6DoF Reference) <<<", source);
 }
 
 void PollHotkeys() {
@@ -302,11 +305,12 @@ void PollHotkeys() {
     if ((GetAsyncKeyState(VK_F9) & 0x8000) && (now - s_lastF9 > 400)) {
         s_lastF9 = now;
         g_trackingSubMode = (g_trackingSubMode + 1) % 3;
+        g_vrWorldAnchorValid = false;
         Beep(700 + g_trackingSubMode * 200, 50);
         const char* names[] = {
-            "0 (Balanced 16:9 FOV + 6DoF Parallax)",
-            "1 (Wide Immersive FOV + 6DoF Parallax)",
-            "2 (Compact Comfort FOV + 3DoF)"
+            "0 (Immersive VR Dome - Obraz Dookoła 150° + Śledzenie Głowy w Pokoju)",
+            "1 (Ultra-Szeroka Panorama 180° - Pełne Otoczenie VR)",
+            "2 (Ekran Kinowy 3D - Framed 3D Cinema Screen)"
         };
         Log(">>> [HOTKEY F9] TrackingSubMode changed to: %s <<<", names[g_trackingSubMode]);
     }
@@ -842,7 +846,10 @@ static bool EnsureD11StereoPipeline() {
     // Method 2 Pixel Shader:
     // 1. Maps each eye's asymmetric OpenXR frustum (fovTan) through tangent space so straight-ahead (0,0)
     //    samples the exact center (0.5, 0.5) of the game frame in BOTH eyes (0.000 deg divergence).
-    // 2. Applies a calibrated horizontal stereo shift between Left Eye (-disp) and Right Eye (+disp)
+    // 2. In Mode 0 & 1: Immersive Wrap-Around VR ("Obraz Dookoła") with cylindrical/spherical curvature
+    //    surrounds the player's head without black cinema borders.
+    // 3. In Mode 2: Framed 3D Cinema Screen.
+    // 4. Applies calibrated horizontal stereo shift between Left Eye (-disp) and Right Eye (+disp)
     //    combining base stereo convergence + INTZ depth + comfort depth profile.
     const char* psSrc =
         "Texture2D colorTex : register(t0);\n"
@@ -853,7 +860,7 @@ static bool EnsureD11StereoPipeline() {
         "    float4 projParams;  // x=invTwoHalfTanX, y=invTwoHalfTanY, z=eyeSign (-1 left, +1 right), w=stereoStrength\n"
         "    float4 stereoCfg;   // x=baseShift, y=depthScale, z=maxDisp, w=hasRealDepth\n"
         "    float4 extraCfg;    // x=convDepth, y=kz, z=depthViz, w=posOffsetX\n"
-        "    float4 posCfg;      // x=posOffsetY, y=unused, z=unused, w=unused\n"
+        "    float4 posCfg;      // x=posOffsetY, y=viewMode (0=Immersive 150, 1=Ultra-Wide 180, 2=Cinema), z=unused, w=unused\n"
         "};\n"
         "struct PSIn {\n"
         "    float4 pos : SV_POSITION;\n"
@@ -863,10 +870,22 @@ static bool EnsureD11StereoPipeline() {
         "    float tx = lerp(fovTan.x, fovTan.y, i.uv.x);\n"
         "    float ty = lerp(fovTan.z, fovTan.w, i.uv.y);\n"
         "    float2 baseUV;\n"
-        "    baseUV.x = 0.5 + tx * projParams.x;\n"
-        "    baseUV.y = 0.5 - ty * projParams.y;\n"
-        "    if (baseUV.x < 0.0 || baseUV.x > 1.0 || baseUV.y < 0.0 || baseUV.y > 1.0) {\n"
-        "        return float4(0.0, 0.0, 0.0, 1.0);\n"
+        "    if (posCfg.y < 1.5) {\n"
+        "        // Immersive Wrap-Around VR (\"Obraz Dookoła\")\n"
+        "        // Cylindrical & spherical angular projection wraps the game seamlessly around the player\n"
+        "        float angX = atan(tx);\n"
+        "        float angY = atan2(ty, sqrt(1.0 + tx * tx));\n"
+        "        baseUV.x = 0.5 + angX * projParams.x;\n"
+        "        baseUV.y = 0.5 - angY * projParams.y;\n"
+        "        baseUV.x = clamp(baseUV.x, 0.001, 0.999);\n"
+        "        baseUV.y = clamp(baseUV.y, 0.001, 0.999);\n"
+        "    } else {\n"
+        "        // Framed 3D Cinema Screen\n"
+        "        baseUV.x = 0.5 + tx * projParams.x;\n"
+        "        baseUV.y = 0.5 - ty * projParams.y;\n"
+        "        if (baseUV.x < 0.0 || baseUV.x > 1.0 || baseUV.y < 0.0 || baseUV.y > 1.0) {\n"
+        "            return float4(0.0, 0.0, 0.0, 1.0);\n"
+        "        }\n"
         "    }\n"
         "    // Comfort depth profile (foreground lower/center hands & weapon vs mid/background)\n"
         "    float vProx = saturate((baseUV.y - 0.12) * 0.90);\n"
@@ -887,7 +906,7 @@ static bool EnsureD11StereoPipeline() {
         "    if (extraCfg.z > 0.5) {\n"
         "        return float4(prox, prox, prox, 1.0);\n"
         "    }\n"
-        "    float edgeFeather = smoothstep(0.0, 0.05, baseUV.x) * smoothstep(0.0, 0.05, 1.0 - baseUV.x);\n"
+        "    float edgeFeather = smoothstep(0.0, 0.04, baseUV.x) * smoothstep(0.0, 0.04, 1.0 - baseUV.x);\n"
         "    float rawDisp = (stereoCfg.x + stereoCfg.y * (prox - extraCfg.x)) * projParams.w * edgeFeather;\n"
         "    float disp = clamp(rawDisp, -stereoCfg.z, stereoCfg.z) * projParams.z;\n"
         "    float parallaxWeight = 0.35 + 0.65 * prox;\n"
@@ -973,7 +992,7 @@ static bool RenderStereoEyeD11(
     cb->extraCfg[3] = posOffsetX;
 
     cb->posCfg[0] = posOffsetY;
-    cb->posCfg[1] = 0.0f;
+    cb->posCfg[1] = (float)g_trackingSubMode;
     cb->posCfg[2] = 0.0f;
     cb->posCfg[3] = 0.0f;
     g_ctx11->Unmap(g_stereoCB11, 0);
@@ -1908,16 +1927,27 @@ void SubmitXR(IDirect3DDevice9* dev) {
         // transition flashes between Cinema Quad and Stereo Projection!
         if (g_submitMode == 0 || g_submitMode == 1) {
             const bool swapEyes = (g_submitMode == 1);
-            const float leftSign = swapEyes ? +1.0f : -1.0f;
-            const float rightSign = swapEyes ? -1.0f : +1.0f;
+            // Polarity confirmed working by user: left eye positive disparity, right eye negative disparity
+            const float leftSign = swapEyes ? -1.0f : +1.0f;
+            const float rightSign = swapEyes ? +1.0f : -1.0f;
 
-            // Choose horizontal half-tan FOV scale according to TrackingSubMode (F9)
-            float halfTanX = 0.88f; // SubMode 0: Balanced 16:9 FOV (~83 deg horizontal, full HUD comfortable)
-            if (g_trackingSubMode == 1) halfTanX = 1.04f;      // SubMode 1: Wide Immersive (~92 deg)
-            else if (g_trackingSubMode == 2) halfTanX = 0.76f; // SubMode 2: Compact Comfort (~75 deg)
-            const float halfTanY = halfTanX / aspect;
-            const float invTwoHalfTanX = 1.0f / (2.0f * halfTanX);
-            const float invTwoHalfTanY = 1.0f / (2.0f * halfTanY);
+            // Compute projection span parameters based on TrackingSubMode (F9)
+            // Mode 0: Immersive VR Dome 150° (Obraz Dookoła - room-anchored head tracking)
+            // Mode 1: Ultra-Szeroka Panorama 180° (Pełne Otoczenie VR)
+            // Mode 2: Ekran Kinowy 3D (Framed 3D Cinema Screen)
+            float invTwoHalfTanX = 0.5f / 1.309f;
+            float invTwoHalfTanY = invTwoHalfTanX * aspect;
+            if (g_trackingSubMode == 1) {
+                // 180° cylindrical panorama (halfAngleX = pi / 2 = 1.570796 rad)
+                invTwoHalfTanX = 0.5f / 1.5707963f;
+                invTwoHalfTanY = invTwoHalfTanX * aspect;
+            } else if (g_trackingSubMode == 2) {
+                // Framed cinema screen (planar tangent projection)
+                const float halfTanX = 0.88f;
+                const float halfTanY = halfTanX / aspect;
+                invTwoHalfTanX = 1.0f / (2.0f * halfTanX);
+                invTwoHalfTanY = 1.0f / (2.0f * halfTanY);
+            }
 
             // Compute subtle 6DoF positional head-lean parallax offset
             float posOffX = 0.0f, posOffY = 0.0f;
@@ -1944,13 +1974,54 @@ void SubmitXR(IDirect3DDevice9* dev) {
                 WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0]) &&
                 WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[1])) {
 
+                // Determine projection camera pose:
+                // SubMode 0: Immersive VR Dome anchored in room space with comfort yaw deadzone follow (+-28 deg)
+                // SubMode 1: Ultra-Wide 180° Panorama following head orientation directly
+                // SubMode 2: 3D Cinema Screen
+                XrPosef viewPose = head;
+                if (g_trackingSubMode == 0) {
+                    if (!g_vrWorldAnchorValid) {
+                        g_vrWorldAnchor = head;
+                        const float initYaw = ComputeHorizontalYaw(head.orientation);
+                        g_vrWorldAnchor.orientation.x = 0.0f;
+                        g_vrWorldAnchor.orientation.y = std::sin(initYaw * 0.5f);
+                        g_vrWorldAnchor.orientation.z = 0.0f;
+                        g_vrWorldAnchor.orientation.w = std::cos(initYaw * 0.5f);
+                        g_vrWorldAnchorValid = true;
+                        Log("VR World Anchor latched at yaw=%.1f deg (frame=%d)", initYaw * 57.29578f, g_frames);
+                    }
+
+                    // Always anchor position to current head position for natural 6DoF parallax
+                    g_vrWorldAnchor.position = head.position;
+
+                    // Comfort yaw deadzone follow (+- 28 degrees)
+                    const float currentYaw = ComputeHorizontalYaw(head.orientation);
+                    float anchorYaw = ComputeHorizontalYaw(g_vrWorldAnchor.orientation);
+                    float deltaYaw = currentYaw - anchorYaw;
+                    while (deltaYaw > 3.14159265f) deltaYaw -= 6.2831853f;
+                    while (deltaYaw < -3.14159265f) deltaYaw += 6.2831853f;
+
+                    const float deadzone = 0.49f; // ~28 degrees
+                    if (deltaYaw > deadzone) {
+                        anchorYaw += (deltaYaw - deadzone) * 0.12f;
+                    } else if (deltaYaw < -deadzone) {
+                        anchorYaw += (deltaYaw + deadzone) * 0.12f;
+                    }
+                    g_vrWorldAnchor.orientation.x = 0.0f;
+                    g_vrWorldAnchor.orientation.y = std::sin(anchorYaw * 0.5f);
+                    g_vrWorldAnchor.orientation.z = 0.0f;
+                    g_vrWorldAnchor.orientation.w = std::cos(anchorYaw * 0.5f);
+
+                    viewPose = g_vrWorldAnchor;
+                }
+
                 // CRITICAL FOR EYE FUSION:
-                // Both views share the exact same centerPose while using their respective g_eyeFov[e].
+                // Both views share the exact same viewPose while using their respective g_eyeFov[e].
                 // Because RenderStereoEyeD11 mapped g_eyeFov[e]'s tangent space so (tx=0, ty=0) -> UV (0.5, 0.5),
                 // the optical axes of Left Eye and Right Eye are 100% parallel at infinity with 0.000 deg divergence!
                 for (int e = 0; e < 2; ++e) {
                     projViews[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-                    projViews[e].pose = head;
+                    projViews[e].pose = viewPose;
                     projViews[e].fov = g_eyeFov[e];
                     projViews[e].subImage.swapchain = g_swapchain[e];
                     projViews[e].subImage.imageRect.offset = { 0, 0 };
@@ -2083,6 +2154,9 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         g_sysmem = nullptr;
     }
     ReleaseDepthResources9();
+    g_anchorValid = false;
+    g_vrWorldAnchorValid = false;
+    g_vrRefValid = false;
     HRESULT hr = g_origReset(dev, pp);
     Log("Device Reset (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
@@ -2101,6 +2175,9 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
         g_sysmem = nullptr;
     }
     ReleaseDepthResources9();
+    g_anchorValid = false;
+    g_vrWorldAnchorValid = false;
+    g_vrRefValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
     Log("Device ResetEx (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
