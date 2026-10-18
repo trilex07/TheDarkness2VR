@@ -2450,45 +2450,48 @@ static void SampleSurfaceStats(const D3DLOCKED_RECT& lr, UINT w, UINT h,
 }
 
 bool CopyFrame(IDirect3DDevice9* dev) {
-    IDirect3DSurface9* back = nullptr;
-    if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &back)) || !back) return false;
+    // RenderTarget0 is the surface the frame replay re-renders per eye - it MUST be the
+    // capture source (the backbuffer keeps the live-pass composite = identical eyes).
+    // Its size can differ from the backbuffer (the engine picks its own G-buffer size),
+    // so the sysmem surface follows RT0 and the D3D11 blit handles the scaling.
+    IDirect3DSurface9* rt0 = nullptr;
     D3DSURFACE_DESC sd{};
-    back->GetDesc(&sd);
-    if (!EnsureCopy(dev, sd.Width, sd.Height, sd.Format)) {
-        back->Release();
-        return false;
-    }
-
     const char* srcMethod = "RenderTarget0:GetRenderTargetData";
     HRESULT hr = E_FAIL;
-    // RenderTarget0 FIRST: the frame replay re-renders it per eye, while the backbuffer keeps
-    // the live-pass composite (capturing it for both eyes would give identical pixels = no stereo).
-    IDirect3DSurface9* rt0 = nullptr;
     if (SUCCEEDED(dev->GetRenderTarget(0, &rt0)) && rt0) {
-        D3DSURFACE_DESC rtd{};
-        rt0->GetDesc(&rtd);
-        if (rtd.Width == sd.Width && rtd.Height == sd.Height && rtd.Format == sd.Format &&
-            rtd.MultiSampleType == D3DMULTISAMPLE_NONE) {
+        rt0->GetDesc(&sd);
+        if (sd.MultiSampleType != D3DMULTISAMPLE_NONE || !EnsureCopy(dev, sd.Width, sd.Height, sd.Format)) {
+            rt0->Release();
+            rt0 = nullptr;
+        } else {
             hr = dev->GetRenderTargetData(rt0, g_sysmem);
+            if (FAILED(hr)) {
+                static int rtFail = 0;
+                if (rtFail++ < 5) Log("RT0 capture failed hr=0x%08lX (%ux%u fmt=%d)", hr, sd.Width, sd.Height, (int)sd.Format);
+                rt0->Release();
+                rt0 = nullptr;
+            }
         }
-        rt0->Release();
     }
-    if (FAILED(hr)) {
+
+    if (!rt0) {
+        // fallback: the backbuffer (may be black during gameplay - only a safety net)
+        IDirect3DSurface9* back = nullptr;
+        if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &back)) || !back) return false;
+        back->GetDesc(&sd);
+        if (!EnsureCopy(dev, sd.Width, sd.Height, sd.Format)) {
+            back->Release();
+            return false;
+        }
         srcMethod = "BackBuffer0:GetRenderTargetData";
         hr = dev->GetRenderTargetData(back, g_sysmem);
-        if (FAILED(hr)) {
-            srcMethod = "BackBuffer0:GetFrontBufferData";
-            hr = dev->GetFrontBufferData(0, g_sysmem);
-        }
+        back->Release();
+        if (FAILED(hr)) return false;
     }
-    back->Release();
-    if (FAILED(hr)) {
-        static int failLog = 0;
-        if (failLog++ < 5) {
-            Log("capture failed hr=0x%08lX (%ux%u fmt=%d)", hr, sd.Width, sd.Height, (int)sd.Format);
-        }
-        return false;
-    }
+
+    // remember the captured size for the D3D11 upload
+    g_srcW = sd.Width;
+    g_srcH = sd.Height;
 
     D3DLOCKED_RECT lr{};
     if (FAILED(g_sysmem->LockRect(&lr, nullptr, D3DLOCK_READONLY))) return false;
@@ -2504,6 +2507,10 @@ have_locked_rect:
             avgR, avgG, avgB, maxR, maxG, maxB, g_3dCamCallsThisFrame, (int)g_in3DGameplayMode, (int)g_depthHasVariance);
     }
 
+    if (!EnsureUploadTexture(sd.Width, sd.Height)) {
+        g_sysmem->UnlockRect();
+        return false;
+    }
     D3D11_MAPPED_SUBRESOURCE ms{};
     if (FAILED(g_ctx11->Map(g_upload, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) {
         g_sysmem->UnlockRect();
