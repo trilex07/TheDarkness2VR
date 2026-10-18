@@ -81,6 +81,26 @@ int g_dumpDelay = 300;             // wait this many frames before dumping (skip
 int g_zeroCopyEnabled = 0;         // Config: Render.ZeroCopy (0 = CPU CopyFrame, 1 = D3D9Ex shared texture)
 int g_renderW = 2560;              // Config: Render.RenderWidth (VR backbuffer forced size)
 int g_renderH = 1440;              // Config: Render.RenderHeight
+int g_fakeClientRect = 1;          // report the VR size to the engine via GetClientRect (RE_FINDINGS)
+typedef BOOL(WINAPI* PFN_GetClientRect)(HWND, LPRECT);
+static PFN_GetClientRect g_origGetClientRect = nullptr;
+
+// RE (RE_FINDINGS.md): the engine sizes ALL its render targets from the window client rect -
+// Manager::SetHwnd (0x00C96440) calls GetClientRect and stores the size at +0x18C/+0x190,
+// which feeds FullScreenSizeX/Y (0x010E318C/0x010E31B8) and the RT creation. Forcing only the
+// D3D9 backbuffer changed nothing (RT0 stayed 1920x1071). Lying about the client size makes
+// the whole engine render at the VR resolution.
+static BOOL WINAPI Hook_GetClientRect(HWND hwnd, LPRECT rc) {
+    BOOL ok = g_origGetClientRect ? g_origGetClientRect(hwnd, rc) : FALSE;
+    if (ok && rc && g_fakeClientRect && g_renderW >= 1280) {
+        rc->left = 0;
+        rc->top = 0;
+        rc->right = g_renderW;
+        rc->bottom = g_renderH;
+    }
+    return ok;
+}
+bool g_getClientRectHooked = false;
 bool g_stateBlockHookEnabled = false; // Config: Render.StateBlockHook (OFF: runtime vtable layout
                                       // of IDirect3DStateBlock9 differs from the SDK header)
 bool g_replayTestClear = false;    // Config: Render.ReplayTestClear (diagnostic: flood RT before replay)
@@ -285,8 +305,8 @@ void LoadConfig() {
     g_renderW = GetPrivateProfileIntA("Render", "RenderWidth", 2560, chosenIni);
     g_renderH = GetPrivateProfileIntA("Render", "RenderHeight", 1440, chosenIni);
     g_stateBlockHookEnabled = GetPrivateProfileIntA("Render", "StateBlockHook", 0, chosenIni) != 0;
-    if (g_renderW < 1280 || g_renderW > 4096) g_renderW = 2560;
-    if (g_renderH < 720 || g_renderH > 2160) g_renderH = 1440;
+    if (g_renderW < 1280 || g_renderW > 7680) g_renderW = 2560;
+    if (g_renderH < 720 || g_renderH > 4320) g_renderH = 1440;
 
     char buf[64]{};
     if (GetPrivateProfileStringA("Render", "ViewOffsetX", "0.0", buf, sizeof(buf), chosenIni)) {
@@ -758,6 +778,12 @@ static d2vr_replay::StereoParams MakeEyeParams(int eye) {
     sp.transY = 0.0f;
     sp.fovScaleX = (g_fovWidenX > 1.0f) ? (1.0f / g_fovWidenX) : 1.0f;
     sp.fovScaleY = (g_fovWidenY > 1.0f) ? (1.0f / g_fovWidenY) : 1.0f;
+    // Validation must use the same unshifted camera for BOTH live and replay.
+    // Previously live retained transX while only replay cleared it.
+    if (g_stereoMode == 2) {
+        sp.separation = sp.transX = sp.transY = 0.0f;
+        sp.fovScaleX = sp.fovScaleY = 1.0f;
+    }
     return sp;
 }
 
@@ -767,6 +793,11 @@ static d2vr_replay::StereoParams MakeEyeParams(int eye) {
 // rendered image matches the declared per-eye FOV 1:1 (no zoom/offset mismatch).
 static void UpdateSubmissionFovFromMatrices() {
     if (InterlockedCompareExchange(&g_estValid, 0, 0) == 0) return;
+    if (g_stereoMode == 2) {
+        g_gameHalfFovX = std::atan(1.0f / g_estPx);
+        g_gameHalfFovY = std::atan(1.0f / g_estPy);
+        return;
+    }
     if (g_autoFovWiden && g_haveViews) {
         // widen the render to cover the HMD's widest half-angles (auto coverage)
         const float hx = std::max(std::fabs(g_eyeFov[0].angleLeft), std::fabs(g_eyeFov[0].angleRight));
@@ -1366,7 +1397,9 @@ static bool RenderStereoEyeD11(
 
 // ---------------------------------------------------------------- Native engine FOV override
 // RE results (thunk disassembly, thunk_disasm.txt):
-//   The documented "method addresses" are LUA THUNKS (thiscall: ECX=obj, arg=lua_State*).
+//   Lua thunks are cdecl lua_CFunction(lua_State*), NOT avatar thiscall methods.
+//   SetView 0x00DC4354 loads L from [esp+0x10] after sub esp,8 / push esi;
+//   0x00DC4421 returns with C3. ECX is not an avatar argument.
 //   The real engine methods are VIRTUAL and were located inside the thunks:
 //     BaseAvatar::GetFOV()              -> vtable + 0x270  (float __thiscall(void*))
 //     BaseAvatar::SetBaseFovOverride(f) -> vtable + 0xE4   (void  __thiscall(void*, float))
@@ -1377,7 +1410,7 @@ static bool RenderStereoEyeD11(
 // the hooked thunk (a genuine BaseAvatar vtable). Memory scanning for candidates is NOT safe:
 // a wrong class means a different `ret N` convention and stack corruption (we learned it the
 // hard way).
-typedef int(__thiscall* PFN_LuaMethod)(void* obj, void* luaState);
+typedef int(__cdecl* PFN_LuaMethod)(void* luaState);
 typedef float(__thiscall* PFN_VirtGetFov)(void* self);
 typedef void(__thiscall* PFN_VirtSetBaseFov)(void* self, float fov);
 
@@ -1408,22 +1441,13 @@ static void* VTableFn(void* obj, size_t byteOffset) {
     return fn;
 }
 
-static int __fastcall Hook_LuaSetView(void* obj, void* /*edx*/, void* luaState) {
-    if (obj && !g_playerAvatar) {
-        // validate: a real engine object (vtable in the game image)
-        uintptr_t vt = 0;
-        __try { vt = *(uintptr_t*)obj; } __except (1) { vt = 0; }
-        if (IsExeData((void*)vt)) {
-            for (auto& e : g_avatarSeen) {
-                if (e.ptr == obj) { ++e.count; break; }
-                if (!e.ptr) { e.ptr = obj; e.count = 1; break; }
-            }
-        }
-    }
-    if (g_origLuaSetView) {
-        return ((PFN_LuaMethod)g_origLuaSetView)(obj, luaState);
-    }
-    return 0;
+static int __cdecl Hook_LuaSetView(void* luaState) {
+    // Observing a script call does not identify the player. The thunk extracts
+    // its avatar userdata internally; ECX at entry is unspecified.
+    static LONG calls = 0;
+    if (InterlockedIncrement(&calls) <= 3)
+        Log("[FovRE] Lua SetView called; native avatar discovery still unresolved");
+    return g_origLuaSetView ? ((PFN_LuaMethod)g_origLuaSetView)(luaState) : 0;
 }
 
 static float ProbeAvatarFov(void* cand) {
@@ -1651,6 +1675,56 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev) {
 bool CopyFrame(IDirect3DDevice9* dev);
 bool EnsureSwapchains(UINT w, UINT h);
 
+// Keep the right output across scene segments. Restoring the live (left)
+// pixels alone makes a later UI-only replay inherit the wrong eye's world.
+struct EyeColorHistory {
+    IDirect3DSurface9* target = nullptr;
+    IDirect3DSurface9* pixels = nullptr;
+    void Release() {
+        if (pixels) pixels->Release();
+        if (target) target->Release();
+        pixels = nullptr; target = nullptr;
+    }
+    bool Restore(IDirect3DDevice9* dev, IDirect3DSurface9* output) {
+        if (target != output) { Release(); return true; }
+        return !pixels || SUCCEEDED(dev->StretchRect(pixels, nullptr, output, nullptr, D3DTEXF_NONE));
+    }
+    bool Save(IDirect3DDevice9* dev, IDirect3DSurface9* output) {
+        if (!output) { Release(); return false; }
+        if (target != output) Release();
+        if (!pixels) {
+            D3DSURFACE_DESC d{};
+            if (FAILED(output->GetDesc(&d)) || FAILED(dev->CreateRenderTarget(
+                d.Width, d.Height, d.Format, d.MultiSampleType, d.MultiSampleQuality,
+                FALSE, &pixels, nullptr))) return false;
+            target = output; target->AddRef();
+        }
+        if (FAILED(dev->StretchRect(output, nullptr, pixels, nullptr, D3DTEXF_NONE))) {
+            Release(); return false;
+        }
+        return true;
+    }
+};
+static EyeColorHistory g_rightColorHistory;
+static IDirect3DSurface9* g_liveColorBackup = nullptr;
+static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
+    if (!source) return false;
+    D3DSURFACE_DESC wanted{}, current{};
+    if (FAILED(source->GetDesc(&wanted))) return false;
+    if (g_liveColorBackup) {
+        g_liveColorBackup->GetDesc(&current);
+        if (current.Width != wanted.Width || current.Height != wanted.Height ||
+            current.Format != wanted.Format || current.MultiSampleType != wanted.MultiSampleType ||
+            current.MultiSampleQuality != wanted.MultiSampleQuality) {
+            g_liveColorBackup->Release(); g_liveColorBackup = nullptr;
+        }
+    }
+    if (!g_liveColorBackup && FAILED(dev->CreateRenderTarget(wanted.Width, wanted.Height,
+            wanted.Format, wanted.MultiSampleType, wanted.MultiSampleQuality,
+            FALSE, &g_liveColorBackup, nullptr))) return false;
+    return SUCCEEDED(dev->StretchRect(source, nullptr, g_liveColorBackup, nullptr, D3DTEXF_NONE));
+}
+
 static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     static int s_logged = 0;
     const size_t recCount = d2vr_replay::g_rec.size();
@@ -1679,9 +1753,20 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         sp1.transX = 0.0f;
         sp1.transY = 0.0f;
     }
+    d2vr_replay::g_recActive = false;
+    d2vr_replay::DeviceSnapshot liveEnd;
+    if (!liveEnd.Capture(dev)) { g_blitPass = 0; g_eyePairReady = false; return; }
+    // Replay overwrites the live output. Preserve it for later UI/scene segments
+    // that reuse the existing color image without redrawing world geometry.
+    if (!BackupLiveColor(dev, liveEnd.targets[0])) {
+        liveEnd.Release(); g_blitPass = 0; g_eyePairReady = false; return;
+    }
+    const bool historyOk = g_rightColorHistory.Restore(dev, liveEnd.targets[0]);
+    d2vr_replay::g_frameStart.Apply(dev);
     d2vr_replay::ReplayStream(dev, 1, sp1);
 
-    bool eye1Ok = zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev);
+    bool eye1Ok = historyOk && g_rightColorHistory.Save(dev, liveEnd.targets[0]);
+    if (eye1Ok) eye1Ok = zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev);
     {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
         if (zeroCopy) g_uploadSRV = g_sharedSRV11;
@@ -1689,6 +1774,10 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         g_uploadSRV = saved;
     }
     g_blitPass = 0;
+    if (FAILED(dev->StretchRect(g_liveColorBackup, nullptr, liveEnd.targets[0], nullptr, D3DTEXF_NONE)))
+        eye1Ok = false;
+    liveEnd.Apply(dev);
+    liveEnd.Release();
 
     DumpEyeFramesIfRequested();
 
@@ -2398,8 +2487,14 @@ bool EnsureUploadTexture(UINT w, UINT h) {
 }
 
 bool EnsureCopy(IDirect3DDevice9* dev, UINT w, UINT h, D3DFORMAT fmt) {
+    // Upload dimensions are updated by EnsureUploadTexture; they cannot describe
+    // the independently allocated D3D9 readback surface after a resize.
     if (!EnsureUploadTexture(w, h)) return false;
-    if (g_sysmem && w == g_srcW && h == g_srcH && fmt == g_srcFmt) return true;
+    if (g_sysmem) {
+        D3DSURFACE_DESC current{};
+        if (SUCCEEDED(g_sysmem->GetDesc(&current)) && current.Width == w &&
+            current.Height == h && current.Format == fmt) return true;
+    }
     if (g_sysmem) {
         g_sysmem->Release();
         g_sysmem = nullptr;
@@ -2409,6 +2504,7 @@ bool EnsureCopy(IDirect3DDevice9* dev, UINT w, UINT h, D3DFORMAT fmt) {
         return false;
     }
     g_srcFmt = fmt;
+    Log("[Capture] readback surface created %ux%u fmt=%d", w, h, (int)fmt);
     return true;
 }
 
@@ -2489,7 +2585,11 @@ bool CopyFrame(IDirect3DDevice9* dev) {
         }
     }
 
-    if (!rt0) {
+    // GetRenderTarget owns a reference even when readback succeeds.
+    const bool capturedRt0 = rt0 != nullptr;
+    if (rt0) { rt0->Release(); rt0 = nullptr; }
+
+    if (!capturedRt0) {
         // fallback: the backbuffer (may be black during gameplay - only a safety net)
         IDirect3DSurface9* back = nullptr;
         if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &back)) || !back) return false;
@@ -2514,7 +2614,6 @@ bool CopyFrame(IDirect3DDevice9* dev) {
     uint8_t avgR = 0, avgG = 0, avgB = 0, maxR = 0, maxG = 0, maxB = 0;
     SampleSurfaceStats(lr, sd.Width, sd.Height, &avgR, &avgG, &avgB, &maxR, &maxG, &maxB);
 
-have_locked_rect:
     static int s_statCounter = 0;
     if (++s_statCounter % 120 == 0) {
         Log("capture stats [frame %d]: %ux%u (via %s) mean RGB=(%u,%u,%u) max RGB=(%u,%u,%u) 3dCams=%d 3dMode=%d depthVar=%d",
@@ -2977,6 +3076,9 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         g_sysmem->Release();
         g_sysmem = nullptr;
     }
+    d2vr_replay::ReleaseRecording();
+    g_rightColorHistory.Release();
+    if (g_liveColorBackup) { g_liveColorBackup->Release(); g_liveColorBackup = nullptr; }
     ReleaseDepthResources9();
     g_anchorValid = false;
     g_vrWorldAnchorValid = false;
@@ -3004,6 +3106,9 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
         g_sysmem->Release();
         g_sysmem = nullptr;
     }
+    d2vr_replay::ReleaseRecording();
+    g_rightColorHistory.Release();
+    if (g_liveColorBackup) { g_liveColorBackup->Release(); g_liveColorBackup = nullptr; }
     ReleaseDepthResources9();
     g_anchorValid = false;
     g_vrWorldAnchorValid = false;
@@ -3041,13 +3146,6 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
     if (g_submitMode == 4 && g_stereoMode >= 1 && d2vr_replay::g_recActive) {
         RenderEyePairFromReplay(dev);
     }
-    if (g_submitMode == 4 && g_stereoMode >= 1) {
-        d2vr_replay::RecBeginFrame();   // open the recording window for the next frame
-    } else if (d2vr_replay::g_recActive) {
-        d2vr_replay::g_recActive = false;
-        d2vr_replay::g_rec.clear();
-        d2vr_replay::g_recData.clear();
-    }
 
     // Native engine FOV override: the avatar only exists once a level is loaded - retry.
     {
@@ -3057,6 +3155,14 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
         }
     }
     SubmitXR(dev);
+    if (g_submitMode == 4 && g_stereoMode >= 1) {
+        d2vr_replay::RecBeginFrame(dev);   // open the recording window for the next frame
+    } else if (d2vr_replay::g_recActive) {
+        d2vr_replay::g_recActive = false;
+        d2vr_replay::g_rec.clear();
+        d2vr_replay::g_recData.clear();
+    }
+
 }
 
 HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
@@ -3151,12 +3257,8 @@ void HookDevice(IDirect3DDevice9* dev) {
     d2vr_replay::g_orig.SetVertexShaderConstantF = g_origSetVertexShaderConstantF;
     d2vr_replay::InstallReplayHooks(dev);
 
-    // NOTE: the game presents through IDirect3DSwapChain9, but the runtime swapchain
-    // vtable layout does not match the SDK header (hooking slot 3 corrupts the game's
-    // present result). Frame capture is driven from EndScene (VrFrame) instead.
-    if ((g_hookMask & 2) == 0) {
-        // swapchain hook disabled by default
-    }
+    // Swapchain boundary experiment failed in-game (black output); retain EndScene
+    // until the engine's final composition/presentation path is mapped.
 
     Log("Method 2 Hooks active on device %p: Present@17, Reset@16, SetDSS@39, BeginScene@41, EndScene@42, SetTex@65, SetVSConstF@94, PresentEx@121, ResetEx@132",
         dev);
@@ -3168,6 +3270,31 @@ void HookDevice(IDirect3DDevice9* dev) {
             (void*)devGlobal, dev, (devGlobal == (uintptr_t)dev) ? "MATCH" : "mismatch");
     } __except (1) {
         Log("[FovRE] engine device global not readable");
+    }
+
+    // RE: render-target sizing follows the window client rect - patch the game's IAT for
+    // GetClientRect (fixed slot, no ASLR) so the engine renders at the VR resolution.
+    if (!g_getClientRectHooked && g_fakeClientRect) {
+        __try {
+            void** slot = (void**)0x00EEB478;
+            void* cur = *slot;
+            // sanity: the IAT slot must hold a system-DLL function
+            if (cur && (uintptr_t)cur > 0x70000000) {
+                g_origGetClientRect = reinterpret_cast<PFN_GetClientRect>(cur);
+                DWORD old = 0;
+                if (VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) {
+                    *slot = reinterpret_cast<void*>(&Hook_GetClientRect);
+                    VirtualProtect(slot, sizeof(void*), old, &old);
+                    g_getClientRectHooked = true;
+                    Log("[VrRes] GetClientRect IAT@0x00EEB478 hooked (orig=%p) -> engine renders %dx%d",
+                        cur, g_renderW, g_renderH);
+                }
+            } else {
+                Log("[VrRes] IAT slot 0x00EEB478 does not look like GetClientRect (%p) - skipped", cur);
+            }
+        } __except (1) {
+            Log("[VrRes] GetClientRect IAT hook failed");
+        }
     }
 }
 

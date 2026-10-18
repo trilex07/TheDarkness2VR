@@ -80,7 +80,7 @@ static uint32_t HashBytes(const void* p, size_t n) {
 static void AnalyzeVsTokenStreamInner(const DWORD* fn, VsInfo& out) {
     if (!fn) return;
     // count tokens
-    size_t nwords = 0;
+    size_t nwords = 1; // token zero is the shader version, not an instruction
     while (nwords < 8192) {
         uint32_t tok = fn[nwords];
         if ((tok & 0xFFFF) == SI_END) { nwords++; break; }
@@ -206,13 +206,21 @@ static void AnalyzeVsTokenStream(const DWORD* fn, VsInfo& out) {
 }
 
 static size_t SafeShaderTokenCount(const DWORD* fn) {
-    size_t n = 0;
+    size_t n = 1;
     __try {
-        while (n < 4096 && ((fn[n] & 0xFFFF) != 0xFFFF)) n += 1 + ((fn[n] >> 24) & 0xF);
+        if (!fn || (fn[0] >> 16) != 0xFFFE || ((fn[0] >> 8) & 0xFF) < 2) return 0;
+        while (n < 8192) {
+            const DWORD token = fn[n];
+            if ((token & 0xFFFF) == SI_END) return n;
+            const size_t length = (token & 0xFFFF) == SI_COMMENT
+                ? ((token >> 16) & 0x7FFF) : ((token >> 24) & 0xF);
+            if (length >= 8192 - n) return 0;
+            n += 1 + length;
+        }
     } __except (1) {
         return 0;
     }
-    return n;
+    return 0;
 }
 
 // ------------------------------------------------------------- stereo constant injection
@@ -288,9 +296,8 @@ struct Rec {
     uint32_t a[6];
 };
 
-// State blocks: the engine binds shaders/state via IDirect3DStateBlock9::Apply (that is why
-// SetVertexShader never hits our device hook - histogram VS=0). Without recording them the
-// replay executes draws with stale state -> jumping grey triangles. Apply is replayed as-is.
+// State blocks can bind multiple states at once. A zero VS histogram was also
+// caused by Hook_SetVertexShader failing to emit its record, not proof of their use.
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SBApply)(IDirect3DStateBlock9*);
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SBCapture)(IDirect3DStateBlock9*);
 static PFN_SBApply g_origSBApply = nullptr;
@@ -314,10 +321,51 @@ struct RecLockGuard {
     ~RecLockGuard() { InterlockedExchange(&g_recLock, 0); }
 };
 
-static void RecBeginFrame() {
-    RecLockGuard lock;
+// D3D state blocks exclude render targets and depth surfaces. Keep those explicitly.
+struct DeviceSnapshot {
+    IDirect3DStateBlock9* state = nullptr;
+    IDirect3DSurface9* targets[4] = {};
+    IDirect3DSurface9* depth = nullptr;
+    DWORD targetCount = 0;
+    ~DeviceSnapshot() { Release(); }
+    void Release() {
+        if (state) { state->Release(); state = nullptr; }
+        for (auto& t : targets) if (t) { t->Release(); t = nullptr; }
+        if (depth) { depth->Release(); depth = nullptr; }
+    }
+    bool Capture(IDirect3DDevice9* dev) {
+        Release();
+        D3DCAPS9 caps{};
+        if (FAILED(dev->GetDeviceCaps(&caps))) return false;
+        targetCount = std::min<DWORD>(4, caps.NumSimultaneousRTs);
+        if (FAILED(dev->CreateStateBlock(D3DSBT_ALL, &state))) return false;
+        for (DWORD i = 0; i < targetCount; ++i) dev->GetRenderTarget(i, &targets[i]);
+        dev->GetDepthStencilSurface(&depth);
+        return targets[0] != nullptr;
+    }
+    void Apply(IDirect3DDevice9* dev) {
+        if (!state) return;
+        for (DWORD i = 0; i < targetCount; ++i) dev->SetRenderTarget(i, targets[i]);
+        dev->SetDepthStencilSurface(depth);
+        // Apply state AFTER RTs because SetRenderTarget resets the viewport.
+        if (g_origSBApply) g_origSBApply(state); else state->Apply();
+    }
+};
+static DeviceSnapshot g_frameStart;
+static std::vector<IUnknown*> g_recordRefs;
+static void ReleaseRecording() {
+    g_recActive = false;
     g_rec.clear();
     g_recData.clear();
+    for (auto* ref : g_recordRefs) ref->Release();
+    g_recordRefs.clear();
+    g_frameStart.Release();
+}
+
+static void RecBeginFrame(IDirect3DDevice9* dev) {
+    RecLockGuard lock;
+    ReleaseRecording();
+    if (!g_frameStart.Capture(dev)) return;
     if (g_rec.capacity() < 200000) g_rec.reserve(200000);
     if (g_recData.capacity() < (4u << 20)) g_recData.reserve(4u << 20);
     g_recOverflow = false;
@@ -379,6 +427,28 @@ static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 
     Rec r;
     r.op = op; r.n = n;
     r.a[0] = a0; r.a[1] = a1; r.a[2] = a2; r.a[3] = a3; r.a[4] = a4; r.a[5] = a5;
+    // Keep COM objects alive until replay finishes. This preserves object lifetime,
+    // not the contents of dynamic buffers overwritten later in the same frame.
+    int pointerArg = -1;
+    switch (op) {
+    case OP_SetRenderTarget: case OP_SetTexture: case OP_SetStreamSource:
+        pointerArg = 1; break;
+    case OP_SetDepthStencilSurface: case OP_SetVertexDeclaration:
+    case OP_SetVertexShader: case OP_SetIndices: case OP_SetPixelShader:
+    case OP_ColorFill: case OP_ApplyStateBlock:
+        pointerArg = 0; break;
+    default: break;
+    }
+    if (pointerArg >= 0 && r.a[pointerArg]) {
+        auto* ref = reinterpret_cast<IUnknown*>((uintptr_t)r.a[pointerArg]);
+        ref->AddRef(); g_recordRefs.push_back(ref);
+    }
+    if (op == OP_StretchRect) {
+        for (int i = 0; i < 2; ++i) if (r.a[i]) {
+            auto* ref = reinterpret_cast<IUnknown*>((uintptr_t)r.a[i]);
+            ref->AddRef(); g_recordRefs.push_back(ref);
+        }
+    }
     g_rec.push_back(r);
     if (op < 40) g_recCounts[op]++;
 }
@@ -483,6 +553,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDirect3DVertexShader9* sh) {
+    if (g_recActive) RecEmit(OP_SetVertexShader, 0, (uint32_t)(uintptr_t)sh);
     if (sh) {
         RecLockGuard lock;
         auto it = g_vsInfo.find(sh);
@@ -866,10 +937,10 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_SetVSConstI:
-            g_orig.SetVertexShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[2]), r.a[1]);
+            g_orig.SetVertexShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[4]), r.a[1]);
             break;
         case OP_SetVSConstB:
-            g_orig.SetVertexShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[2]), r.a[1]);
+            g_orig.SetVertexShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[4]), r.a[1]);
             break;
         case OP_SetStreamSource:
             g_orig.SetStreamSource(dev, r.a[0], (IDirect3DVertexBuffer9*)(uintptr_t)r.a[1], r.a[2], r.a[3]);
@@ -884,13 +955,13 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             g_orig.SetPixelShader(dev, (IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
             break;
         case OP_SetPSConstF:
-            g_orig.SetPixelShaderConstantF(dev, r.a[0], (const float*)(dataBase + r.a[2]), r.a[1]);
+            g_orig.SetPixelShaderConstantF(dev, r.a[0], (const float*)(dataBase + r.a[4]), r.a[1]);
             break;
         case OP_SetPSConstI:
-            g_orig.SetPixelShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[2]), r.a[1]);
+            g_orig.SetPixelShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[4]), r.a[1]);
             break;
         case OP_SetPSConstB:
-            g_orig.SetPixelShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[2]), r.a[1]);
+            g_orig.SetPixelShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[4]), r.a[1]);
             break;
         case OP_StretchRect:
             g_orig.StretchRect(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0],
