@@ -54,13 +54,20 @@ int g_submitMode = 0;
 //             2 = validation replay with zero shift (image must match live pass)
 int g_stereoMode = 1;
 int g_hookMask = 15;               // bit0=record hooks, bit1=swapchain hook, bit2=vs analysis, bit3=constF extras
-float g_stereoSep = 0.020f;      // shear coefficient per eye (screen-space)
-float g_stereoConv = 2.0f;       // convergence distance in clip-w (world) units
+float g_stereoSep = 0.020f;      // shear coefficient per eye (screen-space) - shift mode 1
+float g_stereoConv = 2.0f;       // convergence distance in clip-w (world) units - shift mode 1
+int g_stereoShiftMode = 0;       // 0 = translation (VR-correct), 1 = shear (HelixMod)
+float g_stereoIPD = 0.065f;      // full interpupillary distance in world units - shift mode 0
+float g_fovWiden = 2.5f;         // rendered FOV multiplier on tan(FOV/2)
 int g_stereoPolarity = 0;        // 0 = left eye +shift, 1 = swapped
 // Game camera frustum (radians, half-angles) used for OpenXR per-view fov.
 // Measured from engine ViewProj matrices: Px=1.347 Py=2.414 (16:9, FOV slider mid).
 float g_gameHalfFovX = 0.637f;
 float g_gameHalfFovY = 0.393f;
+// Projection measured from WVP matrix uploads: Px=len(col0)/len(w-col)=1/tan(halfFovX)
+float g_estPx = 1.347f;
+float g_estPy = 2.414f;
+volatile LONG g_estValid = 0;
 float g_fovOverrideDeg = 100.0f;   // native engine vertical FOV override (0 = disabled)
 volatile LONG g_trueStereoFrames = 0;
 int g_blitPass = 0;                // 1 = RenderStereoEyeD11 does a 1:1 blit (true-stereo mode)
@@ -266,6 +273,15 @@ void LoadConfig() {
         float v = (float)atof(buf);
         if (v >= 0.1f && v <= 100.0f) g_stereoConv = v;
     }
+    g_stereoShiftMode = GetPrivateProfileIntA("Render", "StereoShiftMode", 0, chosenIni) ? 1 : 0;
+    if (GetPrivateProfileStringA("Render", "StereoIPD", "0.065", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.005f && v <= 0.5f) g_stereoIPD = v;
+    }
+    if (GetPrivateProfileStringA("Render", "FovWiden", "2.5", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 1.0f && v <= 8.0f) g_fovWiden = v;
+    }
     if (GetPrivateProfileStringA("Render", "FovOverride", "100.0", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 160.0f) g_fovOverrideDeg = v;
@@ -419,14 +435,25 @@ void PollHotkeys() {
     if ((GetAsyncKeyState(VK_F6) & 0x8000) && (now - s_lastF6 > 400)) {
         s_lastF6 = now;
         if (g_submitMode == 4) {
-            // True-stereo shear separation
-            if (g_stereoSep < 0.012f) g_stereoSep = 0.012f;
-            else if (g_stereoSep < 0.022f) g_stereoSep = 0.022f;
-            else if (g_stereoSep < 0.035f) g_stereoSep = 0.035f;
-            else if (g_stereoSep < 0.055f) g_stereoSep = 0.055f;
-            else g_stereoSep = 0.004f;
-            Beep(750 + (int)(g_stereoSep * 20000.f), 50);
-            Log(">>> [HOTKEY F6] TrueStereo Separation changed to: %.4f <<<", g_stereoSep);
+            if (g_stereoShiftMode == 0) {
+                // True-stereo IPD (world units) - physical depth scale
+                if (g_stereoIPD < 0.050f) g_stereoIPD = 0.050f;
+                else if (g_stereoIPD < 0.060f) g_stereoIPD = 0.065f;
+                else if (g_stereoIPD < 0.075f) g_stereoIPD = 0.085f;
+                else if (g_stereoIPD < 0.100f) g_stereoIPD = 0.110f;
+                else g_stereoIPD = 0.035f;
+                Beep(750 + (int)(g_stereoIPD * 8000.f), 50);
+                Log(">>> [HOTKEY F6] TrueStereo IPD changed to: %.3f world units (srodkowo: %.1f%% ekranu @2m) <<<",
+                    g_stereoIPD, 100.0f * (g_estPx * g_stereoIPD * 0.5f) / 2.0f);
+            } else {
+                if (g_stereoSep < 0.012f) g_stereoSep = 0.012f;
+                else if (g_stereoSep < 0.022f) g_stereoSep = 0.022f;
+                else if (g_stereoSep < 0.035f) g_stereoSep = 0.035f;
+                else if (g_stereoSep < 0.055f) g_stereoSep = 0.055f;
+                else g_stereoSep = 0.004f;
+                Beep(750 + (int)(g_stereoSep * 20000.f), 50);
+                Log(">>> [HOTKEY F6] TrueStereo Separation changed to: %.4f <<<", g_stereoSep);
+            }
         } else {
             if (g_stereoBaseShift < 0.0050f) g_stereoBaseShift = 0.0075f;
             else if (g_stereoBaseShift < 0.0090f) g_stereoBaseShift = 0.0110f;
@@ -481,14 +508,27 @@ void PollHotkeys() {
     if ((GetAsyncKeyState(VK_F11) & 0x8000) && (now - s_lastF11 > 400)) {
         s_lastF11 = now;
         if (g_submitMode == 4) {
-            // True-stereo convergence (zero-disparity distance in world units)
-            if (g_stereoConv < 1.2f) g_stereoConv = 1.2f;
-            else if (g_stereoConv < 1.8f) g_stereoConv = 1.8f;
-            else if (g_stereoConv < 2.5f) g_stereoConv = 2.5f;
-            else if (g_stereoConv < 4.0f) g_stereoConv = 4.0f;
-            else g_stereoConv = 8.0f;
-            Beep(800 + (int)(g_stereoConv * 100.f), 50);
-            Log(">>> [HOTKEY F11] TrueStereo Convergence changed to: %.2f (world units) <<<", g_stereoConv);
+            if (g_stereoShiftMode == 0) {
+                // FOV widen: how much of the HMD frustum the game render covers
+                if (g_fovWiden < 1.3f) g_fovWiden = 1.6f;
+                else if (g_fovWiden < 1.9f) g_fovWiden = 2.2f;
+                else if (g_fovWiden < 2.4f) g_fovWiden = 2.8f;
+                else if (g_fovWiden < 3.1f) g_fovWiden = 3.5f;
+                else g_fovWiden = 1.0f;
+                Beep(700 + (int)(g_fovWiden * 150.f), 50);
+                Log(">>> [HOTKEY F11] FovWiden changed to: %.2fx (pionowo: %.0f deg, poziomo: %.0f deg) <<<",
+                    g_fovWiden,
+                    2.0f * std::atan(g_fovWiden / g_estPy) * 57.29578f,
+                    2.0f * std::atan(g_fovWiden / g_estPx) * 57.29578f);
+            } else {
+                if (g_stereoConv < 1.2f) g_stereoConv = 1.2f;
+                else if (g_stereoConv < 1.8f) g_stereoConv = 1.8f;
+                else if (g_stereoConv < 2.5f) g_stereoConv = 2.5f;
+                else if (g_stereoConv < 4.0f) g_stereoConv = 4.0f;
+                else g_stereoConv = 8.0f;
+                Beep(800 + (int)(g_stereoConv * 100.f), 50);
+                Log(">>> [HOTKEY F11] TrueStereo Convergence changed to: %.2f (world units) <<<", g_stereoConv);
+            }
         } else if (g_submitMode <= 1) {
             if (g_stereoStrength < 0.15f) g_stereoStrength = 0.25f;
             else if (g_stereoStrength < 0.40f) g_stereoStrength = 0.5f;
@@ -659,15 +699,28 @@ static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
 void* PatchVTable(void* obj, int index, void* repl);
 #include "stereo_replay.inl"
 
-// Builds the per-eye shear parameters. Eye sign: left eye positive shift by default.
+// Builds the per-eye transform parameters. Eye sign: left eye positive shift by default.
 static d2vr_replay::StereoParams MakeEyeParams(int eye) {
     d2vr_replay::StereoParams sp;
-    sp.mode = 0;
+    sp.mode = g_stereoShiftMode;
     float sign = (g_stereoPolarity == 0) ? ((eye == 0) ? +1.0f : -1.0f)
                                          : ((eye == 0) ? -1.0f : +1.0f);
     sp.separation = sign * g_stereoSep;
     sp.convergence = g_stereoConv;
+    sp.transX = sign * 0.5f * g_stereoIPD;
+    sp.transY = 0.0f;
+    sp.fovScaleX = (g_fovWiden > 1.0f) ? (1.0f / g_fovWiden) : 1.0f;
+    sp.fovScaleY = sp.fovScaleX;
     return sp;
+}
+
+// Updates the OpenXR per-view frustum from the projection measured in the matrix uploads:
+// tan(halfFov) = 1/Px ; after the FOV-widen scaling tan' = FovWiden/Px.
+static void UpdateSubmissionFovFromMatrices() {
+    if (InterlockedCompareExchange(&g_estValid, 0, 0) == 0) return;
+    const float wx = (g_fovWiden > 1.0f) ? g_fovWiden : 1.0f;
+    g_gameHalfFovX = std::atan(wx / g_estPx);
+    g_gameHalfFovY = std::atan(wx / g_estPy);
 }
 
 // ---------------------------------------------------------------- SetVertexShaderConstantF Hook (Slot 94 - Read-Only 3D Detector)
@@ -2379,6 +2432,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
         // ---------------- TRUE same-frame stereo (SubmitMode 4): dual-eye geometry render ----------------
         if (g_submitMode == 4) {
+            UpdateSubmissionFovFromMatrices();
             if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0]) &&
                 WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[1])) {
                 // Both eye images were rendered from the SAME game frame with per-eye

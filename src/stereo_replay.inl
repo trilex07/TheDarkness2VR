@@ -219,24 +219,51 @@ static size_t SafeShaderTokenCount(const DWORD* fn) {
 struct StereoParams {
     float separation = 0.0f;   // shear coefficient (screen-space, per eye sign applied)
     float convergence = 2.0f;  // in clip-w units (world-ish distance of zero disparity)
-    int mode = 0;              // 0 = shear sep*(w-conv), 1 = pure translation
-    float transX = 0.0f;       // translation mode: clip.x offset (Px*dx)
+    int mode = 0;              // 0 = translation (clip.x += Px*dx, VR-correct), 1 = shear sep*(w-conv)
+    float transX = 0.0f;       // translation mode: eye offset along view X in world units (IPD/2)
     float transY = 0.0f;
+    float fovScaleX = 1.0f;    // <1 widens the rendered horizontal FOV (clip.x *= fovScaleX)
+    float fovScaleY = 1.0f;
 };
 
+// Runtime projection estimates (Px=1/tan(halfFovX)) live in the enclosing namespace
+// (g_estPx/g_estPy/g_estValid declared before this include).
+
 // Folds the per-eye transform into a row-major 4x4 matrix block (4 registers).
-// p points at the first register of the matrix (c_base), n = registers available.
+// Row-vector convention (verified from engine HLSL): clip = x*c0 + y*c1 + z*c2 + c3
+//   clip.x constant term lives in c3.x = p[12]; clip.w = sum(v_i * c_i.w).
 static void ApplyEyeShiftToMatrix(float* p, int n, const StereoParams& sp) {
     if (n < 4) return;
+    const float l0 = std::sqrt(p[0] * p[0] + p[4] * p[4] + p[8] * p[8]);
+    const float l1 = std::sqrt(p[1] * p[1] + p[5] * p[5] + p[9] * p[9]);
+    const float lw = std::sqrt(p[3] * p[3] + p[7] * p[7] + p[11] * p[11]);
+    const float px = (lw > 1e-5f) ? (l0 / lw) : 1.0f;
+    const float py = (lw > 1e-5f) ? (l1 / lw) : 1.0f;
+    if (px > 0.2f && px < 8.0f && py > 0.2f && py < 16.0f) {
+        g_estPx = px;
+        g_estPy = py;
+        InterlockedExchange(&g_estValid, 1);
+    }
+
+    // FOV widen: scaling rows x/y shrinks NDC for the same view angle = wider frustum
+    if (sp.fovScaleX != 1.0f) {
+        for (int i = 0; i < 4; ++i) p[i * 4 + 0] *= sp.fovScaleX;
+    }
+    if (sp.fovScaleY != 1.0f) {
+        for (int i = 0; i < 4; ++i) p[i * 4 + 1] *= sp.fovScaleY;
+    }
+
     if (sp.mode == 0) {
-        // clip.x += sep * clip.w  ; clip.w = sum(v_i * c_i.w) -> add sep*c_i.w to c_i.x
+        // VR-correct camera translation: clip.x += Px*dx (screen shift = k/w -> 0 at infinity,
+        // absolute depth scale stays natural). Row-vector constant row = p[12..15].
+        p[12] += px * sp.transX;
+        p[13] += py * sp.transY;
+    } else {
+        // HelixMod shear: clip.x += sep*(clip.w - conv)
         for (int i = 0; i < 4; ++i) {
             p[i * 4 + 0] += sp.separation * p[i * 4 + 3];
         }
-        p[3 * 4 + 0] -= sp.separation * sp.convergence;
-    } else {
-        p[3 * 4 + 0] += sp.transX;
-        p[3 * 4 + 1] += sp.transY;
+        p[12] -= sp.separation * sp.convergence;
     }
 }
 
@@ -286,6 +313,20 @@ static void RecBeginFrame() {
     g_recActive = true;
 }
 // Crash-safe data capture: never let diagnostic recording kill the game.
+static size_t ClampReadableBytes(const void* p, size_t bytes) {
+    const uint8_t* b = (const uint8_t*)p;
+    size_t done = 0;
+    while (done < bytes) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (!VirtualQuery(b + done, &mbi, sizeof(mbi))) break;
+        if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) break;
+        const uint8_t* regionEnd = (const uint8_t*)mbi.BaseAddress + mbi.RegionSize;
+        size_t chunk = (size_t)(regionEnd - (b + done));
+        if (chunk == 0) break;
+        done += chunk;
+    }
+    return done;
+}
 static void SafeMemcpy(void* dst, const void* src, size_t bytes) {
     __try {
         memcpy(dst, src, bytes);
@@ -298,7 +339,16 @@ static inline uint32_t RecPush(const void* data, size_t bytes) {
     if (bytes > (size_t)8 * 1024 * 1024) bytes = 0;   // sanity clamp
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
-    if (bytes) SafeMemcpy(g_recData.data() + off, data, bytes);
+    if (bytes) {
+        const size_t readable = ClampReadableBytes(data, bytes);
+        if (readable < bytes) {
+            // game passed a smaller buffer than the draw parameters imply - copy what exists
+            memset(g_recData.data() + off, 0, bytes);
+            if (readable) memcpy(g_recData.data() + off, data, readable);
+        } else {
+            SafeMemcpy(g_recData.data() + off, data, bytes);
+        }
+    }
     return off;
 }
 static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
