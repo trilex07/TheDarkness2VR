@@ -1,4 +1,5 @@
-// Darkness2VR v0.3.0 — D3D9/D3D9Ex proxy + OpenXR (In-Game 6DoF + Stereo 3D + World-Anchored Cinema + XInput + Crash VEH Logger).
+// Darkness2VR v0.4.0 — D3D9/D3D9Ex proxy + OpenXR
+// Method 2: Frustum-Aligned Same-Frame Stereo 3D (D3D11 Stereo Shift + INTZ Depth + Comfort Profile)
 // Log: %LOCALAPPDATA%\Darkness2VR\d3d9.log
 // Config: %LOCALAPPDATA%\Darkness2VR\Darkness2VR.ini or beside DarknessII.exe
 
@@ -40,27 +41,31 @@ bool g_logReady = false;
 // TestMode: 0 = Normal Game Capture, 1 = Solid Bright Green, 2 = Checkerboard
 int g_testMode = 0;
 // SubmitMode (F10):
-//   0 = VR_STEREO_3D      (True Stereoscopic 3D VR + 6DoF via Inline SBS Dual-Draw)
-//   1 = VR_STEREO_SWAP    (True Stereoscopic 3D VR with Swapped Eyes)
+//   0 = VR_STEREO_3D      (Method 2: Same-Frame Stereo Shift + INTZ Depth, Convergent)
+//   1 = VR_STEREO_SWAP    (Method 2: Same-Frame Stereo Shift with Swapped Eye Sign)
 //   2 = QUAD_WORLD_ANCHOR (World-anchored cinema screen in LOCAL space)
 //   3 = QUAD_HEAD_LOCKED  (Head-locked cinema screen)
 int g_submitMode = 0;
 
 // TrackingSubMode (F9):
-//   0 = Full 6DoF + Native Game Proj
-//   1 = Full 6DoF + OpenXR FOV Override
-//   2 = 3DoF (Rotation only) + Native Game Proj
+//   0 = Balanced 16:9 FOV (halfTanX = 0.88, full HUD visible + 6DoF parallax)
+//   1 = Immersive Wide FOV (halfTanX = 1.04 + 6DoF parallax)
+//   2 = Comfort Compact FOV (halfTanX = 0.76, locked 3DoF)
 int g_trackingSubMode = 0;
 
-float g_worldScale = 1.0f;     // Meters -> Evolution Engine units (1.0 = 1m)
-float g_stereoStrength = 1.0f; // Multiplier on stereo separation (F11 cycles 1.0, 1.5, 2.0, 0.5, 0.0)
+float g_worldScale = 1.0f;       // Meters -> 6DoF parallax scale
+float g_stereoStrength = 1.0f;   // Multiplier on stereo shift (F11 cycles 1.0, 1.5, 2.0, 0.5, 0.25, 0.0)
+float g_stereoBaseShift = 0.0035f; // Base per-eye horizontal shift in UV (F6 cycles)
+float g_stereoDepthScale = 0.0105f; // Depth-modulated per-eye shift in UV
+float g_stereoMaxDisp = 0.020f;  // Hard safety clamp on per-eye UV shift
+int g_depthViz = 0;              // F5 toggles live depth map visualization
 float g_cinemaDistanceM = 2.0f;
 float g_cinemaWidthM = 2.1f;
 int g_enableVRGamepad = 1;
 int g_remapPhysical = 1;
 int g_forceWindowedReset = 0;
 
-// World anchor state for Cinema (SubmitMode 2 or 2D menu fallback)
+// World anchor state for Cinema (SubmitMode 2)
 bool g_anchorValid = false;
 XrPosef g_anchorPose{};
 XrVector3f g_anchorHeadOrigin{};
@@ -87,7 +92,7 @@ void LogInit() {
 
         FILE* f = nullptr;
         if (fopen_s(&f, g_logPath, "w") == 0 && f) {
-            fprintf(f, "=== Darkness2VR v0.3.0 d3d9.log ===\n");
+            fprintf(f, "=== Darkness2VR v0.4.0 (Method 2 Same-Frame Stereo Shift) d3d9.log ===\n");
             fclose(f);
         }
         g_logReady = true;
@@ -180,20 +185,18 @@ void LoadConfig() {
             if (fopen_s(&f, g_iniPath, "w") == 0 && f) {
                 fprintf(f, "[Render]\n");
                 fprintf(f, "TestMode=0\n");
-                fprintf(f, "; SubmitMode: 0 = VR_6DOF_SYNC (default), 1 = VR_6DOF_AFR, 2 = QUAD_WORLD_ANCHOR (Cinema), 3 = QUAD_HEAD_LOCKED\n");
+                fprintf(f, "; SubmitMode: 0 = VR_STEREO_3D (default), 1 = VR_STEREO_SWAP, 2 = QUAD_WORLD_ANCHOR (Cinema), 3 = QUAD_HEAD_LOCKED\n");
                 fprintf(f, "SubmitMode=0\n");
-                fprintf(f, "; TrackingSubMode: 0 = 6DoF + Native Game FOV, 1 = 6DoF + OpenXR FOV, 2 = 3DoF + Native Game FOV\n");
+                fprintf(f, "; TrackingSubMode: 0 = Balanced FOV, 1 = Wide Immersive FOV, 2 = Compact FOV\n");
                 fprintf(f, "TrackingSubMode=0\n");
                 fprintf(f, "WorldScale=1.0\n");
                 fprintf(f, "StereoStrength=1.0\n");
-                fprintf(f, "; Same-frame depth-warp stereo (frozen scene depth, both eyes same frame)\n");
-                fprintf(f, "; Start conservative: OpenXR pose IPD adds parallax on top. F6=sep F5=clamp.\n");
-                fprintf(f, "StereoSeparation=0.03\n");
-                fprintf(f, "StereoMaxDisparity=0.012\n");
+                fprintf(f, "StereoBaseShift=0.0035\n");
+                fprintf(f, "StereoDepthScale=0.0105\n");
+                fprintf(f, "StereoMaxDisparity=0.020\n");
                 fprintf(f, "DistanceM=2.0\n");
                 fprintf(f, "WidthM=2.1\n");
-                fprintf(f, "ForceWindowedReset=0\n");
-                fprintf(f, "StereoDup=0\n\n");
+                fprintf(f, "ForceWindowedReset=0\n\n");
                 fprintf(f, "[Input]\n");
                 fprintf(f, "EnableVRGamepad=1\n");
                 fprintf(f, "RemapPhysicalPorts=1\n");
@@ -218,6 +221,18 @@ void LoadConfig() {
         float v = (float)atof(buf);
         if (v >= 0.0f && v <= 5.0f) g_stereoStrength = v;
     }
+    if (GetPrivateProfileStringA("Render", "StereoBaseShift", "0.0035", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.0f && v <= 0.05f) g_stereoBaseShift = v;
+    }
+    if (GetPrivateProfileStringA("Render", "StereoDepthScale", "0.0105", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.0f && v <= 0.05f) g_stereoDepthScale = v;
+    }
+    if (GetPrivateProfileStringA("Render", "StereoMaxDisparity", "0.020", buf, sizeof(buf), chosenIni)) {
+        float v = (float)atof(buf);
+        if (v >= 0.002f && v <= 0.08f) g_stereoMaxDisp = v;
+    }
     if (GetPrivateProfileStringA("Render", "DistanceM", "2.0", buf, sizeof(buf), chosenIni)) {
         float v = (float)atof(buf);
         if (v > 0.5f && v < 20.0f) g_cinemaDistanceM = v;
@@ -230,10 +245,10 @@ void LoadConfig() {
     g_remapPhysical = GetPrivateProfileIntA("Input", "RemapPhysicalPorts", 1, chosenIni);
 
     Log("Config loaded from: %s", chosenIni);
-    Log("  Render: SubmitMode=%d TrackingSubMode=%d WorldScale=%.2f StereoStrength=%.2f Distance=%.2fm Width=%.2fm",
-        g_submitMode, g_trackingSubMode, g_worldScale, g_stereoStrength, g_cinemaDistanceM, g_cinemaWidthM);
+    Log("  Render: SubmitMode=%d TrackingSubMode=%d StereoStrength=%.2f BaseShift=%.4f DepthScale=%.4f MaxDisp=%.4f",
+        g_submitMode, g_trackingSubMode, g_stereoStrength, g_stereoBaseShift, g_stereoDepthScale, g_stereoMaxDisp);
     Log("  Input: EnableVRGamepad=%d RemapPhysicalPorts=%d", g_enableVRGamepad, g_remapPhysical);
-    Log("  Hotkeys: F7 = Dump Camera Matrices | F8 (or L3+R3) = Recenter VR | F9 = Cycle 6DoF/FOV SubMode | F10 = Cycle VR Mode | F11 = Cycle Stereo Strength");
+    Log("  Hotkeys: F5=DepthViz | F6=Cycle BaseShift | F7=Dump Matrices | F8 (or L3+R3)=Recenter | F9=Cycle FOV Scale | F10=Cycle VR Mode | F11=Cycle Stereo Strength");
 }
 
 void RequestRecenter(const char* source) {
@@ -244,6 +259,8 @@ void RequestRecenter(const char* source) {
 }
 
 void PollHotkeys() {
+    static DWORD s_lastF5 = 0;
+    static DWORD s_lastF6 = 0;
     static DWORD s_lastF7 = 0;
     static DWORD s_lastF8 = 0;
     static DWORD s_lastF9 = 0;
@@ -251,6 +268,24 @@ void PollHotkeys() {
     static DWORD s_lastF11 = 0;
 
     DWORD now = GetTickCount();
+
+    if ((GetAsyncKeyState(VK_F5) & 0x8000) && (now - s_lastF5 > 400)) {
+        s_lastF5 = now;
+        g_depthViz = !g_depthViz;
+        Beep(g_depthViz ? 1300 : 700, 50);
+        Log(">>> [HOTKEY F5] Depth Visualization toggled: %d <<<", g_depthViz);
+    }
+
+    if ((GetAsyncKeyState(VK_F6) & 0x8000) && (now - s_lastF6 > 400)) {
+        s_lastF6 = now;
+        if (g_stereoBaseShift < 0.001f) g_stereoBaseShift = 0.0020f;
+        else if (g_stereoBaseShift < 0.0028f) g_stereoBaseShift = 0.0035f;
+        else if (g_stereoBaseShift < 0.0048f) g_stereoBaseShift = 0.0060f;
+        else if (g_stereoBaseShift < 0.0075f) g_stereoBaseShift = 0.0090f;
+        else g_stereoBaseShift = 0.0f;
+        Beep(750 + (int)(g_stereoBaseShift * 50000.f), 50);
+        Log(">>> [HOTKEY F6] Stereo Base Shift changed to: %.4f <<<", g_stereoBaseShift);
+    }
 
     if ((GetAsyncKeyState(VK_F7) & 0x8000) && (now - s_lastF7 > 400)) {
         s_lastF7 = now;
@@ -269,9 +304,9 @@ void PollHotkeys() {
         g_trackingSubMode = (g_trackingSubMode + 1) % 3;
         Beep(700 + g_trackingSubMode * 200, 50);
         const char* names[] = {
-            "0 (Full 6DoF + Native Game FOV)",
-            "1 (Full 6DoF + OpenXR FOV Override)",
-            "2 (3DoF Rotation Only + Native Game FOV)"
+            "0 (Balanced 16:9 FOV + 6DoF Parallax)",
+            "1 (Wide Immersive FOV + 6DoF Parallax)",
+            "2 (Compact Comfort FOV + 3DoF)"
         };
         Log(">>> [HOTKEY F9] TrackingSubMode changed to: %s <<<", names[g_trackingSubMode]);
     }
@@ -282,8 +317,8 @@ void PollHotkeys() {
         g_anchorValid = false;
         Beep(600 + g_submitMode * 150, 50);
         const char* names[] = {
-            "0 (VR_STEREO_3D - True Stereoscopic 3D VR + 6DoF)",
-            "1 (VR_STEREO_SWAP - True Stereoscopic 3D with Swapped Eyes)",
+            "0 (VR_STEREO_3D - Method 2 Same-Frame Stereo Shift)",
+            "1 (VR_STEREO_SWAP - Method 2 Swapped Eye Sign)",
             "2 (QUAD_WORLD_ANCHOR - World-Anchored Cinema)",
             "3 (QUAD_HEAD_LOCKED - Head-Locked Cinema)"
         };
@@ -293,13 +328,14 @@ void PollHotkeys() {
     if ((GetAsyncKeyState(VK_F11) & 0x8000) && (now - s_lastF11 > 400)) {
         s_lastF11 = now;
         if (g_submitMode <= 1) {
-            if (g_stereoStrength < 0.25f) g_stereoStrength = 0.5f;
+            if (g_stereoStrength < 0.15f) g_stereoStrength = 0.25f;
+            else if (g_stereoStrength < 0.40f) g_stereoStrength = 0.5f;
             else if (g_stereoStrength < 0.75f) g_stereoStrength = 1.0f;
             else if (g_stereoStrength < 1.25f) g_stereoStrength = 1.5f;
             else if (g_stereoStrength < 1.75f) g_stereoStrength = 2.0f;
             else g_stereoStrength = 0.0f;
             Beep(800 + (int)(g_stereoStrength * 200.f), 50);
-            Log(">>> [HOTKEY F11] Stereo IPD Strength changed to: %.2fx <<<", g_stereoStrength);
+            Log(">>> [HOTKEY F11] Stereo Shift Strength changed to: %.2fx <<<", g_stereoStrength);
         } else {
             g_cinemaDistanceM = (g_cinemaDistanceM >= 3.0f) ? 1.5f : (g_cinemaDistanceM + 0.5f);
             g_anchorValid = false;
@@ -309,7 +345,7 @@ void PollHotkeys() {
     }
 }
 
-// ---------------------------------------------------------------- OpenXR & Math
+// ---------------------------------------------------------------- OpenXR & D3D11 Stereo Resources
 XrInstance g_xrInstance = XR_NULL_HANDLE;
 XrSession g_xrSession = XR_NULL_HANDLE;
 XrSpace g_xrSpace = XR_NULL_HANDLE;      // LOCAL space
@@ -326,30 +362,49 @@ ID3D11Texture2D** g_scImages[2] = { nullptr, nullptr };
 uint32_t g_scCount[2] = { 0, 0 };
 
 ID3D11Texture2D* g_eyeCache[2] = { nullptr, nullptr };
-bool g_eyeCacheValid[2] = { false, false };
-XrPosef g_eyeCachePose[2]{};
-XrFovf g_eyeCacheFov[2]{};
+ID3D11RenderTargetView* g_eyeRTV[2] = { nullptr, nullptr };
 
 IDirect3DSurface9* g_sysmem = nullptr;
 ID3D11Texture2D* g_upload = nullptr;
+ID3D11ShaderResourceView* g_uploadSRV = nullptr;
 UINT g_srcW = 0, g_srcH = 0;
 D3DFORMAT g_srcFmt = D3DFMT_UNKNOWN;
 
-// ---------------------------------------------------------------- Inline Side-by-Side (SBS) Dual-Draw
-static bool g_inDualDraw = false;
-static float g_curCamMat[16]{};
-static bool g_curCamMatValid = false;
-static float g_curCamRight[3]{};
-static float g_curCamUp[3]{};
-static float g_curCamFwd[3]{};
-static float g_curPx = 1.0f;
-static float g_curPy = 1.0f;
+// D3D9 INTZ Depth Capture -> D3D11 Depth SRV (480x270 fast downsample)
+static constexpr UINT kDepthW = 480;
+static constexpr UINT kDepthH = 270;
+static constexpr D3DFORMAT FOURCC_INTZ = static_cast<D3DFORMAT>(0x5A544E49); // 'INTZ'
+static constexpr D3DFORMAT FOURCC_RAWZ = static_cast<D3DFORMAT>(0x5A574152); // 'RAWZ'
+static constexpr D3DFORMAT FOURCC_DF24 = static_cast<D3DFORMAT>(0x34324644); // 'DF24'
 
-typedef HRESULT(STDMETHODCALLTYPE* PFN_DrawIndexedPrimitive)(IDirect3DDevice9*, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
-typedef HRESULT(STDMETHODCALLTYPE* PFN_DrawPrimitive)(IDirect3DDevice9*, D3DPRIMITIVETYPE, UINT, UINT);
-extern PFN_DrawIndexedPrimitive g_origDrawIndexedPrimitive;
-extern PFN_DrawPrimitive g_origDrawPrimitive;
+IDirect3DTexture9* g_intzTex9 = nullptr;
+IDirect3DTexture9* g_depthFreezeTex9 = nullptr;
+IDirect3DSurface9* g_depthFreezeSurf9 = nullptr;
+IDirect3DSurface9* g_depthFreezeSys9 = nullptr;
+IDirect3DVertexShader9* g_depthFreezeVS9 = nullptr;
+IDirect3DPixelShader9* g_depthFreezePS9 = nullptr;
+bool g_depthCapturedThisFrame = false;
+bool g_depthHasVariance = false;
+int g_depthLogCounter = 0;
 
+ID3D11Texture2D* g_depthTex11 = nullptr;
+ID3D11ShaderResourceView* g_depthSRV11 = nullptr;
+
+// D3D11 Method 2 Stereo Shader Pipeline
+ID3D11VertexShader* g_stereoVS11 = nullptr;
+ID3D11PixelShader* g_stereoPS11 = nullptr;
+ID3D11Buffer* g_stereoCB11 = nullptr;
+ID3D11SamplerState* g_stereoSamp11 = nullptr;
+ID3D11RasterizerState* g_stereoRS11 = nullptr;
+bool g_stereoPipelineReady = false;
+
+struct alignas(16) StereoCBData {
+    float fovTan[4];     // x=tanLeft, y=tanRight, z=tanUp, w=tanDown
+    float projParams[4]; // x=invTwoHalfTanX, y=invTwoHalfTanY, z=eyeSign (-1 left, +1 right), w=stereoStrength
+    float stereoCfg[4];  // x=baseShift, y=depthScale, z=maxDisp, w=hasRealDepth
+    float extraCfg[4];   // x=convDepth, y=kz, z=depthViz, w=posOffsetX
+    float posCfg[4];     // x=posOffsetY, y=unused, z=unused, w=unused
+};
 
 XrPosef g_eyePose[2]{};
 XrFovf g_eyeFov[2]{};
@@ -365,15 +420,6 @@ int g_3dCamCallsThisFrame = 0;
 int g_consecutive3DFrames = 0;
 int g_consecutive2DFrames = 0;
 bool g_in3DGameplayMode = false;
-
-static XrQuaternionf QuatMul(const XrQuaternionf& a, const XrQuaternionf& b) {
-    return {
-        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
-    };
-}
 
 static XrVector3f RotVec(const XrQuaternionf& q, float x, float y, float z) {
     const float qx = q.x, qy = q.y, qz = q.z, qw = q.w;
@@ -434,66 +480,7 @@ static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
     return p;
 }
 
-// ---------------------------------------------------------------- Matrix Math (Row-Major 4x4, matching DarknessII.exe 0x00C02F50 & 0x00D46710)
-static void MulMatrix4x4RowMajor(float out[16], const float A[16], const float B[16]) {
-    float tmp[16];
-    for (int r = 0; r < 4; ++r) {
-        const float a0 = A[r * 4 + 0];
-        const float a1 = A[r * 4 + 1];
-        const float a2 = A[r * 4 + 2];
-        const float a3 = A[r * 4 + 3];
-        for (int c = 0; c < 4; ++c) {
-            tmp[r * 4 + c] = a0 * B[0 * 4 + c] +
-                             a1 * B[1 * 4 + c] +
-                             a2 * B[2 * 4 + c] +
-                             a3 * B[3 * 4 + c];
-        }
-    }
-    memcpy(out, tmp, sizeof(tmp));
-}
-
-static void InvertOrthonormalMatrix4x4(float out[16], const float M[16]) {
-    float tmp[16]{};
-    for (int r = 0; r < 3; ++r) {
-        for (int c = 0; c < 3; ++c) {
-            tmp[r * 4 + c] = M[c * 4 + r];
-        }
-        tmp[r * 4 + 3] = M[r * 4 + 3];
-    }
-    const float tx = M[12], ty = M[13], tz = M[14];
-    tmp[12] = -(tx * tmp[0] + ty * tmp[4] + tz * tmp[8]);
-    tmp[13] = -(tx * tmp[1] + ty * tmp[5] + tz * tmp[9]);
-    tmp[14] = -(tx * tmp[2] + ty * tmp[6] + tz * tmp[10]);
-    tmp[15] = M[15];
-    memcpy(out, tmp, sizeof(tmp));
-}
-
-static void ApplyEyeRemap(float r[16], float s) {
-    // r is a 4x4 row-major matrix: r[row * 4 + col]
-    // In D3D9 row-major clip coordinates:
-    // clip.x = sum_row (pos_row * r[row*4 + 0])
-    // clip.w = sum_row (pos_row * r[row*4 + 3])
-    // To remap clip.x into a half-screen:
-    // for left eye (s = -0.5f):  clip.x' = 0.5f * clip.x - 0.5f * clip.w  => NDC.x in [-1, 0]
-    // for right eye (s = +0.5f): clip.x' = 0.5f * clip.x + 0.5f * clip.w  => NDC.x in [0, +1]
-    for (int row = 0; row < 4; ++row) {
-        r[row * 4 + 0] = 0.5f * r[row * 4 + 0] + s * r[row * 4 + 3];
-    }
-}
-
-static void ApplyOffset(float r[16], const float o[3]) {
-    // Translates the camera by world vector o = (o[0], o[1], o[2])
-    // In D3D9 row-major: pos_world * M
-    // Row 3 (indices 12..15) is the translation row:
-    // Row 3 -= o[0]*Row 0 + o[1]*Row 1 + o[2]*Row 2
-    for (int k = 0; k < 4; ++k) {
-        r[3 * 4 + k] -= (o[0] * r[0 * 4 + k] +
-                         o[1] * r[1 * 4 + k] +
-                         o[2] * r[2 * 4 + k]);
-    }
-}
-
-// ---------------------------------------------------------------- SetVertexShaderConstantF Hook (Slot 94)
+// ---------------------------------------------------------------- SetVertexShaderConstantF Hook (Slot 94 - Read-Only 3D Detector)
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SetVertexShaderConstantF)(IDirect3DDevice9*, UINT, const float*, UINT);
 PFN_SetVertexShaderConstantF g_origSetVertexShaderConstantF = nullptr;
 
@@ -511,84 +498,515 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     const float* pConstantData,
     UINT Vector4fCount)
 {
-    // Fast path: camera ViewProjection matrix in Evolution Engine is always at StartRegister == 0 (c0..c3).
-    // Never scan or mutate skeletal bone palettes or object constant registers (registers > 0).
-    if (!pConstantData || Vector4fCount < 4 || StartRegister != 0) {
-        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
-    }
+    // Read-only detection of 3D perspective matrices at c0..c3.
+    // We NEVER modify c0..c3 because in Evolution Engine (DarknessII.exe 0x00C02F50) c0..c3 is per-object
+    // WorldViewProjection while c8..c11 / c20..c23 is ScreenTextureProjection. Keeping D3D9 constants
+    // 100% untouched guarantees zero shader/shadow/mesh corruption and zero crashes.
+    if (pConstantData && Vector4fCount >= 4 && StartRegister == 0) {
+        const float* M = pConstantData;
+        const float lenCol3 = std::sqrt(M[3] * M[3] + M[7] * M[7] + M[11] * M[11]);
+        const float lenCol0 = std::sqrt(M[0] * M[0] + M[4] * M[4] + M[8] * M[8]);
+        const float lenCol1 = std::sqrt(M[1] * M[1] + M[5] * M[5] + M[9] * M[9]);
+        if (lenCol3 > 0.1f && lenCol0 > 0.15f && lenCol1 > 0.25f && std::fabs(M[15]) < 500.0f) {
+            const float aspect = lenCol1 / lenCol0;
+            if (aspect >= 1.2f && aspect <= 2.4f) {
+                g_had3DCameraThisFrame = true;
+                ++g_3dCamCallsThisFrame;
 
-    const float* M = pConstantData; // c0..c3
-
-    // Geometric invariant of D3D9 row-major perspective camera matrices:
-    // Col 3 = (M[3], M[7], M[11]) is the forward vector, length ~ 1.0f
-    // Col 0 = (M[0], M[4], M[8]) is Right * Proj_x, length ~ 2.5f
-    // Col 1 = (M[1], M[5], M[9]) is Up * Proj_y, length ~ 4.5f
-    // Aspect = Col 1 / Col 0 ~ 1.778 (16:9)
-    const float lenCol3 = std::sqrt(M[3] * M[3] + M[7] * M[7] + M[11] * M[11]);
-    if (lenCol3 < 0.7f || lenCol3 > 1.3f) {
-        g_curCamMatValid = false;
-        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
-    }
-
-    const float lenCol0 = std::sqrt(M[0] * M[0] + M[4] * M[4] + M[8] * M[8]);
-    const float lenCol1 = std::sqrt(M[1] * M[1] + M[5] * M[5] + M[9] * M[9]);
-    if (lenCol0 < 1.5f || lenCol0 > 4.5f || lenCol1 < 2.5f || lenCol1 > 7.0f) {
-        g_curCamMatValid = false;
-        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
-    }
-
-    if (std::fabs(M[15]) > 100.0f) {
-        g_curCamMatValid = false;
-        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
-    }
-
-    const float aspect = (lenCol0 > 1e-4f) ? (lenCol1 / lenCol0) : 0.f;
-    if (aspect < 1.4f || aspect > 2.2f) {
-        g_curCamMatValid = false;
-        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
-    }
-
-    // Filter out static main menu camera (at origin with y = -1.7508)
-    const bool isMainMenu = (std::fabs(M[12]) < 0.05f && std::fabs(M[13] + 1.7508f) < 0.1f && std::fabs(M[14]) < 0.05f);
-    if (isMainMenu) {
-        g_curCamMatValid = false;
-        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
-    }
-
-    static int s_loggedVS = 0;
-    const bool f7Dump = (InterlockedCompareExchange(&g_dumpNextFrame, 0, 0) != 0);
-    if (s_loggedVS < 25 || f7Dump) {
-        if (!f7Dump) ++s_loggedVS;
-        Log("[VSConstF] Found 3D ViewProj at c0 (count=%u) | aspect=%.3f lenCol3=%.3f lenCol0=%.3f lenCol1=%.3f",
-            Vector4fCount, aspect, lenCol3, lenCol0, lenCol1);
-        if (s_loggedVS <= 5 || f7Dump) {
-            LogMatrix4x4("ViewProj Matrix", M);
+                static int s_loggedVS = 0;
+                const bool f7Dump = (InterlockedCompareExchange(&g_dumpNextFrame, 0, 0) != 0);
+                if (s_loggedVS < 10 || f7Dump) {
+                    if (!f7Dump) ++s_loggedVS;
+                    Log("[VSConstF] 3D WVP at c0 (count=%u) | aspect=%.3f lenCol3=%.3f lenCol0=%.3f lenCol1=%.3f",
+                        Vector4fCount, aspect, lenCol3, lenCol0, lenCol1);
+                    if (s_loggedVS <= 3 || f7Dump) {
+                        LogMatrix4x4("WVP Matrix", M);
+                    }
+                }
+            }
         }
     }
-
-    // Cache the verified camera matrix and orthonormal basis vectors
-    memcpy(g_curCamMat, pConstantData, 16 * sizeof(float));
-    g_curPx = lenCol0;
-    g_curPy = lenCol1;
-    g_curCamRight[0] = M[0] / lenCol0;
-    g_curCamRight[1] = M[4] / lenCol0;
-    g_curCamRight[2] = M[8] / lenCol0;
-
-    g_curCamUp[0] = M[1] / lenCol1;
-    g_curCamUp[1] = M[5] / lenCol1;
-    g_curCamUp[2] = M[9] / lenCol1;
-
-    g_curCamFwd[0] = M[3] / lenCol3;
-    g_curCamFwd[1] = M[7] / lenCol3;
-    g_curCamFwd[2] = M[11] / lenCol3;
-
-    g_curCamMatValid = true;
-    g_had3DCameraThisFrame = true;
-    ++g_3dCamCallsThisFrame;
-
     return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
 }
 
+// ---------------------------------------------------------------- INTZ Depth Capture (D3D9 -> 480x270 -> D3D11)
+typedef HRESULT(STDMETHODCALLTYPE* PFN_SetDepthStencilSurface)(IDirect3DDevice9*, IDirect3DSurface9*);
+typedef HRESULT(STDMETHODCALLTYPE* PFN_SetTexture)(IDirect3DDevice9*, DWORD, IDirect3DBaseTexture9*);
+PFN_SetDepthStencilSurface g_origSetDepthStencilSurface = nullptr;
+PFN_SetTexture g_origSetTexture = nullptr;
+
+static void ReleaseDepthResources9() {
+    if (g_intzTex9) { g_intzTex9->Release(); g_intzTex9 = nullptr; }
+    if (g_depthFreezeSurf9) { g_depthFreezeSurf9->Release(); g_depthFreezeSurf9 = nullptr; }
+    if (g_depthFreezeTex9) { g_depthFreezeTex9->Release(); g_depthFreezeTex9 = nullptr; }
+    if (g_depthFreezeSys9) { g_depthFreezeSys9->Release(); g_depthFreezeSys9 = nullptr; }
+    if (g_depthFreezeVS9) { g_depthFreezeVS9->Release(); g_depthFreezeVS9 = nullptr; }
+    if (g_depthFreezePS9) { g_depthFreezePS9->Release(); g_depthFreezePS9 = nullptr; }
+}
+
+static ID3DBlob* CompileShaderBlob(const char* src, const char* entry, const char* profile) {
+    static HMODULE s_comp = nullptr;
+    if (!s_comp) {
+        s_comp = LoadLibraryA("d3dcompiler_47.dll");
+        if (!s_comp) s_comp = LoadLibraryA("d3dcompiler_43.dll");
+    }
+    if (!s_comp) return nullptr;
+    typedef HRESULT(WINAPI* PFN_D3DCompile)(const void*, SIZE_T, const char*, const void*, void*,
+                                            const char*, const char*, UINT, UINT, ID3DBlob**, ID3DBlob**);
+    auto pCompile = reinterpret_cast<PFN_D3DCompile>(GetProcAddress(s_comp, "D3DCompile"));
+    if (!pCompile) return nullptr;
+    ID3DBlob* blob = nullptr;
+    ID3DBlob* err = nullptr;
+    HRESULT hr = pCompile(src, strlen(src), "d2vr_shader", nullptr, nullptr, entry, profile, 0, 0, &blob, &err);
+    if (FAILED(hr)) {
+        Log("Shader compile (%s) failed: %s", profile, err ? (const char*)err->GetBufferPointer() : "unknown");
+        if (err) err->Release();
+        if (blob) blob->Release();
+        return nullptr;
+    }
+    if (err) err->Release();
+    return blob;
+}
+
+static bool EnsureDepthFreezeResources(IDirect3DDevice9* dev) {
+    if (g_depthFreezeTex9 && g_depthFreezeSurf9 && g_depthFreezeSys9 && g_depthFreezeVS9 && g_depthFreezePS9) {
+        return true;
+    }
+    if (!g_depthFreezeTex9) {
+        if (FAILED(dev->CreateTexture(kDepthW, kDepthH, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                                      D3DPOOL_DEFAULT, &g_depthFreezeTex9, nullptr)) || !g_depthFreezeTex9) {
+            return false;
+        }
+        g_depthFreezeTex9->GetSurfaceLevel(0, &g_depthFreezeSurf9);
+    }
+    if (!g_depthFreezeSys9) {
+        if (FAILED(dev->CreateOffscreenPlainSurface(kDepthW, kDepthH, D3DFMT_A8R8G8B8,
+                                                    D3DPOOL_SYSTEMMEM, &g_depthFreezeSys9, nullptr))) {
+            return false;
+        }
+    }
+    if (!g_depthFreezeVS9) {
+        const char* vsCode =
+            "float4 main(float4 pos : POSITION) : POSITION {\n"
+            "    return pos;\n"
+            "}\n";
+        ID3DBlob* b = CompileShaderBlob(vsCode, "main", "vs_3_0");
+        if (!b) return false;
+        HRESULT hr = dev->CreateVertexShader(reinterpret_cast<const DWORD*>(b->GetBufferPointer()), &g_depthFreezeVS9);
+        b->Release();
+        if (FAILED(hr)) return false;
+    }
+    if (!g_depthFreezePS9) {
+        // Properly normalize VPOS (0..479, 0..269) to UV [0..1] using c0 = (1/w, 1/h, 0.5/w, 0.5/h)
+        const char* psCode =
+            "sampler2D depthTex : register(s0);\n"
+            "float4 invSize : register(c0);\n"
+            "float4 main(float4 vpos : VPOS) : COLOR0 {\n"
+            "    float2 uv = vpos.xy * invSize.xy + invSize.zw;\n"
+            "    float d = tex2D(depthTex, uv).r;\n"
+            "    return float4(d, d, d, 1.0);\n"
+            "}\n";
+        ID3DBlob* b = CompileShaderBlob(psCode, "main", "ps_3_0");
+        if (!b) return false;
+        HRESULT hr = dev->CreatePixelShader(reinterpret_cast<const DWORD*>(b->GetBufferPointer()), &g_depthFreezePS9);
+        b->Release();
+        if (FAILED(hr)) return false;
+    }
+    return true;
+}
+
+static bool EnsureDepthTexture11() {
+    if (g_depthTex11 && g_depthSRV11) return true;
+    if (!g_dev11) return false;
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = kDepthW;
+    td.Height = kDepthH;
+    td.MipLevels = 1;
+    td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_DYNAMIC;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    td.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if (FAILED(g_dev11->CreateTexture2D(&td, nullptr, &g_depthTex11))) return false;
+    if (FAILED(g_dev11->CreateShaderResourceView(g_depthTex11, nullptr, &g_depthSRV11))) return false;
+    return true;
+}
+
+// Captures the game's INTZ depth texture into our 480x270 D3D11 depth SRV.
+static void CaptureIntzDepthToD11(IDirect3DDevice9* dev) {
+    if (!dev || !g_intzTex9 || !g_dev11 || !g_ctx11) return;
+    if (!EnsureDepthFreezeResources(dev) || !EnsureDepthTexture11()) return;
+
+    // Save complete D3D9 state
+    IDirect3DSurface9* oldRT = nullptr; dev->GetRenderTarget(0, &oldRT);
+    IDirect3DSurface9* oldDS = nullptr; dev->GetDepthStencilSurface(&oldDS);
+    D3DVIEWPORT9 oldVP{}; dev->GetViewport(&oldVP);
+    IDirect3DVertexShader9* oldVS = nullptr; dev->GetVertexShader(&oldVS);
+    IDirect3DPixelShader9* oldPS = nullptr; dev->GetPixelShader(&oldPS);
+    IDirect3DVertexDeclaration9* oldDecl = nullptr; dev->GetVertexDeclaration(&oldDecl);
+    DWORD oldFVF = 0; dev->GetFVF(&oldFVF);
+    IDirect3DBaseTexture9* oldT0 = nullptr; dev->GetTexture(0, &oldT0);
+    DWORD oldMin0 = 0, oldMag0 = 0, oldMip0 = 0, oldU0 = 0, oldV0 = 0;
+    dev->GetSamplerState(0, D3DSAMP_MINFILTER, &oldMin0);
+    dev->GetSamplerState(0, D3DSAMP_MAGFILTER, &oldMag0);
+    dev->GetSamplerState(0, D3DSAMP_MIPFILTER, &oldMip0);
+    dev->GetSamplerState(0, D3DSAMP_ADDRESSU, &oldU0);
+    dev->GetSamplerState(0, D3DSAMP_ADDRESSV, &oldV0);
+    DWORD oldScissor = 0, oldZ = 0, oldZWrite = 0, oldBlend = 0, oldCull = 0, oldColorWrite = 0, oldSrgb = 0;
+    dev->GetRenderState(D3DRS_SCISSORTESTENABLE, &oldScissor);
+    dev->GetRenderState(D3DRS_ZENABLE, &oldZ);
+    dev->GetRenderState(D3DRS_ZWRITEENABLE, &oldZWrite);
+    dev->GetRenderState(D3DRS_ALPHABLENDENABLE, &oldBlend);
+    dev->GetRenderState(D3DRS_CULLMODE, &oldCull);
+    dev->GetRenderState(D3DRS_COLORWRITEENABLE, &oldColorWrite);
+    dev->GetRenderState(D3DRS_SRGBWRITEENABLE, &oldSrgb);
+
+    float oldPSConst0[4]{};
+    dev->GetPixelShaderConstantF(0, oldPSConst0, 1);
+
+    bool drawOk = false;
+    if (SUCCEEDED(dev->SetRenderTarget(0, g_depthFreezeSurf9)) &&
+        SUCCEEDED(dev->SetDepthStencilSurface(nullptr))) {
+        D3DVIEWPORT9 vp{ 0, 0, kDepthW, kDepthH, 0.0f, 1.0f };
+        dev->SetViewport(&vp);
+        dev->SetTexture(0, g_intzTex9);
+        dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+        dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+        dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+        dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+
+        dev->SetVertexShader(g_depthFreezeVS9);
+        dev->SetPixelShader(g_depthFreezePS9);
+        const float invSize[4] = {
+            1.0f / (float)kDepthW,
+            1.0f / (float)kDepthH,
+            0.5f / (float)kDepthW,
+            0.5f / (float)kDepthH
+        };
+        dev->SetPixelShaderConstantF(0, invSize, 1);
+        dev->SetFVF(D3DFVF_XYZW);
+        dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+        dev->SetRenderState(D3DRS_ZENABLE, FALSE);
+        dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+        dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+        dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+        dev->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0000000F);
+        dev->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+
+        // Fullscreen quad in NDC [-1..+1] with 4 floats (x, y, z, w) matching D3DFVF_XYZW
+        struct NDCVert { float x, y, z, w; };
+        static const NDCVert quad[4] = {
+            { -1.0f,  1.0f, 0.0f, 1.0f },
+            {  1.0f,  1.0f, 0.0f, 1.0f },
+            { -1.0f, -1.0f, 0.0f, 1.0f },
+            {  1.0f, -1.0f, 0.0f, 1.0f }
+        };
+        drawOk = SUCCEEDED(dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(NDCVert)));
+    }
+
+    // Restore complete D3D9 state
+    dev->SetPixelShaderConstantF(0, oldPSConst0, 1);
+    dev->SetTexture(0, oldT0);
+    if (oldT0) oldT0->Release();
+    dev->SetSamplerState(0, D3DSAMP_MINFILTER, oldMin0);
+    dev->SetSamplerState(0, D3DSAMP_MAGFILTER, oldMag0);
+    dev->SetSamplerState(0, D3DSAMP_MIPFILTER, oldMip0);
+    dev->SetSamplerState(0, D3DSAMP_ADDRESSU, oldU0);
+    dev->SetSamplerState(0, D3DSAMP_ADDRESSV, oldV0);
+    dev->SetVertexShader(oldVS); if (oldVS) oldVS->Release();
+    dev->SetPixelShader(oldPS); if (oldPS) oldPS->Release();
+    if (oldDecl) {
+        dev->SetVertexDeclaration(oldDecl);
+        oldDecl->Release();
+    } else {
+        dev->SetFVF(oldFVF);
+    }
+    dev->SetRenderState(D3DRS_SCISSORTESTENABLE, oldScissor);
+    dev->SetRenderState(D3DRS_ZENABLE, oldZ);
+    dev->SetRenderState(D3DRS_ZWRITEENABLE, oldZWrite);
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, oldBlend);
+    dev->SetRenderState(D3DRS_CULLMODE, oldCull);
+    dev->SetRenderState(D3DRS_COLORWRITEENABLE, oldColorWrite);
+    dev->SetRenderState(D3DRS_SRGBWRITEENABLE, oldSrgb);
+    dev->SetViewport(&oldVP);
+    dev->SetDepthStencilSurface(oldDS); if (oldDS) oldDS->Release();
+    dev->SetRenderTarget(0, oldRT); if (oldRT) oldRT->Release();
+
+    if (!drawOk) return;
+    if (FAILED(dev->GetRenderTargetData(g_depthFreezeSurf9, g_depthFreezeSys9))) return;
+
+    D3DLOCKED_RECT lr{};
+    if (FAILED(g_depthFreezeSys9->LockRect(&lr, nullptr, D3DLOCK_READONLY))) return;
+
+    uint8_t minD = 255, maxD = 0;
+    const uint8_t* srcBits = static_cast<const uint8_t*>(lr.pBits);
+    for (UINT y = 20; y < kDepthH - 20; y += 8) {
+        const uint8_t* row = srcBits + (size_t)y * lr.Pitch;
+        for (UINT x = 20; x < kDepthW - 20; x += 8) {
+            uint8_t r = row[x * 4 + 2]; // Red channel in B8G8R8A8
+            if (r < minD) minD = r;
+            if (r > maxD) maxD = r;
+        }
+    }
+
+    // Upload to D3D11 if depth has non-trivial variation, or on first capture
+    const bool hasVar = (maxD > minD + 1) && (minD < 254);
+    if (hasVar || !g_depthHasVariance) {
+        D3D11_MAPPED_SUBRESOURCE ms{};
+        if (SUCCEEDED(g_ctx11->Map(g_depthTex11, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) {
+            uint8_t* dstBits = static_cast<uint8_t*>(ms.pData);
+            const size_t rowBytes = (size_t)kDepthW * 4;
+            for (UINT y = 0; y < kDepthH; ++y) {
+                memcpy(dstBits + (size_t)y * ms.RowPitch, srcBits + (size_t)y * lr.Pitch, rowBytes);
+            }
+            g_ctx11->Unmap(g_depthTex11, 0);
+        }
+        if (hasVar) g_depthHasVariance = true;
+    }
+
+    g_depthFreezeSys9->UnlockRect();
+    g_depthCapturedThisFrame = true;
+
+    if (++g_depthLogCounter % 120 == 1) {
+        Log("[DepthINTZ] 480x270 snapshot: minD=%u (%.3f) maxD=%u (%.3f) hasVariance=%d",
+            (unsigned)minD, minD / 255.0f, (unsigned)maxD, maxD / 255.0f, (int)g_depthHasVariance);
+    }
+}
+
+HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDirect3DSurface9* pNewZStencil) {
+    if (pNewZStencil) {
+        D3DSURFACE_DESC sd{};
+        if (SUCCEEDED(pNewZStencil->GetDesc(&sd))) {
+            if ((sd.Format == FOURCC_INTZ || sd.Format == FOURCC_RAWZ || sd.Format == FOURCC_DF24) &&
+                sd.Width >= 640 && sd.Height >= 480 && sd.MultiSampleType == D3DMULTISAMPLE_NONE) {
+                IDirect3DTexture9* tex = nullptr;
+                if (SUCCEEDED(pNewZStencil->GetContainer(__uuidof(IDirect3DTexture9), reinterpret_cast<void**>(&tex))) && tex) {
+                    if (g_intzTex9 != tex) {
+                        if (g_intzTex9) g_intzTex9->Release();
+                        g_intzTex9 = tex;
+                        static int s_intzLog = 0;
+                        if (s_intzLog++ < 5) {
+                            Log("[DepthINTZ] Latched hardware depth texture %p (%ux%u fmt=0x%08X)",
+                                tex, sd.Width, sd.Height, (unsigned)sd.Format);
+                        }
+                    } else {
+                        tex->Release();
+                    }
+                }
+            }
+        }
+    }
+    return g_origSetDepthStencilSurface(dev, pNewZStencil);
+}
+
+// Evolution Engine binds INTZ to sampler s0 (SetTexture(0, intzTex)) during deferred lighting/shadows
+// right after the opaque 3D geometry pass completes (see PixelShaders/C891DB74.txt & 3FF3A68C.txt).
+HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* dev, DWORD Stage, IDirect3DBaseTexture9* pTexture) {
+    if (Stage == 0 && pTexture && !g_intzTex9) {
+        if (pTexture->GetType() == D3DRTYPE_TEXTURE) {
+            auto* tex2d = static_cast<IDirect3DTexture9*>(pTexture);
+            D3DSURFACE_DESC sd{};
+            if (SUCCEEDED(tex2d->GetLevelDesc(0, &sd))) {
+                if ((sd.Format == FOURCC_INTZ || sd.Format == FOURCC_RAWZ || sd.Format == FOURCC_DF24) &&
+                    sd.Width >= 640 && sd.Height >= 480) {
+                    tex2d->AddRef();
+                    g_intzTex9 = tex2d;
+                    Log("[DepthINTZ] Latched INTZ texture %p via SetTexture(0) (%ux%u fmt=0x%08X)",
+                        tex2d, sd.Width, sd.Height, (unsigned)sd.Format);
+                }
+            }
+        }
+    }
+    return g_origSetTexture(dev, Stage, pTexture);
+}
+
+// ---------------------------------------------------------------- D3D11 Method 2 Stereo Shader Pipeline
+static bool EnsureD11StereoPipeline() {
+    if (g_stereoPipelineReady) return true;
+    if (!g_dev11) return false;
+
+    const char* vsSrc =
+        "struct VSOut {\n"
+        "    float4 pos : SV_POSITION;\n"
+        "    float2 uv  : TEXCOORD0;\n"
+        "};\n"
+        "VSOut main(uint id : SV_VertexID) {\n"
+        "    VSOut o;\n"
+        "    o.uv = float2((id << 1) & 2, id & 2);\n"
+        "    o.pos = float4(o.uv * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);\n"
+        "    return o;\n"
+        "}\n";
+
+    // Method 2 Pixel Shader:
+    // 1. Maps each eye's asymmetric OpenXR frustum (fovTan) through tangent space so straight-ahead (0,0)
+    //    samples the exact center (0.5, 0.5) of the game frame in BOTH eyes (0.000 deg divergence).
+    // 2. Applies a calibrated horizontal stereo shift between Left Eye (-disp) and Right Eye (+disp)
+    //    combining base stereo convergence + INTZ depth + comfort depth profile.
+    const char* psSrc =
+        "Texture2D colorTex : register(t0);\n"
+        "Texture2D depthTex : register(t1);\n"
+        "SamplerState linSamp : register(s0);\n"
+        "cbuffer StereoCB : register(b0) {\n"
+        "    float4 fovTan;      // x=tanLeft, y=tanRight, z=tanUp, w=tanDown\n"
+        "    float4 projParams;  // x=invTwoHalfTanX, y=invTwoHalfTanY, z=eyeSign (-1 left, +1 right), w=stereoStrength\n"
+        "    float4 stereoCfg;   // x=baseShift, y=depthScale, z=maxDisp, w=hasRealDepth\n"
+        "    float4 extraCfg;    // x=convDepth, y=kz, z=depthViz, w=posOffsetX\n"
+        "    float4 posCfg;      // x=posOffsetY, y=unused, z=unused, w=unused\n"
+        "};\n"
+        "struct PSIn {\n"
+        "    float4 pos : SV_POSITION;\n"
+        "    float2 uv  : TEXCOORD0;\n"
+        "};\n"
+        "float4 main(PSIn i) : SV_Target {\n"
+        "    float tx = lerp(fovTan.x, fovTan.y, i.uv.x);\n"
+        "    float ty = lerp(fovTan.z, fovTan.w, i.uv.y);\n"
+        "    float2 baseUV;\n"
+        "    baseUV.x = 0.5 + tx * projParams.x;\n"
+        "    baseUV.y = 0.5 - ty * projParams.y;\n"
+        "    if (baseUV.x < 0.0 || baseUV.x > 1.0 || baseUV.y < 0.0 || baseUV.y > 1.0) {\n"
+        "        return float4(0.0, 0.0, 0.0, 1.0);\n"
+        "    }\n"
+        "    // Comfort depth profile (foreground lower/center hands & weapon vs mid/background)\n"
+        "    float vProx = saturate((baseUV.y - 0.12) * 0.90);\n"
+        "    float cx = (baseUV.x - 0.5) * 2.0;\n"
+        "    float cy = (baseUV.y - 0.5) * 2.0;\n"
+        "    float domeProx = saturate(1.0 - (cx * cx + cy * cy) * 0.32);\n"
+        "    float synthProx = 0.55 * vProx + 0.45 * domeProx;\n"
+        "    float prox = synthProx;\n"
+        "    if (stereoCfg.w > 0.5) {\n"
+        "        float d0 = depthTex.SampleLevel(linSamp, baseUV, 0).r;\n"
+        "        float dL = depthTex.SampleLevel(linSamp, baseUV + float2(-0.003, 0.0), 0).r;\n"
+        "        float dR = depthTex.SampleLevel(linSamp, baseUV + float2( 0.003, 0.0), 0).r;\n"
+        "        float dMin = min(d0, min(dL, dR));\n"
+        "        float oneMinusD = max(0.0, 1.0 - dMin);\n"
+        "        float realProx = oneMinusD / (oneMinusD + extraCfg.y);\n"
+        "        prox = lerp(synthProx, realProx, 0.75);\n"
+        "    }\n"
+        "    if (extraCfg.z > 0.5) {\n"
+        "        return float4(prox, prox, prox, 1.0);\n"
+        "    }\n"
+        "    float edgeFeather = smoothstep(0.0, 0.05, baseUV.x) * smoothstep(0.0, 0.05, 1.0 - baseUV.x);\n"
+        "    float rawDisp = (stereoCfg.x + stereoCfg.y * (prox - extraCfg.x)) * projParams.w * edgeFeather;\n"
+        "    float disp = clamp(rawDisp, -stereoCfg.z, stereoCfg.z) * projParams.z;\n"
+        "    float parallaxWeight = 0.35 + 0.65 * prox;\n"
+        "    float2 sampleUV;\n"
+        "    sampleUV.x = clamp(baseUV.x + disp + extraCfg.w * parallaxWeight, 0.001, 0.999);\n"
+        "    sampleUV.y = clamp(baseUV.y + posCfg.x * parallaxWeight, 0.001, 0.999);\n"
+        "    return colorTex.SampleLevel(linSamp, sampleUV, 0);\n"
+        "}\n";
+
+    ID3DBlob* vsBlob = CompileShaderBlob(vsSrc, "main", "vs_4_0");
+    ID3DBlob* psBlob = CompileShaderBlob(psSrc, "main", "ps_4_0");
+    if (!vsBlob || !psBlob) {
+        if (vsBlob) vsBlob->Release();
+        if (psBlob) psBlob->Release();
+        return false;
+    }
+
+    HRESULT hr1 = g_dev11->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &g_stereoVS11);
+    HRESULT hr2 = g_dev11->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &g_stereoPS11);
+    vsBlob->Release();
+    psBlob->Release();
+    if (FAILED(hr1) || FAILED(hr2)) return false;
+
+    D3D11_BUFFER_DESC cbd{};
+    cbd.ByteWidth = sizeof(StereoCBData);
+    cbd.Usage = D3D11_USAGE_DYNAMIC;
+    cbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if (FAILED(g_dev11->CreateBuffer(&cbd, nullptr, &g_stereoCB11))) return false;
+
+    D3D11_SAMPLER_DESC sd{};
+    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sd.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sd.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sd.MaxLOD = D3D11_FLOAT32_MAX;
+    if (FAILED(g_dev11->CreateSamplerState(&sd, &g_stereoSamp11))) return false;
+
+    D3D11_RASTERIZER_DESC rd{};
+    rd.FillMode = D3D11_FILL_SOLID;
+    rd.CullMode = D3D11_CULL_NONE;
+    rd.DepthClipEnable = TRUE;
+    if (FAILED(g_dev11->CreateRasterizerState(&rd, &g_stereoRS11))) return false;
+
+    g_stereoPipelineReady = true;
+    Log("D3D11 Method 2 Stereo Shader Pipeline initialized OK");
+    return true;
+}
+
+static bool RenderStereoEyeD11(
+    int eyeIdx,
+    const XrFovf& eyeFov,
+    float invTwoHalfTanX,
+    float invTwoHalfTanY,
+    float eyeSign,
+    float posOffsetX,
+    float posOffsetY)
+{
+    if (!EnsureD11StereoPipeline() || !g_eyeRTV[eyeIdx] || !g_uploadSRV) return false;
+    EnsureDepthTexture11();
+
+    D3D11_MAPPED_SUBRESOURCE ms{};
+    if (FAILED(g_ctx11->Map(g_stereoCB11, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) return false;
+    auto* cb = static_cast<StereoCBData*>(ms.pData);
+    cb->fovTan[0] = std::tan(eyeFov.angleLeft);
+    cb->fovTan[1] = std::tan(eyeFov.angleRight);
+    cb->fovTan[2] = std::tan(eyeFov.angleUp);
+    cb->fovTan[3] = std::tan(eyeFov.angleDown);
+
+    cb->projParams[0] = invTwoHalfTanX;
+    cb->projParams[1] = invTwoHalfTanY;
+    cb->projParams[2] = eyeSign;
+    cb->projParams[3] = g_stereoStrength;
+
+    cb->stereoCfg[0] = g_stereoBaseShift;
+    cb->stereoCfg[1] = g_stereoDepthScale;
+    cb->stereoCfg[2] = g_stereoMaxDisp;
+    cb->stereoCfg[3] = (g_depthHasVariance && g_depthSRV11) ? 1.0f : 0.0f;
+
+    cb->extraCfg[0] = 0.0f;   // convDepth = 0 (far plane has baseShift, near adds +depthScale)
+    cb->extraCfg[1] = 0.015f; // kz hyperbolic depth linearization constant
+    cb->extraCfg[2] = (float)g_depthViz;
+    cb->extraCfg[3] = posOffsetX;
+
+    cb->posCfg[0] = posOffsetY;
+    cb->posCfg[1] = 0.0f;
+    cb->posCfg[2] = 0.0f;
+    cb->posCfg[3] = 0.0f;
+    g_ctx11->Unmap(g_stereoCB11, 0);
+
+    g_ctx11->OMSetRenderTargets(1, &g_eyeRTV[eyeIdx], nullptr);
+    D3D11_VIEWPORT vp{};
+    vp.TopLeftX = 0.0f;
+    vp.TopLeftY = 0.0f;
+    vp.Width = (float)g_scW;
+    vp.Height = (float)g_scH;
+    vp.MinDepth = 0.0f;
+    vp.MaxDepth = 1.0f;
+    g_ctx11->RSSetViewports(1, &vp);
+    g_ctx11->RSSetState(g_stereoRS11);
+
+    g_ctx11->IASetInputLayout(nullptr);
+    g_ctx11->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    g_ctx11->VSSetShader(g_stereoVS11, nullptr, 0);
+    g_ctx11->PSSetShader(g_stereoPS11, nullptr, 0);
+    g_ctx11->PSSetConstantBuffers(0, 1, &g_stereoCB11);
+    g_ctx11->PSSetSamplers(0, 1, &g_stereoSamp11);
+
+    ID3D11ShaderResourceView* srvs[2] = { g_uploadSRV, g_depthSRV11 };
+    g_ctx11->PSSetShaderResources(0, 2, srvs);
+
+    g_ctx11->Draw(3, 0);
+
+    ID3D11ShaderResourceView* nullSrvs[2] = { nullptr, nullptr };
+    g_ctx11->PSSetShaderResources(0, 2, nullSrvs);
+    ID3D11RenderTargetView* nullRtv = nullptr;
+    g_ctx11->OMSetRenderTargets(1, &nullRtv, nullptr);
+    return true;
+}
 
 // ---------------------------------------------------------------- XInput & OpenXR Gamepad
 HWND g_gameHwnd = nullptr;
@@ -1142,11 +1560,14 @@ bool EnsureSwapchains(UINT w, UINT h) {
             delete[] g_scImages[e];
             g_scImages[e] = nullptr;
         }
+        if (g_eyeRTV[e]) {
+            g_eyeRTV[e]->Release();
+            g_eyeRTV[e] = nullptr;
+        }
         if (g_eyeCache[e]) {
             g_eyeCache[e]->Release();
             g_eyeCache[e] = nullptr;
         }
-        g_eyeCacheValid[e] = false;
     }
 
     uint32_t nfmt = 0;
@@ -1198,16 +1619,24 @@ bool EnsureSwapchains(UINT w, UINT h) {
             Log("CreateTexture2D for eyeCache[%d] failed", e);
             return false;
         }
+        if (FAILED(g_dev11->CreateRenderTargetView(g_eyeCache[e], nullptr, &g_eyeRTV[e]))) {
+            Log("CreateRenderTargetView for eyeRTV[%d] failed", e);
+            return false;
+        }
     }
 
     g_scW = w;
     g_scH = h;
-    Log("Stereo swapchains [0,1] created %ux%u count=(%u,%u)", w, h, g_scCount[0], g_scCount[1]);
+    Log("Stereo swapchains [0,1] + RTVs created %ux%u count=(%u,%u)", w, h, g_scCount[0], g_scCount[1]);
     return true;
 }
 
 bool EnsureUploadTexture(UINT w, UINT h) {
-    if (g_upload && w == g_srcW && h == g_srcH) return true;
+    if (g_upload && g_uploadSRV && w == g_srcW && h == g_srcH) return true;
+    if (g_uploadSRV) {
+        g_uploadSRV->Release();
+        g_uploadSRV = nullptr;
+    }
     if (g_upload) {
         g_upload->Release();
         g_upload = nullptr;
@@ -1224,6 +1653,10 @@ bool EnsureUploadTexture(UINT w, UINT h) {
     td.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     if (FAILED(g_dev11->CreateTexture2D(&td, nullptr, &g_upload))) {
         Log("CreateTexture2D for upload failed (%ux%u)", w, h);
+        return false;
+    }
+    if (FAILED(g_dev11->CreateShaderResourceView(g_upload, nullptr, &g_uploadSRV))) {
+        Log("CreateShaderResourceView for uploadSRV failed");
         return false;
     }
     g_srcW = w;
@@ -1244,167 +1677,6 @@ bool EnsureCopy(IDirect3DDevice9* dev, UINT w, UINT h, D3DFORMAT fmt) {
     }
     g_srcFmt = fmt;
     return true;
-}
-
-// ---------------------------------------------------------------- Inline Side-by-Side (SBS) Dual-Draw
-template <typename F>
-static HRESULT DualDraw(IDirect3DDevice9* dev, F&& drawCall) {
-    if (g_inDualDraw) return drawCall();
-
-    const bool stereoActive = (g_submitMode == 0 || g_submitMode == 1) &&
-                              g_in3DGameplayMode &&
-                              (g_stereoStrength > 0.001f);
-
-    if (!stereoActive || !g_curCamMatValid) {
-        return drawCall();
-    }
-
-    // Filter 1: Must have a vertex shader bound (not fixed-function UI)
-    IDirect3DVertexShader9* vs = nullptr;
-    if (FAILED(dev->GetVertexShader(&vs)) || !vs) {
-        return drawCall();
-    }
-    vs->Release();
-
-    // Filter 2: Must not be pre-transformed screen-space vertices (XYZRHW)
-    DWORD fvf = 0;
-    if (SUCCEEDED(dev->GetFVF(&fvf)) && (fvf & D3DFVF_XYZRHW)) {
-        return drawCall();
-    }
-
-    // Filter 3: Viewport must be wide (width >= 640 and width > height)
-    D3DVIEWPORT9 vp{};
-    if (FAILED(dev->GetViewport(&vp)) || vp.Width < 640 || vp.Width <= vp.Height) {
-        return drawCall();
-    }
-
-    g_inDualDraw = true;
-
-    const LONG halfW = static_cast<LONG>(vp.Width / 2);
-    const LONG fullW = static_cast<LONG>(vp.Width);
-    const LONG fullH = static_cast<LONG>(vp.Height);
-    const LONG vpX = static_cast<LONG>(vp.X);
-    const LONG vpY = static_cast<LONG>(vp.Y);
-
-    // Save Scissor Rect and RenderState
-    RECT origScissor{};
-    DWORD origScissorEnable = FALSE;
-    dev->GetScissorRect(&origScissor);
-    dev->GetRenderState(D3DRS_SCISSORTESTENABLE, &origScissorEnable);
-    dev->SetRenderState(D3DRS_SCISSORTESTENABLE, TRUE);
-
-    // Compute 6DoF head tracking displacement
-    float roomDx = 0.0f, roomDy = 0.0f, roomDz = 0.0f;
-    if (g_trackingSubMode != 2 && g_renderHaveViews) {
-        const XrPosef headCenter = HeadCenterPose(g_renderEyePose[0], g_renderEyePose[1]);
-        if (!g_vrRefValid) {
-            g_vrRefPos = headCenter.position;
-            g_vrRefYaw = ComputeHorizontalYaw(headCenter.orientation);
-            g_vrRefValid = true;
-        }
-        const float rawDx = headCenter.position.x - g_vrRefPos.x;
-        const float rawDy = headCenter.position.y - g_vrRefPos.y;
-        const float rawDz = headCenter.position.z - g_vrRefPos.z;
-
-        const float relYaw = ComputeHorizontalYaw(headCenter.orientation) - g_vrRefYaw;
-        const float cYaw = std::cos(relYaw);
-        const float sYaw = std::sin(relYaw);
-
-        roomDx = (cYaw * rawDx - sYaw * rawDz) * g_worldScale;
-        roomDy = rawDy * g_worldScale;
-        roomDz = -(sYaw * rawDx + cYaw * rawDz) * g_worldScale;
-    }
-
-    const bool swapEyes = (g_submitMode == 1);
-    const float ipdDist = 0.0315f * g_stereoStrength;
-
-    // --- LEFT EYE PASS ---
-    float leftMat[16];
-    memcpy(leftMat, g_curCamMat, sizeof(leftMat));
-    {
-        const float eyeSign = swapEyes ? +1.0f : -1.0f;
-        const float dx = eyeSign * ipdDist + roomDx;
-        const float dy = roomDy;
-        const float dz = roomDz;
-        const float o[3] = {
-            dx * g_curCamRight[0] + dy * g_curCamUp[0] + dz * g_curCamFwd[0],
-            dx * g_curCamRight[1] + dy * g_curCamUp[1] + dz * g_curCamFwd[1],
-            dx * g_curCamRight[2] + dy * g_curCamUp[2] + dz * g_curCamFwd[2]
-        };
-        ApplyOffset(leftMat, o);
-        if (g_trackingSubMode == 1 && g_renderHaveViews) {
-            const XrFovf& eyeFov = g_renderEyeFov[swapEyes ? 1 : 0];
-            const float wFov = std::tan(eyeFov.angleRight) - std::tan(eyeFov.angleLeft);
-            const float hFov = std::tan(eyeFov.angleUp) - std::tan(eyeFov.angleDown);
-            if (wFov > 1e-4f && hFov > 1e-4f && g_curPx > 1e-4f && g_curPy > 1e-4f) {
-                const float sx = (2.0f / wFov) / g_curPx;
-                const float sy = (2.0f / hFov) / g_curPy;
-                for (int r = 0; r < 4; ++r) {
-                    leftMat[r * 4 + 0] *= sx;
-                    leftMat[r * 4 + 1] *= sy;
-                }
-            }
-        }
-        ApplyEyeRemap(leftMat, -0.5f); // Remap into left half [-1, 0]
-    }
-    RECT leftScissor = { vpX, vpY, vpX + halfW, vpY + fullH };
-    if (origScissorEnable) {
-        if (origScissor.left > leftScissor.left) leftScissor.left = origScissor.left;
-        if (origScissor.top > leftScissor.top) leftScissor.top = origScissor.top;
-        if (origScissor.right < leftScissor.right) leftScissor.right = origScissor.right;
-        if (origScissor.bottom < leftScissor.bottom) leftScissor.bottom = origScissor.bottom;
-    }
-    dev->SetScissorRect(&leftScissor);
-    g_origSetVertexShaderConstantF(dev, 0, leftMat, 4);
-    HRESULT hr1 = drawCall();
-
-    // --- RIGHT EYE PASS ---
-    float rightMat[16];
-    memcpy(rightMat, g_curCamMat, sizeof(rightMat));
-    {
-        const float eyeSign = swapEyes ? -1.0f : +1.0f;
-        const float dx = eyeSign * ipdDist + roomDx;
-        const float dy = roomDy;
-        const float dz = roomDz;
-        const float o[3] = {
-            dx * g_curCamRight[0] + dy * g_curCamUp[0] + dz * g_curCamFwd[0],
-            dx * g_curCamRight[1] + dy * g_curCamUp[1] + dz * g_curCamFwd[1],
-            dx * g_curCamRight[2] + dy * g_curCamUp[2] + dz * g_curCamFwd[2]
-        };
-        ApplyOffset(rightMat, o);
-        if (g_trackingSubMode == 1 && g_renderHaveViews) {
-            const XrFovf& eyeFov = g_renderEyeFov[swapEyes ? 0 : 1];
-            const float wFov = std::tan(eyeFov.angleRight) - std::tan(eyeFov.angleLeft);
-            const float hFov = std::tan(eyeFov.angleUp) - std::tan(eyeFov.angleDown);
-            if (wFov > 1e-4f && hFov > 1e-4f && g_curPx > 1e-4f && g_curPy > 1e-4f) {
-                const float sx = (2.0f / wFov) / g_curPx;
-                const float sy = (2.0f / hFov) / g_curPy;
-                for (int r = 0; r < 4; ++r) {
-                    rightMat[r * 4 + 0] *= sx;
-                    rightMat[r * 4 + 1] *= sy;
-                }
-            }
-        }
-        ApplyEyeRemap(rightMat, +0.5f); // Remap into right half [0, +1]
-    }
-    RECT rightScissor = { vpX + halfW, vpY, vpX + fullW, vpY + fullH };
-    if (origScissorEnable) {
-        if (origScissor.left > rightScissor.left) rightScissor.left = origScissor.left;
-        if (origScissor.top > rightScissor.top) rightScissor.top = origScissor.top;
-        if (origScissor.right < rightScissor.right) rightScissor.right = origScissor.right;
-        if (origScissor.bottom < rightScissor.bottom) rightScissor.bottom = origScissor.bottom;
-    }
-    dev->SetScissorRect(&rightScissor);
-    g_origSetVertexShaderConstantF(dev, 0, rightMat, 4);
-    HRESULT hr2 = drawCall();
-
-    // Restore original matrix and scissor state
-    g_origSetVertexShaderConstantF(dev, 0, g_curCamMat, 4);
-    dev->SetScissorRect(&origScissor);
-    dev->SetRenderState(D3DRS_SCISSORTESTENABLE, origScissorEnable);
-
-    g_inDualDraw = false;
-    return SUCCEEDED(hr1) ? hr1 : hr2;
 }
 
 bool FillTestPattern(UINT w, UINT h, int mode) {
@@ -1519,9 +1791,9 @@ bool CopyFrame(IDirect3DDevice9* dev) {
 have_locked_rect:
     static int s_statCounter = 0;
     if (++s_statCounter % 120 == 0) {
-        Log("capture stats [frame %d]: %ux%u (via %s) mean RGB=(%u,%u,%u) max RGB=(%u,%u,%u) 3dCams=%d 3dMode=%d",
+        Log("capture stats [frame %d]: %ux%u (via %s) mean RGB=(%u,%u,%u) max RGB=(%u,%u,%u) 3dCams=%d 3dMode=%d depthVar=%d",
             s_statCounter, sd.Width, sd.Height, srcMethod,
-            avgR, avgG, avgB, maxR, maxG, maxB, g_3dCamCallsThisFrame, (int)g_in3DGameplayMode);
+            avgR, avgG, avgB, maxR, maxG, maxB, g_3dCamCallsThisFrame, (int)g_in3DGameplayMode, (int)g_depthHasVariance);
     }
 
     D3D11_MAPPED_SUBRESOURCE ms{};
@@ -1537,6 +1809,11 @@ have_locked_rect:
         memcpy(d + (size_t)y * ms.RowPitch, s + (size_t)y * lr.Pitch, row);
     g_ctx11->Unmap(g_upload, 0);
     g_sysmem->UnlockRect();
+
+    // Snapshot INTZ depth into 480x270 D3D11 texture if available
+    if (g_intzTex9 && g_had3DCameraThisFrame && !g_depthCapturedThisFrame) {
+        CaptureIntzDepthToD11(dev);
+    }
 
     return true;
 }
@@ -1587,29 +1864,21 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
     UpdateCachedXrPad();
 
-    // Hysteresis filter: require 45 consecutive 3D frames (~0.75s) before switching from Cinema to 3D VR Projection
-    // so short Main Menu transition swoops stay smoothly on the Cinema screen without eye-mismatch flashes.
-    // EXIT threshold must be LONG (was 3) so transient frames without a 3D camera upload (HUD-only,
-    // post-FX passes, cutscene beats) don't bounce us back to the flat Cinema screen -> stereo/flat flicker.
     if (g_had3DCameraThisFrame) {
         ++g_consecutive3DFrames;
         g_consecutive2DFrames = 0;
-        if (!g_in3DGameplayMode && g_consecutive3DFrames >= 45) {
+        if (!g_in3DGameplayMode && g_consecutive3DFrames >= 10) {
             g_in3DGameplayMode = true;
-            g_vrRefValid = false; // Auto-recenter 6DoF origin when entering 3D gameplay
-            g_eyeCacheValid[0] = false;
-            g_eyeCacheValid[1] = false;
-            Log(">>> Entered sustained 3D Gameplay VR mode (consecutive3DFrames=%d) <<<", g_consecutive3DFrames);
+            g_vrRefValid = false;
+            Log(">>> Entered 3D Gameplay VR mode (consecutive3DFrames=%d) <<<", g_consecutive3DFrames);
         }
     } else {
         ++g_consecutive2DFrames;
         g_consecutive3DFrames = 0;
-        if (g_in3DGameplayMode && g_consecutive2DFrames >= 90) { // ~1.5s of no-3D-camera before leaving
+        if (g_in3DGameplayMode && g_consecutive2DFrames >= 90) {
             g_in3DGameplayMode = false;
-            g_eyeCacheValid[0] = false;
-            g_eyeCacheValid[1] = false;
             g_anchorValid = false;
-            Log(">>> Returned to 2D Cinema mode (consecutive2DFrames=%d) <<<", g_consecutive2DFrames);
+            Log(">>> Returned to 2D mode (consecutive2DFrames=%d) <<<", g_consecutive2DFrames);
         }
     }
 
@@ -1634,35 +1903,59 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const float aspect = g_scH ? (float)g_scW / (float)g_scH : (16.f / 9.f);
         const XrPosef head = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
 
-        const bool use3DProjection = (g_submitMode == 0 || g_submitMode == 1) && g_in3DGameplayMode && g_had3DCameraThisFrame;
-
-        if (use3DProjection) {
+        // Method 2 Stereo Projection is used whenever SubmitMode is 0 or 1.
+        // Using the same frustum-aligned projection in both menus and gameplay prevents any jarring
+        // transition flashes between Cinema Quad and Stereo Projection!
+        if (g_submitMode == 0 || g_submitMode == 1) {
             const bool swapEyes = (g_submitMode == 1);
-            const int32_t halfW = static_cast<int32_t>(g_scW / 2);
-            const int32_t fullH = static_cast<int32_t>(g_scH);
+            const float leftSign = swapEyes ? +1.0f : -1.0f;
+            const float rightSign = swapEyes ? -1.0f : +1.0f;
 
-            if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_upload)) {
-                XrPosef leftPose = g_renderHaveViews ? g_renderEyePose[0] : g_eyePose[0];
-                XrPosef rightPose = g_renderHaveViews ? g_renderEyePose[1] : g_eyePose[1];
-                XrFovf leftFov = g_renderHaveViews ? g_renderEyeFov[0] : g_eyeFov[0];
-                XrFovf rightFov = g_renderHaveViews ? g_renderEyeFov[1] : g_eyeFov[1];
+            // Choose horizontal half-tan FOV scale according to TrackingSubMode (F9)
+            float halfTanX = 0.88f; // SubMode 0: Balanced 16:9 FOV (~83 deg horizontal, full HUD comfortable)
+            if (g_trackingSubMode == 1) halfTanX = 1.04f;      // SubMode 1: Wide Immersive (~92 deg)
+            else if (g_trackingSubMode == 2) halfTanX = 0.76f; // SubMode 2: Compact Comfort (~75 deg)
+            const float halfTanY = halfTanX / aspect;
+            const float invTwoHalfTanX = 1.0f / (2.0f * halfTanX);
+            const float invTwoHalfTanY = 1.0f / (2.0f * halfTanY);
 
-                const int32_t leftHalf = swapEyes ? 1 : 0;
-                const int32_t rightHalf = swapEyes ? 0 : 1;
+            // Compute subtle 6DoF positional head-lean parallax offset
+            float posOffX = 0.0f, posOffY = 0.0f;
+            if (g_trackingSubMode != 2) {
+                if (!g_vrRefValid) {
+                    g_vrRefPos = head.position;
+                    g_vrRefYaw = ComputeHorizontalYaw(head.orientation);
+                    g_vrRefValid = true;
+                }
+                const float rawDx = head.position.x - g_vrRefPos.x;
+                const float rawDy = head.position.y - g_vrRefPos.y;
+                const float rawDz = head.position.z - g_vrRefPos.z;
+                const float cYaw = std::cos(-g_vrRefYaw);
+                const float sYaw = std::sin(-g_vrRefYaw);
+                const float localX = cYaw * rawDx - sYaw * rawDz;
+                posOffX = std::max(-0.025f, std::min(0.025f, -localX * 0.04f * g_worldScale));
+                posOffY = std::max(-0.020f, std::min(0.020f,  rawDy  * 0.04f * g_worldScale));
+            }
 
-                projViews[0] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-                projViews[0].pose = leftPose;
-                projViews[0].fov = leftFov;
-                projViews[0].subImage.swapchain = g_swapchain[0];
-                projViews[0].subImage.imageRect.offset = { leftHalf * halfW, 0 };
-                projViews[0].subImage.imageRect.extent = { halfW, fullH };
+            const bool leftOk  = RenderStereoEyeD11(0, g_eyeFov[0], invTwoHalfTanX, invTwoHalfTanY, leftSign,  posOffX, posOffY);
+            const bool rightOk = RenderStereoEyeD11(1, g_eyeFov[1], invTwoHalfTanX, invTwoHalfTanY, rightSign, posOffX, posOffY);
 
-                projViews[1] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-                projViews[1].pose = rightPose;
-                projViews[1].fov = rightFov;
-                projViews[1].subImage.swapchain = g_swapchain[0];
-                projViews[1].subImage.imageRect.offset = { rightHalf * halfW, 0 };
-                projViews[1].subImage.imageRect.extent = { halfW, fullH };
+            if (leftOk && rightOk &&
+                WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0]) &&
+                WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[1])) {
+
+                // CRITICAL FOR EYE FUSION:
+                // Both views share the exact same centerPose while using their respective g_eyeFov[e].
+                // Because RenderStereoEyeD11 mapped g_eyeFov[e]'s tangent space so (tx=0, ty=0) -> UV (0.5, 0.5),
+                // the optical axes of Left Eye and Right Eye are 100% parallel at infinity with 0.000 deg divergence!
+                for (int e = 0; e < 2; ++e) {
+                    projViews[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
+                    projViews[e].pose = head;
+                    projViews[e].fov = g_eyeFov[e];
+                    projViews[e].subImage.swapchain = g_swapchain[e];
+                    projViews[e].subImage.imageRect.offset = { 0, 0 };
+                    projViews[e].subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
+                }
 
                 proj.layerFlags = 0;
                 proj.space = g_xrSpace;
@@ -1703,13 +1996,16 @@ void SubmitXR(IDirect3DDevice9* dev) {
         }
 
         if (g_frames == 0 && layerCount > 0) {
-            Log("*** FIRST FRAME SUBMITTED *** mode=%d 3dProjection=%d size=%ux%u",
-                g_submitMode, (int)use3DProjection, g_scW, g_scH);
+            Log("*** FIRST FRAME SUBMITTED *** mode=%d size=%ux%u leftFov=(%.2f,%.2f) rightFov=(%.2f,%.2f)",
+                g_submitMode, g_scW, g_scH,
+                g_eyeFov[0].angleLeft, g_eyeFov[0].angleRight,
+                g_eyeFov[1].angleLeft, g_eyeFov[1].angleRight);
         }
         ++g_frames;
         if ((g_frames % 600) == 0) {
-            Log("xr submit ok frames=%d shouldRender=%d layers=%u (mode=%d subMode=%d 3dCams=%d 3dGameplay=%d)",
-                g_frames, (int)fs.shouldRender, layerCount, g_submitMode, g_trackingSubMode, g_3dCamCallsThisFrame, (int)g_in3DGameplayMode);
+            Log("xr submit ok frames=%d shouldRender=%d layers=%u (mode=%d subMode=%d 3dCams=%d 3dGameplay=%d depthVar=%d)",
+                g_frames, (int)fs.shouldRender, layerCount, g_submitMode, g_trackingSubMode,
+                g_3dCamCallsThisFrame, (int)g_in3DGameplayMode, (int)g_depthHasVariance);
         }
     }
 
@@ -1731,6 +2027,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
     }
     g_had3DCameraThisFrame = false;
     g_3dCamCallsThisFrame = 0;
+    g_depthCapturedThisFrame = false;
     g_lastStage = 21;
 }
 
@@ -1748,8 +2045,6 @@ typedef HRESULT(STDMETHODCALLTYPE* PFN_BeginScene)(IDirect3DDevice9*);
 typedef HRESULT(STDMETHODCALLTYPE* PFN_PresentEx)(IDirect3DDevice9Ex*, const RECT*, const RECT*, HWND,
                                                   const RGNDATA*, DWORD);
 typedef HRESULT(STDMETHODCALLTYPE* PFN_ResetEx)(IDirect3DDevice9Ex*, D3DPRESENT_PARAMETERS*, D3DDISPLAYMODEEX*);
-typedef HRESULT(STDMETHODCALLTYPE* PFN_DrawIndexedPrimitive)(IDirect3DDevice9*, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
-typedef HRESULT(STDMETHODCALLTYPE* PFN_DrawPrimitive)(IDirect3DDevice9*, D3DPRIMITIVETYPE, UINT, UINT);
 
 PFN_Present g_origPresent = nullptr;
 PFN_Reset g_origReset = nullptr;
@@ -1759,8 +2054,6 @@ PFN_PresentEx g_origPresentEx = nullptr;
 PFN_ResetEx g_origResetEx = nullptr;
 PFN_CreateDevice g_origCreateDevice = nullptr;
 PFN_CreateDeviceEx g_origCreateDeviceEx = nullptr;
-PFN_DrawIndexedPrimitive g_origDrawIndexedPrimitive = nullptr;
-PFN_DrawPrimitive g_origDrawPrimitive = nullptr;
 
 volatile LONG g_frameId = 0;
 volatile LONG g_submittedFrameId = -1;
@@ -1769,8 +2062,6 @@ volatile LONG g_presentSeen = 0;
 volatile LONG g_devHooked = 0;
 volatile LONG g_factoryHooked = 0;
 
-// --- Stereo draw-call duplication (same-frame, coherent stereo) ---
-// --- Stereo Inline Dual-Draw Hooks ---
 static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp);
 
 void* PatchVTable(void* obj, int index, void* repl) {
@@ -1791,7 +2082,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         g_sysmem->Release();
         g_sysmem = nullptr;
     }
-    g_curCamMatValid = false;
+    ReleaseDepthResources9();
     HRESULT hr = g_origReset(dev, pp);
     Log("Device Reset (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
@@ -1809,7 +2100,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
         g_sysmem->Release();
         g_sysmem = nullptr;
     }
-    g_curCamMatValid = false;
+    ReleaseDepthResources9();
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
     Log("Device ResetEx (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
@@ -1840,30 +2131,19 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
     SubmitXR(dev);
 }
 
-HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE primType,
-                                                    INT baseVertexIndex, UINT minVertexIndex,
-                                                    UINT numVertices, UINT startIndex, UINT primCount) {
-    return DualDraw(dev, [&]() {
-        return g_origDrawIndexedPrimitive(dev, primType, baseVertexIndex, minVertexIndex, numVertices, startIndex, primCount);
-    });
-}
-
-HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE primType, UINT startVertex, UINT primCount) {
-    return DualDraw(dev, [&]() {
-        return g_origDrawPrimitive(dev, primType, startVertex, primCount);
-    });
-}
-
 HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     InterlockedIncrement(&g_frameId);
-    g_curCamMatValid = false;
     return g_origBeginScene(dev);
 }
 
 HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
     PollHotkeys();
+    // Snapshot INTZ depth before EndScene completes while scene depth is still intact
+    if (g_intzTex9 && g_had3DCameraThisFrame && !g_depthCapturedThisFrame) {
+        CaptureIntzDepthToD11(dev);
+    }
     HRESULT hr = g_origEndScene(dev);
     if (InterlockedCompareExchange(&g_presentSeen, 0, 0) == 0) {
         VrFrame(dev, "EndScene@42");
@@ -1908,16 +2188,15 @@ void HookDevice(IDirect3DDevice9* dev) {
     g_origResetEx = reinterpret_cast<PFN_ResetEx>(
         PatchVTable(dev, 132, reinterpret_cast<void*>(&Hook_ResetEx)));
 
-    // Hook SetVertexShaderConstantF (slot 94) for clean, non-invasive 6DoF & Stereo matrix transformation
     g_origSetVertexShaderConstantF = reinterpret_cast<PFN_SetVertexShaderConstantF>(
         PatchVTable(dev, 94, reinterpret_cast<void*>(&Hook_SetVertexShaderConstantF)));
-    g_origDrawIndexedPrimitive = reinterpret_cast<PFN_DrawIndexedPrimitive>(
-        PatchVTable(dev, 82, reinterpret_cast<void*>(&Hook_DrawIndexedPrimitive)));
-    g_origDrawPrimitive = reinterpret_cast<PFN_DrawPrimitive>(
-        PatchVTable(dev, 81, reinterpret_cast<void*>(&Hook_DrawPrimitive)));
+    g_origSetDepthStencilSurface = reinterpret_cast<PFN_SetDepthStencilSurface>(
+        PatchVTable(dev, 39, reinterpret_cast<void*>(&Hook_SetDepthStencilSurface)));
+    g_origSetTexture = reinterpret_cast<PFN_SetTexture>(
+        PatchVTable(dev, 65, reinterpret_cast<void*>(&Hook_SetTexture)));
 
-    Log("Present@17, Reset@16, BeginScene@41, EndScene@42, SetVSConstF@94, DIP@82, DP@81, PresentEx@121, ResetEx@132 hooked on device %p (origPresentEx=%p origSetVS=%p)",
-        dev, g_origPresentEx, g_origSetVertexShaderConstantF);
+    Log("Method 2 Hooks active on device %p: Present@17, Reset@16, SetDSS@39, BeginScene@41, EndScene@42, SetTex@65, SetVSConstF@94, PresentEx@121, ResetEx@132",
+        dev);
 }
 
 static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp) {
@@ -2064,7 +2343,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         LogInit();
         g_vehHandle = AddVectoredExceptionHandler(1, &CrashVehHandler);
         LoadConfig();
-        Log("Darkness2VR v0.3.0 attached (pid=%lu)", GetCurrentProcessId());
+        Log("Darkness2VR v0.4.0 attached (pid=%lu)", GetCurrentProcessId());
         if (!LoadReal()) {
             Log("FATAL: could not load system d3d9.dll");
             return FALSE;
