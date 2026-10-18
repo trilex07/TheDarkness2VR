@@ -25,8 +25,6 @@
 #include <cstring>
 #include <cmath>
 
-#include "stereo_warp_ps.h"
-
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "xinput.lib")
@@ -42,19 +40,17 @@ bool g_logReady = false;
 // TestMode: 0 = Normal Game Capture, 1 = Solid Bright Green, 2 = Checkerboard
 int g_testMode = 0;
 // SubmitMode (F10):
-//   0 = VR_6DOF_SYNC      (In-Game 6DoF Head Rotation + Position + Stereo Convergence; both eyes updated every frame -> zero eye desync!)
-//   1 = VR_6DOF_AFR       (In-Game 6DoF + Alternating-Eye Stereo 3D)
-//   2 = QUAD_WORLD_ANCHOR (v0.1.9 world-anchored cinema screen in LOCAL space)
-//   3 = QUAD_HEAD_LOCKED  (v0.1.3 cinema screen following head center)
-int g_submitMode = 1;
+//   0 = VR_STEREO_3D      (True Stereoscopic 3D VR + 6DoF via Inline SBS Dual-Draw)
+//   1 = VR_STEREO_SWAP    (True Stereoscopic 3D VR with Swapped Eyes)
+//   2 = QUAD_WORLD_ANCHOR (World-anchored cinema screen in LOCAL space)
+//   3 = QUAD_HEAD_LOCKED  (Head-locked cinema screen)
+int g_submitMode = 0;
 
-// int g_stereoDupEnabled already declared (forward-declared above and also defined at 51? actually remove this line)
 // TrackingSubMode (F9):
 //   0 = Full 6DoF + Native Game Proj
-//   1 = Full 6DoF + OpenXR FOV Override (REQUIRED for geometric stereo: makes the rendered
-//       projection match each eye's submitted HMD frustum, preventing misalignment/doubling)
+//   1 = Full 6DoF + OpenXR FOV Override
 //   2 = 3DoF (Rotation only) + Native Game Proj
-int g_trackingSubMode = 1;
+int g_trackingSubMode = 0;
 
 float g_worldScale = 1.0f;     // Meters -> Evolution Engine units (1.0 = 1m)
 float g_stereoStrength = 1.0f; // Multiplier on stereo separation (F11 cycles 1.0, 1.5, 2.0, 0.5, 0.0)
@@ -63,12 +59,6 @@ float g_cinemaWidthM = 2.1f;
 int g_enableVRGamepad = 1;
 int g_remapPhysical = 1;
 int g_forceWindowedReset = 0;
-// D9Warp stereo tuning (defined near D9 warp block; forward-declared for hotkeys/config)
-extern float g_dibrDispScale; // UV shift per unit inverse-depth (separation strength)
-extern float g_dibrMaxDisp;   // max per-pixel disparity clamp (UV)
-extern int g_depthViz;        // F4: visualize raw depth as grayscale
-extern IDirect3DSurface9* g_sceneDepthSurf; // depth bound during 3D scene pass
-extern int g_stereoDupEnabled;
 
 // World anchor state for Cinema (SubmitMode 2 or 2D menu fallback)
 bool g_anchorValid = false;
@@ -215,8 +205,8 @@ void LoadConfig() {
     g_testMode = GetPrivateProfileIntA("Render", "TestMode", 0, chosenIni);
     g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
     if (g_submitMode < 0 || g_submitMode > 3) g_submitMode = 0;
-    g_trackingSubMode = GetPrivateProfileIntA("Render", "TrackingSubMode", 1, chosenIni);
-    if (g_trackingSubMode < 0 || g_trackingSubMode > 2) g_trackingSubMode = 1;
+    g_trackingSubMode = GetPrivateProfileIntA("Render", "TrackingSubMode", 0, chosenIni);
+    if (g_trackingSubMode < 0 || g_trackingSubMode > 2) g_trackingSubMode = 0;
     g_forceWindowedReset = GetPrivateProfileIntA("Render", "ForceWindowedReset", 0, chosenIni);
 
     char buf[64]{};
@@ -236,24 +226,14 @@ void LoadConfig() {
         float v = (float)atof(buf);
         if (v > 0.5f && v < 20.0f) g_cinemaWidthM = v;
     }
-    if (GetPrivateProfileStringA("Render", "StereoSeparation", "0.03", buf, sizeof(buf), chosenIni)) {
-        float v = (float)atof(buf);
-        if (v >= 0.0f && v <= 0.5f) g_dibrDispScale = v;
-    }
-    if (GetPrivateProfileStringA("Render", "StereoMaxDisparity", "0.012", buf, sizeof(buf), chosenIni)) {
-        float v = (float)atof(buf);
-        if (v >= 0.002f && v <= 0.1f) g_dibrMaxDisp = v;
-    }
-    g_stereoDupEnabled = GetPrivateProfileIntA("Render", "StereoDup", 0, chosenIni);
     g_enableVRGamepad = GetPrivateProfileIntA("Input", "EnableVRGamepad", 1, chosenIni);
     g_remapPhysical = GetPrivateProfileIntA("Input", "RemapPhysicalPorts", 1, chosenIni);
 
     Log("Config loaded from: %s", chosenIni);
-    Log("  Render: SubmitMode=%d TrackingSubMode=%d WorldScale=%.2f StereoStrength=%.2f Distance=%.2fm Width=%.2fm StereoDup=%d",
-        g_submitMode, g_trackingSubMode, g_worldScale, g_stereoStrength, g_cinemaDistanceM, g_cinemaWidthM, g_stereoDupEnabled);
-    Log("  Stereo warp: Separation=%.3f MaxDisparity=%.3f (F6/F5 = live adjust, F4 = depth view)", g_dibrDispScale, g_dibrMaxDisp);
+    Log("  Render: SubmitMode=%d TrackingSubMode=%d WorldScale=%.2f StereoStrength=%.2f Distance=%.2fm Width=%.2fm",
+        g_submitMode, g_trackingSubMode, g_worldScale, g_stereoStrength, g_cinemaDistanceM, g_cinemaWidthM);
     Log("  Input: EnableVRGamepad=%d RemapPhysicalPorts=%d", g_enableVRGamepad, g_remapPhysical);
-    Log("  Hotkeys: F4 = Depth View | F5 = Max Disparity | F6 = Separation | F7 = Dump Camera Matrices | F8 (or L3+R3) = Recenter VR | F9 = Cycle 6DoF/FOV SubMode | F10 = Cycle VR Mode | F11 = Cycle Stereo/Distance");
+    Log("  Hotkeys: F7 = Dump Camera Matrices | F8 (or L3+R3) = Recenter VR | F9 = Cycle 6DoF/FOV SubMode | F10 = Cycle VR Mode | F11 = Cycle Stereo Strength");
 }
 
 void RequestRecenter(const char* source) {
@@ -327,38 +307,6 @@ void PollHotkeys() {
             Log(">>> [HOTKEY F11] Cinema Distance changed to: %.1fm <<<", g_cinemaDistanceM);
         }
     }
-
-    static DWORD s_lastF5 = 0;
-    static DWORD s_lastF6 = 0;
-    static DWORD s_lastF4 = 0;
-    if ((GetAsyncKeyState(VK_F4) & 0x8000) && (now - s_lastF4 > 400)) {
-        s_lastF4 = now;
-        g_depthViz = !g_depthViz;
-        Beep(g_depthViz ? 1100 : 400, 50);
-        Log(">>> [HOTKEY F4] Depth visualization %s <<<", g_depthViz ? "ON (grayscale = raw depth, near=bright)" : "OFF");
-    }
-    if ((GetAsyncKeyState(VK_F5) & 0x8000) && (now - s_lastF5 > 400)) {
-        s_lastF5 = now;
-        if (g_dibrMaxDisp < 0.008f) g_dibrMaxDisp = 0.012f;
-        else if (g_dibrMaxDisp < 0.018f) g_dibrMaxDisp = 0.025f;
-        else if (g_dibrMaxDisp < 0.035f) g_dibrMaxDisp = 0.050f;
-        else g_dibrMaxDisp = 0.005f;
-        Beep(500 + (int)(g_dibrMaxDisp * 8000.f), 50);
-        Log(">>> [HOTKEY F5] Max disparity clamp changed to: %.3f UV (sep=%.3f) <<<",
-            g_dibrMaxDisp, g_dibrDispScale * g_stereoStrength);
-    }
-    if ((GetAsyncKeyState(VK_F6) & 0x8000) && (now - s_lastF6 > 400)) {
-        s_lastF6 = now;
-        if (g_dibrDispScale < 0.010f) g_dibrDispScale = 0.015f;
-        else if (g_dibrDispScale < 0.022f) g_dibrDispScale = 0.030f;
-        else if (g_dibrDispScale < 0.040f) g_dibrDispScale = 0.050f;
-        else if (g_dibrDispScale < 0.070f) g_dibrDispScale = 0.090f;
-        else if (g_dibrDispScale < 0.120f) g_dibrDispScale = 0.150f;
-        else g_dibrDispScale = 0.005f;
-        Beep(600 + (int)(g_dibrDispScale * 3000.f), 50);
-        Log(">>> [HOTKEY F6] Stereo separation (dispScale) changed to: %.3f (eff=%.3f maxDisp=%.3f) <<<",
-            g_dibrDispScale, g_dibrDispScale * g_stereoStrength, g_dibrMaxDisp);
-    }
 }
 
 // ---------------------------------------------------------------- OpenXR & Math
@@ -387,33 +335,21 @@ ID3D11Texture2D* g_upload = nullptr;
 UINT g_srcW = 0, g_srcH = 0;
 D3DFORMAT g_srcFmt = D3DFMT_UNKNOWN;
 
-// Depth capture + DIBR (Approach 2)
-IDirect3DSurface9* g_depthSysmem = nullptr;
-D3DFORMAT g_depthFmt = D3DFMT_UNKNOWN;
-ID3D11Texture2D* g_depthUpload = nullptr;
-ID3D11ShaderResourceView* g_colorSRV = nullptr;
-ID3D11ShaderResourceView* g_depthSRV = nullptr;
-ID3D11RenderTargetView* g_dibrRTV = nullptr;
-ID3D11PixelShader* g_dibrPS = nullptr;
-ID3D11VertexShader* g_dibrVS = nullptr;
-ID3D11SamplerState* g_dibrSampler = nullptr;
-ID3D11Buffer* g_dibrVB = nullptr;
-ID3D11RasterizerState* g_dibrRS = nullptr;
-bool g_depthValid = false;
-bool g_dibrReady = false;
-int g_dibrEnabled = 1; // Same-frame depth-warp stereo ENABLED again: the FVF TEX1 UV interpolation
-                         // bug is fixed (VPOS-based UV, proven by test/stereo_test). Depth is captured
-                         // into our own texture at EndScene (before the deferred engine clears it),
-                         // so both eyes use one frame -> no AFR desync/doubling. If the depth capture
-                         // is invalid, SubmitXR auto-falls back to geometric stereo for that frame.
-bool g_depthWorking = false;
-int g_depthFailLogged = 0;
-// D9Warp stereo tuning (per-eye UV disparity = dispScale * (depth - dConv))
-float g_dibrDispScale = 0.03f; // per-eye separation K (UV at near plane). Start conservative:
-                               // OpenXR poses already add physical IPD parallax on top of this shader
-                               // shift, so a large K makes the two eyes diverge ("rozjazd"). Tune with F6.
-float g_dibrMaxDisp = 0.012f;  // max per-pixel disparity clamp (UV): ~46px full @1920 (fusible).
-int g_depthViz = 0;            // F4: visualize raw depth as grayscale
+// ---------------------------------------------------------------- Inline Side-by-Side (SBS) Dual-Draw
+static bool g_inDualDraw = false;
+static float g_curCamMat[16]{};
+static bool g_curCamMatValid = false;
+static float g_curCamRight[3]{};
+static float g_curCamUp[3]{};
+static float g_curCamFwd[3]{};
+static float g_curPx = 1.0f;
+static float g_curPy = 1.0f;
+
+typedef HRESULT(STDMETHODCALLTYPE* PFN_DrawIndexedPrimitive)(IDirect3DDevice9*, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+typedef HRESULT(STDMETHODCALLTYPE* PFN_DrawPrimitive)(IDirect3DDevice9*, D3DPRIMITIVETYPE, UINT, UINT);
+extern PFN_DrawIndexedPrimitive g_origDrawIndexedPrimitive;
+extern PFN_DrawPrimitive g_origDrawPrimitive;
+
 
 XrPosef g_eyePose[2]{};
 XrFovf g_eyeFov[2]{};
@@ -421,12 +357,10 @@ bool g_haveViews = false;
 int g_frames = 0;
 volatile LONG g_xrInitTried = 0;
 
-int g_activeEye = 0;
 XrPosef g_renderEyePose[2]{};
 XrFovf g_renderEyeFov[2]{};
 bool g_renderHaveViews = false;
 bool g_had3DCameraThisFrame = false;
-int g_eyeToggleLog = 0; // diagnostic: counts real eye alternations
 int g_3dCamCallsThisFrame = 0;
 int g_consecutive3DFrames = 0;
 int g_consecutive2DFrames = 0;
@@ -534,9 +468,32 @@ static void InvertOrthonormalMatrix4x4(float out[16], const float M[16]) {
     memcpy(out, tmp, sizeof(tmp));
 }
 
+static void ApplyEyeRemap(float r[16], float s) {
+    // r is a 4x4 row-major matrix: r[row * 4 + col]
+    // In D3D9 row-major clip coordinates:
+    // clip.x = sum_row (pos_row * r[row*4 + 0])
+    // clip.w = sum_row (pos_row * r[row*4 + 3])
+    // To remap clip.x into a half-screen:
+    // for left eye (s = -0.5f):  clip.x' = 0.5f * clip.x - 0.5f * clip.w  => NDC.x in [-1, 0]
+    // for right eye (s = +0.5f): clip.x' = 0.5f * clip.x + 0.5f * clip.w  => NDC.x in [0, +1]
+    for (int row = 0; row < 4; ++row) {
+        r[row * 4 + 0] = 0.5f * r[row * 4 + 0] + s * r[row * 4 + 3];
+    }
+}
+
+static void ApplyOffset(float r[16], const float o[3]) {
+    // Translates the camera by world vector o = (o[0], o[1], o[2])
+    // In D3D9 row-major: pos_world * M
+    // Row 3 (indices 12..15) is the translation row:
+    // Row 3 -= o[0]*Row 0 + o[1]*Row 1 + o[2]*Row 2
+    for (int k = 0; k < 4; ++k) {
+        r[3 * 4 + k] -= (o[0] * r[0 * 4 + k] +
+                         o[1] * r[1 * 4 + k] +
+                         o[2] * r[2 * 4 + k]);
+    }
+}
+
 // ---------------------------------------------------------------- SetVertexShaderConstantF Hook (Slot 94)
-// Slot 94 on IDirect3DDevice9 vtable.
-// Zero modifications to DarknessII.exe's .text section (immune to Steam CEG integrity checks).
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SetVertexShaderConstantF)(IDirect3DDevice9*, UINT, const float*, UINT);
 PFN_SetVertexShaderConstantF g_origSetVertexShaderConstantF = nullptr;
 
@@ -569,173 +526,65 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     // Aspect = Col 1 / Col 0 ~ 1.778 (16:9)
     const float lenCol3 = std::sqrt(M[3] * M[3] + M[7] * M[7] + M[11] * M[11]);
     if (lenCol3 < 0.7f || lenCol3 > 1.3f) {
+        g_curCamMatValid = false;
         return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
     }
 
     const float lenCol0 = std::sqrt(M[0] * M[0] + M[4] * M[4] + M[8] * M[8]);
     const float lenCol1 = std::sqrt(M[1] * M[1] + M[5] * M[5] + M[9] * M[9]);
     if (lenCol0 < 1.5f || lenCol0 > 4.5f || lenCol1 < 2.5f || lenCol1 > 7.0f) {
+        g_curCamMatValid = false;
         return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
     }
 
     if (std::fabs(M[15]) > 100.0f) {
+        g_curCamMatValid = false;
         return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
     }
 
     const float aspect = (lenCol0 > 1e-4f) ? (lenCol1 / lenCol0) : 0.f;
     if (aspect < 1.4f || aspect > 2.2f) {
+        g_curCamMatValid = false;
         return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
     }
 
     // Filter out static main menu camera (at origin with y = -1.7508)
     const bool isMainMenu = (std::fabs(M[12]) < 0.05f && std::fabs(M[13] + 1.7508f) < 0.1f && std::fabs(M[14]) < 0.05f);
+    if (isMainMenu) {
+        g_curCamMatValid = false;
+        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    }
 
     static int s_loggedVS = 0;
     const bool f7Dump = (InterlockedCompareExchange(&g_dumpNextFrame, 0, 0) != 0);
     if (s_loggedVS < 25 || f7Dump) {
         if (!f7Dump) ++s_loggedVS;
-        Log("[VSConstF] Found 3D ViewProj at c0 (count=%u) %s | aspect=%.3f lenCol3=%.3f lenCol0=%.3f lenCol1=%.3f",
-            Vector4fCount, isMainMenu ? "[MAIN_MENU]" : "[GAME_3D]",
-            aspect, lenCol3, lenCol0, lenCol1);
+        Log("[VSConstF] Found 3D ViewProj at c0 (count=%u) | aspect=%.3f lenCol3=%.3f lenCol0=%.3f lenCol1=%.3f",
+            Vector4fCount, aspect, lenCol3, lenCol0, lenCol1);
         if (s_loggedVS <= 5 || f7Dump) {
             LogMatrix4x4("ViewProj Matrix", M);
         }
     }
 
-    if (isMainMenu) {
-        return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
-    }
+    // Cache the verified camera matrix and orthonormal basis vectors
+    memcpy(g_curCamMat, pConstantData, 16 * sizeof(float));
+    g_curPx = lenCol0;
+    g_curPy = lenCol1;
+    g_curCamRight[0] = M[0] / lenCol0;
+    g_curCamRight[1] = M[4] / lenCol0;
+    g_curCamRight[2] = M[8] / lenCol0;
 
+    g_curCamUp[0] = M[1] / lenCol1;
+    g_curCamUp[1] = M[5] / lenCol1;
+    g_curCamUp[2] = M[9] / lenCol1;
+
+    g_curCamFwd[0] = M[3] / lenCol3;
+    g_curCamFwd[1] = M[7] / lenCol3;
+    g_curCamFwd[2] = M[11] / lenCol3;
+
+    g_curCamMatValid = true;
     g_had3DCameraThisFrame = true;
     ++g_3dCamCallsThisFrame;
-
-    // Capture the depth-stencil surface bound DURING the 3D scene pass. At Present time
-    // the engine has already cleared the backbuffer's depth (DepthProbe showed d=1.0
-    // everywhere), so the only usable scene depth is the one bound while the 3D camera
-    // constants are uploaded. Stash it for the same-frame warp.
-    // IMPORTANT: shadow-map passes also upload 3D-camera-like constants and bind their
-    // own (square, e.g. 1024x1024) depth. Only accept surfaces matching the backbuffer
-    // size (widescreen, >= 1280x640) so we never stash a shadow map.
-    {
-        IDirect3DSurface9* dsNow = nullptr;
-        if (SUCCEEDED(dev->GetDepthStencilSurface(&dsNow)) && dsNow) {
-            D3DSURFACE_DESC dsd{};
-            dsNow->GetDesc(&dsd);
-            bool match = false;
-            if (g_srcW > 0 && g_srcH > 0) {
-                match = (dsd.Width == g_srcW && dsd.Height == g_srcH);
-            } else {
-                match = (dsd.Width >= 1280 && dsd.Height >= 640 && dsd.Width > dsd.Height);
-            }
-            if (match) {
-                if (g_sceneDepthSurf) g_sceneDepthSurf->Release();
-                g_sceneDepthSurf = dsNow; // keep one reference
-            } else {
-                dsNow->Release();
-            }
-        }
-    }
-
-    // Apply 6DoF + Stereo AFR transformation when in sustained 3D gameplay mode
-    if (g_in3DGameplayMode && g_renderHaveViews && (g_submitMode == 0 || g_submitMode == 1)) {
-        float scratch[256 * 4];
-        const UINT maxVecs = (Vector4fCount <= 256) ? Vector4fCount : 256;
-        memcpy(scratch, pConstantData, maxVecs * 4 * sizeof(float));
-        float* targetM = scratch;
-
-        const XrPosef headCenter = HeadCenterPose(g_renderEyePose[0], g_renderEyePose[1]);
-        if (!g_vrRefValid) {
-            g_vrRefPos = headCenter.position;
-            g_vrRefYaw = ComputeHorizontalYaw(headCenter.orientation);
-            g_vrRefValid = true;
-            Log("VR 6DoF Reference latched: pos=(%.3f, %.3f, %.3f) yaw=%.2f deg",
-                g_vrRefPos.x, g_vrRefPos.y, g_vrRefPos.z, g_vrRefYaw * (180.f / 3.14159265f));
-        }
-
-        // Mode 0: Standard Stereo | Mode 1: Swapped Stereo
-        const bool swapEyes = (g_submitMode == 1);
-        int eye = (g_activeEye & 1);
-        if (swapEyes) eye ^= 1;
-
-        const XrFovf& eyeFov = g_renderEyeFov[eye];
-
-        // Extract true camera orthonormal basis in world space from matrix columns:
-        // Col 0: Right * Proj_x
-        // Col 1: Up * Proj_y
-        // Col 3: Forward (unit length)
-        const float Px = lenCol0;
-        const float Py = lenCol1;
-        const float camRight[3] = { M[0] / Px, M[4] / Px, M[8] / Px };
-        const float camUp[3]    = { M[1] / Py, M[5] / Py, M[9] / Py };
-        const float camFwd[3]   = { M[3] / lenCol3, M[7] / lenCol3, M[11] / lenCol3 };
-
-        // 1. Stereo separation along Camera Right (geometric per-eye camera offset).
-        // Each eye is a real render of the scene from its camera position -> physically correct
-        // stereo pair, no doubling. Half-IPD = 0.063m/2 = 0.0315 world units (worldScale=1).
-        // When the depth-warp experiment is enabled and working, offset is dropped (warp owns stereo).
-        const float stereoMult = g_stereoStrength;
-        const float eyeSign = (eye == 0) ? -1.0f : 1.0f;
-        float dx = g_depthWorking ? 0.0f : (eyeSign * (0.0315f * stereoMult));
-        float dy = 0.0f;
-        float dz = 0.0f;
-
-        // 2. Add 6DoF positional head tracking (in camera view coordinates)
-        if (g_trackingSubMode != 2) {
-            const float rawDx = headCenter.position.x - g_vrRefPos.x;
-            const float rawDy = headCenter.position.y - g_vrRefPos.y;
-            const float rawDz = headCenter.position.z - g_vrRefPos.z;
-
-            const float relYaw = ComputeHorizontalYaw(headCenter.orientation) - g_vrRefYaw;
-            const float cYaw = std::cos(relYaw);
-            const float sYaw = std::sin(relYaw);
-
-            const float roomDx = (cYaw * rawDx - sYaw * rawDz) * g_worldScale;
-            const float roomDy = rawDy * g_worldScale;
-            const float roomDz = -(sYaw * rawDx + cYaw * rawDz) * g_worldScale;
-
-            dx += roomDx;
-            dy += roomDy;
-            dz += roomDz;
-        }
-
-        // 3. Convert view displacement (dx, dy, dz) to world-space offset vector o
-        const float o[3] = {
-            dx * camRight[0] + dy * camUp[0] + dz * camFwd[0],
-            dx * camRight[1] + dy * camUp[1] + dz * camFwd[1],
-            dx * camRight[2] + dy * camUp[2] + dz * camFwd[2]
-        };
-
-        // 4. Translate Row 3 by world offset vector o
-        // D3D9 row-major clip translation: Row 3 -= o.x*Row 0 + o.y*Row 1 + o.z*Row 2
-        // Guarantees: delta clip.x = -dx*Px, delta clip.y = -dy*Py, delta clip.w = -dz
-        for (int k = 0; k < 4; ++k) {
-            targetM[3 * 4 + k] -= (o[0] * targetM[0 * 4 + k] +
-                                   o[1] * targetM[1 * 4 + k] +
-                                   o[2] * targetM[2 * 4 + k]);
-        }
-
-        // 5. OpenXR FOV override if TrackingSubMode == 1
-        if (g_trackingSubMode == 1) {
-            const float tanL = std::tan(eyeFov.angleLeft);
-            const float tanR = std::tan(eyeFov.angleRight);
-            const float tanU = std::tan(eyeFov.angleUp);
-            const float tanD = std::tan(eyeFov.angleDown);
-            const float wFov = tanR - tanL;
-            const float hFov = tanU - tanD;
-            if (wFov > 1e-4f && hFov > 1e-4f && Px > 1e-4f && Py > 1e-4f) {
-                const float xrM00 = 2.0f / wFov;
-                const float xrM11 = 2.0f / hFov;
-                const float sx = xrM00 / Px;
-                const float sy = xrM11 / Py;
-                for (int r = 0; r < 4; ++r) {
-                    targetM[r * 4 + 0] *= sx;
-                    targetM[r * 4 + 1] *= sy;
-                }
-            }
-        }
-
-        return g_origSetVertexShaderConstantF(dev, StartRegister, scratch, Vector4fCount);
-    }
 
     return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
 }
@@ -1284,11 +1133,6 @@ void PumpXR() {
 
 bool EnsureSwapchains(UINT w, UINT h) {
     if (g_swapchain[0] && g_swapchain[1] && w == g_scW && h == g_scH) return true;
-    // Swapchain/eyeCache reallocation invalidates DIBR views targeting old textures
-    if (g_colorSRV) { g_colorSRV->Release(); g_colorSRV = nullptr; }
-    if (g_depthSRV) { g_depthSRV->Release(); g_depthSRV = nullptr; }
-    if (g_dibrRTV) { g_dibrRTV->Release(); g_dibrRTV = nullptr; }
-    if (g_depthUpload) { g_depthUpload->Release(); g_depthUpload = nullptr; }
     for (int e = 0; e < 2; ++e) {
         if (g_swapchain[e]) {
             xrDestroySwapchain(g_swapchain[e]);
@@ -1402,738 +1246,165 @@ bool EnsureCopy(IDirect3DDevice9* dev, UINT w, UINT h, D3DFORMAT fmt) {
     return true;
 }
 
-// ---------------------------------------------------------------- DIBR GPU path (D3D9-side warp, same-frame stereo)
-// The depth buffer is INTZ (sampleable depth texture). CPU readback of depth via
-// CreateOffscreenPlainSurface always fails (D3DERR_INVALIDCALL), so instead we warp
-// the right eye on the game D3D9 device itself: left = backbuffer as-is,
-// right = fullscreen D3D9 warp pass (color + INTZ depth -> disparity shift).
-// Both eyes come from the SAME game frame -> zero temporal desync, no doubling.
-#define DARKNESS_D3DFMT_INTZ ((D3DFORMAT)0x5A544E49)
+// ---------------------------------------------------------------- Inline Side-by-Side (SBS) Dual-Draw
+template <typename F>
+static HRESULT DualDraw(IDirect3DDevice9* dev, F&& drawCall) {
+    if (g_inDualDraw) return drawCall();
 
-IDirect3DTexture9* g_d9CopyTex = nullptr;
-IDirect3DSurface9* g_d9CopySurf = nullptr;
-IDirect3DTexture9* g_d9RightTex = nullptr;
-IDirect3DSurface9* g_d9RightSurf = nullptr;
-IDirect3DSurface9* g_d9RightSys = nullptr;
-IDirect3DSurface9* g_sceneDepthSurf = nullptr; // depth bound during 3D scene pass (before Present-time clear)
-// --- Frozen depth snapshot: the scene depth is CLEARED between the scene pass and Present, so we
-// render it into our own color texture (R channel = depth) at EndScene while it is still valid.
-// Both eyes then warp from THIS frame's frozen depth -> zero temporal desync -> no doubling.
-IDirect3DTexture9* g_depthFreezeTex = nullptr;
-IDirect3DSurface9* g_depthFreezeSurf = nullptr;
-IDirect3DVertexShader9* g_depthFreezeVS = nullptr;
-IDirect3DPixelShader9* g_depthFreezePS = nullptr;
-UINT g_depthFreezeW = 0, g_depthFreezeH = 0;
-bool g_depthFreezeValid = false;   // a good snapshot exists
-int g_depthFreezeLogged = 0;
-IDirect3DVertexShader9* g_d9VS = nullptr;
-IDirect3DPixelShader9* g_d9PS = nullptr;
-UINT g_d9W = 0, g_d9H = 0;
-D3DFORMAT g_d9Fmt = D3DFMT_UNKNOWN;
-bool g_d9StereoValid = false;
-int g_d9Logged = 0;
+    const bool stereoActive = (g_submitMode == 0 || g_submitMode == 1) &&
+                              g_in3DGameplayMode &&
+                              (g_stereoStrength > 0.001f);
 
-// Draw-call duplication resources
-IDirect3DSurface9* g_dupLeftRT = nullptr;
-IDirect3DTexture9* g_dupLeftTex = nullptr;
-IDirect3DSurface9* g_dupRightRT = nullptr;
-IDirect3DTexture9* g_dupRightTex = nullptr;
-IDirect3DSurface9* g_dupOrigRT0 = nullptr;
-IDirect3DSurface9* g_dupOrigDS = nullptr;
-UINT g_dupW = 0, g_dupH = 0;
-bool g_dupCapturing = false;
-bool g_dupReplaying = false;
-int g_dupEye = 0;
-
-
-static void ReleaseD9Warp() {
-    if (g_d9CopySurf) { g_d9CopySurf->Release(); g_d9CopySurf = nullptr; }
-    if (g_d9CopyTex) { g_d9CopyTex->Release(); g_d9CopyTex = nullptr; }
-    if (g_d9RightSurf) { g_d9RightSurf->Release(); g_d9RightSurf = nullptr; }
-    if (g_d9RightTex) { g_d9RightTex->Release(); g_d9RightTex = nullptr; }
-    if (g_d9RightSys) { g_d9RightSys->Release(); g_d9RightSys = nullptr; }
-    if (g_sceneDepthSurf) { g_sceneDepthSurf->Release(); g_sceneDepthSurf = nullptr; }
-    if (g_depthFreezeSurf) { g_depthFreezeSurf->Release(); g_depthFreezeSurf = nullptr; }
-    if (g_depthFreezeTex) { g_depthFreezeTex->Release(); g_depthFreezeTex = nullptr; }
-    if (g_depthFreezeVS) { g_depthFreezeVS->Release(); g_depthFreezeVS = nullptr; }
-    if (g_depthFreezePS) { g_depthFreezePS->Release(); g_depthFreezePS = nullptr; }
-    g_depthFreezeW = 0; g_depthFreezeH = 0; g_depthFreezeValid = false;
-    if (g_d9VS) { g_d9VS->Release(); g_d9VS = nullptr; }
-    if (g_d9PS) { g_d9PS->Release(); g_d9PS = nullptr; }
-    g_d9W = 0; g_d9H = 0; g_d9Fmt = D3DFMT_UNKNOWN;
-}
-
-static void ReleaseDupResources() {
-    if (g_dupLeftRT) { g_dupLeftRT->Release(); g_dupLeftRT = nullptr; }
-    if (g_dupLeftTex) { g_dupLeftTex->Release(); g_dupLeftTex = nullptr; }
-    if (g_dupRightRT) { g_dupRightRT->Release(); g_dupRightRT = nullptr; }
-    if (g_dupRightTex) { g_dupRightTex->Release(); g_dupRightTex = nullptr; }
-    if (g_dupOrigRT0) { g_dupOrigRT0->Release(); g_dupOrigRT0 = nullptr; }
-    if (g_dupOrigDS) { g_dupOrigDS->Release(); g_dupOrigDS = nullptr; }
-    g_dupW = 0; g_dupH = 0;
-    g_dupCapturing = g_dupReplaying = false;
-}
-
-static ID3DBlob* CompileD9Shader(const char* src, const char* target) {
-    HMODULE comp = LoadLibraryA("d3dcompiler_47.dll");
-    if (!comp) comp = LoadLibraryA("d3dcompiler_43.dll");
-    if (!comp) return nullptr;
-    typedef HRESULT(WINAPI* PFN_D3DCompile)(const void*, SIZE_T, const char*, const D3D_SHADER_MACRO*, ID3DInclude*,
-                                           const char*, const char*, UINT, UINT, ID3DBlob**, ID3DBlob**);
-    PFN_D3DCompile pCompile = reinterpret_cast<PFN_D3DCompile>(GetProcAddress(comp, "D3DCompile"));
-    if (!pCompile) return nullptr;
-    ID3DBlob* blob = nullptr; ID3DBlob* err = nullptr;
-    HRESULT hr = pCompile(src, strlen(src), "d9warp", nullptr, nullptr, "main", target, 0, 0, &blob, &err);
-    if (FAILED(hr)) {
-        if (g_d9Logged < 3) Log("D9Warp: %s compile failed: %s", target, err ? (char*)err->GetBufferPointer() : "unknown");
-        if (blob) blob->Release();
-        return nullptr;
-    }
-    return blob;
-}
-
-static bool EnsureD9Warp(IDirect3DDevice9* dev, UINT w, UINT h, D3DFORMAT fmt) {
-    if (g_d9CopyTex && g_d9RightTex && g_d9RightSys && g_d9VS && g_d9PS &&
-        w == g_d9W && h == g_d9H && fmt == g_d9Fmt) return true;
-    ReleaseD9Warp();
-
-    D3DFORMAT rtFmt = fmt;
-    if (rtFmt != D3DFMT_A8R8G8B8 && rtFmt != D3DFMT_X8R8G8B8) rtFmt = D3DFMT_A8R8G8B8;
-
-    HRESULT hr = dev->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, rtFmt, D3DPOOL_DEFAULT, &g_d9CopyTex, nullptr);
-    if (FAILED(hr)) {
-        hr = dev->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_d9CopyTex, nullptr);
-    }
-    if (FAILED(hr) || !g_d9CopyTex) {
-        if (g_d9Logged++ < 3) Log("D9Warp: copyTex create failed hr=0x%08lX", hr);
-        ReleaseD9Warp(); return false;
-    }
-    g_d9CopyTex->GetSurfaceLevel(0, &g_d9CopySurf);
-
-    hr = dev->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, rtFmt, D3DPOOL_DEFAULT, &g_d9RightTex, nullptr);
-    if (FAILED(hr) || !g_d9RightTex) {
-        if (g_d9Logged++ < 3) Log("D9Warp: rightTex create failed hr=0x%08lX", hr);
-        ReleaseD9Warp(); return false;
-    }
-    g_d9RightTex->GetSurfaceLevel(0, &g_d9RightSurf);
-
-    hr = dev->CreateOffscreenPlainSurface(w, h, rtFmt, D3DPOOL_SYSTEMMEM, &g_d9RightSys, nullptr);
-    if (FAILED(hr) || !g_d9RightSys) {
-        if (g_d9Logged++ < 3) Log("D9Warp: rightSys create failed hr=0x%08lX", hr);
-        ReleaseD9Warp(); return false;
+    if (!stereoActive || !g_curCamMatValid) {
+        return drawCall();
     }
 
-    const char* vsSrc = kStereoWarpVS;
-    const char* psSrc = kStereoWarpPS;
-    ID3DBlob* vsBlob = CompileD9Shader(vsSrc, "vs_3_0");
-    ID3DBlob* psBlob = CompileD9Shader(psSrc, "ps_3_0");
-    if (!vsBlob || !psBlob) {
-        if (vsBlob) vsBlob->Release();
-        if (psBlob) psBlob->Release();
-        ReleaseD9Warp(); return false;
+    // Filter 1: Must have a vertex shader bound (not fixed-function UI)
+    IDirect3DVertexShader9* vs = nullptr;
+    if (FAILED(dev->GetVertexShader(&vs)) || !vs) {
+        return drawCall();
     }
-    hr = dev->CreateVertexShader((DWORD*)vsBlob->GetBufferPointer(), &g_d9VS);
-    vsBlob->Release();
-    if (FAILED(hr)) { if (psBlob) psBlob->Release(); ReleaseD9Warp(); return false; }
-    hr = dev->CreatePixelShader((DWORD*)psBlob->GetBufferPointer(), &g_d9PS);
-    psBlob->Release();
-    if (FAILED(hr)) { ReleaseD9Warp(); return false; }
+    vs->Release();
 
-    g_d9W = w; g_d9H = h; g_d9Fmt = fmt;
-    Log("D9Warp: ready %ux%u fmt=%d", w, h, (int)fmt);
-    return true;
-}
+    // Filter 2: Must not be pre-transformed screen-space vertices (XYZRHW)
+    DWORD fvf = 0;
+    if (SUCCEEDED(dev->GetFVF(&fvf)) && (fvf & D3DFVF_XYZRHW)) {
+        return drawCall();
+    }
 
-// Renders one eye's warp from the current backbuffer color + the FROZEN depth texture.
-// Returns true on success. Both eyes are produced from the SAME color frame and SAME frozen
-// depth -> zero temporal desync -> the two eyes form one coherent stereo pair.
-static bool RunD9Warp(IDirect3DDevice9* dev, UINT w, UINT h, float dispScale, float eyeSign) {
-    IDirect3DSurface9* back = nullptr;
-    if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &back)) || !back) return false;
+    // Filter 3: Viewport must be wide (width >= 640 and width > height)
+    D3DVIEWPORT9 vp{};
+    if (FAILED(dev->GetViewport(&vp)) || vp.Width < 640 || vp.Width <= vp.Height) {
+        return drawCall();
+    }
 
-    // Depth source: the frozen grayscale depth texture (R = depth). Fall back to the live
-    // scene depth only if we have no frozen copy yet (first frame).
-    IDirect3DTexture9* depthTex = nullptr;
-    if (g_depthFreezeValid && g_depthFreezeTex && g_depthFreezeW == w && g_depthFreezeH == h) {
-        depthTex = g_depthFreezeTex;
-        depthTex->AddRef();
-    } else {
-        if (!g_sceneDepthSurf) { back->Release(); return false; }
-        if (FAILED(g_sceneDepthSurf->GetContainer(__uuidof(IDirect3DTexture9), (void**)&depthTex)) || !depthTex) {
-            back->Release(); return false;
+    g_inDualDraw = true;
+
+    const LONG halfW = static_cast<LONG>(vp.Width / 2);
+    const LONG fullW = static_cast<LONG>(vp.Width);
+    const LONG fullH = static_cast<LONG>(vp.Height);
+    const LONG vpX = static_cast<LONG>(vp.X);
+    const LONG vpY = static_cast<LONG>(vp.Y);
+
+    // Save Scissor Rect and RenderState
+    RECT origScissor{};
+    DWORD origScissorEnable = FALSE;
+    dev->GetScissorRect(&origScissor);
+    dev->GetRenderState(D3DRS_SCISSORTESTENABLE, &origScissorEnable);
+    dev->SetRenderState(D3DRS_SCISSORTESTENABLE, TRUE);
+
+    // Compute 6DoF head tracking displacement
+    float roomDx = 0.0f, roomDy = 0.0f, roomDz = 0.0f;
+    if (g_trackingSubMode != 2 && g_renderHaveViews) {
+        const XrPosef headCenter = HeadCenterPose(g_renderEyePose[0], g_renderEyePose[1]);
+        if (!g_vrRefValid) {
+            g_vrRefPos = headCenter.position;
+            g_vrRefYaw = ComputeHorizontalYaw(headCenter.orientation);
+            g_vrRefValid = true;
         }
+        const float rawDx = headCenter.position.x - g_vrRefPos.x;
+        const float rawDy = headCenter.position.y - g_vrRefPos.y;
+        const float rawDz = headCenter.position.z - g_vrRefPos.z;
+
+        const float relYaw = ComputeHorizontalYaw(headCenter.orientation) - g_vrRefYaw;
+        const float cYaw = std::cos(relYaw);
+        const float sYaw = std::sin(relYaw);
+
+        roomDx = (cYaw * rawDx - sYaw * rawDz) * g_worldScale;
+        roomDy = rawDy * g_worldScale;
+        roomDz = -(sYaw * rawDx + cYaw * rawDz) * g_worldScale;
     }
 
-    if (!EnsureD9Warp(dev, w, h, D3DFMT_A8R8G8B8)) {
-        depthTex->Release(); back->Release(); return false;
-    }
+    const bool swapEyes = (g_submitMode == 1);
+    const float ipdDist = 0.0315f * g_stereoStrength;
 
-    // Color -> copy texture (StretchRect resolves MSAA if needed)
-    HRESULT srHr = dev->StretchRect(back, nullptr, g_d9CopySurf, nullptr, D3DTEXF_NONE);
-    back->Release();
-    if (FAILED(srHr)) {
-        if (g_d9Logged++ < 3) Log("D9Warp: StretchRect color failed hr=0x%08lX", srHr);
-        depthTex->Release(); return false;
-    }
-
-    // Save state
-    IDirect3DSurface9* oldRT = nullptr; dev->GetRenderTarget(0, &oldRT);
-    IDirect3DSurface9* oldDS = nullptr; dev->GetDepthStencilSurface(&oldDS);
-    D3DVIEWPORT9 oldVP{}; dev->GetViewport(&oldVP);
-    IDirect3DVertexShader9* oldVS = nullptr; dev->GetVertexShader(&oldVS);
-    IDirect3DPixelShader9* oldPS = nullptr; dev->GetPixelShader(&oldPS);
-    DWORD oldFVF = 0; dev->GetFVF(&oldFVF);
-    IDirect3DBaseTexture9* oldT0 = nullptr; dev->GetTexture(0, &oldT0);
-    IDirect3DBaseTexture9* oldT1 = nullptr; dev->GetTexture(1, &oldT1);
-    DWORD oldMin0 = 0, oldMag0 = 0, oldMip0 = 0, oldU0 = 0, oldV0 = 0;
-    DWORD oldMin1 = 0, oldMag1 = 0, oldMip1 = 0, oldU1 = 0, oldV1 = 0;
-    dev->GetSamplerState(0, D3DSAMP_MINFILTER, &oldMin0); dev->GetSamplerState(0, D3DSAMP_MAGFILTER, &oldMag0);
-    dev->GetSamplerState(0, D3DSAMP_MIPFILTER, &oldMip0); dev->GetSamplerState(0, D3DSAMP_ADDRESSU, &oldU0);
-    dev->GetSamplerState(0, D3DSAMP_ADDRESSV, &oldV0);
-    dev->GetSamplerState(1, D3DSAMP_MINFILTER, &oldMin1); dev->GetSamplerState(1, D3DSAMP_MAGFILTER, &oldMag1);
-    dev->GetSamplerState(1, D3DSAMP_MIPFILTER, &oldMip1); dev->GetSamplerState(1, D3DSAMP_ADDRESSU, &oldU1);
-    dev->GetSamplerState(1, D3DSAMP_ADDRESSV, &oldV1);
-    DWORD oldScissor = 0, oldZ = 0, oldBlend = 0;
-    dev->GetRenderState(D3DRS_SCISSORTESTENABLE, &oldScissor);
-    dev->GetRenderState(D3DRS_ZENABLE, &oldZ);
-    dev->GetRenderState(D3DRS_ALPHABLENDENABLE, &oldBlend);
-
-    bool drawOk = false;
-    HRESULT hr = dev->SetRenderTarget(0, g_d9RightSurf);
-    if (SUCCEEDED(hr)) hr = dev->SetDepthStencilSurface(nullptr);
-    D3DVIEWPORT9 vp{ 0, 0, w, h, 0.f, 1.f };
-    if (SUCCEEDED(hr)) hr = dev->SetViewport(&vp);
-    if (SUCCEEDED(hr)) {
-        dev->SetTexture(0, g_d9CopyTex);
-        dev->SetTexture(1, depthTex);
-        dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
-        dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-        dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
-        dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-        dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-        dev->SetSamplerState(1, D3DSAMP_MINFILTER, D3DTEXF_POINT);
-        dev->SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
-        dev->SetSamplerState(1, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
-        dev->SetSamplerState(1, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-        dev->SetSamplerState(1, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-        dev->SetVertexShader(g_d9VS);
-        const float c1[4] = { 1.0f / (float)w, 1.0f / (float)h, 0.f, 0.f };
-        dev->SetPixelShaderConstantF(1, c1, 1); // vsConst: (1/w, 1/h) for VPOS->uv
-        dev->SetPixelShader(g_d9PS);
-        dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
-        dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-        dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-        dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-        const float c0[4] = { dispScale, (float)g_depthViz, eyeSign, g_dibrMaxDisp };
-        dev->SetPixelShaderConstantF(0, c0, 1);
-        struct V { float x, y, rhw, u, v; }; // XYZRHW(x,y,rhw) + TEX1(u,v) = 5 floats = FVF stride
-        const float fw = (float)w, fh = (float)h;
-        V quad[4] = { { 0, 0, 1, 0, 0 }, { fw, 0, 1, 1, 0 },
-                      { 0, fh, 1, 0, 1 }, { fw, fh, 1, 1, 1 } };
-        hr = dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(V));
-        drawOk = SUCCEEDED(hr);
-        if (FAILED(hr) && g_d9Logged++ < 3) Log("D9Warp: draw failed hr=0x%08lX", hr);
-        // Capture warped result to sysmem while target still bound
-        if (drawOk) {
-            HRESULT capHr = dev->GetRenderTargetData(g_d9RightSurf, g_d9RightSys);
-            if (FAILED(capHr)) {
-                drawOk = false;
-                if (g_d9Logged++ < 3) Log("D9Warp: capture failed hr=0x%08lX", capHr);
-            }
-        }
-    }
-
-    // Restore state
-    dev->SetTexture(0, oldT0); dev->SetTexture(1, oldT1);
-    if (oldT0) oldT0->Release(); if (oldT1) oldT1->Release();
-    dev->SetSamplerState(0, D3DSAMP_MINFILTER, oldMin0); dev->SetSamplerState(0, D3DSAMP_MAGFILTER, oldMag0);
-    dev->SetSamplerState(0, D3DSAMP_MIPFILTER, oldMip0); dev->SetSamplerState(0, D3DSAMP_ADDRESSU, oldU0);
-    dev->SetSamplerState(0, D3DSAMP_ADDRESSV, oldV0);
-    dev->SetSamplerState(1, D3DSAMP_MINFILTER, oldMin1); dev->SetSamplerState(1, D3DSAMP_MAGFILTER, oldMag1);
-    dev->SetSamplerState(1, D3DSAMP_MIPFILTER, oldMip1); dev->SetSamplerState(1, D3DSAMP_ADDRESSU, oldU1);
-    dev->SetSamplerState(1, D3DSAMP_ADDRESSV, oldV1);
-    dev->SetVertexShader(oldVS); dev->SetPixelShader(oldPS);
-    if (oldVS) oldVS->Release(); if (oldPS) oldPS->Release();
-    dev->SetFVF(oldFVF);
-    dev->SetRenderState(D3DRS_SCISSORTESTENABLE, oldScissor);
-    dev->SetRenderState(D3DRS_ZENABLE, oldZ);
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, oldBlend);
-    dev->SetViewport(&oldVP);
-    dev->SetDepthStencilSurface(oldDS);
-    dev->SetRenderTarget(0, oldRT);
-    if (oldRT) oldRT->Release(); if (oldDS) oldDS->Release();
-    depthTex->Release();
-
-    return drawOk;
-}
-
-// Renders the scene depth (g_sceneDepthSurf) into our own A8R8G8B8 texture while it is still
-// valid (called at EndScene, before the deferred engine clears it). Depth goes to the RED
-// channel. This frozen texture is what the stereo warp samples, so both eyes use ONE frame's
-// depth -> no temporal desync / no doubling.
-static bool FreezeDepthToColor(IDirect3DDevice9* dev, UINT w, UINT h) {
-    if (!g_sceneDepthSurf) return false;
-    D3DSURFACE_DESC zsd{}; g_sceneDepthSurf->GetDesc(&zsd);
-    if (zsd.Width != w || zsd.Height != h) return false;
-    if (zsd.MultiSampleType != D3DMULTISAMPLE_NONE) return false;
-
-    IDirect3DTexture9* depthTex = nullptr;
-    if (FAILED(g_sceneDepthSurf->GetContainer(__uuidof(IDirect3DTexture9), (void**)&depthTex)) || !depthTex)
-        return false;
-
-    // Create/refresh freeze target + shaders (grayscale copy of depth).
-    if (!g_depthFreezeTex || g_depthFreezeW != w || g_depthFreezeH != h) {
-        if (g_depthFreezeTex) { g_depthFreezeSurf->Release(); g_depthFreezeTex->Release(); }
-        g_depthFreezeSurf = nullptr; g_depthFreezeTex = nullptr;
-        if (FAILED(dev->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                      D3DPOOL_DEFAULT, &g_depthFreezeTex, nullptr)) || !g_depthFreezeTex) {
-            depthTex->Release(); return false;
-        }
-        g_depthFreezeTex->GetSurfaceLevel(0, &g_depthFreezeSurf);
-        g_depthFreezeW = w; g_depthFreezeH = h;
-    }
-    if (!g_depthFreezeVS || !g_depthFreezePS) {
-        const char* vsSrc =
-            "float4 main(float4 pos : POSITION) : POSITION { return pos; }\n";
-        const char* psSrc =
-            "sampler2D depthTex : register(s0);\n"
-            "float4 main(float4 vpos : VPOS) : COLOR0 {\n"
-            "  float d = tex2D(depthTex, vpos.xy).r;\n"
-            "  return float4(d, d, d, 1.0);\n"
-            "}\n";
-        ID3DBlob* vb = CompileD9Shader(vsSrc, "vs_3_0");
-        ID3DBlob* pb = CompileD9Shader(psSrc, "ps_3_0");
-        if (vb) { dev->CreateVertexShader((DWORD*)vb->GetBufferPointer(), &g_depthFreezeVS); vb->Release(); }
-        if (pb) { dev->CreatePixelShader((DWORD*)pb->GetBufferPointer(), &g_depthFreezePS); pb->Release(); }
-        if (!g_depthFreezeVS || !g_depthFreezePS) { depthTex->Release(); return false; }
-    }
-
-    // Save state
-    IDirect3DSurface9* oldRT = nullptr; dev->GetRenderTarget(0, &oldRT);
-    IDirect3DSurface9* oldDS = nullptr; dev->GetDepthStencilSurface(&oldDS);
-    D3DVIEWPORT9 oldVP{}; dev->GetViewport(&oldVP);
-    IDirect3DVertexShader9* oldVS = nullptr; dev->GetVertexShader(&oldVS);
-    IDirect3DPixelShader9* oldPS = nullptr; dev->GetPixelShader(&oldPS);
-    IDirect3DBaseTexture9* oldT0 = nullptr; dev->GetTexture(0, &oldT0);
-    DWORD oldScissor = 0, oldZ = 0, oldBlend = 0, oldMin0 = 0, oldMag0 = 0, oldMip0 = 0, oldU0 = 0, oldV0 = 0;
-    dev->GetRenderState(D3DRS_SCISSORTESTENABLE, &oldScissor);
-    dev->GetRenderState(D3DRS_ZENABLE, &oldZ);
-    dev->GetRenderState(D3DRS_ALPHABLENDENABLE, &oldBlend);
-    dev->GetSamplerState(0, D3DSAMP_MINFILTER, &oldMin0); dev->GetSamplerState(0, D3DSAMP_MAGFILTER, &oldMag0);
-    dev->GetSamplerState(0, D3DSAMP_MIPFILTER, &oldMip0); dev->GetSamplerState(0, D3DSAMP_ADDRESSU, &oldU0);
-    dev->GetSamplerState(0, D3DSAMP_ADDRESSV, &oldV0);
-
-    bool ok = false;
-    if (SUCCEEDED(dev->SetRenderTarget(0, g_depthFreezeSurf)) &&
-        SUCCEEDED(dev->SetDepthStencilSurface(nullptr))) {
-        D3DVIEWPORT9 vp{ 0, 0, w, h, 0.f, 1.f }; dev->SetViewport(&vp);
-        dev->Clear(0, nullptr, D3DCLEAR_TARGET, 0xFF000000, 1.0f, 0);
-        dev->SetTexture(0, depthTex);
-        dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT);
-        dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
-        dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
-        dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-        dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-        dev->SetVertexShader(g_depthFreezeVS);
-        dev->SetPixelShader(g_depthFreezePS);
-        dev->SetFVF(D3DFVF_XYZRHW);
-        dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-        dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-        dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-        struct V { float x, y, rhw; };
-        const float fw = (float)w, fh = (float)h;
-        V quad[4] = { {0,0,1}, {fw,0,1}, {0,fh,1}, {fw,fh,1} };
-        ok = SUCCEEDED(dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(V)));
-    }
-
-    // Restore
-    dev->SetTexture(0, oldT0); if (oldT0) oldT0->Release();
-    dev->SetSamplerState(0, D3DSAMP_MINFILTER, oldMin0); dev->SetSamplerState(0, D3DSAMP_MAGFILTER, oldMag0);
-    dev->SetSamplerState(0, D3DSAMP_MIPFILTER, oldMip0); dev->SetSamplerState(0, D3DSAMP_ADDRESSU, oldU0);
-    dev->SetSamplerState(0, D3DSAMP_ADDRESSV, oldV0);
-    dev->SetVertexShader(oldVS); if (oldVS) oldVS->Release();
-    dev->SetPixelShader(oldPS); if (oldPS) oldPS->Release();
-    dev->SetRenderState(D3DRS_SCISSORTESTENABLE, oldScissor);
-    dev->SetRenderState(D3DRS_ZENABLE, oldZ);
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, oldBlend);
-    dev->SetViewport(&oldVP);
-    dev->SetDepthStencilSurface(oldDS);
-    dev->SetRenderTarget(0, oldRT);
-    if (oldRT) oldRT->Release(); if (oldDS) oldDS->Release();
-    depthTex->Release();
-
-    if (ok) g_depthFreezeValid = true;
-    return ok;
-}
-
-static void ReplayDup(IDirect3DDevice9* dev, int eye);
-
-static void ReplayDup(IDirect3DDevice9* dev, int eye);
-
-static bool EnsureDupTargets(IDirect3DDevice9* dev, UINT w, UINT h) {
-    if (!dev) return false;
-    if (g_dupLeftTex && g_dupW == w && g_dupH == h) return true;
-    ReleaseDupResources();
-    HRESULT hr1 = dev->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_dupLeftTex, nullptr);
-    HRESULT hr2 = dev->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_dupRightTex, nullptr); // keep consistent
-    if (FAILED(hr1) || FAILED(hr2) || !g_dupLeftTex || !g_dupRightTex) {
-        ReleaseDupResources();
-        return false;
-    }
-    g_dupLeftTex->GetSurfaceLevel(0, &g_dupLeftRT);
-    g_dupRightTex->GetSurfaceLevel(0, &g_dupRightRT);
-    g_dupW = w; g_dupH = h;
-    return true;
-}
-
-// Uploads the warped right-eye sysmem surface into the given D3D11 eye cache texture.
-static bool UploadD9RightToEye(int eye) {
-    if (!g_d9RightSys || eye < 0 || eye > 1 || !g_eyeCache[eye] || !g_upload) return false;
-    D3DLOCKED_RECT rlr{};
-    if (FAILED(g_d9RightSys->LockRect(&rlr, nullptr, D3DLOCK_READONLY))) return false;
-    bool ok = false;
-    D3D11_MAPPED_SUBRESOURCE rms{};
-    if (SUCCEEDED(g_ctx11->Map(g_upload, 0, D3D11_MAP_WRITE_DISCARD, 0, &rms))) {
-        const size_t rrow = (size_t)g_srcW * 4;
-        const uint8_t* rs = static_cast<const uint8_t*>(rlr.pBits);
-        uint8_t* rd = static_cast<uint8_t*>(rms.pData);
-        for (UINT y = 0; y < g_srcH; ++y)
-            memcpy(rd + (size_t)y * rms.RowPitch, rs + (size_t)y * rlr.Pitch, rrow);
-        g_ctx11->Unmap(g_upload, 0);
-        g_ctx11->CopyResource(g_eyeCache[eye], g_upload);
-        ok = true;
-    }
-    g_d9RightSys->UnlockRect();
-    return ok;
-}
-
-// One-shot: read back a coarse grid of real depth values and log the distribution.
-// Lets us calibrate separation/convergence to the engine's actual near/far instead of guessing.
-// Periodic: read back a coarse grid of real depth values and log the distribution.
-// Lets us calibrate separation/convergence to the engine's actual near/far instead of
-// guessing. Probes the SCENE-pass depth first (stashed in VS hook), then the bound depth.
-static void ProbeDepthOnce(IDirect3DDevice9* dev, UINT w, UINT h) {
-    static int s_probeCount = 0;
-    static int s_frameSinceLast = 0;
-    ++s_frameSinceLast;
-    if (s_frameSinceLast < 300) return;
-    s_frameSinceLast = 0;
-    if (s_probeCount >= 8) return;
-    ++s_probeCount;
-
-    IDirect3DSurface9* zs = nullptr;
-    const char* srcName = "bound";
-    if (g_sceneDepthSurf) { zs = g_sceneDepthSurf; zs->AddRef(); srcName = "scene-pass"; }
-    else if (FAILED(dev->GetDepthStencilSurface(&zs)) || !zs) return;
-    D3DSURFACE_DESC zsd{}; zs->GetDesc(&zsd);
-    IDirect3DTexture9* depthTex = nullptr;
-    HRESULT hr = zs->GetContainer(__uuidof(IDirect3DTexture9), (void**)&depthTex);
-    zs->Release();
-    if (FAILED(hr) || !depthTex) {
-        Log("DepthProbe[%d]: %s depth %ux%u fmt=%d has no texture container hr=0x%08lX",
-            s_probeCount, srcName, zsd.Width, zsd.Height, (int)zsd.Format, hr);
-        return;
-    }
-
-    // Small offscreen A8R8G8B8 target to blit depth (as grayscale) into, then read back.
-    const UINT pw = 64, ph = 36;
-    IDirect3DTexture9* pt = nullptr;
-    IDirect3DPixelShader9* ps = nullptr;
-    if (FAILED(dev->CreateTexture(pw, ph, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &pt, nullptr)) || !pt) {
-        depthTex->Release(); return;
-    }
-    const char* psSrc =
-        "sampler2D depthTex : register(s0);\n"
-        "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
-        "  float d = tex2D(depthTex, uv).r;\n"
-        "  return float4(d, d, d, 1.0);\n"
-        "}\n";
-    // compile via same helper used elsewhere
-    ID3DBlob* blob = CompileD9Shader(psSrc, "ps_3_0");
-    if (blob) {
-        hr = dev->CreatePixelShader((const DWORD*)blob->GetBufferPointer(), &ps);
-        blob->Release();
-    }
-    if (SUCCEEDED(hr) && ps) {
-        IDirect3DSurface9* oldRT = nullptr; dev->GetRenderTarget(0, &oldRT);
-        IDirect3DPixelShader9* oldPS = nullptr; dev->GetPixelShader(&oldPS);
-        IDirect3DBaseTexture9* oldT0 = nullptr; dev->GetTexture(0, &oldT0);
-        IDirect3DSurface9* rt = nullptr; pt->GetSurfaceLevel(0, &rt);
-        if (SUCCEEDED(dev->SetRenderTarget(0, rt))) {
-            D3DVIEWPORT9 vp{ 0, 0, pw, ph, 0.f, 1.f }; dev->SetViewport(&vp);
-            dev->SetTexture(0, depthTex);
-            dev->SetPixelShader(ps);
-            dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
-            dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-            dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-            struct V { float x, y, rhw, u, v; }; // XYZRHW + TEX1 = 5 floats = FVF stride
-            V quad[4] = { {0,0,1,0,0}, {(float)pw,0,1,1,0}, {0,(float)ph,1,0,1}, {(float)pw,(float)ph,1,1,1} };
-            dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(V));
-            // read back via a sysmem copy
-            IDirect3DSurface9* sys = nullptr;
-            if (SUCCEEDED(dev->CreateOffscreenPlainSurface(pw, ph, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &sys, nullptr)) && sys) {
-                if (SUCCEEDED(dev->GetRenderTargetData(rt, sys))) {
-                    D3DLOCKED_RECT lr{};
-                    if (SUCCEEDED(sys->LockRect(&lr, nullptr, D3DLOCK_READONLY))) {
-                        int hist[9] = {0}; // buckets over d in [0,1]
-                        const uint8_t* p = (const uint8_t*)lr.pBits;
-                        float dmin = 1.f, dmax = 0.f, dsum = 0.f; int cnt = 0;
-                        for (UINT y = 0; y < ph; ++y) {
-                            const uint8_t* row = p + (size_t)y * lr.Pitch;
-                            for (UINT x = 0; x < pw; ++x) {
-                                float d = row[x * 4] / 255.f; // blue channel holds d
-                                if (d < dmin) dmin = d;
-                                if (d > dmax) dmax = d;
-                                dsum += d; cnt++;
-                                int b = (int)(d * 8.f); if (b < 0) b = 0; if (b > 8) b = 8;
-                                hist[b]++;
-                            }
-                        }
-                        sys->UnlockRect();
-                        Log("DepthProbe[%d] %s: d range [%.4f .. %.4f] mean=%.4f samples=%d", s_probeCount, srcName, dmin, dmax, dsum / (cnt ? cnt : 1), cnt);
-                        Log("DepthProbe[%d] %s hist(0..1 in 9 bins): %d %d %d %d %d %d %d %d %d", s_probeCount, srcName,
-                            hist[0], hist[1], hist[2], hist[3], hist[4], hist[5], hist[6], hist[7], hist[8]);
-                        bool cleared = (dmin >= 0.999f || dmax <= 0.001f || (dmax - dmin) < 0.005f);
-                        Log("DepthProbe[%d] %s: %s", s_probeCount, srcName, cleared
-                            ? "DEPTH APPEARS CLEARED/CONSTANT (warp would give flat/zero disparity)"
-                            : "depth has real scene variation (warp usable)");
-                    }
+    // --- LEFT EYE PASS ---
+    float leftMat[16];
+    memcpy(leftMat, g_curCamMat, sizeof(leftMat));
+    {
+        const float eyeSign = swapEyes ? +1.0f : -1.0f;
+        const float dx = eyeSign * ipdDist + roomDx;
+        const float dy = roomDy;
+        const float dz = roomDz;
+        const float o[3] = {
+            dx * g_curCamRight[0] + dy * g_curCamUp[0] + dz * g_curCamFwd[0],
+            dx * g_curCamRight[1] + dy * g_curCamUp[1] + dz * g_curCamFwd[1],
+            dx * g_curCamRight[2] + dy * g_curCamUp[2] + dz * g_curCamFwd[2]
+        };
+        ApplyOffset(leftMat, o);
+        if (g_trackingSubMode == 1 && g_renderHaveViews) {
+            const XrFovf& eyeFov = g_renderEyeFov[swapEyes ? 1 : 0];
+            const float wFov = std::tan(eyeFov.angleRight) - std::tan(eyeFov.angleLeft);
+            const float hFov = std::tan(eyeFov.angleUp) - std::tan(eyeFov.angleDown);
+            if (wFov > 1e-4f && hFov > 1e-4f && g_curPx > 1e-4f && g_curPy > 1e-4f) {
+                const float sx = (2.0f / wFov) / g_curPx;
+                const float sy = (2.0f / hFov) / g_curPy;
+                for (int r = 0; r < 4; ++r) {
+                    leftMat[r * 4 + 0] *= sx;
+                    leftMat[r * 4 + 1] *= sy;
                 }
-                sys->Release();
             }
-            if (rt) rt->Release();
         }
-        if (oldRT) { dev->SetRenderTarget(0, oldRT); oldRT->Release(); }
-        if (oldPS) { dev->SetPixelShader(oldPS); oldPS->Release(); }
-        if (oldT0) { dev->SetTexture(0, oldT0); oldT0->Release(); }
-        ps->Release();
+        ApplyEyeRemap(leftMat, -0.5f); // Remap into left half [-1, 0]
     }
-    pt->Release();
-    depthTex->Release();
-}
-
-// ---------------------------------------------------------------- DIBR (Depth-Image-Based Rendering) helpers
-static void ReleaseDibrResources() {
-    if (g_colorSRV) { g_colorSRV->Release(); g_colorSRV = nullptr; }
-    if (g_depthSRV) { g_depthSRV->Release(); g_depthSRV = nullptr; }
-    if (g_dibrRTV) { g_dibrRTV->Release(); g_dibrRTV = nullptr; }
-    if (g_dibrPS) { g_dibrPS->Release(); g_dibrPS = nullptr; }
-    if (g_dibrVS) { g_dibrVS->Release(); g_dibrVS = nullptr; }
-    if (g_dibrSampler) { g_dibrSampler->Release(); g_dibrSampler = nullptr; }
-    if (g_dibrVB) { g_dibrVB->Release(); g_dibrVB = nullptr; }
-    if (g_dibrRS) { g_dibrRS->Release(); g_dibrRS = nullptr; }
-    if (g_depthUpload) { g_depthUpload->Release(); g_depthUpload = nullptr; }
-}
-
-static bool EnsureDibrShaders() {
-    if (g_dibrReady) return true;
-    HMODULE comp = LoadLibraryA("d3dcompiler_47.dll");
-    if (!comp) comp = LoadLibraryA("d3dcompiler_43.dll");
-    if (!comp) { Log("DIBR: no d3dcompiler available"); return false; }
-    typedef HRESULT(WINAPI* PFN_D3DCompile)(const void*, SIZE_T, const char*, const D3D_SHADER_MACRO*, ID3DInclude*,
-                                           const char*, const char*, UINT, UINT, ID3DBlob**, ID3DBlob**);
-    PFN_D3DCompile pCompile = reinterpret_cast<PFN_D3DCompile>(GetProcAddress(comp, "D3DCompile"));
-    if (!pCompile) { Log("DIBR: D3DCompile not found"); return false; }
-
-    const char* vsSrc =
-        "struct VSOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };\n"
-        "VSOut main(uint id : SV_VertexID) {\n"
-        "  VSOut o;\n"
-        "  float x = (id == 1) ? 3.0 : -1.0;\n"
-        "  float y = (id == 2) ? 3.0 : -1.0;\n"
-        "  o.pos = float4(x, y, 0, 1);\n"
-        "  o.uv = float2((x + 1) * 0.5, (1 - y) * 0.5);\n"
-        "  return o;\n"
-        "}\n";
-
-    const char* psSrc =
-        "Texture2D colorTex : register(t0);\n"
-        "Texture2D depthTex : register(t1);\n"
-        "SamplerState samp : register(s0);\n"
-        "cbuffer CB : register(b0) { float4 params; }; // x=dispScale, y=convergence, z=near, w=far\n"
-        "float LinearDepth(float d) {\n"
-        "  float n = params.z; float f = params.w;\n"
-        "  return (n * f) / (f - d * (f - n) + 1e-6);\n"
-        "}\n"
-        "float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target {\n"
-        "  float d = depthTex.Sample(samp, uv).r;\n"
-        "  float Z = LinearDepth(d);\n"
-        "  float disp = params.x / (Z + 1e-4);\n"
-        "  float2 srcUv = uv + float2(disp, 0.0);\n"
-        "  if (srcUv.x < 0.0 || srcUv.x > 1.0) srcUv.x = saturate(srcUv.x);\n"
-        "  return colorTex.Sample(samp, srcUv);\n"
-        "}\n";
-
-    ID3DBlob* vsBlob = nullptr; ID3DBlob* vsErr = nullptr;
-    HRESULT hr = pCompile(vsSrc, strlen(vsSrc), "dibr_vs", nullptr, nullptr, "main", "vs_4_0", 0, 0, &vsBlob, &vsErr);
-    if (FAILED(hr)) { Log("DIBR: VS compile failed: %s", vsErr ? (char*)vsErr->GetBufferPointer() : "unknown"); return false; }
-    hr = g_dev11->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &g_dibrVS);
-    vsBlob->Release();
-    if (FAILED(hr)) { Log("DIBR: CreateVertexShader failed"); return false; }
-
-    ID3DBlob* psBlob = nullptr; ID3DBlob* psErr = nullptr;
-    hr = pCompile(psSrc, strlen(psSrc), "dibr_ps", nullptr, nullptr, "main", "ps_4_0", 0, 0, &psBlob, &psErr);
-    if (FAILED(hr)) { Log("DIBR: PS compile failed: %s", psErr ? (char*)psErr->GetBufferPointer() : "unknown"); return false; }
-    hr = g_dev11->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &g_dibrPS);
-    psBlob->Release();
-    if (FAILED(hr)) { Log("DIBR: CreatePixelShader failed"); return false; }
-
-    // sampler
-    D3D11_SAMPLER_DESC sd{};
-    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-    sd.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-    sd.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-    sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-    g_dev11->CreateSamplerState(&sd, &g_dibrSampler);
-
-    // constant buffer (dynamic)
-    // We'll create a small dynamic buffer
-    D3D11_BUFFER_DESC bd{};
-    bd.ByteWidth = 16;
-    bd.Usage = D3D11_USAGE_DYNAMIC;
-    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    g_dev11->CreateBuffer(&bd, nullptr, &g_dibrVB);
-
-    D3D11_RASTERIZER_DESC rd{};
-    rd.FillMode = D3D11_FILL_SOLID;
-    rd.CullMode = D3D11_CULL_NONE;
-    rd.DepthClipEnable = TRUE;
-    g_dev11->CreateRasterizerState(&rd, &g_dibrRS);
-
-    g_dibrReady = true;
-    Log("DIBR: shaders compiled & ready");
-    return true;
-}
-
-// Forward for dup
-static bool EnsureDupTargets(IDirect3DDevice9* dev, UINT w, UINT h);
-
-bool EnsureDibrTargets(UINT w, UINT h) {
-    if (!g_dibrReady || !g_eyeCache[1] || !g_upload) return false;
-    // color SRV from g_upload (recreate if size changed or eyeCache reallocated)
-    static UINT sW = 0, sH = 0;
-    static ID3D11Texture2D* sEye1 = nullptr;
-    if (sW == w && sH == h && sEye1 == g_eyeCache[1] && g_colorSRV && g_depthSRV && g_dibrRTV) return true;
-
-    if (g_colorSRV) { g_colorSRV->Release(); g_colorSRV = nullptr; }
-    if (g_depthSRV) { g_depthSRV->Release(); g_depthSRV = nullptr; }
-    if (g_dibrRTV) { g_dibrRTV->Release(); g_dibrRTV = nullptr; }
-
-    // color SRV
-    D3D11_SHADER_RESOURCE_VIEW_DESC csvd{};
-    csvd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    csvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    csvd.Texture2D.MipLevels = 1;
-    if (FAILED(g_dev11->CreateShaderResourceView(g_upload, &csvd, &g_colorSRV))) {
-        Log("DIBR: color SRV failed"); return false;
+    RECT leftScissor = { vpX, vpY, vpX + halfW, vpY + fullH };
+    if (origScissorEnable) {
+        if (origScissor.left > leftScissor.left) leftScissor.left = origScissor.left;
+        if (origScissor.top > leftScissor.top) leftScissor.top = origScissor.top;
+        if (origScissor.right < leftScissor.right) leftScissor.right = origScissor.right;
+        if (origScissor.bottom < leftScissor.bottom) leftScissor.bottom = origScissor.bottom;
     }
+    dev->SetScissorRect(&leftScissor);
+    g_origSetVertexShaderConstantF(dev, 0, leftMat, 4);
+    HRESULT hr1 = drawCall();
 
-    // depth upload texture + SRV
-    if (g_depthUpload) { g_depthUpload->Release(); g_depthUpload = nullptr; }
-    D3D11_TEXTURE2D_DESC td{};
-    td.Width = w; td.Height = h; td.MipLevels = 1; td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_R32_FLOAT;
-    td.SampleDesc.Count = 1; td.Usage = D3D11_USAGE_DYNAMIC;
-    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    td.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    if (FAILED(g_dev11->CreateTexture2D(&td, nullptr, &g_depthUpload))) {
-        Log("DIBR: depth upload tex failed"); return false;
-    }
-    D3D11_SHADER_RESOURCE_VIEW_DESC dsvd{};
-    dsvd.Format = DXGI_FORMAT_R32_FLOAT;
-    dsvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    dsvd.Texture2D.MipLevels = 1;
-    if (FAILED(g_dev11->CreateShaderResourceView(g_depthUpload, &dsvd, &g_depthSRV))) {
-        Log("DIBR: depth SRV failed"); return false;
-    }
-
-    // RTV for right eye cache (reuse g_eyeCache[1] which is D3D11 texture). Create RTV on demand.
-    // We'll create RTV targeting g_eyeCache[1] here (recreated each size change).
-    D3D11_RENDER_TARGET_VIEW_DESC rtvd{};
-    rtvd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    rtvd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-    HRESULT rtvHr = g_dev11->CreateRenderTargetView(g_eyeCache[1], &rtvd, &g_dibrRTV);
-    if (FAILED(rtvHr)) {
-        static int s_rtvLogged = 0;
-        if (s_rtvLogged++ < 3) Log("DIBR: RTV failed hr=0x%08lX", rtvHr);
-        return false;
-    }
-
-    sW = w; sH = h; sEye1 = g_eyeCache[1];
-    return true;
-}
-
-static bool ConvertDepthToUpload(UINT w, UINT h) {
-    if (!g_depthSysmem || !g_depthUpload) return false;
-    D3DSURFACE_DESC zsd{};
-    g_depthSysmem->GetDesc(&zsd);
-    if (zsd.Width != w || zsd.Height != h) return false;
-    D3DLOCKED_RECT zlr{};
-    if (FAILED(g_depthSysmem->LockRect(&zlr, nullptr, D3DLOCK_READONLY))) return false;
-    D3D11_MAPPED_SUBRESOURCE zms{};
-    bool ok = false;
-    if (SUCCEEDED(g_ctx11->Map(g_depthUpload, 0, D3D11_MAP_WRITE_DISCARD, 0, &zms))) {
-        const uint8_t* zsrc = (const uint8_t*)zlr.pBits;
-        float* zdst = (float*)zms.pData;
-        for (UINT y = 0; y < h; ++y) {
-            const uint8_t* zrow = zsrc + (size_t)y * zlr.Pitch;
-            float* drow = zdst + (size_t)y * (zms.RowPitch / sizeof(float));
-            for (UINT x = 0; x < w; ++x) {
-                float depthVal = 0.f;
-                if (zsd.Format == D3DFMT_D32F_LOCKABLE) {
-                    depthVal = *reinterpret_cast<const float*>(zrow + x * 4);
-                } else if (zsd.Format == D3DFMT_D24S8 || zsd.Format == D3DFMT_D24X8) {
-                    uint32_t packed = *reinterpret_cast<const uint32_t*>(zrow + x * 4);
-                    depthVal = (float)(packed >> 8) / 16777215.f;
-                } else if (zsd.Format == D3DFMT_D16 || zsd.Format == D3DFMT_D16_LOCKABLE) {
-                    uint16_t v = *reinterpret_cast<const uint16_t*>(zrow + x * 2);
-                    depthVal = (float)v / 65535.f;
-                } else {
-                    uint32_t packed = *reinterpret_cast<const uint32_t*>(zrow + x * 4);
-                    depthVal = (float)(packed >> 8) / 16777215.f;
+    // --- RIGHT EYE PASS ---
+    float rightMat[16];
+    memcpy(rightMat, g_curCamMat, sizeof(rightMat));
+    {
+        const float eyeSign = swapEyes ? -1.0f : +1.0f;
+        const float dx = eyeSign * ipdDist + roomDx;
+        const float dy = roomDy;
+        const float dz = roomDz;
+        const float o[3] = {
+            dx * g_curCamRight[0] + dy * g_curCamUp[0] + dz * g_curCamFwd[0],
+            dx * g_curCamRight[1] + dy * g_curCamUp[1] + dz * g_curCamFwd[1],
+            dx * g_curCamRight[2] + dy * g_curCamUp[2] + dz * g_curCamFwd[2]
+        };
+        ApplyOffset(rightMat, o);
+        if (g_trackingSubMode == 1 && g_renderHaveViews) {
+            const XrFovf& eyeFov = g_renderEyeFov[swapEyes ? 0 : 1];
+            const float wFov = std::tan(eyeFov.angleRight) - std::tan(eyeFov.angleLeft);
+            const float hFov = std::tan(eyeFov.angleUp) - std::tan(eyeFov.angleDown);
+            if (wFov > 1e-4f && hFov > 1e-4f && g_curPx > 1e-4f && g_curPy > 1e-4f) {
+                const float sx = (2.0f / wFov) / g_curPx;
+                const float sy = (2.0f / hFov) / g_curPy;
+                for (int r = 0; r < 4; ++r) {
+                    rightMat[r * 4 + 0] *= sx;
+                    rightMat[r * 4 + 1] *= sy;
                 }
-                drow[x] = depthVal;
             }
         }
-        g_ctx11->Unmap(g_depthUpload, 0);
-        ok = true;
+        ApplyEyeRemap(rightMat, +0.5f); // Remap into right half [0, +1]
     }
-    g_depthSysmem->UnlockRect();
-    return ok;
-}
+    RECT rightScissor = { vpX + halfW, vpY, vpX + fullW, vpY + fullH };
+    if (origScissorEnable) {
+        if (origScissor.left > rightScissor.left) rightScissor.left = origScissor.left;
+        if (origScissor.top > rightScissor.top) rightScissor.top = origScissor.top;
+        if (origScissor.right < rightScissor.right) rightScissor.right = origScissor.right;
+        if (origScissor.bottom < rightScissor.bottom) rightScissor.bottom = origScissor.bottom;
+    }
+    dev->SetScissorRect(&rightScissor);
+    g_origSetVertexShaderConstantF(dev, 0, rightMat, 4);
+    HRESULT hr2 = drawCall();
 
-static void RunDibrPass(UINT w, UINT h, float dispScale) {
-    if (!g_dibrReady || !g_colorSRV || !g_depthSRV || !g_dibrRTV) return;
-    // update constant buffer
-    if (g_dibrVB) {
-        D3D11_MAPPED_SUBRESOURCE ms{};
-        if (SUCCEEDED(g_ctx11->Map(g_dibrVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) {
-            float* p = (float*)ms.pData;
-            p[0] = dispScale; p[1] = 0.5f; p[2] = 0.1f; p[3] = 1000.f;
-            g_ctx11->Unmap(g_dibrVB, 0);
-        }
-    }
-    // set render target
-    g_ctx11->OMSetRenderTargets(1, &g_dibrRTV, nullptr);
-    D3D11_VIEWPORT vp{};
-    vp.Width = (float)w; vp.Height = (float)h; vp.MaxDepth = 1.f;
-    g_ctx11->RSSetViewports(1, &vp);
-    g_ctx11->VSSetShader(g_dibrVS, nullptr, 0);
-    g_ctx11->PSSetShader(g_dibrPS, nullptr, 0);
-    if (g_dibrRS) g_ctx11->RSSetState(g_dibrRS);
-    ID3D11ShaderResourceView* srvs[2] = { g_colorSRV, g_depthSRV };
-    g_ctx11->PSSetShaderResources(0, 2, srvs);
-    g_ctx11->PSSetSamplers(0, 1, &g_dibrSampler);
-    ID3D11Buffer* cbs[1] = { g_dibrVB };
-    g_ctx11->PSSetConstantBuffers(0, 1, cbs);
-    g_ctx11->Draw(3, 0);
-    // unbind
-    ID3D11ShaderResourceView* nulls[2] = { nullptr, nullptr };
-    g_ctx11->PSSetShaderResources(0, 2, nulls);
-    ID3D11RenderTargetView* nullrt = nullptr;
-    g_ctx11->OMSetRenderTargets(1, &nullrt, nullptr);
-    g_ctx11->RSSetState(nullptr);
+    // Restore original matrix and scissor state
+    g_origSetVertexShaderConstantF(dev, 0, g_curCamMat, 4);
+    dev->SetScissorRect(&origScissor);
+    dev->SetRenderState(D3DRS_SCISSORTESTENABLE, origScissorEnable);
+
+    g_inDualDraw = false;
+    return SUCCEEDED(hr1) ? hr1 : hr2;
 }
 
 bool FillTestPattern(UINT w, UINT h, int mode) {
@@ -2248,9 +1519,9 @@ bool CopyFrame(IDirect3DDevice9* dev) {
 have_locked_rect:
     static int s_statCounter = 0;
     if (++s_statCounter % 120 == 0) {
-        Log("capture stats [frame %d]: %ux%u (via %s) mean RGB=(%u,%u,%u) max RGB=(%u,%u,%u) 3dCams=%d 3dMode=%d eye=%d",
+        Log("capture stats [frame %d]: %ux%u (via %s) mean RGB=(%u,%u,%u) max RGB=(%u,%u,%u) 3dCams=%d 3dMode=%d",
             s_statCounter, sd.Width, sd.Height, srcMethod,
-            avgR, avgG, avgB, maxR, maxG, maxB, g_3dCamCallsThisFrame, (int)g_in3DGameplayMode, g_activeEye);
+            avgR, avgG, avgB, maxR, maxG, maxB, g_3dCamCallsThisFrame, (int)g_in3DGameplayMode);
     }
 
     D3D11_MAPPED_SUBRESOURCE ms{};
@@ -2267,10 +1538,6 @@ have_locked_rect:
     g_ctx11->Unmap(g_upload, 0);
     g_sysmem->UnlockRect();
 
-    // --- Neutral center frame captured to g_upload above. Stereo warp is done in SubmitXR
-    //     where both eyes are generated from THIS frame's color + the frozen depth snapshot
-    //     (no AFR desync -> no doubling).
-    g_depthValid = false;
     return true;
 }
 
@@ -2370,85 +1637,39 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const bool use3DProjection = (g_submitMode == 0 || g_submitMode == 1) && g_in3DGameplayMode && g_had3DCameraThisFrame;
 
         if (use3DProjection) {
-            // Same-frame D3D9 warp: both eyes generated from THIS frame's neutral color+depth.
-            // No AFR, no temporal desync -> eyes fuse. VS hook keeps geometry neutral (dx eye IPD = 0).
             const bool swapEyes = (g_submitMode == 1);
-            const float leftSign = swapEyes ? +1.0f : -1.0f;
-            const float rightSign = swapEyes ? -1.0f : +1.0f;
-            const float dispScale = g_dibrDispScale * g_stereoStrength;
+            const int32_t halfW = static_cast<int32_t>(g_scW / 2);
+            const int32_t fullH = static_cast<int32_t>(g_scH);
 
-            bool leftOk = false, rightOk = false;
-            if (g_dibrEnabled) {
-                leftOk = RunD9Warp(dev, g_scW, g_scH, dispScale, leftSign) &&
-                         UploadD9RightToEye(0);
-                rightOk = RunD9Warp(dev, g_scW, g_scH, dispScale, rightSign) &&
-                          UploadD9RightToEye(1);
-            }
-            const bool doDibr = g_dibrEnabled && leftOk && rightOk;
-            g_depthWorking = doDibr;
-            g_d9StereoValid = doDibr;
-
-            if (doDibr) {
+            if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_upload)) {
                 XrPosef leftPose = g_renderHaveViews ? g_renderEyePose[0] : g_eyePose[0];
                 XrPosef rightPose = g_renderHaveViews ? g_renderEyePose[1] : g_eyePose[1];
                 XrFovf leftFov = g_renderHaveViews ? g_renderEyeFov[0] : g_eyeFov[0];
                 XrFovf rightFov = g_renderHaveViews ? g_renderEyeFov[1] : g_eyeFov[1];
 
-                if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0]) &&
-                    WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[1])) {
-                    projViews[0] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-                    projViews[0].pose = leftPose;
-                    projViews[0].fov = leftFov;
-                    projViews[0].subImage.swapchain = g_swapchain[0];
-                    projViews[0].subImage.imageRect.offset = { 0, 0 };
-                    projViews[0].subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
-                    projViews[1] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-                    projViews[1].pose = rightPose;
-                    projViews[1].fov = rightFov;
-                    projViews[1].subImage.swapchain = g_swapchain[1];
-                    projViews[1].subImage.imageRect.offset = { 0, 0 };
-                    projViews[1].subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
-                    proj.layerFlags = 0;
-                    proj.space = g_xrSpace;
-                    proj.viewCount = 2;
-                    proj.views = projViews;
-                    layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
-                    layerCount = 1;
-                }
-            } else {
-                // Fallback: original AFR cache path
-                const int curEye = g_activeEye & 1;
-                const int otherEye = 1 - curEye;
-                g_ctx11->CopyResource(g_eyeCache[curEye], g_upload);
-                g_eyeCachePose[curEye] = g_renderHaveViews ? g_renderEyePose[curEye] : g_eyePose[curEye];
-                g_eyeCacheFov[curEye] = g_renderHaveViews ? g_renderEyeFov[curEye] : g_eyeFov[curEye];
-                g_eyeCacheValid[curEye] = true;
+                const int32_t leftHalf = swapEyes ? 1 : 0;
+                const int32_t rightHalf = swapEyes ? 0 : 1;
 
-                if (!g_eyeCacheValid[otherEye]) {
-                    g_ctx11->CopyResource(g_eyeCache[otherEye], g_upload);
-                    g_eyeCachePose[otherEye] = g_renderHaveViews ? g_renderEyePose[otherEye] : g_eyePose[otherEye];
-                    g_eyeCacheFov[otherEye] = g_renderHaveViews ? g_renderEyeFov[otherEye] : g_eyeFov[otherEye];
-                    g_eyeCacheValid[otherEye] = true;
-                }
+                projViews[0] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
+                projViews[0].pose = leftPose;
+                projViews[0].fov = leftFov;
+                projViews[0].subImage.swapchain = g_swapchain[0];
+                projViews[0].subImage.imageRect.offset = { leftHalf * halfW, 0 };
+                projViews[0].subImage.imageRect.extent = { halfW, fullH };
 
-                if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[0]) &&
-                    WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[1])) {
+                projViews[1] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
+                projViews[1].pose = rightPose;
+                projViews[1].fov = rightFov;
+                projViews[1].subImage.swapchain = g_swapchain[0];
+                projViews[1].subImage.imageRect.offset = { rightHalf * halfW, 0 };
+                projViews[1].subImage.imageRect.extent = { halfW, fullH };
 
-                    for (int e = 0; e < 2; ++e) {
-                        projViews[e] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-                        projViews[e].pose = g_eyeCachePose[e];
-                        projViews[e].fov = g_eyeCacheFov[e];
-                        projViews[e].subImage.swapchain = g_swapchain[e];
-                        projViews[e].subImage.imageRect.offset = { 0, 0 };
-                        projViews[e].subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
-                    }
-                    proj.layerFlags = 0;
-                    proj.space = g_xrSpace;
-                    proj.viewCount = 2;
-                    proj.views = projViews;
-                    layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
-                    layerCount = 1;
-                }
+                proj.layerFlags = 0;
+                proj.space = g_xrSpace;
+                proj.viewCount = 2;
+                proj.views = projViews;
+                layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
+                layerCount = 1;
             }
         } else {
             g_ctx11->CopyResource(g_eyeCache[0], g_upload);
@@ -2501,17 +1722,6 @@ void SubmitXR(IDirect3DDevice9* dev) {
     static int endFail = 0;
     if (XR_FAILED(endR) && endFail++ < 5) Log("xrEndFrame failed %d", (int)endR);
 
-    if ((g_submitMode == 0 || g_submitMode == 1) && g_in3DGameplayMode && g_had3DCameraThisFrame) {
-        g_activeEye ^= 1;
-        // Diagnostic: confirm eye actually alternates (log every 60 toggles).
-        if (++g_eyeToggleLog >= 60) {
-            g_eyeToggleLog = 0;
-            Log("StereoToggle: eye=%d after 60 alternations (ipdOffset=%.4f, subMode=%d)",
-                g_activeEye, 0.0315f * g_stereoStrength, g_trackingSubMode);
-        }
-    } else {
-        g_activeEye = 0;
-    }
     if (g_haveViews) {
         g_renderEyePose[0] = g_eyePose[0];
         g_renderEyePose[1] = g_eyePose[1];
@@ -2560,25 +1770,7 @@ volatile LONG g_devHooked = 0;
 volatile LONG g_factoryHooked = 0;
 
 // --- Stereo draw-call duplication (same-frame, coherent stereo) ---
-extern int g_stereoDupEnabled;
-int g_stereoDupEnabled = 0; // INI
-
-
-// Draw call recording
-struct DrawCall {
-    int type; // 0 = DIP, 1 = DP
-    // DIP
-    D3DPRIMITIVETYPE primType;
-    INT baseVertexIndex;
-    UINT minVertexIndex;
-    UINT numVertices;
-    UINT startIndex;
-    UINT primCount;
-    // DP
-    UINT startVertex;
-};
-static std::vector<DrawCall> g_dupCalls;
-
+// --- Stereo Inline Dual-Draw Hooks ---
 static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp);
 
 void* PatchVTable(void* obj, int index, void* repl) {
@@ -2599,13 +1791,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         g_sysmem->Release();
         g_sysmem = nullptr;
     }
-    if (g_depthSysmem) {
-        g_depthSysmem->Release();
-        g_depthSysmem = nullptr;
-    }
-    ReleaseD9Warp();
-    ReleaseDibrResources();
-    ReleaseDupResources();
+    g_curCamMatValid = false;
     HRESULT hr = g_origReset(dev, pp);
     Log("Device Reset (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
@@ -2623,13 +1809,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
         g_sysmem->Release();
         g_sysmem = nullptr;
     }
-    if (g_depthSysmem) {
-        g_depthSysmem->Release();
-        g_depthSysmem = nullptr;
-    }
-    ReleaseD9Warp();
-    ReleaseDibrResources();
-    ReleaseDupResources();
+    g_curCamMatValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
     Log("Device ResetEx (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
@@ -2663,75 +1843,30 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
 HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE primType,
                                                     INT baseVertexIndex, UINT minVertexIndex,
                                                     UINT numVertices, UINT startIndex, UINT primCount) {
-    if (g_dupCapturing && !g_dupReplaying) {
-        DrawCall c{};
-        c.type = 0;
-        c.primType = primType;
-        c.baseVertexIndex = baseVertexIndex;
-        c.minVertexIndex = minVertexIndex;
-        c.numVertices = numVertices;
-        c.startIndex = startIndex;
-        c.primCount = primCount;
-        c.startVertex = 0;
-        g_dupCalls.push_back(c);
-    }
-    return g_origDrawIndexedPrimitive(dev, primType, baseVertexIndex, minVertexIndex, numVertices, startIndex, primCount);
+    return DualDraw(dev, [&]() {
+        return g_origDrawIndexedPrimitive(dev, primType, baseVertexIndex, minVertexIndex, numVertices, startIndex, primCount);
+    });
 }
 
 HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE primType, UINT startVertex, UINT primCount) {
-    if (g_dupCapturing && !g_dupReplaying) {
-        DrawCall c{};
-        c.type = 1;
-        c.primType = primType;
-        c.startVertex = startVertex;
-        c.primCount = primCount;
-        g_dupCalls.push_back(c);
-    }
-    return g_origDrawPrimitive(dev, primType, startVertex, primCount);
+    return DualDraw(dev, [&]() {
+        return g_origDrawPrimitive(dev, primType, startVertex, primCount);
+    });
 }
 
 HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     InterlockedIncrement(&g_frameId);
+    g_curCamMatValid = false;
     return g_origBeginScene(dev);
 }
-
-static void ReplayDup(IDirect3DDevice9* dev, int eye); // forward
 
 HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
     PollHotkeys();
     HRESULT hr = g_origEndScene(dev);
     if (InterlockedCompareExchange(&g_presentSeen, 0, 0) == 0) {
         VrFrame(dev, "EndScene@42");
-    }
-    // Freeze the scene depth into our own texture NOW (before the deferred engine clears it
-    // ahead of Present). Both eyes warp from this one frame -> coherent stereo, no doubling.
-    if (g_in3DGameplayMode && g_had3DCameraThisFrame && g_srcW > 0 && g_srcH > 0) {
-        if (FreezeDepthToColor(dev, g_srcW, g_srcH) && g_depthFreezeLogged < 3) {
-            ++g_depthFreezeLogged;
-            Log("D9Warp: froze scene depth %ux%u into own texture", g_srcW, g_srcH);
-        }
-    }
-    // Minimal StereoDup capture: if enabled, start capturing draw calls for this frame in 3D context
-    if (g_stereoDupEnabled && g_in3DGameplayMode && g_srcW > 0 && g_srcH > 0) {
-        if (EnsureDupTargets(dev, g_srcW, g_srcH)) {
-            g_dupCalls.clear();
-            g_dupCapturing = true;
-            g_dupReplaying = false;
-            static int dupLog = 0;
-            if (dupLog++ < 50) Log("StereoDup: capturing draw calls %ux%u", g_srcW, g_srcH);
-        }
-    } else {
-        g_dupCapturing = false;
-    }
-    // If we captured draw calls in this frame, replay for both eyes now
-    if (g_stereoDupEnabled && g_dupCapturing) {
-        static int repLog = 0;
-        if (repLog++ < 50) Log("StereoDup: CAPTURED %zu draw calls (in3d=%d hadCam=%d)", g_dupCalls.size(), (int)g_in3DGameplayMode, (int)g_had3DCameraThisFrame);
-        g_dupCapturing = false;
-    } else {
-        g_dupCapturing = false;
     }
     return hr;
 }
