@@ -1,5 +1,36 @@
 # Darkness2VR — HANDOFF v0.5 (2026-10-18)
 
+## CIĄGŁY TASK (od użytkownika): pełna dekompilacja silnika i renderowania
+„Dekompilować grę aż będziesz wiedział wszystko o niej — silniku i renderowaniu!"
+
+**Program RE (priorytety):**
+1. **Rozdzielczość renderu** — RT0 (G-buffer) jest zawsze 1920×1071 niezależnie od
+   backbuffera (wymuszone 5120×2880 nie zmieniło go). Znaleźć funkcję/global, który
+   rozmiaruje render targety → wymusić 5K. (W toku: agent RE, RE_FINDINGS.md)
+2. **Pipeline renderowania** — mapa przebiegów (G-buffer → deferred lighting → cienie →
+   post), adresy funkcji, kiedy co jest renderowane.
+3. **FOV + culling** — jak `mBaseFovOverride`/`gFOV` trafia do macierzy projekcji i gdzie
+   budowany jest frustum cullingu (problem „góra/dół nie renderowana").
+4. **StateBlock vtable** — potwierdzić układ runtime'u (artefakty: silnik wiąże shadery
+   przez StateBlock::Apply; hook z walidacją `ret N` jest w kodzie, domyślnie włączony).
+5. **Pełna mapa rejestrów shaderów + pipeline deferred** (CTAB + HelixFix HLSL + bytecode).
+
+**Materiały RE (gotowe):**
+- `thunk_disasm.txt` — pełny disasm DarknessII.exe (dumpbin, 221MB, adresy VA).
+- `test-output/shaders/*.bin` — bytecode shaderów z gry + `tools/vs_analyze.py` (parser
+  tokenów SM3 + CTAB z nazwami semantyk!).
+- `helix_fix/` — źródłowy asm HLSL silnika (LitInstance = WVP c0..c3, World c4..c7,
+  ScreenTextureProjection c8..c11, ModelSpaceEye c12) + fix HelixMod (wzór shear).
+- `ENGINE_REVERSE_ENGINEERING.md` — mapa metod Lua kamery (thunki), Region::GetPlayerAvatar
+  (0x00B73EE0, ret 8), macierzowe funkcje 0x00C02F50 / 0x00D46710, tabela semantyk
+  0x00712800, singleton D3D9 0x010dd394.
+- `extracted_assets/` (H_Script 547, B_Script 475) — skrypty Lua + shadery z cache gry.
+
+**Zasady RE (z AGENTS.md):** dowód przed patchem — każdy claim = adres + bajty/instrukcje,
+które go dowodzą. Nie zgadywać rejestrów/offsetów.
+
+---
+
 ## Cel: pełne VR dla The Darkness II (Evolution Engine, D3D9Ex, x86, bez ASLR)
 
 Objawy zgłoszone przez użytkownika (start sesji v0.5):
