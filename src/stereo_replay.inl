@@ -21,6 +21,9 @@
 //
 #pragma once
 
+#include "stereo_math.h"
+#include "stereo_geometry.h"
+
 namespace d2vr_replay {
 
 // ------------------------------------------------------------- VS bytecode analysis
@@ -46,7 +49,50 @@ struct VsInfo {
     bool depthOnly = false;
     bool hasBones = false;
     bool analyzed = false;
+    bool namedConstants = false;
+    bool reflected = false;
+    int reflectedWvp = -1, reflectedStp = -1;
+    // Last uploaded WorldViewProjection: the ScreenTextureProjection identity check needs
+    // the matching WVP even when the two matrices arrive in separate records.
+    float lastWvp[16] = {};
+    bool hasLastWvp = false;
 };
+
+// D3DX CTAB offsets are relative to the header following the CTAB FourCC.
+// Read only bounded FLOAT4 matrix entries; never infer a screen projection
+// merely because a matrix happens to feed a texture-coordinate output.
+static int FindNamedRegister(const DWORD* fn, size_t words, const char* name, bool* foundTable,
+                             WORD wantCount) {
+    if (foundTable) *foundTable = false;
+    for (size_t i = 1; i < words;) {
+        DWORD op = fn[i] & 0xffff;
+        if (op == SI_END) break;
+        size_t n = op == SI_COMMENT ? (fn[i] >> 16) & 0x7fff : (fn[i] >> 24) & 15;
+        if (n > words - i - 1) break;
+        if (op == SI_COMMENT && n >= 8 && fn[i+1] == 0x42415443) {
+            const unsigned char* data = reinterpret_cast<const unsigned char*>(fn + i + 2);
+            size_t bytes = (n - 1) * 4;
+            auto u32 = [&](size_t off) { DWORD v = 0; memcpy(&v, data + off, 4); return v; };
+            DWORD count = u32(12), offset = u32(16);
+            if (offset > bytes || count > (bytes-offset)/20) return -1;
+            if (foundTable) *foundTable = true;
+            for (DWORD j = 0; j < count; ++j) {
+                size_t entry = offset + j * 20;
+                DWORD nameOff = u32(entry), registers = u32(entry+4);
+                WORD registerCount = 0; memcpy(&registerCount, data+entry+8, 2);
+                size_t length = strlen(name);
+                if (nameOff >= bytes || length >= bytes-nameOff) continue;
+                if ((registers & 0xffff) == 2 && registerCount == wantCount &&
+                    memcmp(data+nameOff, name, length+1) == 0) return registers >> 16;
+            }
+        }
+        i += n + 1;
+    }
+    return -1;
+}
+static int FindNamedMatrix(const DWORD* fn, size_t words, const char* name, bool* foundTable) {
+    return FindNamedRegister(fn, words, name, foundTable, 4);
+}
 
 static inline uint32_t RegKey(uint32_t tok) {
     uint32_t type = ((tok & 0x70000000u) >> 28) | ((tok & 0x1800u) >> 8);
@@ -208,7 +254,8 @@ static void AnalyzeVsTokenStream(const DWORD* fn, VsInfo& out) {
 static size_t SafeShaderTokenCount(const DWORD* fn) {
     size_t n = 1;
     __try {
-        if (!fn || (fn[0] >> 16) != 0xFFFE || ((fn[0] >> 8) & 0xFF) < 2) return 0;
+        if (!fn || ((fn[0] >> 16) != 0xFFFE && (fn[0] >> 16) != 0xFFFF) ||
+            ((fn[0] >> 8) & 0xFF) < 2) return 0;
         while (n < 8192) {
             const DWORD token = fn[n];
             if ((token & 0xFFFF) == SI_END) return n;
@@ -232,47 +279,78 @@ struct StereoParams {
     float transY = 0.0f;
     float fovScaleX = 1.0f;    // <1 widens the rendered horizontal FOV (clip.x *= fovScaleX)
     float fovScaleY = 1.0f;
+    bool headGeometry = false; // opt-in render diagnostic; native culling not yet hooked
+    float headClip[16]{}, inverseHeadClip[16]{};
 };
+static bool g_cameraProjectionKnown = false;
+static float g_cameraPx = 1, g_cameraPy = 1;
+static float g_cameraInverseProjection[16]{};
+
+// Projection estimates feed the OpenXR submission FOV, so a single bogus matrix (an
+// un-analyzed shader's parameter block, a skinned object with non-uniform scale) must not
+// win: publish through a small median window. The InverseProjection observer writes
+// g_cameraPx/g_cameraPy directly - those are exact.
+static float s_estHistX[8], s_estHistY[8];
+static int s_estHistN = 0;
+static void PublishProjectionEstimate(float px, float py) {
+    if (!(px > 0.2f && px < 8.0f && py > 0.2f && py < 16.0f)) return;
+    s_estHistX[s_estHistN % 8] = px;
+    s_estHistY[s_estHistN % 8] = py;
+    if (s_estHistN < 8) ++s_estHistN;
+    if (s_estHistN < 3) return;
+    const int n = s_estHistN < 8 ? s_estHistN : 8;
+    float xs[8], ys[8];
+    for (int i = 0; i < n; ++i) { xs[i] = s_estHistX[i]; ys[i] = s_estHistY[i]; }
+    for (int i = 1; i < n; ++i) {   // insertion sort - n <= 8
+        const float kx = xs[i];
+        int j = i - 1;
+        while (j >= 0 && xs[j] > kx) { xs[j + 1] = xs[j]; --j; }
+        xs[j + 1] = kx;
+    }
+    for (int i = 1; i < n; ++i) {
+        const float ky = ys[i];
+        int j = i - 1;
+        while (j >= 0 && ys[j] > ky) { ys[j + 1] = ys[j]; --j; }
+        ys[j + 1] = ky;
+    }
+    g_estPx = xs[n / 2];
+    g_estPy = ys[n / 2];
+    InterlockedExchange(&g_estValid, 1);
+}
+
+static void ObserveInverseProjection(const float* src, UINT start, UINT count, int base) {
+    if (!src || base < 0 || start > (UINT)base || start + count < (UINT)base + 4) return;
+    const float* p = src + (base-start)*4;
+    // Observed perspective inverse is diagonal in x/y; row2.w != 0. World-space
+    // reconstruction matrices (height fog) fail this test and must not overwrite the
+    // camera coefficients.
+    if (!d2vr_math::IsViewInverseProjection(p)) return;
+    g_cameraPx = 1.f/p[0]; g_cameraPy = 1.f/p[5]; g_cameraProjectionKnown = true;
+    memcpy(g_cameraInverseProjection,p,sizeof(g_cameraInverseProjection));
+    g_estPx = g_cameraPx; g_estPy = g_cameraPy; InterlockedExchange(&g_estValid, 1);
+}
 
 // Runtime projection estimates (Px=1/tan(halfFovX)) live in the enclosing namespace
 // (g_estPx/g_estPy/g_estValid declared before this include).
 
 // Folds the per-eye transform into a row-major 4x4 matrix block (4 registers).
 // Row-vector convention (verified from engine HLSL): clip = x*c0 + y*c1 + z*c2 + c3
-//   clip.x constant term lives in c3.x = p[12]; clip.w = sum(v_i * c_i.w).
-static void ApplyEyeShiftToMatrix(float* p, int n, const StereoParams& sp) {
+static void ApplyEyeShiftToMatrix(float* p, int n, const StereoParams& sp, bool estimate = true) {
     if (n < 4) return;
-    const float l0 = std::sqrt(p[0] * p[0] + p[4] * p[4] + p[8] * p[8]);
-    const float l1 = std::sqrt(p[1] * p[1] + p[5] * p[5] + p[9] * p[9]);
-    const float lw = std::sqrt(p[3] * p[3] + p[7] * p[7] + p[11] * p[11]);
-    const float px = (lw > 1e-5f) ? (l0 / lw) : 1.0f;
-    const float py = (lw > 1e-5f) ? (l1 / lw) : 1.0f;
-    if (px > 0.2f && px < 8.0f && py > 0.2f && py < 16.0f) {
-        g_estPx = px;
-        g_estPy = py;
-        InterlockedExchange(&g_estValid, 1);
-    }
-
-    // FOV widen: scaling rows x/y shrinks NDC for the same view angle = wider frustum
-    if (sp.fovScaleX != 1.0f) {
-        for (int i = 0; i < 4; ++i) p[i * 4 + 0] *= sp.fovScaleX;
-    }
-    if (sp.fovScaleY != 1.0f) {
-        for (int i = 0; i < 4; ++i) p[i * 4 + 1] *= sp.fovScaleY;
-    }
-
-    if (sp.mode == 0) {
-        // VR-correct camera translation: clip.x += Px*dx (screen shift = k/w -> 0 at infinity,
-        // absolute depth scale stays natural). Row-vector constant row = p[12..15].
-        p[12] += px * sp.transX;
-        p[13] += py * sp.transY;
-    } else {
-        // HelixMod shear: clip.x += sep*(clip.w - conv)
-        for (int i = 0; i < 4; ++i) {
-            p[i * 4 + 0] += sp.separation * p[i * 4 + 3];
-        }
-        p[12] -= sp.separation * sp.convergence;
-    }
+    float px = 0, py = 0;
+    d2vr_stereo::EstimatePxPy(p, g_cameraProjectionKnown, g_cameraPx, g_cameraPy, &px, &py);
+    if (estimate) PublishProjectionEstimate(px, py);
+    d2vr_stereo::EyeShiftParams ep{};
+    ep.separation = sp.separation;
+    ep.convergence = sp.convergence;
+    ep.mode = sp.mode;
+    ep.transX = sp.transX;
+    ep.transY = sp.transY;
+    ep.fovScaleX = sp.fovScaleX;
+    ep.fovScaleY = sp.fovScaleY;
+    ep.headGeometry = sp.headGeometry;
+    d2vr_stereo::ApplyEyeShiftToMatrix(p, n, ep, g_cameraProjectionKnown, g_cameraPx, g_cameraPy,
+                                       sp.headGeometry ? sp.headClip : nullptr);
 }
 
 // ------------------------------------------------------------- frame recording
@@ -287,7 +365,7 @@ enum RecOp : uint16_t {
     OP_SetStreamSource, OP_SetStreamSourceFreq, OP_SetIndices,
     OP_SetPixelShader, OP_SetPSConstF, OP_SetPSConstI, OP_SetPSConstB,
     OP_StretchRect, OP_ColorFill, OP_UpdateSurface, OP_UpdateTexture,
-    OP_SetClipStatus, OP_PresentMarker, OP_ApplyStateBlock
+    OP_SetClipStatus, OP_PresentMarker, OP_ApplyStateBlock, OP_SetClipPlane
 };
 
 struct Rec {
@@ -322,6 +400,7 @@ struct RecLockGuard {
 };
 
 // D3D state blocks exclude render targets and depth surfaces. Keep those explicitly.
+static void SyncActiveShader(IDirect3DDevice9* dev);
 struct DeviceSnapshot {
     IDirect3DStateBlock9* state = nullptr;
     IDirect3DSurface9* targets[4] = {};
@@ -349,6 +428,7 @@ struct DeviceSnapshot {
         dev->SetDepthStencilSurface(depth);
         // Apply state AFTER RTs because SetRenderTarget resets the viewport.
         if (g_origSBApply) g_origSBApply(state); else state->Apply();
+        SyncActiveShader(dev);
     }
 };
 static DeviceSnapshot g_frameStart;
@@ -365,7 +445,11 @@ static void ReleaseRecording() {
 static void RecBeginFrame(IDirect3DDevice9* dev) {
     RecLockGuard lock;
     ReleaseRecording();
-    if (!g_frameStart.Capture(dev)) return;
+    if (!g_frameStart.Capture(dev)) {
+        static int s_captureFails = 0;
+        if (s_captureFails++ < 8) Log("[Record] frame-start capture failed - recording stays off");
+        return;
+    }
     if (g_rec.capacity() < 200000) g_rec.reserve(200000);
     if (g_recData.capacity() < (4u << 20)) g_recData.reserve(4u << 20);
     g_recOverflow = false;
@@ -418,6 +502,16 @@ static inline uint32_t RecPush(const void* data, size_t bytes) {
     }
     return off;
 }
+
+// Light-input readback state (diagnostic only, see LightInputReadback below).
+static const uint32_t kShadowLightPsHash = 0xC4D1FB10u;
+static std::unordered_map<const void*, uint32_t> g_psHashByPtr;       // PS pointer -> hash
+static std::unordered_map<const void*, const void*> g_surfToTex;      // RT surface -> texture (AddRef'd)
+static const void* g_replayPs = nullptr;                              // PS currently bound in replay
+static const void* g_replayVs = nullptr;                              // VS currently bound in replay
+static std::unordered_map<const void*, uint32_t> g_lightEndHash;      // texture -> hash at window end
+static int g_lightRbFrames = -1;                                      // windows left (-1 = unread)
+static int g_lightRbBudget = 0;                                       // light draws left to read back
 
 static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
                            uint32_t a2 = 0, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
@@ -495,7 +589,9 @@ struct OrigFns {
     HRESULT(STDMETHODCALLTYPE* UpdateSurface)(IDirect3DDevice9*, IDirect3DSurface9*, const RECT*, IDirect3DSurface9*, const POINT*) = nullptr;
     HRESULT(STDMETHODCALLTYPE* UpdateTexture)(IDirect3DDevice9*, IDirect3DBaseTexture9*, IDirect3DBaseTexture9*) = nullptr;
     HRESULT(STDMETHODCALLTYPE* SetClipStatus)(IDirect3DDevice9*, const D3DCLIPSTATUS9*) = nullptr;
+    HRESULT(STDMETHODCALLTYPE* SetClipPlane)(IDirect3DDevice9*, DWORD, const float*) = nullptr;
     HRESULT(STDMETHODCALLTYPE* CreateVertexShader)(IDirect3DDevice9*, const DWORD*, IDirect3DVertexShader9**) = nullptr;
+    HRESULT(STDMETHODCALLTYPE* CreatePixelShader)(IDirect3DDevice9*, const DWORD*, IDirect3DPixelShader9**) = nullptr;
 };
 static OrigFns g_orig;
 
@@ -505,6 +601,215 @@ static int g_replayEye = -1;           // -1 = live/mono, 0/1 = eye during repla
 static int g_stereoMode = 1;           // 0 = mono, 1 = same-frame dual eye, 2 = validation replay (shift 0)
 static std::unordered_map<IDirect3DVertexShader9*, VsInfo> g_vsInfo;
 static VsInfo* g_activeVs = nullptr;
+static std::unordered_map<IDirect3DPixelShader9*, int> g_psInverse;
+static int g_activePsInverse = -1;
+// DeferredLight variants (projector / view-extent family) reconstruct the view-space
+// position as x = ndc.x * z * ViewExtents.x. ViewExtents must follow the render-FOV
+// scale or the projected light/shadow is compressed toward the screen centre and slides
+// with the camera (playtest 2026-10-19).
+static std::unordered_map<IDirect3DPixelShader9*, int> g_psViewExtents;
+static int g_activePsViewExtents = -1;
+static void SyncActiveShader(IDirect3DDevice9* dev) {
+    IDirect3DVertexShader9* shader = nullptr;
+    g_activeVs = nullptr;
+    if (SUCCEEDED(dev->GetVertexShader(&shader)) && shader) {
+        auto it = g_vsInfo.find(shader);
+        if (it != g_vsInfo.end()) g_activeVs = &it->second;
+        shader->Release();
+    }
+    IDirect3DPixelShader9* ps = nullptr;
+    g_activePsInverse = -1;
+    g_activePsViewExtents = -1;
+    if (SUCCEEDED(dev->GetPixelShader(&ps)) && ps) {
+        auto it = g_psInverse.find(ps);
+        if (it != g_psInverse.end()) g_activePsInverse = it->second;
+        auto it2 = g_psViewExtents.find(ps);
+        if (it2 != g_psViewExtents.end()) g_activePsViewExtents = it2->second;
+        ps->Release();
+    }
+}
+
+// Known final composites: replace only DOF/ghost blend with the sharp Frame.
+// Keep token offsets and CTAB intact; preserve fog, bloom and colour grading.
+static bool BuildSharpComposite(const DWORD* fn, size_t count, std::vector<DWORD>& out) {
+    out.clear();
+    if (!fn || count < 6 || fn[0] != 0xffff0300u) return false;
+    const uint32_t hash = HashBytes(fn, count * sizeof(DWORD));
+    if (hash != 0x33DE98C1u && hash != 0x75F88E11u) return false;
+    const DWORD blend[] = {0x04000012u, 0x80270003u, 0x80550000u, 0x80e40001u, 0x80e40002u};
+    size_t match = count;
+    for (size_t i = 1; i + 5 <= count; ++i) {
+        if (memcmp(fn + i, blend, sizeof(blend)) == 0) {
+            if (match != count) return false;
+            match = i;
+        }
+    }
+    if (match == count) return false;
+    out.assign(fn, fn + count);
+    out[match] = 0x02000001u; // mov_pp r3.xyz, r2
+    out[match + 2] = blend[4];
+    out[match + 3] = out[match + 4] = 0; // two NOPs replace spare operands
+    return true;
+}
+
+// Stock FXAA PS5104FEF7: retain declarations/CTAB and its own centre sample,
+// including alpha and explicit LOD zero. Remove only the offset edge filtering.
+static bool BuildUnfilteredFxaa(const DWORD* fn, size_t count, std::vector<DWORD>& out) {
+    out.clear();
+    if (!fn || count != 938 || HashBytes(fn, count * 4) != 0x5104FEF7u) return false;
+    out.assign(fn, fn + 78);
+    out.insert(out.end(), fn + 133, fn + 141); // mul r5,c1.xxyy,v0.xyxx; texldl r5,r5,s0
+    out.insert(out.end(), fn + 934, fn + 938); // mov_pp oC0,r5; end
+    return true;
+}
+
+static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, const DWORD* fn,
+                                                        IDirect3DPixelShader9** out) {
+    bool screenDepthOverride = false;
+    DWORD replacement[8192]{};
+    // This original shader reconstructs lighting from depth. Its interpolated
+    // light-volume UV can diverge from the actual depth pixel after an eye shift.
+    // Restrict the experiment to its exact bytecode hash and an explicit switch.
+    if (fn && GetPrivateProfileIntA("Diagnostics", "ShadowScreenDepth", 0,
+            ".\\Darkness2VR-diagnostic.ini") == 1) {
+        const size_t words = SafeShaderTokenCount(fn);
+        if (words && HashBytes(fn, (words + 1) * 4) == 0xC4D1FB10u) {
+            FILE* input = nullptr;
+            if (fopen_s(&input, "test-output\\shadow_screen_depth.psh", "rb") == 0 && input) {
+                const size_t read = fread(replacement, 1, sizeof(replacement), input);
+                fclose(input);
+                if (read >= 16 && read < sizeof(replacement) && read % 4 == 0 &&
+                    replacement[0] == 0xFFFF0300u && replacement[read/4-1] == 0x0000FFFFu) {
+                    screenDepthOverride = true;
+                    Log("[Lighting] testing screen-pixel depth coordinates for shadow shader C4D1FB10");
+                }
+            }
+        }
+    }
+    std::vector<DWORD> sharp;
+    const size_t originalWords = fn ? SafeShaderTokenCount(fn) : 0;
+    const bool sharpOverride = !screenDepthOverride && g_disableDepthOfField &&
+        g_submitMode == 4 && originalWords && BuildSharpComposite(fn, originalWords + 1, sharp);
+    const bool fxaaOverride = !screenDepthOverride && !sharpOverride && g_disableFxaa &&
+        g_submitMode == 4 && originalWords && BuildUnfilteredFxaa(fn, originalWords + 1, sharp);
+    HRESULT hr = g_orig.CreatePixelShader(dev,
+        (sharpOverride || fxaaOverride) ? sharp.data() : (screenDepthOverride ? replacement : fn), out);
+    if (sharpOverride || fxaaOverride) {
+        Log("[Sharpness] %s bypass hash=%08X result=%08X",
+            fxaaOverride ? "FXAA" : "DOF/ghost blend",
+            HashBytes(fn, (originalWords + 1)*4), (unsigned)hr);
+        if (FAILED(hr)) hr = g_orig.CreatePixelShader(dev, fn, out);
+    }
+    if (FAILED(hr) && screenDepthOverride) {
+        Log("[Lighting] shadow shader override rejected (hr=%08X); using original", (unsigned)hr);
+        screenDepthOverride = false;
+        hr = g_orig.CreatePixelShader(dev, fn, out);
+    }
+    if (SUCCEEDED(hr) && out && *out && fn) {
+        const size_t psWords = SafeShaderTokenCount(fn);
+        if (psWords) {
+            const uint32_t psHash = HashBytes(fn, (psWords + 1) * 4);
+            g_psHashByPtr[*out] = psHash;
+            Log("[PSPtr] %p hash=%08X", (void*)*out, psHash);
+        }
+        // GetFunction provides the driver's validated bytecode length for PS.
+        UINT bytes = 0;
+        if (SUCCEEDED((*out)->GetFunction(nullptr, &bytes)) && bytes <= 32768) {
+            std::vector<DWORD> code((bytes + 3)/4);
+            if (SUCCEEDED((*out)->GetFunction(code.data(), &bytes))) {
+                const std::string shaderBytes((const char*)code.data(), bytes);
+                if (shaderBytes.find("InvRenderTargetSize") != std::string::npos &&
+                    shaderBytes.find("ShadowMask") != std::string::npos) {
+                    char path[MAX_PATH];
+                    sprintf_s(path, "test-output\\ps_material_%08X.bin", HashBytes(code.data(), bytes));
+                    FILE* file = nullptr;
+                    if (fopen_s(&file, path, "wb") == 0 && file) {
+                        fwrite(code.data(), 1, bytes, file); fclose(file);
+                        Log("[Lighting] material shadow-mask shader %s", path);
+                    }
+                }
+                int base = screenDepthOverride ? 27 :
+                    FindNamedMatrix(code.data(), bytes/4, "InverseProjection", nullptr);
+                if (base >= 0) {
+                    char path[MAX_PATH];
+                    sprintf_s(path, "test-output\\ps_inverse_%08X.bin", HashBytes(code.data(), bytes));
+                    FILE* file = nullptr;
+                    if (fopen_s(&file, path, "wb") == 0 && file) { fwrite(code.data(), 1, bytes, file); fclose(file); }
+                }
+                // ViewExtents (DeferredLight family): NDC -> view-space direction scale.
+                // It has to track the render-FOV scale like the InverseProjection rows do.
+                const int extents = FindNamedRegister(code.data(), bytes/4, "ViewExtents", nullptr, 1);
+                if (extents < 0 && shaderBytes.find("ViewExtents") != std::string::npos) {
+                    Log("[Lighting] shader has ViewExtents name but no 1-register entry (matrix form: c%d)",
+                        FindNamedMatrix(code.data(), bytes/4, "ViewExtents", nullptr));
+                    char path[MAX_PATH];
+                    sprintf_s(path, "test-output\\ps_viewext_%08X.bin", HashBytes(code.data(), bytes));
+                    FILE* file = nullptr;
+                    if (fopen_s(&file, path, "wb") == 0 && file) { fwrite(code.data(), 1, bytes, file); fclose(file); }
+                }
+                RecLockGuard lock;
+                g_psInverse[*out] = base;
+                g_psViewExtents[*out] = extents;
+                if (base >= 0) Log("[Lighting] named InverseProjection c%d", base);
+                if (extents >= 0) Log("[Lighting] named ViewExtents c%d", extents);
+            }
+        }
+    }
+    return hr;
+}
+
+static bool ApplyInverseProjection(float* dst, const float* src, UINT start, UINT count,
+                                   int base, const StereoParams& sp) {
+    if (g_noInvProj) return false;   // candidate fix (Shift+F3): raw reconstruction
+    if (g_lightingPreset == 1 || g_lightingPreset == 3) return false;
+    if (base < 0 || start > (UINT)base || count > 224 || start + count < (UINT)base + 4 ||
+        sp.mode != 0 || sp.fovScaleX <= 0 || sp.fovScaleY <= 0) return false;
+    memcpy(dst, src, count * 4 * sizeof(float));
+    float* m = dst + (base-start)*4;
+    if (g_lightingPreset == 9 && !d2vr_math::IsViewInverseProjection(m)) return false;
+    // Row-vector inverse: undo the clip scaling (left-multiply by S^-1 = scale rows 0/1),
+    // then remove the eye translation from the reconstruction OUTPUT space so the light
+    // position/shadow matrices - which the engine keeps in the game camera space - stay
+    // valid. For the view-space InverseProjection that space is the view space; for the
+    // world-space inverse (height fog variant) InverseMatrixTranslation rotates the
+    // offset with the matrix' own view rotation automatically.
+    for (int c = 0; c < 4 && g_lightingPreset != 5; ++c) {
+        m[c] /= sp.fovScaleX;
+        m[4+c] /= sp.fovScaleY;
+    }
+    if (g_lightingPreset != 4) {
+        float t[3];
+        if (!d2vr_math::InverseMatrixTranslation(m, sp.transX, sp.transY, t)) return false;
+        if (g_lightingPreset == 6) for (float& component : t) component = -component;
+        d2vr_math::SubtractOutputTranslation(m, t);
+    }
+    if(sp.headGeometry) d2vr_math::Multiply(sp.inverseHeadClip,m,m);
+    return true;
+}
+
+// Combined per-eye PS constant compensation:
+//   * InverseProjection (view/world reconstruction)  -> remove the eye translation
+//   * ViewExtents (NDC -> view-direction scale)      -> follow the render-FOV scale
+// Returns true when dst was written. Both blocks are disjoint (e.g. c26 vs c27..c30).
+static bool CompensatePsConstants(float* dst, const float* src, UINT start, UINT count,
+                                  int inverseBase, int extentsBase, const StereoParams& sp) {
+    if (!dst || !src || count == 0 || count > 224) return false;
+    bool copied = false;
+    if ((g_projectionFix & 2) && ApplyInverseProjection(dst, src, start, count, inverseBase, sp)) {
+        copied = true;
+    }
+    if ((g_projectionFix & 2) && g_lightingPreset != 1 && g_lightingPreset != 2 && extentsBase >= 0 &&
+        (UINT)extentsBase >= start && (UINT)extentsBase < start + count &&
+        (sp.fovScaleX != 1.0f || sp.fovScaleY != 1.0f)) {
+        if (!copied) {
+            memcpy(dst, src, sizeof(float) * 4 * count);
+            copied = true;
+        }
+        d2vr_math::ApplyViewExtentsScale(dst + (extentsBase - (int)start) * 4,
+                                         sp.fovScaleX, sp.fovScaleY);
+    }
+    return copied;
+}
 static bool g_shaderAnalysisLog = false;
 static volatile LONG g_shiftCount = 0;      // diagnostics: matrix uploads shifted per frame
 
@@ -519,6 +824,13 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         VsInfo vi;
         vi.hash = h;
         AnalyzeVsTokenStream(fn, vi);
+        bool hasTable = false;
+        int namedWvp = FindNamedMatrix(fn, n + 1, "WorldViewProjection", &hasTable);
+        if (hasTable) {
+            vi.reflected = true;
+            vi.reflectedWvp = namedWvp;
+            vi.reflectedStp = FindNamedMatrix(fn, n + 1, "ScreenTextureProjection", nullptr);
+        }
         bool isNew = false;
         {
             RecLockGuard lock;   // shader map is shared - the engine creates shaders off-thread
@@ -558,6 +870,10 @@ static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDi
         RecLockGuard lock;
         auto it = g_vsInfo.find(sh);
         g_activeVs = (it != g_vsInfo.end()) ? &it->second : nullptr;
+        // pointer -> hash map for the traces (once per shader, first 400 shaders)
+        static std::unordered_map<const void*, int> s_vsPtrLogged;
+        if (g_activeVs && s_vsPtrLogged.size() < 400 && s_vsPtrLogged.emplace(sh, 1).second)
+            Log("[VSPtr] %p hash=%08X", (void*)sh, g_activeVs->hash);
     } else {
         g_activeVs = nullptr;
     }
@@ -565,38 +881,127 @@ static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDi
 }
 
 // ------------------------------------------------------------- constant injection
+static bool IsShadowAtlas(const D3DSURFACE_DESC& rt, const D3DVIEWPORT9& vp) {
+    // Observed Darkness II shadow pass: RGB565 square atlas, square subviewport.
+    // Camera/G-buffer targets are A8R8G8B8/A16B16G16R16F at full viewport.
+    return rt.Format == D3DFMT_R5G6B5 && rt.Width == rt.Height &&
+        vp.Width == vp.Height && vp.Width > 0 && vp.Width < rt.Width;
+}
+static bool IsShadowAtlasPass(IDirect3DDevice9* dev) {
+    IDirect3DSurface9* rt = nullptr;
+    if (FAILED(dev->GetRenderTarget(0, &rt)) || !rt) return false;
+    D3DSURFACE_DESC desc{}; D3DVIEWPORT9 vp{};
+    HRESULT a = rt->GetDesc(&desc), b = dev->GetViewport(&vp);
+    rt->Release();
+    return SUCCEEDED(a) && SUCCEEDED(b) && IsShadowAtlas(desc, vp);
+}
 // Returns true if the upload was modified (copies into caller buffer).
-// Two strategies:
-//   1. Shader analysis: shift exactly the matrix blocks that feed o0 (WorldViewProjection)
-//      and screen-space outputs (ScreenTextureProjection).
-//   2. Fallback (engine register semantics, table at 0x00712800): every upload at c0 with
-//      count >= 4 starts with the per-object WorldViewProjection (c0..c3); LitInstance also
-//      carries ScreenTextureProjection at c8..c11. c4..c7 (World) must NOT be touched.
+// Register semantics (verified from captured runtime traces + extracted shader CTABs):
+//   1. Shader analysis / CTAB names: shift exactly the matrix block that feeds o0
+//      (WorldViewProjection) and, when verified, the ScreenTextureProjection block.
+//   2. Fallback (engine register convention, table at 0x00712800): an upload at c0 with
+//      count >= 4 starts with the per-object WorldViewProjection (c0..c3). Nothing else
+//      is guessed - c8..c11 of un-analyzed shaders regularly holds LIGHT PARAMETERS
+//      (LightViewPosRadius/ShadowParams/light direction) and shifting those corrupts
+//      lighting differently per eye (run_40332 trace: c11 held the sun direction).
+//   3. A matrix block that merely writes a non-oPos output is only a ScreenTexture
+//      Projection when it satisfies STP = WVP * S. Bare viewport-bias/flip matrices are
+//      constants and must stay untouched.
 static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT count,
-                               const VsInfo* vi, const StereoParams& sp) {
-    bool modified = false;
-    int bases[4] = { -1, -1, -1, -1 };
-    int nbases = 0;
+                               VsInfo* vi, const StereoParams& sp) {
+    if (vi && g_diagnosticSkipVs && vi->hash == g_diagnosticSkipVs) return false;
 
-    const bool haveAnalysis = vi && vi->analyzed && vi->wvpBase >= 0;
-    if (haveAnalysis) {
-        bases[nbases++] = vi->wvpBase;
-        if (vi->stpBase >= 0) bases[nbases++] = vi->stpBase;
-    } else if (start == 0 && count >= 4) {
-        // Engine semantics: c0..c3 = WorldViewProjection. Skip 2D/ortho blocks
-        // (w-column near zero) so HUD/menus don't get disparity.
-        const float* m = src;   // block at c0
+    int wvpBase = -1, stpBase = -1;
+    bool namedStp = false, identifiedWvp = false;
+    if ((g_projectionFix & 1) && vi && vi->reflected) {
+        wvpBase = vi->reflectedWvp;
+        stpBase = vi->reflectedStp;
+        namedStp = stpBase >= 0;
+        identifiedWvp = wvpBase >= 0;
+    } else if (vi && vi->analyzed) {
+        wvpBase = vi->wvpBase;
+        stpBase = vi->stpBase;
+        identifiedWvp = wvpBase >= 0;
+    }
+    bool fallbackWvp = false;
+    if (wvpBase < 0 && (!vi || !vi->namedConstants) && start == 0 && count >= 4) {
+        // Engine semantic: c0..c3 is the per-object WorldViewProjection. Nothing else is
+        // guessed - c8..c11 of un-analyzed shaders regularly holds light parameters
+        // (LightViewPosRadius/ShadowParams/light direction) and shifting those corrupts
+        // lighting differently per eye (run_40332 trace: c11 held the sun direction).
+        // The w-column gate is strict on purpose: blur kernels and packed parameter
+        // blocks also land at c0 with a small but nonzero w column.
+        const float* m = src;
         const float wlen = std::sqrt(m[3] * m[3] + m[7] * m[7] + m[11] * m[11]);
-        if (wlen > 0.02f) {
-            bases[nbases++] = 0;
-            if (count >= 12) bases[nbases++] = 8;   // LitInstance: ScreenTextureProjection
+        if (wlen > 0.2f) {
+            fallbackWvp = true;
+            wvpBase = 0;
         }
     }
 
-    for (int k = 0; k < nbases; ++k) {
-        int b = bases[k];
+    // Orthographic UI: never gets an eye translation (it floats at screen depth), but the
+    // FOV scale IS applied to sprite-style blocks so 2D content keeps the angular size and
+    // position it has outside VR. Without it the menu text grows past the visible area and
+    // screen-attached effects (the darkness tentacles) sit in the lens periphery once the
+    // submission FOV is widened. Fullscreen passes use hardcoded quads or scale ~1
+    // matrices and are left alone.
+    if (!fallbackWvp && wvpBase >= 0 &&
+        (int)start <= wvpBase && (int)(start + count) >= wvpBase + 4) {
+        const float* wvp = src + (wvpBase - (int)start) * 4;
+        const float perspective = wvp[3] * wvp[3] + wvp[7] * wvp[7] + wvp[11] * wvp[11];
+        if (perspective < 1e-8f) {
+            const float lin = std::max(std::fabs(wvp[0]), std::max(std::fabs(wvp[1]),
+                 std::max(std::fabs(wvp[4]), std::fabs(wvp[5]))));
+            const bool sprite = g_scale2DContent && lin > 0.0f && lin < 0.05f &&
+                                (sp.fovScaleX != 1.0f || sp.fovScaleY != 1.0f);
+            if (!sprite) return false;
+            memcpy(dst, src, sizeof(float) * 4 * count);
+            float* matrix = dst + (wvpBase - (int)start) * 4;
+            for (int i = 0; i < 4; ++i) {
+                matrix[i * 4 + 0] *= sp.fovScaleX;
+                matrix[i * 4 + 1] *= sp.fovScaleY;
+            }
+            ++g_shiftCount;
+            return true;
+        }
+    }
+
+    // WVP reference values for the ScreenTextureProjection identity check.
+    float wvpRef[16];
+    bool haveWvpRef = false;
+    if (wvpBase >= 0 && (int)start <= wvpBase && (int)(start + count) >= wvpBase + 4) {
+        memcpy(wvpRef, src + (wvpBase - (int)start) * 4, sizeof(wvpRef));
+        haveWvpRef = true;
+        if (vi) {
+            memcpy(vi->lastWvp, wvpRef, sizeof(vi->lastWvp));
+            vi->hasLastWvp = true;
+        }
+    } else if (vi && vi->hasLastWvp) {
+        memcpy(wvpRef, vi->lastWvp, sizeof(wvpRef));
+        haveWvpRef = true;
+    }
+
+    bool modified = false;
+    for (int k = 0; k < 2; ++k) {
+        const int b = (k == 0) ? wvpBase : ((wvpBase == stpBase) ? -1 : stpBase);
         if (b < 0) continue;
         if ((int)start > b || (int)(start + count) < b + 4) continue;
+        const float* orig = src + (b - (int)start) * 4;
+
+        bool screenProjection = false;
+        if (k == 1) {
+            if (g_lightingPreset == 7) continue;
+            if (namedStp || (haveWvpRef && d2vr_math::IsScreenTextureProjection(orig, wvpRef))) {
+                screenProjection = true;
+            } else {
+                // Not a screen projection: keep previous-frame/secondary projection-like
+                // matrices shifting like a WVP, leave constant clip->UV transforms alone.
+                const float wlen = std::sqrt(orig[3] * orig[3] + orig[7] * orig[7] +
+                                             orig[11] * orig[11]);
+                if (wlen <= 0.02f) continue;
+            }
+        }
+
         if (!modified) {
             memcpy(dst, src, sizeof(float) * 4 * count);
             modified = true;
@@ -605,17 +1010,25 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
             static int s_shiftLog = 0;
             if (s_shiftLog < 6) {
                 ++s_shiftLog;
-                float* q = dst + (b - (int)start) * 4;
-                const float* q0 = src + (b - (int)start) * 4;
+                const float* q0 = orig;
                 const float l0 = std::sqrt(q0[0] * q0[0] + q0[4] * q0[4] + q0[8] * q0[8]);
                 const float lw = std::sqrt(q0[3] * q0[3] + q0[7] * q0[7] + q0[11] * q0[11]);
-                Log("[ShiftDbg] c%d start=%u count=%u | l0=%.3f lw=%.3f px=%.3f | c3.x %.4f -> will add %.4f | sp mode=%d transX=%.3f",
+                Log("[ShiftDbg] c%d start=%u count=%u | l0=%.3f lw=%.3f px=%.3f | c3.x %.4f -> will add %.4f | sp mode=%d transX=%.3f%s",
                     b, start, count, l0, lw, (lw > 1e-5f) ? l0 / lw : 0.0f,
-                    q0[12], ((lw > 1e-5f) ? l0 / lw : 1.0f) * sp.transX, sp.mode, sp.transX);
-                (void)q;
+                    q0[12], ((lw > 1e-5f) ? l0 / lw : 1.0f) * sp.transX, sp.mode, sp.transX,
+                    screenProjection ? " (screen-tex-proj)" : (fallbackWvp ? " (fallback)" : ""));
             }
         }
-        ApplyEyeShiftToMatrix(dst + (b - (int)start) * 4, 4, sp);
+        float* matrix = dst + (b - (int)start) * 4;
+        if (screenProjection) d2vr_math::UnbiasScreenTextureProjection(matrix);
+        // Only positively identified WVP blocks may refine the projection estimate used
+        // for the OpenXR submission FOV.
+        StereoParams matrixParams = sp;
+        if (k == 1 && g_lightingPreset == 8) {
+            matrixParams.transX = matrixParams.transY = matrixParams.separation = 0.0f;
+        }
+        ApplyEyeShiftToMatrix(matrix, 4, matrixParams, identifiedWvp && k == 0);
+        if (screenProjection) d2vr_math::RebiasScreenTextureProjection(matrix);
         ++g_shiftCount;
     }
     return modified;
@@ -651,7 +1064,24 @@ typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateSurface)(IDirect3DDevice9*, IDirect
 typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateTexture)(IDirect3DDevice9*, IDirect3DBaseTexture9*, IDirect3DBaseTexture9*);
 
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWORD idx, IDirect3DSurface9* s) {
-    if (g_recActive) RecEmit(OP_SetRenderTarget, 0, idx, (uint32_t)(uintptr_t)s);
+    if (d2vr_trace::g_enabled) {
+        d2vr_trace::Emit(GetTickCount64(), GetCurrentThreadId(), "SetRenderTarget", 0,
+                         (uint32_t)g_rec.size(), dev, s, nullptr, idx, nullptr, 0, "");
+    }
+    if (g_recActive) {
+        RecEmit(OP_SetRenderTarget, 0, idx, (uint32_t)(uintptr_t)s);
+        // surface -> owning texture (D3D's own container link), once per surface
+        static std::unordered_map<const void*, int> s_rtContLogged;
+        if (s && s_rtContLogged.size() < 400 && s_rtContLogged.emplace(s, 1).second) {
+            IDirect3DTexture9* cont = nullptr;
+            static const GUID kIidTexture9 = { 0x85C31227, 0x3DE5, 0x4F00, { 0x9B, 0x3A, 0xF1, 0x1A, 0xC3, 0x8C, 0x18, 0xB5 } };
+            if (SUCCEEDED(s->GetContainer(kIidTexture9, reinterpret_cast<void**>(&cont))) && cont) {
+                Log("[RTCont] %p %p", (void*)s, (void*)cont);
+                // keep the reference (GetContainer AddRef'd): the readback needs a live texture
+                g_surfToTex[s] = cont;
+            }
+        }
+    }
     return g_orig.SetRenderTarget(dev, idx, s);
 }
 static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, const D3DRECT* rects,
@@ -672,6 +1102,10 @@ static HRESULT STDMETHODCALLTYPE Hook_SetViewport(IDirect3DDevice9* dev, const D
     if (g_recActive) { uint32_t off = RecPush(vp, sizeof(D3DVIEWPORT9)); RecEmit(OP_SetViewport, 0, off); }
     return g_orig.SetViewport(dev, vp);
 }
+static HRESULT STDMETHODCALLTYPE Hook_SetClipPlane(IDirect3DDevice9* dev, DWORD index, const float* plane) {
+    if (g_recActive && plane) RecEmitData(OP_SetClipPlane, plane, sizeof(float)*4, index);
+    return g_orig.SetClipPlane(dev, index, plane);
+}
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderState(IDirect3DDevice9* dev, D3DRENDERSTATETYPE st, DWORD v) {
     if (g_recActive) RecEmit(OP_SetRenderState, 0, st, v);
     return g_orig.SetRenderState(dev, st, v);
@@ -680,7 +1114,17 @@ static HRESULT STDMETHODCALLTYPE Hook_SetTextureStageState(IDirect3DDevice9* dev
     if (g_recActive) RecEmit(OP_SetTextureStageState, 0, stage, t, v);
     return g_orig.SetTextureStageState(dev, stage, t, v);
 }
+// Increase only an existing anisotropic filter's quality budget. Do not alter
+// point/linear filtering, mip selection or postprocessing texture coordinates.
+static DWORD ResolveSamplerValue(IDirect3DDevice9* dev, D3DSAMPLERSTATETYPE t, DWORD v) {
+    if (g_submitMode != 4 || t != D3DSAMP_MAXANISOTROPY) return v;
+    D3DCAPS9 caps{};
+    if (FAILED(dev->GetDeviceCaps(&caps)) || caps.MaxAnisotropy < 1) return v;
+    return std::min(caps.MaxAnisotropy, std::max(v, (DWORD)g_textureAnisotropy));
+}
+
 static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWORD smp, D3DSAMPLERSTATETYPE t, DWORD v) {
+    v = ResolveSamplerValue(dev, t, v);
     if (g_recActive) RecEmit(OP_SetSamplerState, 0, smp, t, v);
     return g_orig.SetSamplerState(dev, smp, t, v);
 }
@@ -691,14 +1135,74 @@ static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect(IDirect3DDevice9* dev, cons
     }
     return g_orig.SetScissorRect(dev, r);
 }
+
+struct UiClipState { RECT rect; DWORD enabled; bool applied; };
+
+// FOV scaling must also scale the original viewport clip. Otherwise widgets
+// deliberately parked beyond NDC y=1 (the unused BOSS NAME bars) become visible.
+// Restrict this to the observed UI VS and an orthographic sprite matrix.
+static UiClipState BeginScaledUiClip(IDirect3DDevice9* dev) {
+    UiClipState state{};
+    if (!g_clipScaledUi || !g_scale2DContent || g_submitMode != 4 || g_stereoMode != 1 ||
+        !g_activeVs || g_activeVs->hash != 0x7070C5BCu) return state;
+    const StereoParams sp = MakeEyeParams(g_replayEye >= 0 ? g_replayEye : 0);
+    if (sp.fovScaleX >= 1 && sp.fovScaleY >= 1) return state;
+    float m[16]; D3DVIEWPORT9 vp{};
+    if (FAILED(dev->GetVertexShaderConstantF(0, m, 4)) ||
+        m[3]*m[3] + m[7]*m[7] + m[11]*m[11] >= 1e-8f ||
+        std::fabs(m[15]-1) > 1e-5f ||
+        std::max(std::fabs(m[0]), std::max(std::fabs(m[1]),
+            std::max(std::fabs(m[4]), std::fabs(m[5])))) >= 0.05f ||
+        FAILED(dev->GetViewport(&vp)) || FAILED(dev->GetScissorRect(&state.rect)) ||
+        FAILED(dev->GetRenderState(D3DRS_SCISSORTESTENABLE, &state.enabled))) return state;
+    // Pixel centres follow D3D9's integer convention. Include x/y=0, exclude W/H.
+    RECT clip = {
+        LONG(std::ceil(vp.X + vp.Width * (1-sp.fovScaleX)*0.5f)),
+        LONG(std::ceil(vp.Y + vp.Height * (1-sp.fovScaleY)*0.5f)),
+        LONG(std::ceil(vp.X + vp.Width * (1+sp.fovScaleX)*0.5f)),
+        LONG(std::ceil(vp.Y + vp.Height * (1+sp.fovScaleY)*0.5f))};
+    if (state.enabled) {
+        clip.left = std::max(clip.left, state.rect.left);
+        clip.top = std::max(clip.top, state.rect.top);
+        clip.right = std::max(clip.left, std::min(clip.right, state.rect.right));
+        clip.bottom = std::max(clip.top, std::min(clip.bottom, state.rect.bottom));
+    }
+    if (FAILED(g_orig.SetScissorRect(dev, &clip))) return state;
+    if (FAILED(g_orig.SetRenderState(dev, D3DRS_SCISSORTESTENABLE, TRUE))) {
+        g_orig.SetScissorRect(dev, &state.rect); return state;
+    }
+    state.applied = true;
+    static int logged = 0;
+    if (logged < 2) {
+        ++logged;
+        Log("[HUD] native UI clipping restored eye=%d rect=%ld,%ld,%ld,%ld",
+            g_replayEye >= 0 ? g_replayEye : 0, clip.left, clip.top, clip.right, clip.bottom);
+    }
+    return state;
+}
+
+static void EndScaledUiClip(IDirect3DDevice9* dev, const UiClipState& state) {
+    if (!state.applied) return;
+    g_orig.SetScissorRect(dev, &state.rect);
+    g_orig.SetRenderState(dev, D3DRS_SCISSORTESTENABLE, state.enabled);
+}
+
 static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
+    if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if (g_recActive) RecEmit(OP_DrawPrimitive, 0, t, sv, pc);
-    return g_orig.DrawPrimitive(dev, t, sv, pc);
+    const UiClipState clip = BeginScaledUiClip(dev);
+    HRESULT hr = g_orig.DrawPrimitive(dev, t, sv, pc);
+    EndScaledUiClip(dev, clip);
+    return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
+    if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if (g_recActive) RecEmit(OP_DrawIndexedPrimitive, 0, t, (uint32_t)bvi, mvi, nv, si, pc);
-    return g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
+    const UiClipState clip = BeginScaledUiClip(dev);
+    HRESULT hr = g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
+    EndScaledUiClip(dev, clip);
+    return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     UINT pc, const void* vb, UINT stride) {
@@ -714,7 +1218,10 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3D
             RecEmit(OP_DrawPrimitiveUP, 1, t, pc, stride, (uint32_t)(uintptr_t)vb);   // data skipped (too large / null)
         }
     }
-    return g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
+    const UiClipState clip = BeginScaledUiClip(dev);
+    HRESULT hr = g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
+    EndScaledUiClip(dev, clip);
+    return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
@@ -743,7 +1250,10 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
         uint32_t auxOff = RecPush(&aux, sizeof(aux));
         RecEmit(OP_DrawIndexedPrimitiveUP, 0, t, mvi, nv, pc, (uint32_t)fmt, auxOff);
     }
-    return g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+    const UiClipState clip = BeginScaledUiClip(dev);
+    HRESULT hr = g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+    EndScaledUiClip(dev, clip);
+    return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexDeclaration(IDirect3DDevice9* dev, IDirect3DVertexDeclaration9* d) {
     if (g_recActive) RecEmit(OP_SetVertexDeclaration, 0, (uint32_t)(uintptr_t)d);
@@ -775,10 +1285,19 @@ static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* ps) {
     if (g_recActive) RecEmit(OP_SetPixelShader, 0, (uint32_t)(uintptr_t)ps);
+    auto it = g_psInverse.find(ps);
+    g_activePsInverse = it == g_psInverse.end() ? -1 : it->second;
+    auto it2 = g_psViewExtents.find(ps);
+    g_activePsViewExtents = it2 == g_psViewExtents.end() ? -1 : it2->second;
     return g_orig.SetPixelShader(dev, ps);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n) {
+    if (g_replayEye < 0) ObserveInverseProjection(d, s, n, g_activePsInverse);
     if (g_recActive) RecEmitData(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n);
+    float adjusted[224*4];
+    if (g_submitMode == 4 && g_replayEye < 0 && d &&
+        CompensatePsConstants(adjusted, d, s, n, g_activePsInverse, g_activePsViewExtents,
+                              MakeEyeParams(0))) d = adjusted;
     return g_orig.SetPixelShaderConstantF(dev, s, d, n);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
@@ -823,8 +1342,89 @@ static HRESULT STDMETHODCALLTYPE Hook_UpdateTexture(IDirect3DDevice9* dev, IDire
 }
 
 // ------------------------------------------------------------- replay executor
+// ---------------------------------------------------------------------------------------
+// Light-input readback (DIAGNOSTIC ONLY, [Diagnostics] LightReadback=<frames>).
+// Question: does the shadow-light pass read render-target data from the previous window?
+// At the end of every window the content hash of each render target is recorded; the
+// first shadow-light draws of the next replay read the same targets back and compare.
+// ---------------------------------------------------------------------------------------
+static uint32_t ReadbackTextureHash(IDirect3DDevice9* dev, IDirect3DTexture9* tex) {
+    IDirect3DSurface9* lvl = nullptr;
+    if (FAILED(tex->GetSurfaceLevel(0, &lvl)) || !lvl) return 0;
+    D3DSURFACE_DESC d{};
+    uint32_t h = 0;
+    lvl->GetDesc(&d);
+    IDirect3DSurface9* sys = nullptr;
+    if (SUCCEEDED(dev->CreateOffscreenPlainSurface(d.Width, d.Height, d.Format, D3DPOOL_SYSTEMMEM, &sys, nullptr)) && sys) {
+        if (SUCCEEDED(dev->GetRenderTargetData(lvl, sys))) {
+            D3DLOCKED_RECT lr{};
+            if (SUCCEEDED(sys->LockRect(&lr, nullptr, D3DLOCK_READONLY))) {
+                const UINT bpp = (d.Format == D3DFMT_A16B16G16R16F) ? 8u : 4u;
+                const UINT rowBytes = d.Width * bpp;
+                h = 2166136261u;
+                for (UINT y = 0; y < d.Height; y += 4) {
+                    const uint8_t* row = (const uint8_t*)lr.pBits + (size_t)y * lr.Pitch;
+                    for (UINT x = 0; x < rowBytes; x += 8) h = (h ^ row[x]) * 16777619u;
+                }
+                sys->UnlockRect();
+            }
+        }
+        sys->Release();
+    }
+    lvl->Release();
+    return h;
+}
+
+static bool IsRenderTargetTexture(const void* tex) {
+    for (const auto& kv : g_surfToTex)
+        if (kv.second == tex) return true;
+    return false;
+}
+
+// Called before each replay draw: when the current pixel shader is the shadow-light shader,
+// read back every bound render-target texture (within the budget) and log its hash.
+static void LightInputReadback(IDirect3DDevice9* dev, const void* ps, const void* const* texes, int eye) {
+    if (g_lightRbBudget <= 0) return;
+    auto ph = g_psHashByPtr.find(ps);
+    if (ph == g_psHashByPtr.end() || ph->second != kShadowLightPsHash) return;
+    --g_lightRbBudget;
+    for (int st = 0; st < 16; ++st) {
+        const void* tex = texes[st];
+        if (!tex || !IsRenderTargetTexture(tex)) continue;
+        const uint32_t now = ReadbackTextureHash(dev, (IDirect3DTexture9*)tex);
+        auto end = g_lightEndHash.find(tex);
+        if (end == g_lightEndHash.end()) {
+            Log("[LightRB] eye=%d stage=%d tex=%p hashAtLight=%08X endOfWindow=none", eye, st, tex, now);
+        } else {
+            Log("[LightRB] eye=%d stage=%d tex=%p hashAtLight=%08X endOfWindow=%08X %s",
+                eye, st, tex, now, end->second, end->second == now ? "SAME" : "DIFF");
+        }
+    }
+}
+
+// Called once per window (before the next recording starts): snapshot the render targets'
+// content hashes, and arm the light readback for the next replay while frames remain.
+static void LightEndOfWindowSnapshot(IDirect3DDevice9* dev) {
+    if (g_lightRbFrames < 0) {
+        g_lightRbFrames = (int)GetPrivateProfileIntA("Diagnostics", "LightReadback", 0, ".\\Darkness2VR-diagnostic.ini");
+        if (g_lightRbFrames > 0) Log("[LightRB] enabled for %d windows", g_lightRbFrames);
+    }
+    if (g_lightRbFrames <= 0 || g_surfToTex.empty()) return;   // count only 3D windows
+    --g_lightRbFrames;
+    std::unordered_map<const void*, bool> seen;
+    for (const auto& kv : g_surfToTex) {
+        const void* tex = kv.second;
+        if (seen.emplace(tex, true).second) {
+            g_lightEndHash[tex] = ReadbackTextureHash(dev, (IDirect3DTexture9*)tex);
+        }
+    }
+    g_lightRbBudget = 2;
+    Log("[LightRB] end-of-window snapshot: %zu render targets", seen.size());
+}
+
 static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp) {
     g_replayEye = eye;
+    const void* replayTex[16] = {};
     static int s_dumpFrames = 0;
     const bool dump = (s_dumpFrames < 3);
     if (dump) ++s_dumpFrames;
@@ -870,11 +1470,15 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_SetViewport:
             g_orig.SetViewport(dev, (const D3DVIEWPORT9*)(dataBase + r.a[0]));
             break;
+        case OP_SetClipPlane:
+            g_orig.SetClipPlane(dev, r.a[0], (const float*)(dataBase + r.a[4]));
+            break;
         case OP_SetRenderState:
             g_orig.SetRenderState(dev, (D3DRENDERSTATETYPE)r.a[0], r.a[1]);
             break;
         case OP_SetTexture:
             g_orig.SetTexture(dev, r.a[0], (IDirect3DBaseTexture9*)(uintptr_t)r.a[1]);
+            if (r.a[0] < 16) replayTex[r.a[0]] = (const void*)(uintptr_t)r.a[1];
             break;
         case OP_SetTextureStageState:
             g_orig.SetTextureStageState(dev, r.a[0], (D3DTEXTURESTAGESTATETYPE)r.a[1], r.a[2]);
@@ -885,17 +1489,27 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_SetScissorRect:
             g_orig.SetScissorRect(dev, r.n ? (const RECT*)(dataBase + r.a[0]) : nullptr);
             break;
-        case OP_DrawPrimitive:
+        case OP_DrawPrimitive: {
+            if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
+            const UiClipState clip = BeginScaledUiClip(dev);
             g_orig.DrawPrimitive(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2]);
+            EndScaledUiClip(dev, clip);
             break;
-        case OP_DrawIndexedPrimitive:
+        }
+        case OP_DrawIndexedPrimitive: {
+            if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
+            const UiClipState clip = BeginScaledUiClip(dev);
             g_orig.DrawIndexedPrimitive(dev, (D3DPRIMITIVETYPE)r.a[0], (INT)r.a[1], r.a[2], r.a[3], r.a[4], r.a[5]);
+            EndScaledUiClip(dev, clip);
             break;
+        }
         case OP_DrawPrimitiveUP: {
             HOOK_MARK(900 + r.op);
             const void* data = (r.n == 1) ? (const void*)(uintptr_t)r.a[3]
                                           : (const void*)(dataBase + r.a[3]);
+            const UiClipState clip = BeginScaledUiClip(dev);
             g_orig.DrawPrimitiveUP(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], data, r.a[2]);
+            EndScaledUiClip(dev, clip);
             HOOK_MARK(1900 + r.op);
             break;
         }
@@ -907,8 +1521,10 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const UINT stride = aux->stride & 0x7FFFFFFFu;
             const void* vb = livePtrs ? (const void*)(uintptr_t)aux->vbOff : (const void*)(dataBase + aux->vbOff);
             const void* ib = livePtrs ? (const void*)(uintptr_t)aux->ibOff : (const void*)(dataBase + aux->ibOff);
+            const UiClipState clip = BeginScaledUiClip(dev);
             g_orig.DrawIndexedPrimitiveUP(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
                                          ib, (D3DFORMAT)r.a[4], vb, stride);
+            EndScaledUiClip(dev, clip);
             HOOK_MARK(1900 + r.op);
             break;
         }
@@ -922,6 +1538,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             IDirect3DVertexShader9* sh = (IDirect3DVertexShader9*)(uintptr_t)r.a[0];
             auto it = g_vsInfo.find(sh);
             g_activeVs = (it != g_vsInfo.end()) ? &it->second : nullptr;
+            g_replayVs = (const void*)sh;
             g_orig.SetVertexShader(dev, sh);
             break;
         }
@@ -930,7 +1547,10 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             // MUST hold Vector4fCount vectors of 4 floats each (bone palettes upload up to
             // 68 vectors = 272 floats). The old size (17*4) overflowed the stack -> fail-fast.
             float tmp[68 * 4];
-            if (eye >= 0 && r.a[1] <= 68) {
+            bool lightVs = false;
+            if (g_skipLightVsShift && g_activeVs && g_activeVs->hash == 0x68EEE79Cu)
+                lightVs = true;   // candidate fix (Shift+F2): light volume in engine/world space
+            if (eye >= 0 && r.a[1] <= 68 && !lightVs && !IsShadowAtlasPass(dev)) {
                 if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, sp)) src = tmp;
             }
             g_orig.SetVertexShaderConstantF(dev, r.a[0], src, r.a[1]);
@@ -952,11 +1572,39 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             g_orig.SetIndices(dev, (IDirect3DIndexBuffer9*)(uintptr_t)r.a[0]);
             break;
         case OP_SetPixelShader:
+            {
+            g_replayPs = (const void*)(uintptr_t)r.a[0];
+                auto it = g_psInverse.find((IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
+                g_activePsInverse = it == g_psInverse.end() ? -1 : it->second;
+                auto it2 = g_psViewExtents.find((IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
+                g_activePsViewExtents = it2 == g_psViewExtents.end() ? -1 : it2->second;
+            }
             g_orig.SetPixelShader(dev, (IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
             break;
-        case OP_SetPSConstF:
-            g_orig.SetPixelShaderConstantF(dev, r.a[0], (const float*)(dataBase + r.a[4]), r.a[1]);
+        case OP_SetPSConstF: {
+            const float* values = (const float*)(dataBase + r.a[4]);
+            float adjusted[224*4];
+            bool copied = CompensatePsConstants(adjusted, values, r.a[0], r.a[1],
+                                                g_activePsInverse, g_activePsViewExtents, sp);
+            if (!copied) memcpy(adjusted, values, sizeof(float) * 4 * r.a[1]);
+            if (g_lightPosShift && sp.transX != 0.0f && r.a[0] <= 0 && r.a[0] + r.a[1] > 0) {
+                auto psIt = g_psHashByPtr.find(g_replayPs);
+                if (psIt != g_psHashByPtr.end() && psIt->second == kShadowLightPsHash) {
+                    // LightViewPosRadius (PS c0) is a position in view space and is uploaded
+                    // by the engine relative to the live (left-eye) camera. The replay renders
+                    // the right eye with an IPD offset, so the position must follow the
+                    // geometry or the light lands elsewhere than the surface it lights.
+                    const int start = (r.a[0] < 0) ? 0 : (int)r.a[0];
+                    const int count  = (int)r.a[1] - start;
+                    adjusted[start * 4 + 0] += sp.transX;
+                    adjusted[start * 4 + 1] += sp.transY;
+                    copied = true;
+                }
+            }
+            const float* values2 = copied ? adjusted : values;
+            g_orig.SetPixelShaderConstantF(dev, r.a[0], values2, r.a[1]);
             break;
+        }
         case OP_SetPSConstI:
             g_orig.SetPixelShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[4]), r.a[1]);
             break;
@@ -987,6 +1635,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             // call the ORIGINAL Apply: the vtable points at our hook which would try to
             // record while the record lock is held here -> deadlock
             if (sb && g_origSBApply) g_origSBApply(sb);
+            SyncActiveShader(dev);
             HOOK_MARK(1900 + r.op);
             break;
         }
@@ -1080,6 +1729,7 @@ static bool InstallReplayHooks(void* dev) {
         { 43, ORIG(Clear), (void*)&Hook_Clear, "Clear@43" },
         { 44, ORIG(SetTransform), (void*)&Hook_SetTransform, "SetTransform@44" },
         { 47, ORIG(SetViewport), (void*)&Hook_SetViewport, "SetViewport@47" },
+        { 55, ORIG(SetClipPlane), (void*)&Hook_SetClipPlane, "SetClipPlane@55" },
         { 57, ORIG(SetRenderState), (void*)&Hook_SetRenderState, "SetRS@57" },
         { 59, (void**)&g_origCreateStateBlock, (void*)&Hook_CreateStateBlock, "CreateStateBlock@59" },
         { 61, (void**)&g_origEndStateBlock, (void*)&Hook_EndStateBlock, "EndStateBlock@61" },
@@ -1100,6 +1750,7 @@ static bool InstallReplayHooks(void* dev) {
         { 102, ORIG(SetStreamSourceFreq), (void*)&Hook_SetStreamSourceFreq, "SetStreamFreq@102" },
         { 104, ORIG(SetIndices), (void*)&Hook_SetIndices, "SetIndices@104" },
         { 107, ORIG(SetPixelShader), (void*)&Hook_SetPixelShader, "SetPS@107" },
+        { 106, ORIG(CreatePixelShader), (void*)&Hook_CreatePixelShader, "CreatePS@106" },
         { 109, ORIG(SetPixelShaderConstantF), (void*)&Hook_SetPSConstF, "SetPSCF@109" },
         { 111, ORIG(SetPixelShaderConstantI), (void*)&Hook_SetPSConstI, "SetPSCI@111" },
         { 113, ORIG(SetPixelShaderConstantB), (void*)&Hook_SetPSConstB, "SetPSCB@113" },
