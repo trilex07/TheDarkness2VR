@@ -28,9 +28,20 @@ Gate "stereo_geometry_suite" (Join-Path $root "stereo-math-tests\build.ps1")
 Gate "vr_frame_test" (Join-Path $repo "test\build_vr_test.ps1")
 Gate "frame_boundary_simulator" (Join-Path $root "frame-boundary-simulator\build.ps1")
 
-GateNotRun "runtime_trace_capture" "Requires live game trace (run-darkness2-trace.ps1)"
-GateNotRun "d3d9_stereo_harness" "Geometric disparity not validated (placeholder WVP)"
-GateNotRun "real_trace_replay" "Run replay-render-trace.py after CSV capture"
+foreach ($g in @(
+    @{ Section = 'vanilla_launch'; Detail = 'run-lifetime-experiment.ps1 -Mode A' }
+    @{ Section = 'mod_no_hook'; Detail = 'run-lifetime-experiment.ps1 -Mode B' }
+    @{ Section = 'presentmon_etw'; Detail = 'run-presentmon-capture.ps1' }
+    @{ Section = 'overlay_matrix'; Detail = 'run-steam-overlay-matrix.ps1' }
+    @{ Section = 'crash_dump_analysis'; Detail = 'WinDbg on WER minidump when available' }
+    @{ Section = 'hook_recursion_test'; Detail = 'PresentHook maxTlsDepth + harness' }
+    @{ Section = 'minimal_passthrough_present'; Detail = 'PresentHookLevel=0 shadow-vtable' }
+    @{ Section = '1000_consecutive_presents'; Detail = 'BLOCKED until hook hits ETW swapchain' }
+    @{ Section = 'runtime_trace_capture'; Detail = 'run-darkness2-trace.ps1' }
+    @{ Section = 'd3d9_stereo_harness'; Detail = 'Geometric disparity not validated' }
+    @{ Section = 'real_trace_replay'; Detail = 'replay-render-trace.py' }
+    @{ Section = 'repeated_startup_tests'; Detail = '20x cold launch — not started' }
+)) { GateNotRun $g.Section $g.Detail }
 
 Write-Host ""
 $mandatoryNotRun = @("runtime_trace_capture", "d3d9_stereo_harness")

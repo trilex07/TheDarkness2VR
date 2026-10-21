@@ -101,6 +101,11 @@ static volatile LONG g_stereoPresentBoundarySeen = 0;
 static d2vr_frame::BoundaryMachine g_frameBoundary(d2vr_frame::Policy::TraceOnly);
 static int g_frameBoundaryPolicy = 2; // TraceOnly until Present path is proven (see FrameBoundaryPolicy ini)
 static int g_renderPipelineTrace = 0;
+// PresentHookLevel: 0=pass-through only (orig then optional counter), 1=+boundary FSM, 2=+CSV trace (post-present).
+static int g_presentHookLevel = 0;
+static volatile LONG g_swapChainPresentCount = 0;
+static volatile LONG g_devicePresentCount = 0;
+static volatile LONG g_swapChainPresentMaxDepth = 0;
 static std::unordered_set<void*> g_hookedSwapChains;
 static XrPosef g_pairSubmitHead{};
 static XrPosef g_pairSubmitEyePose[2]{};
@@ -589,6 +594,8 @@ void LoadConfig() {
         if (dx < 0) dx = GetPrivateProfileIntA(nullptr, "DisableOpenXR", 0, chosenIni);
         g_disableOpenXR = dx ? 1 : 0;
     }
+    g_presentHookLevel = GetPrivateProfileIntA("Render", "PresentHookLevel", 0, chosenIni);
+    if (g_presentHookLevel < 0 || g_presentHookLevel > 2) g_presentHookLevel = 0;
     Log("  FrameBoundaryPolicy=%d (%s) debounceMs=%llu (legacy max ~%.1f Hz)",
         g_frameBoundaryPolicy,
         g_frameBoundaryPolicy == 0   ? "PresentPrimary"
@@ -596,9 +603,9 @@ void LoadConfig() {
                                        : "TraceOnly",
         (unsigned long long)d2vr_frame::BoundaryMachine::kLegacyEndSceneDebounceMs,
         d2vr_frame::MaxVrFrameHzFromLegacyDebounce());
-    Log("[EffectiveConfig] RenderPipelineTrace=%d FrameBoundaryPolicy=%d DisableOpenXR=%d SubmitMode=%d StereoMode=%d StartupMode=%d HookMask=0x%X",
+    Log("[EffectiveConfig] RenderPipelineTrace=%d FrameBoundaryPolicy=%d DisableOpenXR=%d SubmitMode=%d StereoMode=%d StartupMode=%d HookMask=0x%X PresentHookLevel=%d",
         g_renderPipelineTrace, g_frameBoundaryPolicy, g_disableOpenXR, g_submitMode, g_stereoMode, g_startupMode,
-        g_hookMask);
+        g_hookMask, g_presentHookLevel);
 }
 
 void RequestRecenter(const char* source) {
@@ -4366,6 +4373,7 @@ void* PatchVTable(void* obj, int index, void* repl) {
 
 static void VrFrame(IDirect3DDevice9* dev, const char* caller);
 static void TryHookSwapChainPresent(IDirect3DDevice9* dev);
+static void RestoreSwapChainHooksBeforeReset();
 
 static d2vr_frame::Event MakePipelineEvent(d2vr_frame::EventType type) {
     d2vr_frame::Event e{};
@@ -4435,6 +4443,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_anchorValid = false;
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
+    RestoreSwapChainHooksBeforeReset();
     HRESULT hr = g_origReset(dev, pp);
     Log("Device Reset (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
@@ -4623,6 +4632,10 @@ HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
     }
     HRESULT hr = g_origEndScene(dev);
     if (FAILED(hr)) Log("!!! EndScene FAILED hr=0x%08lX", hr);
+    if ((g_hookMask & 2) && g_swapChainPresentCount == 0 && g_devicePresentCount == 0) {
+        static int s_reprobe = 0;
+        if ((++s_reprobe % 120) == 1) TryHookSwapChainPresent(dev);
+    }
     {
         const auto ev = MakePipelineEvent(d2vr_frame::EventType::EndScene);
         d2vr_frame::Decision decision{};
@@ -4654,6 +4667,9 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* dev, const RECT* a, con
     if(g_insidePresentation) return g_origPresent(dev,a,b,w,r);
     PresentationScope presenting;
     PollHotkeys();
+    const LONG dp = InterlockedIncrement(&g_devicePresentCount);
+    if (dp == 1 || (dp % 600) == 0)
+        Log("[PresentHook] DevicePresent count=%ld dev=%p", dp, dev);
     if (InterlockedCompareExchange(&g_presentSeen, 1, 0) == 0) {
         Log("Hook_Present@17 detected — SubmitMode 4 stereo submits at Present@17 (not EndScene@42)");
     }
@@ -4708,64 +4724,155 @@ typedef HRESULT(STDMETHODCALLTYPE* PFN_SwapChainPresent)(IDirect3DSwapChain9*, c
 PFN_SwapChainPresent g_origSwapChainPresent = nullptr;
 static std::unordered_map<void*, PFN_SwapChainPresent> g_swapChainOrigPresent;
 static std::unordered_map<void*, void**> g_swapChainVtableClones;
+static std::unordered_map<void*, void**> g_swapChainSharedVt;
+
+static void RestoreSwapChainHooksBeforeReset() {
+    for (void* sc : g_hookedSwapChains) {
+        if (auto sh = g_swapChainSharedVt.find(sc); sh != g_swapChainSharedVt.end())
+            *reinterpret_cast<void***>(sc) = sh->second;
+        if (auto cl = g_swapChainVtableClones.find(sc); cl != g_swapChainVtableClones.end())
+            VirtualFree(cl->second, 0, MEM_RELEASE);
+    }
+    g_hookedSwapChains.clear();
+    g_swapChainOrigPresent.clear();
+    g_swapChainVtableClones.clear();
+    g_swapChainSharedVt.clear();
+}
+
+static PFN_SwapChainPresent ResolveSwapChainOrig(IDirect3DSwapChain9* sc) {
+    if (auto it = g_swapChainOrigPresent.find(sc); it != g_swapChainOrigPresent.end()) return it->second;
+    return g_origSwapChainPresent;
+}
+
+static void LogPresentFnModule(const char* tag, void* fn) {
+    if (!fn) return;
+    HMODULE mod = nullptr;
+    char modName[MAX_PATH] = "?";
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           static_cast<LPCSTR>(fn), &mod) &&
+        mod) {
+        GetModuleFileNameA(mod, modName, MAX_PATH);
+    }
+    Log("[PresentHook] %s fn=%p module=%s", tag, fn, modName);
+}
+
 HRESULT STDMETHODCALLTYPE Hook_SwapChainPresent(IDirect3DSwapChain9* sc, const RECT* a, const RECT* b, HWND w,
                                                 const RGNDATA* r, DWORD flags) {
-    PFN_SwapChainPresent orig = g_origSwapChainPresent;
-    if (auto it = g_swapChainOrigPresent.find(sc); it != g_swapChainOrigPresent.end()) orig = it->second;
+    PFN_SwapChainPresent orig = ResolveSwapChainOrig(sc);
     if (g_insidePresentation) return orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
 
     PresentationScope presenting;
-    static int s_logged = 0;
-    if (s_logged++ < 3) Log("SwapChain::Present: complete game-frame boundary");
+
+    static thread_local int tlsDepth = 0;
+    ++tlsDepth;
+    LONG prevMax = InterlockedCompareExchange(&g_swapChainPresentMaxDepth, (LONG)tlsDepth, (LONG)tlsDepth);
+    if (tlsDepth > prevMax) InterlockedExchange(&g_swapChainPresentMaxDepth, (LONG)tlsDepth);
+    if (tlsDepth > 4) {
+        --tlsDepth;
+        return orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
+    }
+
+    if (g_suppressDesktopPresent && ShouldRouteDisplayToHeadsetOnly()) {
+        --tlsDepth;
+        return D3D_OK;
+    }
+
+    const HRESULT hr = orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
 
     InterlockedExchange(&g_presentSeen, 1);
-    IDirect3DDevice9* dev = nullptr;
-    sc->GetDevice(&dev);
-    if (d2vr_trace::g_enabled) {
-        d2vr_trace::EmitSimple(GetTickCount64(), GetCurrentThreadId(), "SwapChainPresent", 0,
-                               (uint32_t)d2vr_replay::g_rec.size(), dev ? (void*)dev : (void*)sc,
-                               "swapchain");
+    const LONG n = InterlockedIncrement(&g_swapChainPresentCount);
+    if (n == 1 || (n % 600) == 0) {
+        Log("[PresentHook] SwapChainPresent count=%ld hr=0x%08lX sc=%p maxTlsDepth=%ld", n, hr, sc,
+            (long)InterlockedCompareExchange(&g_swapChainPresentMaxDepth, 0, 0));
     }
-    if (dev) {
+
+    if (g_presentHookLevel >= 1) {
         const auto ev = MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent);
         const auto decision = g_frameBoundary.OnEvent(ev);
-        if (g_submitMode == 4)
-            ApplyBoundaryDecision(dev, decision);
-        else if (!d2vr_trace::g_enabled && g_submitMode != 0)
-            VrFrame(dev, "SwapChain::Present");
-        if (g_suppressDesktopPresent && ShouldRouteDisplayToHeadsetOnly()) {
-            dev->Release();
-            return D3D_OK;
+        if (g_submitMode == 4) {
+            IDirect3DDevice9* dev = nullptr;
+            if (SUCCEEDED(sc->GetDevice(&dev)) && dev) {
+                ApplyBoundaryDecision(dev, decision);
+                dev->Release();
+            }
         }
-        dev->Release();
     }
-    return orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
+    if (g_presentHookLevel >= 2 && d2vr_trace::g_enabled) {
+        d2vr_trace::EmitSimple(GetTickCount64(), GetCurrentThreadId(), "SwapChainPresent", 0, 0, sc, "swapchain");
+    }
+
+    --tlsDepth;
+    return hr;
 }
 
 static void HookSwapChainObject(IDirect3DSwapChain9* sc) {
     if (!sc || !(g_hookMask & 2)) return;
-    void** vt = *reinterpret_cast<void***>(sc);
-    if (!vt) return;
-    if (vt[3] == reinterpret_cast<void*>(&Hook_SwapChainPresent)) return;
-    if (g_hookedSwapChains.count(sc)) return;
-    void* origFn = vt[3];
-    if (!origFn || origFn == reinterpret_cast<void*>(&Hook_SwapChainPresent)) return;
-    void* hooked = PatchVTable(sc, 3, reinterpret_cast<void*>(&Hook_SwapChainPresent));
-    if (hooked && hooked != reinterpret_cast<void*>(&Hook_SwapChainPresent)) {
-        g_swapChainOrigPresent[sc] = reinterpret_cast<PFN_SwapChainPresent>(hooked);
-        if (!g_origSwapChainPresent) g_origSwapChainPresent = reinterpret_cast<PFN_SwapChainPresent>(hooked);
+    void** curVt = *reinterpret_cast<void***>(sc);
+    if (curVt && curVt[3] == reinterpret_cast<void*>(&Hook_SwapChainPresent)) {
         g_hookedSwapChains.insert(sc);
-        Log("SwapChain::Present@3 hooked chain=%p vtable=%p orig=%p", sc, vt, hooked);
+        return;
     }
+    if (g_hookedSwapChains.count(sc)) {
+        RestoreSwapChainHooksBeforeReset();
+    }
+    void** sharedVt = *reinterpret_cast<void***>(sc);
+    if (!sharedVt) return;
+    if (sharedVt[3] == reinterpret_cast<void*>(&Hook_SwapChainPresent)) {
+        g_hookedSwapChains.insert(sc);
+        return;
+    }
+    void* origFn = sharedVt[3];
+    if (!origFn || origFn == reinterpret_cast<void*>(&Hook_SwapChainPresent)) return;
+
+    // Per-instance shadow vtable: never patch the shared d3d9/overlay vtable slot.
+    constexpr size_t kVtSlots = 32;
+    void** clone =
+        static_cast<void**>(VirtualAlloc(nullptr, kVtSlots * sizeof(void*), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    if (!clone) return;
+    memcpy(clone, sharedVt, kVtSlots * sizeof(void*));
+    clone[3] = reinterpret_cast<void*>(&Hook_SwapChainPresent);
+
+    DWORD oldProt = 0;
+    if (!VirtualProtect(sc, sizeof(void*), PAGE_READWRITE, &oldProt)) {
+        VirtualFree(clone, 0, MEM_RELEASE);
+        return;
+    }
+    *reinterpret_cast<void***>(sc) = clone;
+    VirtualProtect(sc, sizeof(void*), oldProt, &oldProt);
+
+    g_swapChainOrigPresent[sc] = reinterpret_cast<PFN_SwapChainPresent>(origFn);
+    if (!g_origSwapChainPresent) g_origSwapChainPresent = reinterpret_cast<PFN_SwapChainPresent>(origFn);
+    g_swapChainVtableClones[sc] = clone;
+    g_swapChainSharedVt[sc] = sharedVt;
+    g_hookedSwapChains.insert(sc);
+
+    Log("[PresentHook] install chain=%p sharedVt=%p cloneVt=%p origPresent=%p hook=%p technique=shadow-vtable",
+        sc, sharedVt, clone, origFn, reinterpret_cast<void*>(&Hook_SwapChainPresent));
+    LogPresentFnModule("origPresent", origFn);
 }
 
 static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
     if (!(g_hookMask & 2) || !dev) return;
-    for (UINT i = 0; i < 4; ++i) {
+    for (UINT i = 0; i < 8; ++i) {
         IDirect3DSwapChain9* sc = nullptr;
         if (FAILED(dev->GetSwapChain(i, &sc)) || !sc) continue;
         HookSwapChainObject(sc);
         sc->Release();
+    }
+    __try {
+        IDirect3DDevice9* eng = reinterpret_cast<IDirect3DDevice9*>(*(uintptr_t*)(0x010dee84 + 0x0c));
+        if (eng && eng != dev) {
+            Log("[PresentHook] engine device global=%p (CreateDevice hook=%p) — probing engine swapchains", eng,
+                dev);
+            for (UINT i = 0; i < 8; ++i) {
+                IDirect3DSwapChain9* sc = nullptr;
+                if (FAILED(eng->GetSwapChain(i, &sc)) || !sc) continue;
+                Log("[PresentHook] probe engine chain[%u]=%p", i, sc);
+                HookSwapChainObject(sc);
+                sc->Release();
+            }
+        }
+    } __except (1) {
     }
 }
 
@@ -4801,7 +4908,7 @@ void HookDevice(IDirect3DDevice9* dev) {
     d2vr_replay::g_orig.SetVertexShaderConstantF = g_origSetVertexShaderConstantF;
     d2vr_replay::InstallReplayHooks(dev);
 
-    TryHookSwapChainPresent(dev);
+    // SwapChain present hooks are installed after the first successful Device::Reset only.
 
     void** devVt = *reinterpret_cast<void***>(dev);
     Log("[EffectiveConfig] SwapChainPresentHook=%s OpenXR=%s TraceCSV=%s",
@@ -5018,6 +5125,9 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         TryInstallXInputHook();
         LogStartupStage(6, "TryInstallXInputHook done (FOV probes deferred until CreateDevice)");
     } else if (reason == DLL_PROCESS_DETACH) {
+        Log("[PresentHook] detach presentCount=%ld maxTlsDepth=%ld hookedSwapChains=%zu",
+            (long)InterlockedCompareExchange(&g_swapChainPresentCount, 0, 0),
+            (long)InterlockedCompareExchange(&g_swapChainPresentMaxDepth, 0, 0), g_hookedSwapChains.size());
         d2vr_trace::Shutdown();
         RemoveNativeHandsHook();
         RemoveNativePistolHook();
