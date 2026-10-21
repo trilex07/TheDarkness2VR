@@ -76,6 +76,27 @@ def summarize_chunk(label: str, chunk):
         print(f"  records/EndScene p50={statistics.median(recs):.0f} p95={sorted(recs)[int(len(recs)*0.95)-1]}")
 
 
+def summarize_present_frames(rows):
+    """Metrics between consecutive SwapChainPresent events."""
+    idx = [i for i, r in enumerate(rows) if r["event"] == "SwapChainPresent"]
+    if len(idx) < 2:
+        print("\n### SwapChain-presented frames")
+        print(f"  frames={len(idx)} (need >=2 for rates)")
+        return
+    print("\n### SwapChain-presented frames")
+    gaps = []
+    es_ratios = []
+    for a, b in zip(idx, idx[1:]):
+        chunk = rows[a : b + 1]
+        t0, t1 = chunk[0]["ms"], chunk[-1]["ms"]
+        gap = t1 - t0
+        gaps.append(gap)
+        es = sum(1 for r in chunk if r["event"] == "EndScene")
+        es_ratios.append(es)
+    print(f"  frames={len(idx)} median_gap_ms={statistics.median(gaps):.2f} p95={sorted(gaps)[int(len(gaps)*0.95)-1]:.2f}")
+    print(f"  EndScene/frame p50={statistics.median(es_ratios):.1f} p95={sorted(es_ratios)[int(len(es_ratios)*0.95)-1]}")
+
+
 def cluster_present_gaps(rows):
     pts = [r["ms"] for r in rows if r["event"] in PRESENT_EVENTS]
     if len(pts) < 2:
@@ -118,6 +139,7 @@ def main():
     for ev in PRESENT_EVENTS:
         print(f"  {ev} total={sum(1 for r in rows if r['event']==ev)}")
     cluster_present_gaps(rows)
+    summarize_present_frames(rows)
     segs = segment_phases(rows)
     for i, (a, b, chunk) in enumerate(segs):
         summarize_chunk(f"window_{i}_{a}_{b}ms", chunk)

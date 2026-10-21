@@ -1,6 +1,8 @@
 # Backup + deploy research d3d9.dll with SHA256 verification.
 param(
     [switch]$Install,
+    [switch]$DllOnly,
+    [switch]$SkipIni,
     [string]$GameDir,
     [string]$RepoRoot = (Split-Path $PSScriptRoot -Parent)
 )
@@ -54,6 +56,13 @@ if ($Install) {
     Write-Host 'Deployed OK - SHA256 match verified.'
 }
 
+if ($SkipIni -or $DllOnly) {
+    return [pscustomobject]@{
+        GameDir = $GameDir; OriginalSha = $origSha; ResearchSha = $researchSha
+        BackupPath = $(if (Test-Path $backupDll) { $backupDll } else { $null }); LocalIni = $null
+    }
+}
+
 # Ensure trace-friendly local config (does not overwrite entire ini if present).
 $localIni = Join-Path $env:LOCALAPPDATA 'Darkness2VR\Darkness2VR.ini'
 New-Item -ItemType Directory -Force -Path (Split-Path $localIni) | Out-Null
@@ -64,9 +73,11 @@ $content = if (Test-Path $localIni) { Get-Content $localIni -Raw } else { '[Rend
 $lines = @(
     'RenderPipelineTrace=1',
     'FrameBoundaryPolicy=2',
-    'SubmitMode=4',
+    'SubmitMode=0',
     'StereoMode=0',
-    'StartupMode=1'
+    'StartupMode=1',
+    'DisableOpenXR=1',
+    'HookMask=2'
 )
 foreach ($line in $lines) {
     $key = ($line -split '=')[0]
@@ -101,7 +112,7 @@ if (Test-Path $gameIni) {
     # Keys must live under [Render]; append if deploy regex missed orphaned keys.
     $raw = Get-Content $gameIni -Raw
     if ($raw -notmatch '(?m)^\[Render\][\s\S]*?RenderPipelineTrace=') {
-        $raw = $raw -replace '(?m)^(\[Render\]\r?\n)', "`$1RenderPipelineTrace=1$([Environment]::NewLine)FrameBoundaryPolicy=2$([Environment]::NewLine)StartupMode=1$([Environment]::NewLine)"
+        $raw = $raw -replace '(?m)^(\[Render\]\r?\n)', "`$1RenderPipelineTrace=1$([Environment]::NewLine)FrameBoundaryPolicy=2$([Environment]::NewLine)StartupMode=1$([Environment]::NewLine)DisableOpenXR=1$([Environment]::NewLine)"
         Set-Content -Path $gameIni -Value $raw -NoNewline
     }
 }

@@ -240,6 +240,7 @@ int g_startupMode = 0;            // 0=default safe path, 1=skip native exe hook
 int g_fovFrustumHook = 0;         // 0=off (10-byte patch @B23F7F risky at intro); 1=enable when validated
 int g_hideGameWindow = 0;         // opt-in: hide desktop window when XR runs
 int g_suppressDesktopPresent = 0; // opt-in: skip desktop Present when OpenXR has the frame
+int g_disableOpenXR = 0;          // research: never call InitXR / xrWaitFrame (trace-only runs)
 static volatile LONG g_fovProbeInstalled = 0;
 static volatile LONG g_xrSubmittedThisFrame = 0;
 static volatile LONG g_needRecBegin = 1; // SubmitMode 4: open recording on next BeginScene, not mid-frame EndScene
@@ -410,9 +411,7 @@ void LoadConfig() {
     g_replayTestClear = GetPrivateProfileIntA("Render", "ReplayTestClear", 0, chosenIni) != 0;
     g_autoFovWiden = GetPrivateProfileIntA("Render", "AutoFovWiden", 1, chosenIni) ? 1 : 0;
     {
-        int sm = GetPrivateProfileIntA("Render", "StartupMode", -1, chosenIni);
-        if (sm < 0) sm = GetPrivateProfileIntA(nullptr, "StartupMode", 0, chosenIni);
-        g_startupMode = sm;
+        g_startupMode = GetPrivateProfileIntA("Render", "StartupMode", 0, chosenIni);
     }
     if (g_startupMode < 0 || g_startupMode > 2) g_startupMode = 0;
     g_fovFrustumHook = GetPrivateProfileIntA("Render", "FovFrustumHook", 0, chosenIni) ? 1 : 0;
@@ -568,8 +567,11 @@ void LoadConfig() {
     g_frameBoundary.Reset(static_cast<d2vr_frame::Policy>(g_frameBoundaryPolicy));
     d2vr_trace::g_enabled = g_renderPipelineTrace;
     d2vr_trace::g_maxEvents = GetPrivateProfileIntA("Render", "RenderPipelineTraceMax", 200000, chosenIni);
+    d2vr_trace::g_traceScenes = GetPrivateProfileIntA("Render", "RenderPipelineTraceScenes", 0, chosenIni) ? 1 : 0;
+    d2vr_trace::g_traceAllScenes = GetPrivateProfileIntA("Render", "RenderPipelineTraceAllScenes", 0, chosenIni) ? 1 : 0;
     if (g_renderPipelineTrace) {
-        g_hookMask |= 3; // record hooks + swapchain present
+        // Trace capture: enable swapchain present hook unless HookMask explicitly zero.
+        if (g_hookMask != 0) g_hookMask |= 2;
         if (g_stereoMode > 0) {
             Log("[RenderPipelineTrace] forcing StereoMode=0 (trace without replay/XR)");
             g_stereoMode = 0;
@@ -579,8 +581,13 @@ void LoadConfig() {
         char* slash = strrchr(traceDir, '\\');
         if (slash) *slash = '\0';
         d2vr_trace::Init(traceDir);
-        Log("[RenderPipelineTrace] csv=%s\\render_pipeline_trace.csv maxEvents=%d", traceDir,
-            d2vr_trace::g_maxEvents);
+        Log("[RenderPipelineTrace] csv=%s\\render_pipeline_trace.csv maxEvents=%d scenes=%d allScenes=%d",
+            traceDir, d2vr_trace::g_maxEvents, d2vr_trace::g_traceScenes, d2vr_trace::g_traceAllScenes);
+    }
+    {
+        int dx = GetPrivateProfileIntA("Render", "DisableOpenXR", -1, chosenIni);
+        if (dx < 0) dx = GetPrivateProfileIntA(nullptr, "DisableOpenXR", 0, chosenIni);
+        g_disableOpenXR = dx ? 1 : 0;
     }
     Log("  FrameBoundaryPolicy=%d (%s) debounceMs=%llu (legacy max ~%.1f Hz)",
         g_frameBoundaryPolicy,
@@ -589,6 +596,9 @@ void LoadConfig() {
                                        : "TraceOnly",
         (unsigned long long)d2vr_frame::BoundaryMachine::kLegacyEndSceneDebounceMs,
         d2vr_frame::MaxVrFrameHzFromLegacyDebounce());
+    Log("[EffectiveConfig] RenderPipelineTrace=%d FrameBoundaryPolicy=%d DisableOpenXR=%d SubmitMode=%d StereoMode=%d StartupMode=%d HookMask=0x%X",
+        g_renderPipelineTrace, g_frameBoundaryPolicy, g_disableOpenXR, g_submitMode, g_stereoMode, g_startupMode,
+        g_hookMask);
 }
 
 void RequestRecenter(const char* source) {
@@ -3879,6 +3889,7 @@ static bool WriteTextureToSwapchain(XrSwapchain sc, ID3D11Texture2D** scImages, 
 }
 
 void SubmitXR(IDirect3DDevice9* dev) {
+    if (g_disableOpenXR) return;
     g_lastStage = 20;
 
     if (!g_xrReady) return;
@@ -4365,8 +4376,20 @@ static d2vr_frame::Event MakePipelineEvent(d2vr_frame::EventType type) {
     return e;
 }
 
+static bool ShouldEmitSceneTrace(d2vr_frame::EventType type) {
+    if (!d2vr_trace::g_enabled || !d2vr_trace::g_traceScenes) return false;
+    if (d2vr_trace::g_traceAllScenes) return true;
+    const int depth = g_frameBoundary.OpenBeginScenes();
+    if (type == d2vr_frame::EventType::BeginScene) return depth == 1;
+    if (type == d2vr_frame::EventType::EndScene) return depth == 0;
+    return true;
+}
+
 static void EmitPipelineTrace(const d2vr_frame::Event& e, void* dev, const char* note = "") {
     if (!d2vr_trace::g_enabled) return;
+    if (e.type == d2vr_frame::EventType::BeginScene || e.type == d2vr_frame::EventType::EndScene) {
+        if (!ShouldEmitSceneTrace(e.type)) return;
+    }
     const int depth = (e.type == d2vr_frame::EventType::BeginScene ||
                        e.type == d2vr_frame::EventType::EndScene)
                           ? g_frameBoundary.OpenBeginScenes()
@@ -4473,7 +4496,7 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
         Log("VrFrame called by %s (frameId=%ld tid=%lu)", caller, id, g_renderThreadId);
     }
 
-    if (InterlockedCompareExchange(&g_xrInitTried, 1, 0) == 0) InitXR();
+    if (!g_disableOpenXR && InterlockedCompareExchange(&g_xrInitTried, 1, 0) == 0) InitXR();
 
     // True stereo: build the eye pair from the recorded frame stream BEFORE submitting.
     // Runs once per frame thanks to the g_submittedFrameId dedupe above.
@@ -4560,10 +4583,14 @@ static void ApplyBoundaryDecision(IDirect3DDevice9* dev, const d2vr_frame::Decis
 HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
-    if (g_submitMode != 4) {
+    if (g_submitMode != 4 && !d2vr_trace::g_enabled) {
         InterlockedIncrement(&g_frameId);
     }
-    if (d2vr_trace::g_enabled || (g_submitMode == 4 && g_stereoMode >= 1)) {
+    if (g_submitMode == 4 && g_stereoMode >= 1) {
+        const auto ev = MakePipelineEvent(d2vr_frame::EventType::BeginScene);
+        g_frameBoundary.OnEvent(ev);
+        EmitPipelineTrace(ev, dev);
+    } else if (d2vr_trace::g_enabled && d2vr_trace::g_traceScenes) {
         const auto ev = MakePipelineEvent(d2vr_frame::EventType::BeginScene);
         g_frameBoundary.OnEvent(ev);
         EmitPipelineTrace(ev, dev);
@@ -4598,8 +4625,16 @@ HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
     if (FAILED(hr)) Log("!!! EndScene FAILED hr=0x%08lX", hr);
     {
         const auto ev = MakePipelineEvent(d2vr_frame::EventType::EndScene);
-        const auto decision = g_frameBoundary.OnEvent(ev);
-        if (d2vr_trace::g_enabled) EmitPipelineTrace(ev, dev);
+        d2vr_frame::Decision decision{};
+        if (g_submitMode == 4 && g_stereoMode >= 1) {
+            decision = g_frameBoundary.OnEvent(ev);
+        } else if (d2vr_trace::g_enabled && d2vr_trace::g_traceScenes) {
+            decision = g_frameBoundary.OnEvent(ev);
+            EmitPipelineTrace(ev, dev);
+        } else if (!d2vr_trace::g_enabled &&
+                   InterlockedCompareExchange(&g_presentSeen, 0, 0) == 0) {
+            decision = g_frameBoundary.OnEvent(ev);
+        }
         if (g_submitMode == 4 && g_stereoMode >= 1)
             ApplyBoundaryDecision(dev, decision);
         else if (!d2vr_trace::g_enabled &&
@@ -4671,24 +4706,32 @@ HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a,
 // Use the actual presentation boundary, not each of the world's/UI's EndScene segments.
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SwapChainPresent)(IDirect3DSwapChain9*, const RECT*, const RECT*, HWND, const RGNDATA*, DWORD);
 PFN_SwapChainPresent g_origSwapChainPresent = nullptr;
+static std::unordered_map<void*, PFN_SwapChainPresent> g_swapChainOrigPresent;
+static std::unordered_map<void*, void**> g_swapChainVtableClones;
 HRESULT STDMETHODCALLTYPE Hook_SwapChainPresent(IDirect3DSwapChain9* sc, const RECT* a, const RECT* b, HWND w,
                                                 const RGNDATA* r, DWORD flags) {
-    if(g_insidePresentation) return g_origSwapChainPresent ? g_origSwapChainPresent(sc,a,b,w,r,flags):D3D_OK;
+    PFN_SwapChainPresent orig = g_origSwapChainPresent;
+    if (auto it = g_swapChainOrigPresent.find(sc); it != g_swapChainOrigPresent.end()) orig = it->second;
+    if (g_insidePresentation) return orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
+
     PresentationScope presenting;
     static int s_logged = 0;
     if (s_logged++ < 3) Log("SwapChain::Present: complete game-frame boundary");
+
+    InterlockedExchange(&g_presentSeen, 1);
     IDirect3DDevice9* dev = nullptr;
-    if (SUCCEEDED(sc->GetDevice(&dev)) && dev) {
-        InterlockedExchange(&g_presentSeen, 1);
-        IDirect3DSurface9* bb = nullptr;
-        sc->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &bb);
-        TracePresentLike(dev, "SwapChainPresent", sc, bb, flags, "swapchain");
-        if (bb) bb->Release();
+    sc->GetDevice(&dev);
+    if (d2vr_trace::g_enabled) {
+        d2vr_trace::EmitSimple(GetTickCount64(), GetCurrentThreadId(), "SwapChainPresent", 0,
+                               (uint32_t)d2vr_replay::g_rec.size(), dev ? (void*)dev : (void*)sc,
+                               "swapchain");
+    }
+    if (dev) {
         const auto ev = MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent);
         const auto decision = g_frameBoundary.OnEvent(ev);
         if (g_submitMode == 4)
             ApplyBoundaryDecision(dev, decision);
-        else if (!d2vr_trace::g_enabled)
+        else if (!d2vr_trace::g_enabled && g_submitMode != 0)
             VrFrame(dev, "SwapChain::Present");
         if (g_suppressDesktopPresent && ShouldRouteDisplayToHeadsetOnly()) {
             dev->Release();
@@ -4696,20 +4739,23 @@ HRESULT STDMETHODCALLTYPE Hook_SwapChainPresent(IDirect3DSwapChain9* sc, const R
         }
         dev->Release();
     }
-    return g_origSwapChainPresent ? g_origSwapChainPresent(sc, a, b, w, r, flags) : D3D_OK;
+    return orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
 }
 
 static void HookSwapChainObject(IDirect3DSwapChain9* sc) {
     if (!sc || !(g_hookMask & 2)) return;
     void** vt = *reinterpret_cast<void***>(sc);
+    if (!vt) return;
     if (vt[3] == reinterpret_cast<void*>(&Hook_SwapChainPresent)) return;
     if (g_hookedSwapChains.count(sc)) return;
-    void* presentSlot = vt[3];
+    void* origFn = vt[3];
+    if (!origFn || origFn == reinterpret_cast<void*>(&Hook_SwapChainPresent)) return;
     void* hooked = PatchVTable(sc, 3, reinterpret_cast<void*>(&Hook_SwapChainPresent));
     if (hooked && hooked != reinterpret_cast<void*>(&Hook_SwapChainPresent)) {
+        g_swapChainOrigPresent[sc] = reinterpret_cast<PFN_SwapChainPresent>(hooked);
         if (!g_origSwapChainPresent) g_origSwapChainPresent = reinterpret_cast<PFN_SwapChainPresent>(hooked);
         g_hookedSwapChains.insert(sc);
-        Log("SwapChain::Present@3 hooked chain=%p vtable=%p slot=%p orig=%p", sc, vt, presentSlot, hooked);
+        Log("SwapChain::Present@3 hooked chain=%p vtable=%p orig=%p", sc, vt, hooked);
     }
 }
 
@@ -4758,6 +4804,10 @@ void HookDevice(IDirect3DDevice9* dev) {
     TryHookSwapChainPresent(dev);
 
     void** devVt = *reinterpret_cast<void***>(dev);
+    Log("[EffectiveConfig] SwapChainPresentHook=%s OpenXR=%s TraceCSV=%s",
+        g_hookedSwapChains.empty() ? "NOT_INSTALLED" : "installed",
+        g_disableOpenXR ? "disabled" : "enabled",
+        d2vr_trace::g_enabled ? "enabled" : "disabled");
     Log("Method 2 Hooks active on device %p vtable=%p Present@17=%p EndScene@42=%p swapchainsHooked=%zu",
         dev, devVt, devVt[17], devVt[42], g_hookedSwapChains.size());
 

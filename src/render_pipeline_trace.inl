@@ -8,6 +8,8 @@
 namespace d2vr_trace {
 
 inline int g_enabled = 0;
+inline int g_traceScenes = 0; // 0=no Begin/End rows (stable); 1=emit scene rows (see g_traceAllScenes)
+inline int g_traceAllScenes = 0; // when g_traceScenes: 0=outer pairs only; 1=every nested pair
 inline int g_maxEvents = 500000;
 inline FILE* g_file = nullptr;
 inline FILE* g_retFile = nullptr;
@@ -65,7 +67,7 @@ inline void Emit(uint64_t ms, uint32_t tid, const char* event, int sceneDepth, u
     const uint64_t rel = g_t0Ms ? (ms - g_t0Ms) : ms;
     fprintf(g_file, "%llu,%u,%s,%d,%ld,%u,%p,%p,%p,%u,%p,%u,%s\n", rel, tid, event, sceneDepth, draws,
             records, device, obj0, obj1, auxU32, retaddr, flags, note);
-    if ((g_count % 256) == 0) fflush(g_file);
+    if ((g_count % 256) == 0 || (event && strcmp(event, "SwapChainPresent") == 0)) fflush(g_file);
 }
 
 inline void EmitSimple(uint64_t ms, uint32_t tid, const char* event, int sceneDepth, uint32_t records,

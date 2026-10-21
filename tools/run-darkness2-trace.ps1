@@ -19,7 +19,18 @@ Write-Host "Game: $($game.GameDir)"
 Write-Host "Exe:  $($game.ExePath)"
 
 if (-not $SkipDeploy) {
-    & (Join-Path $PSScriptRoot 'deploy-research-build.ps1') -Install | Format-List *
+    & (Join-Path $PSScriptRoot 'deploy-research-build.ps1') -Install -DllOnly | Format-List *
+    & (Join-Path $PSScriptRoot 'lib\Set-GameRenderIni.ps1') -GameDir $game.GameDir -Keys @{
+        RenderPipelineTrace = 1
+        RenderPipelineTraceMax = 2000000
+        RenderPipelineTraceScenes = 0
+        FrameBoundaryPolicy = 2
+        SubmitMode = 0
+        StereoMode = 0
+        StartupMode = 1
+        DisableOpenXR = 1
+        HookMask = 2
+    }
 }
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -43,8 +54,7 @@ while (-not (Get-Process DarknessII -ErrorAction SilentlyContinue)) {
     if ((Get-Date) -gt $deadline) { throw 'Game did not start within 3 minutes' }
     Start-Sleep -Seconds 2
 }
-$proc = Get-Process DarknessII
-Write-Host "Game pid=$($proc.Id)"
+Write-Host "Game pid=$((Get-Process DarknessII).Id)"
 
 function Get-TraceTailStats {
     param([string]$Path)
@@ -69,7 +79,8 @@ $lastTraceGrowth = Get-Date
 $lastPresentCount = 0
 
 function Watchdog-Tick {
-    if (-not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) {
+    $live = Get-Process DarknessII -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $live) {
         Write-Warning 'Game process exited (capture partial trace if present)'
         return $false
     }
@@ -113,15 +124,37 @@ if ($TransitionCount -gt 0) {
 }
 
 Write-Host 'Stopping game...'
-Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+Get-Process DarknessII -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 
-if (Test-Path $tracePath) {
-    Copy-Item $tracePath (Join-Path $archive "$stamp-final-trace.csv") -Force
-    python (Join-Path $PSScriptRoot 'analyze-render-pipeline-trace.py') $tracePath
+$fail = $false
+if (-not (Test-Path $logPath)) {
+    Write-Error 'FAIL: d3d9.log not created'
+    $fail = $true
 } else {
-    Write-Warning "No trace captured at $tracePath"
+    $cfg = Select-String -Path $logPath -Pattern '\[EffectiveConfig\]' | Select-Object -Last 3
+    if (-not $cfg) { Write-Error 'FAIL: EffectiveConfig not logged'; $fail = $true }
+    else { $cfg | ForEach-Object { Write-Host $_.Line } }
 }
-
+if (-not (Test-Path $tracePath)) {
+    Write-Error 'FAIL: render_pipeline_trace.csv not created'
+    $fail = $true
+} else {
+    $lines = (Get-Content $tracePath | Measure-Object -Line).Lines
+    if ($lines -lt 50) {
+        Write-Error "FAIL: trace too short ($lines lines)"
+        $fail = $true
+    } else {
+        Copy-Item $tracePath (Join-Path $archive "$stamp-final-trace.csv") -Force
+        python (Join-Path $PSScriptRoot 'analyze-render-pipeline-trace.py') $tracePath
+        if ($LASTEXITCODE -ne 0) { $fail = $true }
+        $scPresent = (Select-String -Path $tracePath -Pattern ',SwapChainPresent,' -AllMatches).Count
+        if ($scPresent -lt 30) {
+            Write-Error "FAIL: SwapChainPresent count=$scPresent (expected >=30 for menu capture)"
+            $fail = $true
+        }
+    }
+}
+if ($fail) { exit 1 }
 Write-Host "Archive: $archive\$stamp-*"
-Write-Host 'DONE'
+Write-Host 'PASS trace capture'

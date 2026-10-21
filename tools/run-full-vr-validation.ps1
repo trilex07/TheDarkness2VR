@@ -18,41 +18,31 @@ function Gate($section, $script) {
     }
 }
 
+function GateNotRun($section, $reason) {
+    $script:results += [pscustomobject]@{ Section = $section; Status = "NOT RUN"; Detail = $reason }
+}
+
 Gate "Build (d3d9 proxy)" (Join-Path $repo "build.ps1")
 Gate "stereo_math_test" (Join-Path $repo "test\build_math_test.ps1")
 Gate "stereo_geometry_suite" (Join-Path $root "stereo-math-tests\build.ps1")
 Gate "vr_frame_test" (Join-Path $repo "test\build_vr_test.ps1")
 Gate "frame_boundary_simulator" (Join-Path $root "frame-boundary-simulator\build.ps1")
 
+GateNotRun "runtime_trace_capture" "Requires live game trace (run-darkness2-trace.ps1)"
+GateNotRun "d3d9_stereo_harness" "Geometric disparity not validated (placeholder WVP)"
+GateNotRun "real_trace_replay" "Run replay-render-trace.py after CSV capture"
+
 Write-Host ""
-Write-Host "FULL VR VALIDATION SUMMARY" -ForegroundColor $(if ($failed) { "Red" } else { "Green" })
-$results | Format-Table -AutoSize
+$mandatoryNotRun = @("runtime_trace_capture", "d3d9_stereo_harness")
+$blocked = ($results | Where-Object { $_.Status -eq "NOT RUN" -and $_.Section -in $mandatoryNotRun }).Count
+Write-Host "FULL VR VALIDATION SUMMARY" -ForegroundColor $(if ($failed -or $blocked) { "Red" } else { "Green" })
+$results | Format-Table Section, Status, Detail -AutoSize
 $pass = ($results | Where-Object Status -eq "PASS").Count
 $fail = ($results | Where-Object Status -eq "FAIL").Count
-Write-Host "TOTAL SECTIONS: $($results.Count)  PASSED: $pass  FAILED: $fail"
-foreach ($name in @("Frame boundary", "Stereo math", "Projection", "OpenXR", "Loading regression", "Mutation")) {
-    $st = if ($failed) { "FAIL" } else { "PASS" }
-    if ($name -eq "Frame boundary") {
-        $fb = $results | Where-Object Section -eq "frame_boundary_simulator"
-        $st = if ($fb.Status -eq "PASS") { "PASS" } else { "FAIL" }
-    }
-    if ($name -eq "Stereo math") {
-        $sm = $results | Where-Object Section -eq "stereo_geometry_suite"
-        $st = if ($sm.Status -eq "PASS") { "PASS" } else { "FAIL" }
-    }
-    if ($name -eq "OpenXR") {
-        $xr = $results | Where-Object Section -eq "vr_frame_test"
-        $st = if ($xr.Status -eq "PASS") { "PASS" } else { "FAIL" }
-    }
-    if ($name -eq "Loading regression") {
-        $fb = $results | Where-Object Section -eq "frame_boundary_simulator"
-        $st = if ($fb.Status -eq "PASS") { "PASS (test_rc20_infinite_loading_regression)" } else { "FAIL" }
-    }
-    if ($name -eq "Mutation") {
-        $fb = $results | Where-Object Section -eq "frame_boundary_simulator"
-        $st = if ($fb.Status -eq "PASS") { "PASS" } else { "FAIL" }
-    }
-    if ($name -in @("Projection", "D3D9 harness", "Image analysis")) { $st = "NOT RUN (pending)" }
-    Write-Host ("{0}: {1}" -f $name, $st)
-}
+$notRun = ($results | Where-Object Status -eq "NOT RUN").Count
+Write-Host "TOTAL: $($results.Count)  PASS: $pass  FAIL: $fail  NOT RUN: $notRun"
 if ($failed) { exit 1 }
+if ($blocked) {
+    Write-Host "BLOCKED: mandatory runtime gates not executed." -ForegroundColor Red
+    exit 2
+}
