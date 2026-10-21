@@ -7,6 +7,17 @@
 
 namespace d2vr_stereo {
 
+// A centered blit samples source NDC = output NDC * crop. The submitted
+// frustum must describe those rays, not the headset's recommended frustum.
+inline bool RenderedHalfFov(float projectionScale, float matrixScale, float crop,
+                            float* angle) {
+    if (!angle || !std::isfinite(projectionScale) || !std::isfinite(matrixScale) ||
+        !std::isfinite(crop) || projectionScale <= 0 || matrixScale <= 0 ||
+        crop <= 0 || crop > 1) return false;
+    *angle = std::atan(crop / (projectionScale * matrixScale));
+    return std::isfinite(*angle) && *angle > 0;
+}
+
 struct EyeShiftParams {
     float separation = 0.0f;
     float convergence = 2.0f;

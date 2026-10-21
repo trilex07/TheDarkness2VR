@@ -2648,6 +2648,28 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         g_pairSubmitEyePose[1] = g_eyePose[1];
         g_pairSubmitFov[0] = g_eyeFov[0];
         g_pairSubmitFov[1] = g_eyeFov[1];
+        // The game projection is symmetric and the D3D11 blit only center-crops.
+        // Raw asymmetric HMD FOVs describe different rays and split the optical
+        // axes. Derive submission angles from the actual projection and the
+        // frozen transform/crop used for this pair.
+        if (d2vr_replay::g_cameraProjectionKnown) {
+            for (int e = 0; e < 2; ++e) {
+                const auto sp = MakeEyeParams(e);
+                float hx = 0, hy = 0;
+                if (d2vr_stereo::RenderedHalfFov(d2vr_replay::g_cameraPx,
+                        sp.fovScaleX, g_perEyeCropX[e], &hx) &&
+                    d2vr_stereo::RenderedHalfFov(d2vr_replay::g_cameraPy,
+                        sp.fovScaleY, g_perEyeCropY[e], &hy)) {
+                    g_pairSubmitFov[e] = {-hx, hx, hy, -hy};
+                    if ((g_trueStereoFrames % 600) == 0)
+                        Log("[RenderedFov] eye=%d PxPy=%.7g,%.7g scale=%.7g,%.7g crop=%.7g,%.7g submit=%.7g,%.7g,%.7g,%.7g hmd=%.7g,%.7g,%.7g,%.7g",
+                            e,d2vr_replay::g_cameraPx,d2vr_replay::g_cameraPy,
+                            sp.fovScaleX,sp.fovScaleY,g_perEyeCropX[e],g_perEyeCropY[e],
+                            -hx,hx,hy,-hy,g_eyeFov[e].angleLeft,g_eyeFov[e].angleRight,
+                            g_eyeFov[e].angleUp,g_eyeFov[e].angleDown);
+                }
+            }
+        }
         g_pairSubmitMetaValid = true;
     }
     LARGE_INTEGER perf[5]{}, frequency{};
