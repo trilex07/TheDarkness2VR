@@ -3,6 +3,7 @@
 *.lib
 *.pdb
 *.ilk
+*.map
 *.dll
 *.bak*
 test_vt.cpp

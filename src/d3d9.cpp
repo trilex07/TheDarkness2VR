@@ -106,7 +106,7 @@ static int g_presentHookLevel = 0;
 static volatile LONG g_swapChainPresentCount = 0;
 static volatile LONG g_devicePresentCount = 0;
 static volatile LONG g_swapChainPresentMaxDepth = 0;
-static std::unordered_set<void*> g_hookedSwapChains;
+static bool g_enginePresentInstalled = false;
 static XrPosef g_pairSubmitHead{};
 static XrPosef g_pairSubmitEyePose[2]{};
 static XrFovf g_pairSubmitFov[2]{};
@@ -549,7 +549,8 @@ void LoadConfig() {
     if (savedLighting >= 0 && savedLighting <= 9) {
         g_lightingPreset = savedLighting == 0 ? 9 : savedLighting - 1;
         g_projectionFix = 3;
-        g_stereoMode = 1;
+        // Restoring lighting must not override the requested mono/replay
+        // validation mode. Only an explicit live preset selection enables stereo.
         g_noInvProj = g_lightPosShift = g_skipLightVsShift = 0;
         g_diagnosticSameEye = -1; g_diagnosticSkipVs = 0;
         Log("[LightingPreset] restored Shift+%d: %s", savedLighting,
@@ -4355,8 +4356,9 @@ volatile LONG g_devHooked = 0;
 volatile LONG g_factoryHooked = 0;
 static thread_local bool g_insidePresentation=false;
 struct PresentationScope {
+    bool previous = g_insidePresentation;
     PresentationScope() { g_insidePresentation=true; }
-    ~PresentationScope() { g_insidePresentation=false; }
+    ~PresentationScope() { g_insidePresentation=previous; }
 };
 
 static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp);
@@ -4373,7 +4375,6 @@ void* PatchVTable(void* obj, int index, void* repl) {
 
 static void VrFrame(IDirect3DDevice9* dev, const char* caller);
 static void TryHookSwapChainPresent(IDirect3DDevice9* dev);
-static void RestoreSwapChainHooksBeforeReset();
 
 static d2vr_frame::Event MakePipelineEvent(d2vr_frame::EventType type) {
     d2vr_frame::Event e{};
@@ -4443,17 +4444,19 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_anchorValid = false;
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
-    RestoreSwapChainHooksBeforeReset();
     HRESULT hr = g_origReset(dev, pp);
     Log("Device Reset (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
         pp ? (int)pp->BackBufferFormat : 0, pp ? (int)pp->Windowed : 0,
         pp ? pp->FullScreen_RefreshRateInHz : 0, hr);
-    if (SUCCEEDED(hr)) TryHookSwapChainPresent(dev);
+    // Install from the first completed EndScene, after overlay device setup.
+    // Reset can run while another interceptor is still collecting entry points.
+    if (SUCCEEDED(hr)) g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetSucceeded));
     return hr;
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
+    g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetEx));
     g_gpuTiming.Release();
     if (g_forceWindowedReset && pp) {
         TweakPresentParams(pp);
@@ -4479,6 +4482,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
+    if (SUCCEEDED(hr)) g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetSucceeded));
     Log("Device ResetEx (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
         pp ? (int)pp->BackBufferFormat : 0, pp ? (int)pp->Windowed : 0,
@@ -4512,15 +4516,21 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
     if (g_submitMode == 4 && g_stereoMode >= 1 && d2vr_replay::g_recActive) {
         g_eyePairReady=false;
         const size_t recCount = d2vr_replay::g_rec.size();
-        // Loading/menu passes often record only BeginScene+EndScene; replaying that
-        // still costs xrWaitFrame + GPU but produces no usable stereo pair.
-        if (recCount >= 500) {
+        // A real Present seals the recording. Replay actual draw content, not a
+        // guessed command-count threshold (a small UI frame is still a frame).
+        const bool hasDraw = std::any_of(d2vr_replay::g_rec.begin(), d2vr_replay::g_rec.end(),
+            [](const d2vr_replay::Rec& r) {
+                return r.op == d2vr_replay::OP_DrawPrimitive || r.op == d2vr_replay::OP_DrawIndexedPrimitive ||
+                    r.op == d2vr_replay::OP_DrawPrimitiveUP || r.op == d2vr_replay::OP_DrawIndexedPrimitiveUP;
+            });
+        if (hasDraw && !d2vr_replay::g_recOverflow) {
             RenderEyePairFromReplay(dev);
             g_eyePairFrameId=g_trackedFrame.id;
         } else {
             static int s_skipLog = 0;
             if (s_skipLog++ < 6)
-                Log("[StereoPair] skip replay (rec=%zu) — menu/loading segment", recCount);
+                Log("[StereoPair] no replayable draw stream (rec=%zu overflow=%d)", recCount,
+                    (int)d2vr_replay::g_recOverflow);
         }
     }
 
@@ -4590,6 +4600,7 @@ static void ApplyBoundaryDecision(IDirect3DDevice9* dev, const d2vr_frame::Decis
 }
 
 HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
+    if (g_insidePresentation) return g_origBeginScene(dev);
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     if (g_submitMode != 4 && !d2vr_trace::g_enabled) {
@@ -4621,6 +4632,7 @@ HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
 }
 
 HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
+    if (g_insidePresentation) return g_origEndScene(dev);
     PollHotkeys();
     if (g_submitMode == 4 && g_stereoMode >= 1) {
         d2vr_replay::RecEmit(d2vr_replay::OP_EndScene, 0);
@@ -4721,159 +4733,93 @@ HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a,
 
 // Use the actual presentation boundary, not each of the world's/UI's EndScene segments.
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SwapChainPresent)(IDirect3DSwapChain9*, const RECT*, const RECT*, HWND, const RGNDATA*, DWORD);
-PFN_SwapChainPresent g_origSwapChainPresent = nullptr;
-static std::unordered_map<void*, PFN_SwapChainPresent> g_swapChainOrigPresent;
-static std::unordered_map<void*, void**> g_swapChainVtableClones;
-static std::unordered_map<void*, void**> g_swapChainSharedVt;
-
-static void RestoreSwapChainHooksBeforeReset() {
-    for (void* sc : g_hookedSwapChains) {
-        if (auto sh = g_swapChainSharedVt.find(sc); sh != g_swapChainSharedVt.end())
-            *reinterpret_cast<void***>(sc) = sh->second;
-        if (auto cl = g_swapChainVtableClones.find(sc); cl != g_swapChainVtableClones.end())
-            VirtualFree(cl->second, 0, MEM_RELEASE);
-    }
-    g_hookedSwapChains.clear();
-    g_swapChainOrigPresent.clear();
-    g_swapChainVtableClones.clear();
-    g_swapChainSharedVt.clear();
-}
-
-static PFN_SwapChainPresent ResolveSwapChainOrig(IDirect3DSwapChain9* sc) {
-    if (auto it = g_swapChainOrigPresent.find(sc); it != g_swapChainOrigPresent.end()) return it->second;
-    return g_origSwapChainPresent;
-}
-
-static void LogPresentFnModule(const char* tag, void* fn) {
-    if (!fn) return;
-    HMODULE mod = nullptr;
-    char modName[MAX_PATH] = "?";
-    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                           static_cast<LPCSTR>(fn), &mod) &&
-        mod) {
-        GetModuleFileNameA(mod, modName, MAX_PATH);
-    }
-    Log("[PresentHook] %s fn=%p module=%s", tag, fn, modName);
-}
-
-HRESULT STDMETHODCALLTYPE Hook_SwapChainPresent(IDirect3DSwapChain9* sc, const RECT* a, const RECT* b, HWND w,
-                                                const RGNDATA* r, DWORD flags) {
-    PFN_SwapChainPresent orig = ResolveSwapChainOrig(sc);
-    if (g_insidePresentation) return orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
-
+// Diagnostic pass-through at the engine's actual COM dispatch. The vtable and
+// implementation entry remain owned by D3D/other interceptors. Resolve the live
+// slot for each call, so we never retain an entry subsequently detoured back to us.
+static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
+    const RECT* a, const RECT* b, HWND w, const RGNDATA* r, DWORD flags) {
+    const auto next = reinterpret_cast<PFN_SwapChainPresent>((*reinterpret_cast<void***>(sc))[3]);
     PresentationScope presenting;
-
-    static thread_local int tlsDepth = 0;
-    ++tlsDepth;
-    LONG prevMax = InterlockedCompareExchange(&g_swapChainPresentMaxDepth, (LONG)tlsDepth, (LONG)tlsDepth);
-    if (tlsDepth > prevMax) InterlockedExchange(&g_swapChainPresentMaxDepth, (LONG)tlsDepth);
-    if (tlsDepth > 4) {
-        --tlsDepth;
-        return orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
-    }
-
-    if (g_suppressDesktopPresent && ShouldRouteDisplayToHeadsetOnly()) {
-        --tlsDepth;
-        return D3D_OK;
-    }
-
-    const HRESULT hr = orig ? orig(sc, a, b, w, r, flags) : D3D_OK;
-
-    InterlockedExchange(&g_presentSeen, 1);
-    const LONG n = InterlockedIncrement(&g_swapChainPresentCount);
-    if (n == 1 || (n % 600) == 0) {
-        Log("[PresentHook] SwapChainPresent count=%ld hr=0x%08lX sc=%p maxTlsDepth=%ld", n, hr, sc,
-            (long)InterlockedCompareExchange(&g_swapChainPresentMaxDepth, 0, 0));
-    }
-
+    // Complete the recorded game frame while its backbuffer is still valid,
+    // before a DISCARD Present. Overlay scenes inside next() are not game frames.
     if (g_presentHookLevel >= 1) {
-        const auto ev = MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent);
-        const auto decision = g_frameBoundary.OnEvent(ev);
-        if (g_submitMode == 4) {
-            IDirect3DDevice9* dev = nullptr;
-            if (SUCCEEDED(sc->GetDevice(&dev)) && dev) {
-                ApplyBoundaryDecision(dev, decision);
-                dev->Release();
+        const auto decision = g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent));
+        if (g_submitMode == 4 && decision.requestVrFrame) {
+            IDirect3DDevice9* owner = nullptr;
+            if (SUCCEEDED(sc->GetDevice(&owner)) && owner) {
+                ApplyBoundaryDecision(owner, decision);
+                owner->Release();
             }
         }
     }
-    if (g_presentHookLevel >= 2 && d2vr_trace::g_enabled) {
-        d2vr_trace::EmitSimple(GetTickCount64(), GetCurrentThreadId(), "SwapChainPresent", 0, 0, sc, "swapchain");
+    const HRESULT hr = next(sc, a, b, w, r, flags);
+    const LONG n = InterlockedIncrement(&g_swapChainPresentCount);
+    InterlockedExchange(&g_presentSeen, 1);
+    if (n == 1) {
+        IDirect3DDevice9* owner = nullptr;
+        IDirect3DSwapChain9* implicit = nullptr;
+        if (SUCCEEDED(sc->GetDevice(&owner)) && owner) {
+            owner->GetSwapChain(0, &implicit);
+            Log("[EnginePresent] identity actual=%p implicit=%p device=%p chains=%u",
+                sc, implicit, owner, owner->GetNumberOfSwapChains());
+            IDirect3DSurface9 *actualBack=nullptr, *implicitBack=nullptr, *rt=nullptr;
+            sc->GetBackBuffer(0,D3DBACKBUFFER_TYPE_MONO,&actualBack);
+            owner->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&implicitBack);
+            owner->GetRenderTarget(0,&rt);
+            D3DSURFACE_DESC desc{};
+            if (actualBack) actualBack->GetDesc(&desc);
+            Log("[EnginePresent] surfaces actual=%p implicit=%p rt0=%p actualSize=%ux%u",
+                actualBack,implicitBack,rt,desc.Width,desc.Height);
+            if(actualBack) actualBack->Release();
+            if(implicitBack) implicitBack->Release();
+            if(rt) rt->Release();
+            if (implicit) implicit->Release();
+            owner->Release();
+        }
     }
-
-    --tlsDepth;
+    if (n == 1 || n % 1000 == 0)
+        Log("[EnginePresent] completed=%ld sc=%p next=%p hr=0x%08lX caller=%p ms=%llu",
+            n, sc, reinterpret_cast<void*>(next), hr, _ReturnAddress(), GetTickCount64());
+    if (g_presentHookLevel >= 2)
+        d2vr_trace::Emit(GetTickCount64(), GetCurrentThreadId(), "SwapChainPresent", 0,
+            static_cast<uint32_t>(d2vr_replay::g_rec.size()), nullptr, sc, nullptr,
+            static_cast<uint32_t>(hr), _ReturnAddress(), flags, "engine-dispatch-completed");
     return hr;
-}
-
-static void HookSwapChainObject(IDirect3DSwapChain9* sc) {
-    if (!sc || !(g_hookMask & 2)) return;
-    void** curVt = *reinterpret_cast<void***>(sc);
-    if (curVt && curVt[3] == reinterpret_cast<void*>(&Hook_SwapChainPresent)) {
-        g_hookedSwapChains.insert(sc);
-        return;
-    }
-    if (g_hookedSwapChains.count(sc)) {
-        RestoreSwapChainHooksBeforeReset();
-    }
-    void** sharedVt = *reinterpret_cast<void***>(sc);
-    if (!sharedVt) return;
-    if (sharedVt[3] == reinterpret_cast<void*>(&Hook_SwapChainPresent)) {
-        g_hookedSwapChains.insert(sc);
-        return;
-    }
-    void* origFn = sharedVt[3];
-    if (!origFn || origFn == reinterpret_cast<void*>(&Hook_SwapChainPresent)) return;
-
-    // Per-instance shadow vtable: never patch the shared d3d9/overlay vtable slot.
-    constexpr size_t kVtSlots = 32;
-    void** clone =
-        static_cast<void**>(VirtualAlloc(nullptr, kVtSlots * sizeof(void*), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
-    if (!clone) return;
-    memcpy(clone, sharedVt, kVtSlots * sizeof(void*));
-    clone[3] = reinterpret_cast<void*>(&Hook_SwapChainPresent);
-
-    DWORD oldProt = 0;
-    if (!VirtualProtect(sc, sizeof(void*), PAGE_READWRITE, &oldProt)) {
-        VirtualFree(clone, 0, MEM_RELEASE);
-        return;
-    }
-    *reinterpret_cast<void***>(sc) = clone;
-    VirtualProtect(sc, sizeof(void*), oldProt, &oldProt);
-
-    g_swapChainOrigPresent[sc] = reinterpret_cast<PFN_SwapChainPresent>(origFn);
-    if (!g_origSwapChainPresent) g_origSwapChainPresent = reinterpret_cast<PFN_SwapChainPresent>(origFn);
-    g_swapChainVtableClones[sc] = clone;
-    g_swapChainSharedVt[sc] = sharedVt;
-    g_hookedSwapChains.insert(sc);
-
-    Log("[PresentHook] install chain=%p sharedVt=%p cloneVt=%p origPresent=%p hook=%p technique=shadow-vtable",
-        sc, sharedVt, clone, origFn, reinterpret_cast<void*>(&Hook_SwapChainPresent));
-    LogPresentFnModule("origPresent", origFn);
 }
 
 static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
     if (!(g_hookMask & 2) || !dev) return;
-    for (UINT i = 0; i < 8; ++i) {
-        IDirect3DSwapChain9* sc = nullptr;
-        if (FAILED(dev->GetSwapChain(i, &sc)) || !sc) continue;
-        HookSwapChainObject(sc);
-        sc->Release();
+    static bool attempted = false;
+    if (attempted) return;
+    attempted = true;
+    // Verified x86 engine dispatch: mov eax,[ecx+0Ch]; call eax. All six
+    // stdcall arguments are already on the stack. No relocated instructions.
+    auto image = reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr));
+    const auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+    const auto pe = reinterpret_cast<const IMAGE_NT_HEADERS32*>(image + dos->e_lfanew);
+    if (pe->FileHeader.Machine != IMAGE_FILE_MACHINE_I386 ||
+        pe->FileHeader.TimeDateStamp != 0x4F68A875 || pe->OptionalHeader.SizeOfImage != 0xDEC000) {
+        Log("[EnginePresent] REFUSED: unsupported executable identity");
+        return;
     }
-    __try {
-        IDirect3DDevice9* eng = reinterpret_cast<IDirect3DDevice9*>(*(uintptr_t*)(0x010dee84 + 0x0c));
-        if (eng && eng != dev) {
-            Log("[PresentHook] engine device global=%p (CreateDevice hook=%p) — probing engine swapchains", eng,
-                dev);
-            for (UINT i = 0; i < 8; ++i) {
-                IDirect3DSwapChain9* sc = nullptr;
-                if (FAILED(eng->GetSwapChain(i, &sc)) || !sc) continue;
-                Log("[PresentHook] probe engine chain[%u]=%p", i, sc);
-                HookSwapChainObject(sc);
-                sc->Release();
-            }
-        }
-    } __except (1) {
+    auto site = image + 0x694052;
+    const unsigned char expected[] = {0x8B,0x41,0x0C,0xFF,0xD0};
+    if (memcmp(site, expected, sizeof(expected)) != 0) {
+        Log("[EnginePresent] REFUSED: call-site bytes differ");
+        return;
     }
+    DWORD old = 0;
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    const int32_t rel = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&EngineSwapChainPresent) -
+        reinterpret_cast<uintptr_t>(site + 5));
+    site[0] = 0xE8;
+    memcpy(site + 1, &rel, sizeof(rel));
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+    VirtualProtect(site, 5, old, &old);
+    g_enginePresentInstalled = true;
+    Log("[EnginePresent] installed verified call-site=%p (no COM slot patch)", site);
+    // The old fixed address reads 0xC9, not a proven COM device. Never call
+    // through it: SEH is not object validation. Only use CreateDevice results.
 }
 
 void HookDevice(IDirect3DDevice9* dev) {
@@ -4912,11 +4858,11 @@ void HookDevice(IDirect3DDevice9* dev) {
 
     void** devVt = *reinterpret_cast<void***>(dev);
     Log("[EffectiveConfig] SwapChainPresentHook=%s OpenXR=%s TraceCSV=%s",
-        g_hookedSwapChains.empty() ? "NOT_INSTALLED" : "installed",
+        g_enginePresentInstalled ? "engine-callsite" : "pending-first-EndScene",
         g_disableOpenXR ? "disabled" : "enabled",
         d2vr_trace::g_enabled ? "enabled" : "disabled");
     Log("Method 2 Hooks active on device %p vtable=%p Present@17=%p EndScene@42=%p swapchainsHooked=%zu",
-        dev, devVt, devVt[17], devVt[42], g_hookedSwapChains.size());
+        dev, devVt, devVt[17], devVt[42], size_t(g_enginePresentInstalled));
 
     // Evidence check of the RE map (ENGINE_REVERSE_ENGINEERING.md): engine D3D9 device global
     __try {
@@ -5127,8 +5073,11 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
     } else if (reason == DLL_PROCESS_DETACH) {
         Log("[PresentHook] detach presentCount=%ld maxTlsDepth=%ld hookedSwapChains=%zu",
             (long)InterlockedCompareExchange(&g_swapChainPresentCount, 0, 0),
-            (long)InterlockedCompareExchange(&g_swapChainPresentMaxDepth, 0, 0), g_hookedSwapChains.size());
+            (long)InterlockedCompareExchange(&g_swapChainPresentMaxDepth, 0, 0), size_t(g_enginePresentInstalled));
         d2vr_trace::Shutdown();
+        Log("[RenderPipelineTrace] attempted=%ld dropped=%ld (last worker flush may be lost at process exit)",
+            (long)InterlockedCompareExchange(&d2vr_trace::g_count,0,0),
+            (long)InterlockedCompareExchange(&d2vr_trace::g_dropped,0,0));
         RemoveNativeHandsHook();
         RemoveNativePistolHook();
         RemoveNativeWeaponHook();

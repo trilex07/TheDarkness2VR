@@ -16,6 +16,7 @@ enum class EventType : uint8_t {
     SwapChainPresent,
     Reset,
     ResetEx,
+    ResetSucceeded,
 };
 
 enum class Policy : int {
@@ -36,6 +37,7 @@ inline const char* EventTypeName(EventType t) {
         case EventType::SwapChainPresent: return "SwapChainPresent";
         case EventType::Reset: return "Reset";
         case EventType::ResetEx: return "ResetEx";
+        case EventType::ResetSucceeded: return "ResetSucceeded";
     }
     return "?";
 }
@@ -121,6 +123,10 @@ public:
                 inReset_ = true;
                 openBeginScenes_ = 0;
                 lastEndSceneVrMs_ = 0;
+                return d;
+            case EventType::ResetSucceeded:
+                inReset_ = false;
+                openBeginScenes_ = 0;
                 return d;
             default:
                 return d;

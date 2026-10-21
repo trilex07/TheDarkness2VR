@@ -190,6 +190,18 @@ static void test_loading_then_present() {
 }
 
 int main() {
+    // A failed Reset must suppress submissions until a successful retry;
+    // the old machine latched inReset forever, even after successful Reset.
+    for (const auto reset : {d2vr_frame::EventType::Reset, d2vr_frame::EventType::ResetEx}) {
+        d2vr_frame::BoundaryMachine m(d2vr_frame::Policy::PresentPrimary);
+        CHECK(m.OnEvent(Ev(d2vr_frame::EventType::SwapChainPresent, 1)).requestVrFrame);
+        m.OnEvent(Ev(reset, 2));
+        CHECK(!m.OnEvent(Ev(d2vr_frame::EventType::SwapChainPresent, 3)).requestVrFrame);
+        m.OnEvent(Ev(reset, 4));
+        m.OnEvent(Ev(d2vr_frame::EventType::ResetSucceeded, 5));
+        CHECK(!m.OnEvent(Ev(d2vr_frame::EventType::EndScene, 6)).requestVrFrame);
+        CHECK(m.OnEvent(Ev(d2vr_frame::EventType::SwapChainPresent, 7)).requestVrFrame);
+    }
     test_rc20_infinite_loading_regression();
     test_present_primary_one_per_present();
     test_nested_endscene();
