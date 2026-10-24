@@ -3,7 +3,8 @@
 
 Analyzes Darkness2VR record-stream traces (run_*_trace.txt) by correlating
 shader constant uploads with active vertex shader bytecode reflection, CTAB
-constant table semantics, render target slot attachments, and draw call context.
+constant table semantics, render target slot attachments, surface identity,
+and draw call context.
 
 Mathematical Foundations (Clean-room implementations of published literature):
   - Frustum plane extraction: Gribb, G. & Hartmann, K. (2001),
@@ -26,11 +27,35 @@ from pathlib import Path
 from typing import Sequence
 
 # --------------------------------------------------------------------------
+# Direct3D 9 Format Constants (D3DFORMAT)
+# --------------------------------------------------------------------------
+
+D3DFMT_NAMES: dict[int, str] = {
+    20: "R8G8B8",
+    21: "A8R8G8B8",
+    22: "X8R8G8B8",
+    23: "R5G6B5",       # 16-bit RGB 5:6:5 (NOT R32F!)
+    24: "X1R5G5B5",
+    25: "A1R5G5B5",
+    26: "A4R4G4B4",
+    50: "D16",
+    75: "D24S8",
+    111: "R16F",
+    112: "G16R16F",
+    113: "A16B16G16R16F",
+    114: "R32F",        # 32-bit single-channel float
+    115: "G32R32F",
+    116: "A32B32G32R32F",
+}
+
+def format_name(fmt: int) -> str:
+    return D3DFMT_NAMES.get(fmt, f"FMT_{fmt}")
+
+# --------------------------------------------------------------------------
 # Evidence & Provenance Levels
 # --------------------------------------------------------------------------
 
 class EvidenceLevel(str, Enum):
-    VALIDATED_CAMERA_WVP = "VALIDATED_CAMERA_WVP"
     PROJECTION_CONSISTENT_WVP = "PROJECTION_CONSISTENT_WVP"
     CORRELATED_OBJECT_WVP = "CORRELATED_OBJECT_WVP"
     SHADOW_PASS_WVP = "SHADOW_PASS_WVP"
@@ -38,14 +63,16 @@ class EvidenceLevel(str, Enum):
     MODEL_TRANSFORM_AFFINE = "MODEL_RIGID_AFFINE"
     ORTHO_UI = "ORTHO_UI"
     BONE_PALETTE_BLOCK = "BONE_PALETTE"
-    STALE_CROSS_PASS = "STALE_CROSS_PASS"
     UNVERIFIED_CANDIDATE = "UNVERIFIED_CANDIDATE"
     UNKNOWN = "UNKNOWN"
 
+# Backwards compatibility alias: unproven camera identity is projection consistency
+VALIDATED_CAMERA_WVP = EvidenceLevel.PROJECTION_CONSISTENT_WVP
+
 class RenderPassType(str, Enum):
-    SHADOW_ATLAS = "SHADOW_ATLAS (4096x4096 R32F)"
-    MAIN_HDR_SCENE = "MAIN_HDR_SCENE (3076x3140 FP16)"
-    MAIN_FORWARD = "MAIN_FORWARD (3076x3140 RGB)"
+    SHADOW_ATLAS = "SHADOW_ATLAS"
+    MAIN_HDR_SCENE = "MAIN_HDR_SCENE"
+    MAIN_FORWARD = "MAIN_FORWARD"
     POSTFX_DOWNSAMPLE = "POSTFX_DOWNSAMPLE"
     UNKNOWN_PASS = "UNKNOWN_PASS"
 
@@ -97,7 +124,7 @@ def solve_3x3(rows: Sequence[Sequence[float]], rhs: Sequence[float]) -> Vec3 | N
 @dataclass
 class MatrixClassification:
     evidence: EvidenceLevel
-    layout: str  # "row_major" or "transposed"
+    layout: str  # "row_major", "transposed", "ambiguous", "unknown"
     pass_type: RenderPassType
     slot: str  # e.g. "c0..c3"
     draw_command: int
@@ -109,6 +136,10 @@ class MatrixClassification:
     aspect: float | None = None
     eye_pos: Vec3 | None = None
     view_z_dir: Vec3 | None = None
+    upload_command: int | None = None
+    upload_pass: RenderPassType | None = None
+    rt0_identity: int | None = None
+    viewport: tuple[int, int, int, int] | None = None
     notes: list[str] = field(default_factory=list)
 
 def extract_gribb_hartmann_planes_d3d(m: Sequence[float]) -> tuple[Vec4, Vec4, Vec4, Vec4] | None:
@@ -216,7 +247,7 @@ def is_ortho(m: Sequence[float]) -> bool:
     return True
 
 # --------------------------------------------------------------------------
-# Trace Stream Processor with State & Pass Tracking
+# Trace Stream Processor with Separated State Banks & Provenance Tracking
 # --------------------------------------------------------------------------
 
 LINE_RE = re.compile(r"^\s*(\d+)\s+op=(\d+)\s+a=([0-9,\-]+)")
@@ -227,43 +258,78 @@ PS_RE = re.compile(r"^\s*PS\s+inverse=([-\d]+)\s+hash=(\w+)")
 
 class TraceAnalyzer:
     def __init__(self):
-        self.constants: dict[int, list[float]] = {}
+        # 1. Separated VS and PS Constant Banks
+        self.vs_constants: dict[int, list[float]] = {}
+        self.ps_constants: dict[int, list[float]] = {}
+
+        # Upload Provenance per bank
+        self.vs_upload_cmd: dict[int, int] = {}
+        self.vs_upload_pass: dict[int, RenderPassType] = {}
+        self.ps_upload_cmd: dict[int, int] = {}
+        self.ps_upload_pass: dict[int, RenderPassType] = {}
+
+        # Active constant upload target context
+        self.active_upload_target: str | None = None  # "VS", "PS", or None
+        self.active_upload_cmd: int = -1
+        self.active_upload_start: int = -1
+        self.active_upload_count: int = -1
+
+        # Skeletal bone palette tracking (quarantined registers)
         self.bone_palette_registers: set[int] = set()
 
-        # Provenance tracking
-        self.reg_upload_cmd: dict[int, int] = {}
-        self.reg_upload_pass: dict[int, RenderPassType] = {}
-
-        # RT attachments tracked strictly by slot (slot -> (w, h, fmt))
-        self.rt_slots: dict[int, tuple[int, int, int]] = {}
+        # RT attachments tracked strictly by slot (slot -> (w, h, fmt, surface_ptr))
+        self.rt_slots: dict[int, tuple[int, int, int, int]] = {}
+        self.pending_rt_surface: dict[int, int] = {}
+        self.rt0_surface_ptr: int = 0
+        self.rt0_width: int = 0
+        self.rt0_height: int = 0
+        self.rt0_format: int = 0
+        self.rt0_viewport: tuple[int, int, int, int] | None = None
         self.current_pass: RenderPassType = RenderPassType.UNKNOWN_PASS
         self.current_pass_epoch: int = 0
 
+        # Active Shader State
+        self.active_vs_ptr: int = 0
         self.active_vs_hash: str = "NONE"
         self.active_vs_guessed_wvp: int = -1
         self.active_vs_guessed_stp: int = -1
         self.active_vs_named_wvp: int = -1
         self.active_vs_named_stp: int = -1
 
+        self.active_ps_ptr: int = 0
         self.active_ps_hash: str = "NONE"
         self.active_ps_inverse: int = -1
+        self.state_block_restored: bool = False
 
         self.classifications: list[MatrixClassification] = []
 
     def update_pass_type(self):
-        """Pass context is derived strictly from RT0 (primary color target), not arbitrary MRTs."""
+        """Pass context is derived strictly from RT0 (primary color target), not arbitrary MRTs.
+        D3DFMT_R5G6B5 = 23, D3DFMT_R32F = 114, D3DFMT_A16B16G16R16F = 113.
+        """
         rt0 = self.rt_slots.get(0)
         if not rt0:
             self.current_pass = RenderPassType.UNKNOWN_PASS
+            self.rt0_surface_ptr = 0
+            self.rt0_viewport = None
             return
 
-        w, h, fmt = rt0
+        w = rt0[0]
+        h = rt0[1]
+        fmt = rt0[2]
+        surf_ptr = rt0[3] if len(rt0) > 3 else self.rt0_surface_ptr
+
+        if surf_ptr == 0:
+            self.current_pass = RenderPassType.UNKNOWN_PASS
+            self.rt0_viewport = None
+            return
+
         new_pass = RenderPassType.UNKNOWN_PASS
-        if w == 4096 and h == 4096 and fmt == 23:
+        if w == 4096 and h == 4096 and fmt in (23, 114):
             new_pass = RenderPassType.SHADOW_ATLAS
         elif w == 3076 and h == 3140 and fmt == 113:
             new_pass = RenderPassType.MAIN_HDR_SCENE
-        elif w == 3076 and h == 3140 and fmt in (21, 22):
+        elif w == 3076 and h == 3140 and fmt in (20, 21, 22):
             new_pass = RenderPassType.MAIN_FORWARD
         elif w > 0 and (w <= 1538 or h <= 1570):
             new_pass = RenderPassType.POSTFX_DOWNSAMPLE
@@ -288,48 +354,42 @@ class TraceAnalyzer:
                     slot=f"c{wvp_base}..c{wvp_base+3}",
                     draw_command=cmd_idx,
                     vs_hash=self.active_vs_hash,
-                    notes=["Quarantined: candidate register belongs to a skeletal bone palette upload (>16 registers)"]
+                    rt0_identity=self.rt0_surface_ptr,
+                    viewport=self.rt0_viewport,
+                    notes=["Quarantined: candidate register belongs to a skeletal bone palette upload (>16 registers, start >= 32)"]
                 ))
                 return
 
-            if all((wvp_base + i) in self.constants for i in range(4)):
-                # Accuracy Gate 2: Cross-Pass Stale Constant Tracking
-                cross_pass_stale = any(
-                    self.reg_upload_pass.get(wvp_base + i) != self.current_pass
-                    for i in range(4)
-                )
-                if cross_pass_stale:
-                    prior_pass = self.reg_upload_pass.get(wvp_base, RenderPassType.UNKNOWN_PASS)
-                    self.classifications.append(MatrixClassification(
-                        evidence=EvidenceLevel.STALE_CROSS_PASS,
-                        layout="unknown",
-                        pass_type=self.current_pass,
-                        slot=f"c{wvp_base}..c{wvp_base+3}",
-                        draw_command=cmd_idx,
-                        vs_hash=self.active_vs_hash,
-                        notes=[f"Stale cross-pass constant: uploaded in {prior_pass.value}, unrefreshed in current {self.current_pass.value}"]
-                    ))
-                    return
-
-                # Normalization to standard D3D row-major row-vector layout
+            # Check presence in VS constant bank (never PS)
+            if all((wvp_base + i) in self.vs_constants for i in range(4)):
                 raw_mat = []
                 for i in range(4):
-                    raw_mat.extend(self.constants[wvp_base + i])
+                    raw_mat.extend(self.vs_constants[wvp_base + i])
 
-                res = solve_camera_frustum(raw_mat)
-                layout = "row_major"
-                norm_mat = raw_mat
-                if not res:
-                    mat_t = transpose16(raw_mat)
-                    res = solve_camera_frustum(mat_t)
-                    if res:
-                        norm_mat = mat_t
-                        layout = "transposed"
+                # Layout disambiguation: test both raw and transposed layouts
+                res_raw = solve_camera_frustum(raw_mat)
+                res_t = solve_camera_frustum(transpose16(raw_mat))
+
+                if res_raw and res_t:
+                    layout = "ambiguous"
+                    res = res_raw
+                    norm_mat = raw_mat
+                elif res_raw:
+                    layout = "row_major"
+                    res = res_raw
+                    norm_mat = raw_mat
+                elif res_t:
+                    layout = "transposed"
+                    res = res_t
+                    norm_mat = transpose16(raw_mat)
+                else:
+                    res = None
+                    layout = "unknown"
 
                 if res:
                     fov_x, fov_y, aspect, eye, vz = res
 
-                    # Accuracy Gate 5: Projection-coefficient calculation on normalized row-major matrix
+                    # Projection-coefficient calculation on normalized row-major matrix
                     # Using consistent row-vector convention: [x, y, z, 1] * norm_mat
                     col0 = (norm_mat[0], norm_mat[4], norm_mat[8])
                     col1 = (norm_mat[1], norm_mat[5], norm_mat[9])
@@ -339,47 +399,52 @@ class TraceAnalyzer:
                     py = length3(col1) / len3 if len3 > 1e-6 else None
 
                     # Check for Model matrix in adjacent registers (LitInstance struct c4..c7)
-                    # Model matrix is only correlated if uploaded together with WVP (same upload command)
+                    # All eight registers must share the exact same upload command
                     model_rigid = False
                     model_is_identity = False
-                    wvp_upload_cmd = max(self.reg_upload_cmd.get(wvp_base + i, 0) for i in range(4))
+                    wvp_cmds = {self.vs_upload_cmd.get(wvp_base + i) for i in range(4)}
+                    has_model = all((wvp_base + 4 + i) in self.vs_constants for i in range(4))
 
-                    if all((wvp_base + 4 + i) in self.constants for i in range(4)):
-                        model_upload_cmd = max(self.reg_upload_cmd.get(wvp_base + 4 + i, 0) for i in range(4))
-                        if model_upload_cmd == wvp_upload_cmd:
+                    if has_model:
+                        model_cmds = {self.vs_upload_cmd.get(wvp_base + 4 + i) for i in range(4)}
+                        if len(wvp_cmds) == 1 and wvp_cmds == model_cmds and None not in wvp_cmds:
                             m_cand = []
                             for i in range(4):
-                                m_cand.extend(self.constants[wvp_base + 4 + i])
+                                m_cand.extend(self.vs_constants[wvp_base + 4 + i])
                             if is_rigid_affine(m_cand):
                                 model_rigid = True
                                 if is_identity_4x4(m_cand):
                                     model_is_identity = True
 
-                    # Accuracy Gate 4: Distinguish validated camera identity from projection consistency
+                    # Distinguish validated camera identity from projection consistency:
+                    # Static analysis cannot establish active player camera ownership without a runtime witness.
                     proj_matches_engine = bool(px and py and abs(px - 1.768) < 0.05 and abs(py - 1.732) < 0.05)
+                    upload_cmd = max(self.vs_upload_cmd.get(wvp_base + i, 0) for i in range(4))
+                    upload_pass = self.vs_upload_pass.get(wvp_base, RenderPassType.UNKNOWN_PASS)
 
                     if self.current_pass == RenderPassType.SHADOW_ATLAS:
                         ev = EvidenceLevel.SHADOW_PASS_WVP
-                        note = "Shadow depth pass (4096x4096 R32F atlas)"
+                        fmt_str = format_name(self.rt0_format)
+                        note = f"Shadow depth pass (4096x4096 {fmt_str} atlas)"
                     elif self.current_pass in (RenderPassType.MAIN_HDR_SCENE, RenderPassType.MAIN_FORWARD):
                         if model_rigid and model_is_identity and proj_matches_engine:
-                            ev = EvidenceLevel.VALIDATED_CAMERA_WVP
-                            note = "Camera identity validated: World=Identity verified and projection scales match (Px=1.768, Py=1.732, V-FOV=60.0 deg)"
+                            ev = EvidenceLevel.PROJECTION_CONSISTENT_WVP
+                            note = ("Projection scales match camera coefficients (Px=1.768, Py=1.732, V-FOV=60.0 deg); "
+                                    "World=Identity verified, but active player camera ownership unproven (auxiliary camera candidate)")
                         elif model_rigid and not model_is_identity:
                             ev = EvidenceLevel.CORRELATED_OBJECT_WVP
                             note = "Combined object WVP carrying non-identity model transform W (LitInstance c4..c7); plane angles are object-space"
                         elif proj_matches_engine:
                             ev = EvidenceLevel.PROJECTION_CONSISTENT_WVP
-                            note = "Projection scales match camera coefficients (Px=1.768, Py=1.732), but World=Identity condition is unverified"
+                            note = "Projection scales match camera coefficients (Px=1.768, Py=1.732), but World transform is unverified"
                         else:
                             ev = EvidenceLevel.CORRELATED_OBJECT_WVP
                             note = f"Active VS {self.active_vs_hash} WVP; plane angles may carry local object scaling"
                     else:
                         ev = EvidenceLevel.UNVERIFIED_CANDIDATE
-                        note = f"Uploaded in pass {self.current_pass.value}"
+                        note = f"Uploaded in pass {upload_pass.value}"
 
-                    upload_cmd = max(self.reg_upload_cmd.get(wvp_base + i, 0) for i in range(4))
-                    note += f" [Uploaded at cmd {upload_cmd}]"
+                    note += f" [Uploaded at cmd {upload_cmd} in {upload_pass.value}, drawn at cmd {cmd_idx} in {self.current_pass.value}]"
 
                     self.classifications.append(MatrixClassification(
                         evidence=ev,
@@ -395,12 +460,18 @@ class TraceAnalyzer:
                         aspect=round(aspect, 4),
                         eye_pos=tuple(round(v, 2) for v in eye),  # type: ignore[assignment]
                         view_z_dir=tuple(round(v, 4) for v in vz),  # type: ignore[assignment]
+                        upload_command=upload_cmd,
+                        upload_pass=upload_pass,
+                        rt0_identity=self.rt0_surface_ptr,
+                        viewport=self.rt0_viewport,
                         notes=[note]
                     ))
 
         # 2. Check for Screen Texture Projection if designated by VS
         stp_base = self.active_vs_named_stp if self.active_vs_named_stp >= 0 else self.active_vs_guessed_stp
-        if stp_base >= 0 and all((stp_base + i) in self.constants for i in range(4)):
+        if stp_base >= 0 and all((stp_base + i) in self.vs_constants for i in range(4)):
+            upload_cmd = max(self.vs_upload_cmd.get(stp_base + i, 0) for i in range(4))
+            upload_pass = self.vs_upload_pass.get(stp_base, RenderPassType.UNKNOWN_PASS)
             self.classifications.append(MatrixClassification(
                 evidence=EvidenceLevel.SCREEN_TEXTURE_PROJECTION,
                 layout="row_major",
@@ -408,25 +479,43 @@ class TraceAnalyzer:
                 slot=f"c{stp_base}..c{stp_base+3}",
                 draw_command=cmd_idx,
                 vs_hash=self.active_vs_hash,
-                notes=[f"VS designated ScreenTextureProjection slot (guessed/named {stp_base})"]
+                upload_command=upload_cmd,
+                upload_pass=upload_pass,
+                rt0_identity=self.rt0_surface_ptr,
+                viewport=self.rt0_viewport,
+                notes=[f"VS designated ScreenTextureProjection slot (guessed/named {stp_base}) [Uploaded at cmd {upload_cmd}]"]
             ))
 
     def parse_file(self, trace_path: str | Path):
         path = Path(trace_path)
         with path.open("r", encoding="utf-8", errors="replace") as f:
             for line in f:
-                # 1. Parse Comments with Render Target, VS, or PS metadata
+                # 1. Parse RT comment
                 rt_m = RT_RE.match(line)
                 if rt_m:
                     slot = int(rt_m.group(1))
                     w, h, fmt = int(rt_m.group(2)), int(rt_m.group(3)), int(rt_m.group(4))
+                    surf_ptr = self.pending_rt_surface.get(slot, slot + 1)
                     if w == 0 or h == 0 or fmt == 0:
                         self.rt_slots.pop(slot, None)
+                        if slot == 0:
+                            self.rt0_surface_ptr = 0
+                            self.rt0_width = 0
+                            self.rt0_height = 0
+                            self.rt0_format = 0
+                            self.rt0_viewport = None
                     else:
-                        self.rt_slots[slot] = (w, h, fmt)
+                        self.rt_slots[slot] = (w, h, fmt, surf_ptr)
+                        if slot == 0:
+                            self.rt0_surface_ptr = surf_ptr
+                            self.rt0_width = w
+                            self.rt0_height = h
+                            self.rt0_format = fmt
+                            self.rt0_viewport = (0, 0, w, h)
                     self.update_pass_type()
                     continue
 
+                # 2. Parse VS comment
                 vs_m = VS_RE.match(line)
                 if vs_m:
                     self.active_vs_hash = vs_m.group(1)
@@ -436,13 +525,31 @@ class TraceAnalyzer:
                     self.active_vs_named_stp = int(vs_m.group(5))
                     continue
 
+                # 3. Parse PS comment
                 ps_m = PS_RE.match(line)
                 if ps_m:
                     self.active_ps_inverse = int(ps_m.group(1))
                     self.active_ps_hash = ps_m.group(2)
                     continue
 
-                # 2. Parse Commands
+                # 4. Parse Float Constants (cN x y z w)
+                c_m = CONST_RE.match(line)
+                if c_m:
+                    reg = int(c_m.group(1))
+                    vals = [float(c_m.group(i)) for i in range(2, 6)]
+                    if self.active_upload_target == "VS":
+                        if self.active_upload_start <= reg < self.active_upload_start + self.active_upload_count:
+                            self.vs_constants[reg] = vals
+                            self.vs_upload_cmd[reg] = self.active_upload_cmd
+                            self.vs_upload_pass[reg] = self.current_pass
+                    elif self.active_upload_target == "PS":
+                        if self.active_upload_start <= reg < self.active_upload_start + self.active_upload_count:
+                            self.ps_constants[reg] = vals
+                            self.ps_upload_cmd[reg] = self.active_upload_cmd
+                            self.ps_upload_pass[reg] = self.current_pass
+                    continue
+
+                # 5. Parse Commands (N op=X a=...)
                 cmd_m = LINE_RE.match(line)
                 if cmd_m:
                     cmd_idx = int(cmd_m.group(1))
@@ -452,34 +559,92 @@ class TraceAnalyzer:
                     if op == 1:  # SetRenderTarget
                         slot = args[0]
                         surf_ptr = args[1]
+                        self.pending_rt_surface[slot] = surf_ptr
                         if surf_ptr == 0:
                             self.rt_slots.pop(slot, None)
+                            if slot == 0:
+                                self.rt0_surface_ptr = 0
+                                self.rt0_width = 0
+                                self.rt0_height = 0
+                                self.rt0_format = 0
+                                self.rt0_viewport = None
                             self.update_pass_type()
+                        self.active_upload_target = None
+
+                    elif op == 7:  # SetViewport
+                        self.active_upload_target = None
+
+                    elif op == 19:  # SetVertexShader
+                        # Invalidate active VS bindings conservatively; require immediate VS metadata line to restore
+                        self.active_vs_ptr = args[0]
+                        self.active_vs_hash = "NONE"
+                        self.active_vs_guessed_wvp = -1
+                        self.active_vs_guessed_stp = -1
+                        self.active_vs_named_wvp = -1
+                        self.active_vs_named_stp = -1
+                        self.active_upload_target = None
 
                     elif op == 20:  # SetVertexShaderConstantF
                         start, count = args[0], args[1]
-                        if count > 16:
+                        self.active_upload_target = "VS"
+                        self.active_upload_cmd = cmd_idx
+                        self.active_upload_start = start
+                        self.active_upload_count = count
+
+                        if count > 16 and start >= 32:
                             # Skeletal bone palette upload - quarantine registers
                             for r in range(start, start + count):
                                 self.bone_palette_registers.add(r)
-                                self.reg_upload_cmd[r] = cmd_idx
-                                self.reg_upload_pass[r] = self.current_pass
-                        else:
+                        elif count <= 16:
                             for r in range(start, start + count):
                                 self.bone_palette_registers.discard(r)
-                                self.reg_upload_cmd[r] = cmd_idx
-                                self.reg_upload_pass[r] = self.current_pass
+
+                        # Invalidate registers being overwritten until matching cN data lines arrive
+                        for r in range(start, start + count):
+                            self.vs_constants.pop(r, None)
+                            self.vs_upload_cmd.pop(r, None)
+                            self.vs_upload_pass.pop(r, None)
+
+                    elif op == 26:  # SetPixelShader
+                        # Invalidate active PS bindings conservatively
+                        self.active_ps_ptr = args[0]
+                        self.active_ps_hash = "NONE"
+                        self.active_ps_inverse = -1
+                        self.active_upload_target = None
+
+                    elif op == 27:  # SetPixelShaderConstantF
+                        start, count = args[0], args[1]
+                        self.active_upload_target = "PS"
+                        self.active_upload_cmd = cmd_idx
+                        self.active_upload_start = start
+                        self.active_upload_count = count
+
+                        for r in range(start, start + count):
+                            self.ps_constants.pop(r, None)
+                            self.ps_upload_cmd.pop(r, None)
+                            self.ps_upload_pass.pop(r, None)
+
+                    elif op == 36:  # ApplyStateBlock
+                        # State block restores unrecorded device state: clear bindings conservatively
+                        self.active_vs_ptr = 0
+                        self.active_vs_hash = "NONE"
+                        self.active_vs_guessed_wvp = -1
+                        self.active_vs_guessed_stp = -1
+                        self.active_vs_named_wvp = -1
+                        self.active_vs_named_stp = -1
+                        self.active_ps_ptr = 0
+                        self.active_ps_hash = "NONE"
+                        self.active_ps_inverse = -1
+                        self.state_block_restored = True
+                        self.active_upload_target = None
 
                     elif op in (13, 14, 15, 16):  # Draw operations
+                        self.active_upload_target = None
                         self.process_draw_call(cmd_idx)
-                    continue
 
-                # 3. Parse Float Constants
-                c_m = CONST_RE.match(line)
-                if c_m:
-                    reg = int(c_m.group(1))
-                    vals = [float(c_m.group(i)) for i in range(2, 6)]
-                    self.constants[reg] = vals
+                    else:
+                        self.active_upload_target = None
+                    continue
 
     def print_summary(self):
         print("=" * 105)
