@@ -31,3 +31,15 @@ open; static worker/dispatcher/bounds evidence and reproducible range hashes
 added. Restored installed EXE passes identity/14-site/10-range audit, but AV
 resolution and native-patch-free Present observation still block runtime gates.
 Details and validation: docs/research/matched-frame-capture.md.
+
+
+## MAIN 2026-10-24 - Gemini diagnostic toolchain accepted
+
+Integrated ae8de22, 0f9085f, 85be172, 120b9e0 once, preserving previous series.
+Acceptance fixes: opaque op=7 viewport becomes UNKNOWN; op=36 clears both shader
+constant banks, provenance and pending context so rebind/partial upload cannot
+resurrect pre-Apply data. Eight new tests plus original 17 pass, including the
+private real trace. Corrected L8=50/D16=80 against local SDK. Existing capture
+10/10, PE parser 6/6, Luna self-test PASS. Production src/, INI and build unchanged
+versus prior integration; original untracked MODLOG untouched. No Steam work.
+Adapter remains diagnostic evidence only; no active-player-camera proof claimed.

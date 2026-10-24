@@ -142,3 +142,15 @@ The original EXE reappeared and passes the expanded read-only audit. Bitdefender
 resolution is not yet confirmed. No Steam launch/deployment or headset test.
 The native-patch-free diagnostic also needs proof of COM Present observation;
 it refuses capture without that boundary. Native-wide FOV remains unimplemented.
+
+
+## Gemini toolchain acceptance - 2026-10-24
+
+Full series through 120b9e0 integrated on codex/integration-frame-capture,
+followed by MAIN fixes for opaque SetViewport payloads (UNKNOWN) and unknown
+VS/PS register state after ApplyStateBlock. Adapter suite: 25/25 PASS including
+private trace; matched-capture tests 10/10; audit parser tests 6/6; Luna self-test
+PASS. No production src/INI/build changes relative to 9c9496f, no Steam changes.
+See external-toolchain-evaluation.md section 9 for exact picks and limitations.
+This diagnostic adapter does not establish player-camera ownership. Next scope
+remains same-frame RT0/eye capture and camera-to-visibility investigation.

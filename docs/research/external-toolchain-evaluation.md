@@ -331,3 +331,70 @@ python tools/external-toolchain/trace_matrix_adapter.py test-output/run_<pid>_fr
 # 2. Run the deterministic portable test suite
 python tools/external-toolchain/test_trace_matrix_adapter.py -v
 ```
+
+
+## 9. MAIN acceptance - 2026-10-24
+
+Accepted on `codex/integration-frame-capture`, preserving existing Luna/Sol/Astra
+and matched-capture work, from the research/evolution base (never main).
+Complete Gemini series, each absent by ancestry/patch comparison before picking:
+`ae8de22 -> 5ae340f`, `0f9085f -> f524542`, `85be172 -> ce6383a`,
+`120b9e0 -> 029821b`. The historical results above describe the Gemini tip;
+the following additional gates were applied before MAIN acceptance.
+
+### SetViewport / op=7: UNKNOWN when payload is absent
+
+Verified against `src/stereo_replay.inl::Hook_SetViewport`: a[0] is the offset
+returned by RecPush for a D3DVIEWPORT9 in the private record arena. Replay reads
+that arena at a[0]. The legacy text exporter in
+`src/d3d9.cpp::DumpEyeFramesIfRequested` emits the numeric op arguments but no
+viewport payload or arena bytes. Actual viewport recovery from this text is
+therefore NOT POSSIBLE, including when the offset happens to be zero.
+
+The adapter now invalidates rt0_viewport at every op=7, exposes None on the
+classification and prints viewport=UNKNOWN in its summary. MRT attachments do
+not recover it. A later RT0 binding with dimensions restores the full-target
+viewport as the D3D9 SetRenderTarget reset, under the existing trace assumption
+that recorded calls succeeded (HRESULTs are not exported). Grouping includes
+RT0 identity and viewport, so an UNKNOWN observation cannot be hidden behind a
+same-size representative. RT attachment width/height remain independent facts.
+No production trace-writer changes were made to invent missing payloads.
+
+### ApplyStateBlock / op=36: forget unknown restored state
+
+The trace exports only a stateblock pointer, not its captured register contents
+or capture mask. Clearing shader bindings alone was insufficient: rebind of the
+same VS could reuse pre-Apply constants, and partial post-Apply uploads could
+combine new rows with unknown restored rows.
+
+The adapter now clears both VS/PS float banks, both upload-command/pass maps,
+bone-palette quarantine, pending upload context and viewport, as well as the
+previously cleared shader bindings. Only explicit post-Apply uploads can recover
+register knowledge, independently per bank. This deliberately loses knowledge
+when a stateblock might preserve a subset; it never promotes old values to
+current authority. Ordinary RT switches still preserve D3D9 constants.
+
+Eight new regression methods cover opaque viewport offsets (0/24/4096), visible
+UNKNOWN summary, MRT isolation, RT0 reset, shader rebind after Apply, partial
+uploads, independent fresh-bank recovery and orphan upload/palette invalidation.
+They exposed failures on the unmodified candidate before the fix.
+A small additional enum correction was verified directly in local Windows SDK
+10.0.26100.0/shared/d3d9types.h: format 50 is L8, D16 is 80. Both are asserted in
+the existing format regression test.
+
+### Final results and limits
+
+- Adapter: 25/25 PASS, 0 failures, 0 skips. This includes the available private
+  `run_43052_frame_003_trace.txt` replay; no private trace is committed.
+- Existing matched-capture validator: 10/10 PASS.
+- Existing executable-audit parsers: 6/6 PASS.
+- Luna image/ray analysis self-test: PASS.
+- Production scope check: zero diff versus 9c9496f in src/, build.ps1 and
+  Darkness2VR.ini. Original checkout's untracked MODLOG remains unchanged.
+- No DLL deployment, native-FOV change, Steam installation change or game launch.
+
+Adapter acceptance is DIAGNOSTIC ONLY. Coefficient agreement, identity-model
+matrices, recovered apex and render-target heuristics do not prove an active
+player camera, native CPU frustum ownership or same-frame source/final images.
+The next work remains the separately planned matched RT0/eye capture and native
+camera-to-visibility chain, with its existing AV/presentation runtime gates.

@@ -38,7 +38,8 @@ D3DFMT_NAMES: dict[int, str] = {
     24: "X1R5G5B5",
     25: "A1R5G5B5",
     26: "A4R4G4B4",
-    50: "D16",
+    50: "L8",
+    80: "D16",
     75: "D24S8",
     111: "R16F",
     112: "G16R16F",
@@ -572,6 +573,10 @@ class TraceAnalyzer:
                         self.active_upload_target = None
 
                     elif op == 7:  # SetViewport
+                        # a[0] is a RecPush arena offset, NOT X/Y/Width/Height.
+                        # The text exporter omits the D3DVIEWPORT9 payload. Even
+                        # offset zero is opaque; never retain the previous size.
+                        self.rt0_viewport = None
                         self.active_upload_target = None
 
                     elif op == 19:  # SetVertexShader
@@ -625,6 +630,21 @@ class TraceAnalyzer:
                             self.ps_upload_pass.pop(r, None)
 
                     elif op == 36:  # ApplyStateBlock
+                        # A stateblock may restore constants as well as bindings.
+                        # Its contents are absent from the text trace. Forget BOTH
+                        # banks/provenance until explicit post-Apply uploads occur;
+                        # rebinding the same shader does not recover those values.
+                        self.vs_constants.clear()
+                        self.ps_constants.clear()
+                        self.vs_upload_cmd.clear()
+                        self.ps_upload_cmd.clear()
+                        self.vs_upload_pass.clear()
+                        self.ps_upload_pass.clear()
+                        self.bone_palette_registers.clear()
+                        self.rt0_viewport = None
+                        self.active_upload_cmd = -1
+                        self.active_upload_start = -1
+                        self.active_upload_count = -1
                         # State block restores unrecorded device state: clear bindings conservatively
                         self.active_vs_ptr = 0
                         self.active_vs_hash = "NONE"
@@ -654,19 +674,21 @@ class TraceAnalyzer:
             print("No correlated 3D draw matrices identified.")
             return
 
-        # Group by (slot, evidence, pass_type)
+        # Keep RT identity and UNKNOWN/known viewport witnesses in separate groups.
         grouped = defaultdict(list)
         for c in self.classifications:
-            grouped[(c.slot, c.evidence, c.pass_type)].append(c)
+            grouped[(c.slot, c.evidence, c.pass_type, c.rt0_identity, c.viewport)].append(c)
 
         print(f"{'Slot':<10} {'Evidence Level':<28} {'Pass Context':<25} {'FOV(H x V)':<16} {'Camera Eye (X, Y, Z)':<25}")
         print("-" * 105)
 
-        for (slot, ev, p_type), items in sorted(grouped.items(), key=lambda x: str(x[0])):
+        for (slot, ev, p_type, rt0_identity, viewport), items in sorted(grouped.items(), key=lambda x: str(x[0])):
             rep = items[-1]
             fov_str = f"{rep.fov_x_deg or '-'} x {rep.fov_y_deg or '-'}"
             eye_str = f"{rep.eye_pos}" if rep.eye_pos else "-"
             print(f"{slot:<10} {ev.value:<28} {p_type.name:<25} {fov_str:<16} {eye_str:<25}")
+            viewport_text = "UNKNOWN" if viewport is None else str(viewport)
+            print(f"  --> RT0={rt0_identity} viewport={viewport_text}")
             if rep.notes:
                 print(f"  --> Note: {rep.notes[0]} (Observed in {len(items)} draws)")
 

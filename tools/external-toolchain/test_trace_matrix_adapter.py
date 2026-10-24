@@ -103,6 +103,120 @@ TRANSLATION_4X4 = [
 
 class TestTraceMatrixAdapter(unittest.TestCase):
 
+
+    def _acceptance_fixture(self, suffix):
+        proj = make_d3d_perspective_lh(60.0, 1.0, 0.5, 200.0)
+        rows = "\n".join(f" c{i} {' '.join(map(str, proj[4*i:4*i+4]))}" for i in range(4))
+        trace = f"""0 op=1 a=0,4096,0,0,0
+ RT slot=0 size=3076x3140 format=113
+1 op=19 a=1000,0,0,0,0
+ VS TEST guessed=0,-1 named=-1,-1
+2 op=26 a=2000,0,0,0,0
+ PS inverse=0 hash=TESTPS
+3 op=20 a=0,4,0,0,0
+{rows}
+4 op=27 a=0,4,0,0,0
+{rows}
+5 op=14 a=4,0,0,10,0
+{suffix}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"trace.txt"
+            path.write_text(trace, encoding="utf-8")
+            analyzer = TraceAnalyzer()
+            analyzer.parse_file(path)
+        return analyzer
+
+    def test_viewport_opaque_offset_becomes_unknown(self):
+        for offset in (0, 24, 4096):
+            with self.subTest(offset=offset):
+                a = self._acceptance_fixture(f"10 op=7 a={offset},0,0,0,0\n11 op=14 a=4,0,0,10,0")
+                self.assertEqual(a.classifications[0].viewport, (0,0,3076,3140))
+                self.assertIsNone(a.rt0_viewport)
+                self.assertIsNone(a.classifications[-1].viewport)
+                self.assertEqual(a.rt0_width, 3076)  # attachment dimensions remain known
+
+    def test_viewport_unknown_is_visible_in_summary(self):
+        import contextlib
+        import io
+        a = self._acceptance_fixture("10 op=7 a=1024,0,0,0,0\n11 op=14 a=4,0,0,10,0")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            a.print_summary()
+        self.assertIn("viewport=UNKNOWN", out.getvalue())
+
+    def test_viewport_unknown_survives_mrt_attachment(self):
+        a = self._acceptance_fixture("""10 op=7 a=128,0,0,0,0
+11 op=1 a=1,8192,0,0,0
+ RT slot=1 size=1538x1570 format=113
+12 op=14 a=4,0,0,10,0""")
+        self.assertIsNone(a.rt0_viewport)
+        self.assertIsNone(a.classifications[-1].viewport)
+        self.assertEqual(a.rt0_surface_ptr,4096)
+
+    def test_rt0_bind_recovers_default_viewport_after_opaque_update(self):
+        a = self._acceptance_fixture("""10 op=7 a=128,0,0,0,0
+11 op=1 a=0,8192,0,0,0
+ RT slot=0 size=3076x3140 format=113
+12 op=14 a=4,0,0,10,0""")
+        self.assertEqual(a.classifications[-1].viewport,(0,0,3076,3140))
+
+    def test_stateblock_rebind_does_not_resurrect_vs_or_ps_constants(self):
+        a = self._acceptance_fixture("""10 op=36 a=9000,0,0,0,0
+11 op=19 a=1000,0,0,0,0
+ VS TEST guessed=0,-1 named=-1,-1
+12 op=26 a=2000,0,0,0,0
+ PS inverse=0 hash=TESTPS
+13 op=14 a=4,0,0,10,0""")
+        self.assertEqual(len(a.classifications),1)
+        for bank in (a.vs_constants,a.ps_constants,a.vs_upload_cmd,a.ps_upload_cmd,a.vs_upload_pass,a.ps_upload_pass):
+            self.assertEqual(bank,{})
+        self.assertIsNone(a.rt0_viewport)
+
+    def test_stateblock_partial_upload_cannot_mix_old_matrix_rows(self):
+        a = self._acceptance_fixture("""10 op=36 a=9000,0,0,0,0
+11 op=19 a=1000,0,0,0,0
+ VS TEST guessed=0,-1 named=-1,-1
+12 op=20 a=0,2,0,0,0
+ c0 1 0 0 0
+ c1 0 1 0 0
+13 op=27 a=2,2,0,0,0
+ c2 0 0 1 0
+ c3 0 0 0 1
+14 op=14 a=4,0,0,10,0""")
+        self.assertEqual(set(a.vs_constants),{0,1})
+        self.assertEqual(set(a.ps_constants),{2,3})
+        self.assertEqual(len(a.classifications),1)
+
+    def test_stateblock_fresh_banks_recover_independently(self):
+        proj = make_d3d_perspective_lh(90.0,1.5,0.5,200.0)
+        rows = "\n".join(f" c{i} {' '.join(map(str, proj[4*i:4*i+4]))}" for i in range(4))
+        a = self._acceptance_fixture(f"""10 op=36 a=9000,0,0,0,0
+11 op=19 a=1000,0,0,0,0
+ VS TEST guessed=0,-1 named=-1,-1
+12 op=20 a=0,4,0,0,0
+{rows}
+13 op=27 a=0,1,0,0,0
+ c0 -9 -9 -9 -9
+14 op=14 a=4,0,0,10,0""")
+        self.assertEqual(len(a.classifications),2)
+        self.assertAlmostEqual(a.classifications[-1].fov_y_deg,90,delta=.01)
+        self.assertEqual(a.vs_upload_cmd,{i:12 for i in range(4)})
+        self.assertEqual(a.ps_upload_cmd,{0:13})
+        self.assertEqual(a.ps_constants,{0:[-9.0]*4})
+
+    def test_stateblock_clears_palette_and_orphan_upload_context(self):
+        a = self._acceptance_fixture("""10 op=20 a=45,20,0,0,0
+ c45 1 2 3 4
+11 op=36 a=9000,0,0,0,0
+ c46 5 6 7 8""")
+        self.assertEqual(a.bone_palette_registers,set())
+        self.assertEqual(a.vs_constants,{})
+        self.assertIsNone(a.active_upload_target)
+        self.assertEqual(a.active_upload_cmd,-1)
+        self.assertEqual(a.active_upload_start,-1)
+        self.assertEqual(a.active_upload_count,-1)
+
     def test_synthetic_camera_projection(self):
         """1. Validates frustum plane extraction on pure 60-degree D3D9 perspective matrix."""
         proj = make_d3d_perspective_lh(fov_y_deg=60.0, aspect=1.5, zn=0.1, zf=100.0)
@@ -494,6 +608,8 @@ class TestTraceMatrixAdapter(unittest.TestCase):
 
     def test_d3dfmt_constants_correctness(self):
         """14. Defect P2: Format 23 is D3DFMT_R5G6B5 (NOT R32F); format 114 is D3DFMT_R32F."""
+        self.assertEqual(format_name(50), "L8")
+        self.assertEqual(format_name(80), "D16")
         self.assertEqual(format_name(23), "R5G6B5")
         self.assertEqual(format_name(114), "R32F")
         self.assertEqual(format_name(113), "A16B16G16R16F")
