@@ -105,7 +105,7 @@ If only a prop size is known, use a prop whose engine-unit dimension and intende
 The branch adds:
 
 - `tools/stereo-math-tests/clarity_depth_test.cpp` and `build-clarity-depth.ps1`: run production matrix helpers at multiple depths, verify polarity reversal, demonstrate the alternate convergence plane, and recover a synthetic units-per-metre scale from a known 2 m feature.
-- `tools/clarity_capture_analysis.py`: compare same-sized BMP captures at identical pixel coordinates, report MAE/RMSE/gradient/Laplacian metrics, measure horizontal disparity for a user-selected ROI, recover scale when the metric inputs are known, and compute the shader FNV-1a fingerprint.
+- `tools/clarity_capture_analysis.py`: compare same-sized BMP captures at identical pixel coordinates, compare different-sized captures at matched projection rays against an explicit bilinear crop-resample baseline, measure horizontal disparity for a user-selected ROI, recover scale when the metric inputs are known, and compute the shader FNV-1a fingerprint.
 
 Commands:
 
@@ -113,21 +113,25 @@ Commands:
 .\tools\stereo-math-tests\build-clarity-depth.ps1
 python .\tools\clarity_capture_analysis.py self-test
 python .\tools\clarity_capture_analysis.py compare <same-eye-A.bmp> <same-eye-B.bmp> --roi X Y WIDTH HEIGHT --json
+python .\tools\clarity_capture_analysis.py ray-compare <same-frame-RT0.bmp> <same-frame-eye.bmp> --source-fov-tan SL SR SU SD --target-fov-tan TL TR TU TD --crop-x CX --crop-y CY --roi X Y WIDTH HEIGHT --json
 python .\tools\clarity_capture_analysis.py measure-disparity <left.bmp> <right.bmp> --roi X Y WIDTH HEIGHT --max-shift 80 --px-effective P --distance-game Z --xr-ipd-m IPD --json
 python .\tools\clarity_capture_analysis.py shader-hash <shader-bytecode.bin>
 ```
 
-Image comparison intentionally requires the same dimensions and coordinates; it does not auto-register, crop, or resize the pair. For sharpness comparisons, the same eye, scene, camera, exposure, output scale, and static ROI are required. The edge metrics are comparison signals, not a claim of perceived sharpness. Disparity matching uses only horizontal NCC in the selected ROI and should be checked for a unique, high-correlation feature.
+`compare` intentionally requires the same dimensions and coordinates; it does not auto-register, crop, or resize the pair. `ray-compare` reads the actual dimensions from both BMPs. Its source and target FOV arguments are tangent bounds in `left, right, up, down` order: source RT0's uncropped frustum and the final per-eye submitted frustum. The target ROI is expressed in target-image pixels. It reports two comparisons: source samples at matching tangent-space rays, and the expected source-to-target D3D11 crop (`uv = 0.5 + (targetUV - 0.5) * crop`) sampled with bilinear/clamp filtering. The latter is the baseline for expected resampling; do not call its detail reduction extra blur. `target_fov_crop_match_max_abs_tangent_error` checks whether the submitted FOV agrees with the RT0 frustum and recorded crop.
+
+For MAIN to run this analysis, capture both images from **one exact game frame**: D3D9 RT0 immediately before the D3D11 eye pass and that pass's complete final eye image. Record the matching frame ID, eye index, exact source and target image/viewport dimensions, source projection matrix after all game and VR FOV edits but before the eye-pass crop, per-eye final submitted `XrFovf` angles, and the exact per-eye `cropX`/`cropY` float values used by the D3D11 shader. Convert the matrix/FOV to the tangent bounds passed to the tool; preserve the raw matrix and radians in the capture record. Also record source/target view poses or view matrices, eye-specific stereo shift/warp inputs, pixel format and color-space state. Those values are needed to identify residuals due to parallax, view changes, tone/color conversion, or other shader work. The analyzer maps rays in a common camera orientation and does not undo 3D translation or depth-dependent stereo reprojection. Use a static ROI whose view and scene are unchanged; interpret nonzero residuals with those limits in mind. Pixel/edge metrics are diagnostics, not proof of perceived sharpness.
 
 Validation performed for this branch:
 
 - C++ test: `PASS: native stereo translation, polarity, shear convergence, and scale recovery`.
 - Python image-metric self-test: synthetic blur lowers Laplacian response; identical images return zero difference.
+- Python ray-comparison self-test: identity and bilinear baselines match exactly; the centered-crop bilinear baseline matches exactly and ray mapping agrees within one 8-bit level; known post-resample blur is detected against the expected baseline.
 - Python disparity self-test: a synthetic five-pixel eye shift is recovered.
 - Existing local zero-shift capture ROI: 512×512, MAE=0, RMSE=0, max=0.
 - Saved local DOF blobs: FNV-1a `33DE98C1` and `75F88E11` recomputed from 1956-byte and 1684-byte files.
 - Runtime shader creation log: bypass creation returned `00000000` for DOF `33DE98C1`, DOF `75F88E11`, and FXAA `5104FEF7`; the saved frame trace binds pointers corresponding to `33DE98C1` and `5104FEF7`.
-- No headset or in-game test was run in this task.
+- No same-frame RT0/final-eye runtime pair is available for the new ray comparison. Further validation requires MAIN to capture one; no headset or in-game test was run in this task.
 
 Local historical evidence paths (ignored/untracked in the original checkout; not part of this branch): `test-output/xr-neutral-43052.log`, `test-output/run_43052_frame_003_trace.txt`, `test-output/run_43052_frame_003_eye0.bmp`, `test-output/run_43052_frame_003_eye1.bmp`, `test-output/ps_inverse_33DE98C1.bin`, and `test-output/ps_inverse_75F88E11.bin`.
 
