@@ -130,3 +130,15 @@ HookMask=15         ; diagnostyka: bit0=record, bit1=swapchain(WYL), bit2=analiz
 - Analiza bytecode'u VS na razie nie trafia wzorców (wzorce łańcuchów do dopracowania);
   działa fallback semantyczny.
 - FOV override nieaktywny (RE niedokończone) — brak pokrycia góry/dołu.
+
+
+## MAIN offline integration - 2026-10-24
+
+Branch `codex/integration-frame-capture` integrates the approved Luna/Sol/Astra
+series, with no Gemini adapter and no merge into research. See
+[matched-frame-capture](docs/research/matched-frame-capture.md) for capture
+protocol, tests, native-patch isolation, exact integrated hashes and blockers.
+The original EXE reappeared and passes the expanded read-only audit. Bitdefender
+resolution is not yet confirmed. No Steam launch/deployment or headset test.
+The native-patch-free diagnostic also needs proof of COM Present observation;
+it refuses capture without that boundary. Native-wide FOV remains unimplemented.

@@ -1,6 +1,7 @@
 # Builds Darkness2VR d3d9.dll (x86) for The Darkness II.
 param(
     [switch]$Install,
+    [switch]$DiagnosticCapture,
     [string]$GameDir = "C:\Program Files (x86)\Steam\steamapps\common\Darkness II"
 )
 
@@ -27,8 +28,9 @@ $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
 
 Push-Location $here
 try {
+    $captureDefine = if ($DiagnosticCapture) { "/DD2VR_MATCHED_CAPTURE=1 " } else { "" }
     $cmd = "`"$vcvars`" x86 && cl /nologo /LD /EHsc /W3 /O2 /Zi /MD /std:c++17 " +
-           "/I`"$inc`" /Fe:d3d9.dll src\d3d9.cpp " +
+           $captureDefine + "/I`"$inc`" /Fe:d3d9.dll src\d3d9.cpp " +
            "/link /DEBUG /OPT:REF /OPT:ICF /MAP:d3d9.map /DEF:d3d9.def /LIBPATH:`"$libDir`" openxr_loader.lib dxgi.lib d3d11.lib user32.lib shell32.lib xinput.lib"
     cmd /c $cmd
     if ($LASTEXITCODE -ne 0) { throw "build failed" }

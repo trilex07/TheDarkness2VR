@@ -308,3 +308,69 @@ It is not read by the mod and changes no INI. It requires re-auditing the
 restored installed EXE, preserving deployment hashes, and correlating frame
 IDs/projection/visibility/draws before any native-wide experiment. It does not
 implement an unverified hook or certify the missing visibility producer.
+
+
+## MAIN integration follow-up — 2026-10-24
+
+Private Ghidra exports `d2vr-camera-owner-integration.txt` and
+`d2vr-camera-dispatch-integration.txt` both end with `EVIDENCE COMPLETE`.
+No executable or decompilation is included in Git. Analysis still uses the
+B56B depot program; its ten analyzed contiguous instruction ranges were then
+compared byte-for-byte against the reappeared installed 55C8 EXE. All matched.
+`audit_camera.py` now reproduces the original image identity, 14 instruction-site
+checks and ten range SHA-256 checks. This transfers these specific static
+instruction observations, not an unverified receiver type or runtime ownership.
+
+### The selected producer receives a task descriptor, not proven player-camera this
+
+`00445E40` loads its first stack argument into EAX at `00445E5A`.
+The descriptor's `[+0]` supplies the camera-like pointer in ECX, saved at
+`[ESP+34]`; `[+4]` is a different owner/stage pointer initially placed in EBX.
+At `00445F82`, EBX is reloaded from the saved camera pointer. This distinction
+prevents accidentally treating the stage's fields as the camera's fields.
+The camera-like receiver supplies `+17C` (angle), `+184` (aspect) to
+`00A31FF0` at `0044609F`, only on the descriptor `[+8]==0` branch.
+Near/far are selected by scanning stage records of stride 0x50 at stage +64,
+using record fields +28/+2C (see `00445EF1..00445F7C`); they are not proven
+near/far fields on the active player camera.
+
+`00445F8E..0044600E` also passes the camera transform and the stage +70
+transform through `00D46710`. `004460BC` multiplies the locally built projection
+with the previously computed relative transform through `00C02F50`.
+The multiplication is explicit float 4x4 matrix composition with caller stack
+cleanup of 12 bytes. It is not itself a camera selector or VS upload.
+
+`00D41B30` is a dispatcher/producer lead: `00D41BA2` stores callback address
+`00445E40` into its output object's `+2FC`, and copies four rows from globals
+`010A14E0..010A1510` into output +20..50. It consults owner ranges +500..504
+and +4F0. This proves registration/assignment of this worker, not that its
+camera pointer is the player camera. Do not hook it as BaseAvatar thiscall.
+
+`00A579E0` assigns vtable `00FE7A28` at `00A579EA` and initializes the
+camera-like +17C/+180/+184 fields at `00A57AFE..00A57B0E`. There is still no
+proven connection from this constructed object to the worker's live receiver.
+
+### Bounds path narrowed, CPU rejection still unproven
+
+`0070CA40` dereferences its first stack argument to obtain the camera-like
+pointer (`0070CADC`), then feeds its +17C/+184 into corner constructor
+`00DF53E0` at `0070CB42`. It reduces the eight resulting corners to min/max
+bounds at `0070CB61..0070CB79`; the 0.5 scalar at FFBA08 is used in center/extent
+arithmetic at `0070CB7B..0070CB92`, not established as an FOV control.
+
+Caller `00AB2E80` uses that first argument's pointee +168/+16C for depth limits
+(`00AB2F1D..00AB2F25`), combines them with another object's +408/+40C/+410
+and invokes the bounds consumer at AB3016, AB312D, AB3224, AB32BE and AB337F.
+That is a concrete depth-partitioned bounds consumer lead. Its ownership and
+actual object-rejection decisions remain open. Matching angle/aspect offsets
+in two functions is insufficient proof that they use the SAME camera instance.
+`007BF850` remains an angular dot-product selection, not this visibility path.
+
+No direct connection from the produced matrices to a particular recorded
+world-draw VS constant range has been proven. The new matched capture records
+actual draw banks and shader identities to enable that correlation later;
+it does not label heuristic matrix matches as an identified native camera.
+The exact remaining chain is: active camera selection/instance -> this producer
+-> world VS upload, plus the SAME instance -> bounds/planes -> real CPU reject.
+No native-wide patch was implemented. See `matched-frame-capture.md` for the
+integrated experiment, the restored-EXE audit and remaining runtime gates.

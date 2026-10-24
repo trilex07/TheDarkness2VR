@@ -351,6 +351,9 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+#ifdef D2VR_MATCHED_CAPTURE
+static std::string g_matchedIniPath;
+#endif
 void LoadConfig() {
     char localIni[MAX_PATH] = ".\\Darkness2VR.ini";
     const char* chosenIni = g_iniPath;
@@ -465,6 +468,9 @@ void LoadConfig() {
         if (v >= 0.005f && v <= 50.0f) g_stereoIPD = v;   // world units: game scale is not meters
     }
     g_stereoIpdSource = GetPrivateProfileIntA("Render", "StereoIpdSource", 0, chosenIni) ? 1 : 0;
+#ifdef D2VR_MATCHED_CAPTURE
+    g_matchedIniPath=chosenIni;
+#endif
     g_stereoDebugMode = GetPrivateProfileIntA("Render", "StereoDebugMode", 0, chosenIni);
     if (g_stereoDebugMode < 0 || g_stereoDebugMode > 4) g_stereoDebugMode = 0;
     g_stereoLayerPose = GetPrivateProfileIntA("Render", "StereoLayerPose", 0, chosenIni) ? 1 : 0;
@@ -1192,6 +1198,13 @@ static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
 void* PatchVTable(void* obj, int index, void* repl);
 namespace d2vr_replay { struct StereoParams; }
 static d2vr_replay::StereoParams MakeEyeParams(int eye);
+#ifdef D2VR_MATCHED_CAPTURE
+extern volatile LONG g_frameId;
+static void MatchedCaptureDraw(IDirect3DDevice9*,int);
+static void MatchedCaptureBlit(int,const StereoCBData&);
+static void MatchedProjectionObserved();
+static void MatchedCaptureInput(IDirect3DSurface9*,bool);
+#endif
 #include "stereo_replay.inl"
 
 static void UpdateHeadGeometry(const XrPosef& head) {
@@ -2010,6 +2023,9 @@ static bool RenderStereoEyeD11(
     memset(cb->aimCfg,0,sizeof(cb->aimCfg));
     if(g_blitPass && g_tentacleBridge && g_tentacleAimMarker && g_tentacleAimVisible && g_in3DGameplayMode)
         ComputeBaseAimMarker(eyeIdx,cb->posCfg[2],cb->posCfg[3],cb->aimCfg);
+#ifdef D2VR_MATCHED_CAPTURE
+    if (g_blitPass) MatchedCaptureBlit(eyeIdx,*cb);
+#endif
     g_ctx11->Unmap(g_stereoCB11, 0);
 
     g_ctx11->OMSetRenderTargets(1, &g_eyeRTV[eyeIdx], nullptr);
@@ -2156,6 +2172,9 @@ static float ApplyNativeFovWiden(float v) {
 }
 
 static void TryNativeBaseFovOverride() {
+#ifdef D2VR_MATCHED_CAPTURE
+    return;
+#endif
     if (g_submitMode == 4) return;
     if (!g_autoFovWiden || !g_haveViews || !g_playerAvatar || !g_avatarVtable) return;
     const float target = ComputeHmdCoverEngineFovDeg();
@@ -2272,6 +2291,9 @@ static bool InstallFrustumGetFovHook() {
 }
 
 static bool InstallGetFovProbe() {
+#ifdef D2VR_MATCHED_CAPTURE
+    return false;
+#endif
     if (g_fovPatchCount > 0) return true;
     SYSTEM_INFO si{};
     GetSystemInfo(&si);
@@ -2563,6 +2585,9 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev) {
     if (FAILED(dev->GetRenderTarget(0, &src)) || !src) {
         if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &src)) || !src) return false;
     }
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureInput(src,false);
+#endif
     HRESULT hr = dev->StretchRect(src, nullptr, g_sharedSurf9, nullptr, D3DTEXF_NONE);
     src->Release();
     if (FAILED(hr)) return false;
@@ -2640,6 +2665,9 @@ static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
     return SUCCEEDED(dev->StretchRect(source, nullptr, g_liveColorBackup, nullptr, D3DTEXF_NONE));
 }
 
+#ifdef D2VR_MATCHED_CAPTURE
+#include "matched_capture.inl"
+#endif
 static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     g_pairSubmitMetaValid = false;
     if (g_haveViews) {
@@ -2692,6 +2720,9 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     }
     const bool zeroCopy = EnsureSharedCapture(dev);
 
+#ifdef D2VR_MATCHED_CAPTURE
+    matched_capture::Source(dev,0);
+#endif
     g_blitPass = 1;
     bool eye0Ok = zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev);
     {
@@ -2725,6 +2756,9 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     d2vr_replay::ReplayStream(dev, 1, sp1);
     QueryPerformanceCounter(&perf[2]);
 
+#ifdef D2VR_MATCHED_CAPTURE
+    matched_capture::Source(dev,1);
+#endif
     bool eye1Ok = historyOk && g_rightColorHistory.Save(dev, liveEnd.targets[0]);
     if (eye1Ok) eye1Ok = zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev);
     {
@@ -3443,6 +3477,9 @@ static bool HookStandardIATOrdinal(HMODULE module, const char* dllName, WORD ord
 }
 
 void TryInstallXInputHook() {
+#ifdef D2VR_MATCHED_CAPTURE
+    return; // no game IAT changes in the diagnostic build
+#endif
     if (InterlockedCompareExchange(&g_xinputAttempted, 1, 0) != 0) return;
     HMODULE exe = GetModuleHandleW(nullptr);
 
@@ -3841,6 +3878,9 @@ bool CopyFrame(IDirect3DDevice9* dev) {
 
     // GetRenderTarget owns a reference even when readback succeeds.
     const bool capturedRt0 = rt0 != nullptr;
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureInput(rt0,!capturedRt0);
+#endif
     if (rt0) { rt0->Release(); rt0 = nullptr; }
 
     if (!capturedRt0) {
@@ -4042,6 +4082,10 @@ void SubmitXR(IDirect3DDevice9* dev) {
         if (g_submitMode == 4) {
             const int leftIdx = (g_stereoDebugMode == 4) ? 1 : 0;
             const int rightIdx = (g_stereoDebugMode == 4) ? 0 : 1;
+#ifdef D2VR_MATCHED_CAPTURE
+            matched_capture::Final(0,g_eyeCache[leftIdx]);
+            matched_capture::Final(1,g_eyeCache[rightIdx]);
+#endif
             if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[leftIdx]) &&
                 WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[rightIdx])) {
                 // Clip-shift renders encode IPD in pixels; default layer pose is head center
@@ -4067,6 +4111,9 @@ void SubmitXR(IDirect3DDevice9* dev) {
                     projViews[e].subImage.imageRect.offset = { 0, 0 };
                     projViews[e].subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
                 }
+#ifdef D2VR_MATCHED_CAPTURE
+                matched_capture::Submission(projViews);
+#endif
                 proj.layerFlags = 0;
                 proj.space = g_xrSpace;
                 proj.viewCount = 2;
@@ -4240,6 +4287,9 @@ void SubmitXR(IDirect3DDevice9* dev) {
     fei.layerCount = layerCount;
     fei.layers = layerCount ? layers : nullptr;
     const XrResult endR = xrEndFrame(g_xrSession, &fei);
+#ifdef D2VR_MATCHED_CAPTURE
+    matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1 && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
+#endif
     g_trackedFrame.open = false;
     const ULONGLONG frameMs = GetTickCount64() - g_trackedFrame.startedMs;
     if ((g_trackedFrame.id % 300) == 0)
@@ -4343,6 +4393,10 @@ static void BeginTrackedFrame() {
         Log("[HeadGeometry] applied=%d tracked=0x%llX world=%d projection=%d; GPU camera diagnostic",
             (int)g_frameEyeParams[0].headGeometry,(unsigned long long)g_trackedFrame.flags,
             (int)g_in3DGameplayMode,(int)d2vr_replay::g_cameraProjectionKnown);
+#ifdef D2VR_MATCHED_CAPTURE
+    matched_capture::iniPath=g_matchedIniPath;
+    matched_capture::Begin();
+#endif
     UpdateCachedXrPad();
 }
 
@@ -4810,6 +4864,9 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
 }
 
 static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
+#ifdef D2VR_MATCHED_CAPTURE
+    return; // no executable code patches in the diagnostic build
+#endif
     if (!(g_hookMask & 2) || !dev) return;
     static bool attempted = false;
     if (attempted) return;
@@ -4897,6 +4954,7 @@ void HookDevice(IDirect3DDevice9* dev) {
 
     // RE: render-target sizing follows the window client rect - patch the game's IAT for
     // GetClientRect (fixed slot, no ASLR) so the engine renders at the VR resolution.
+#ifndef D2VR_MATCHED_CAPTURE
     if (!g_getClientRectHooked && g_fakeClientRect) {
         __try {
             void** slot = (void**)0x00EEB478;
@@ -4919,6 +4977,7 @@ void HookDevice(IDirect3DDevice9* dev) {
             Log("[VrRes] GetClientRect IAT hook failed");
         }
     }
+#endif // no game IAT changes in diagnostic build
 }
 
 static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp) {
@@ -5071,7 +5130,12 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         LogStartupStage(2, "VEH crash handler installed");
         LoadConfig();
         LogStartupStage(3, "LoadConfig");
+#ifdef D2VR_MATCHED_CAPTURE
+        Log("[MatchedCapture] diagnostic build: native gameplay and FOV hooks suppressed");
+        if (false) {
+#else
         if (g_startupMode < 1) {
+#endif
             InstallNativeAimHook();
             InstallNativeThrowHook();
             InstallNativeWeaponHook();

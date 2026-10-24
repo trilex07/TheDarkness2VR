@@ -17,3 +17,17 @@ though all six instruction sites match. Steam/PSVR2 testing waits for the user
 to resolve the antivirus detection and safely restore the installation.
 
 Detailed evidence and limits: [native camera audit](docs/research/native-camera-fov-audit.md).
+
+
+## MAIN 2026-10-24 - clean offline integration and opt-in matched capture
+
+Approved picks: 744e637, accd9b2, f978db8, 5f59fe1, ddaf4af, in that order.
+New dedicated integration worktree; original untracked MODLOG preserved.
+Added compile/runtime-off one-frame RT0/final-eye capture with draw banks,
+metadata, completeness receipts and checked Luna analysis. No Gemini adapter.
+No production INI change or deployment. Ordinary preprocessed production source
+matches the integrated baseline. Native camera/CPU visibility ownership remains
+open; static worker/dispatcher/bounds evidence and reproducible range hashes
+added. Restored installed EXE passes identity/14-site/10-range audit, but AV
+resolution and native-patch-free Present observation still block runtime gates.
+Details and validation: docs/research/matched-frame-capture.md.

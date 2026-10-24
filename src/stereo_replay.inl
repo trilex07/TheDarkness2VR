@@ -327,6 +327,9 @@ static void ObserveInverseProjection(const float* src, UINT start, UINT count, i
     if (!d2vr_math::IsViewInverseProjection(p)) return;
     g_cameraPx = 1.f/p[0]; g_cameraPy = 1.f/p[5]; g_cameraProjectionKnown = true;
     memcpy(g_cameraInverseProjection,p,sizeof(g_cameraInverseProjection));
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedProjectionObserved();
+#endif
     g_estPx = g_cameraPx; g_estPy = g_cameraPy; InterlockedExchange(&g_estValid, 1);
 }
 
@@ -1191,6 +1194,9 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPR
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if (g_recActive) RecEmit(OP_DrawPrimitive, 0, t, sv, pc);
     const UiClipState clip = BeginScaledUiClip(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
+#endif
     HRESULT hr = g_orig.DrawPrimitive(dev, t, sv, pc);
     EndScaledUiClip(dev, clip);
     return hr;
@@ -1200,6 +1206,9 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if (g_recActive) RecEmit(OP_DrawIndexedPrimitive, 0, t, (uint32_t)bvi, mvi, nv, si, pc);
     const UiClipState clip = BeginScaledUiClip(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
+#endif
     HRESULT hr = g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
     EndScaledUiClip(dev, clip);
     return hr;
@@ -1219,6 +1228,9 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3D
         }
     }
     const UiClipState clip = BeginScaledUiClip(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
+#endif
     HRESULT hr = g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
     EndScaledUiClip(dev, clip);
     return hr;
@@ -1251,6 +1263,9 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
         RecEmit(OP_DrawIndexedPrimitiveUP, 0, t, mvi, nv, pc, (uint32_t)fmt, auxOff);
     }
     const UiClipState clip = BeginScaledUiClip(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
+#endif
     HRESULT hr = g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
     EndScaledUiClip(dev, clip);
     return hr;
@@ -1492,6 +1507,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_DrawPrimitive: {
             if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
             const UiClipState clip = BeginScaledUiClip(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
+#endif
             g_orig.DrawPrimitive(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2]);
             EndScaledUiClip(dev, clip);
             break;
@@ -1499,6 +1517,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_DrawIndexedPrimitive: {
             if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
             const UiClipState clip = BeginScaledUiClip(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
+#endif
             g_orig.DrawIndexedPrimitive(dev, (D3DPRIMITIVETYPE)r.a[0], (INT)r.a[1], r.a[2], r.a[3], r.a[4], r.a[5]);
             EndScaledUiClip(dev, clip);
             break;
@@ -1508,6 +1529,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const void* data = (r.n == 1) ? (const void*)(uintptr_t)r.a[3]
                                           : (const void*)(dataBase + r.a[3]);
             const UiClipState clip = BeginScaledUiClip(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
+#endif
             g_orig.DrawPrimitiveUP(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], data, r.a[2]);
             EndScaledUiClip(dev, clip);
             HOOK_MARK(1900 + r.op);
@@ -1522,6 +1546,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const void* vb = livePtrs ? (const void*)(uintptr_t)aux->vbOff : (const void*)(dataBase + aux->vbOff);
             const void* ib = livePtrs ? (const void*)(uintptr_t)aux->ibOff : (const void*)(dataBase + aux->ibOff);
             const UiClipState clip = BeginScaledUiClip(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
+#endif
             g_orig.DrawIndexedPrimitiveUP(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
                                          ib, (D3DFORMAT)r.a[4], vb, stride);
             EndScaledUiClip(dev, clip);

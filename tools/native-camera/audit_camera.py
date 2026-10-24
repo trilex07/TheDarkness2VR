@@ -20,7 +20,31 @@ SITES = {
     "cosine_consumer_candidate": (0x7BF850, "8b8270020000ffd0d80d08baff00"),
     "positive_fov_test_candidate": (0x76968A, "8b8270020000ffd0d9eedff1ddd8"),
     "scalar_modifier_candidate": (0xB23F7F, "8b90700200008bceffd2d8642408"),
+    "camera_worker_entry": (0x445E40, "558bec83e4f081ec24070000"),
+    "camera_projection_call": (0x44609F, "e84cbf5e008d842420010000"),
+    "perspective_builder_entry": (0xA31FF0, "558bec83e4f083ec0cf30f10"),
+    "matrix_multiply_entry": (0xC02F50, "558bec83e4f083ec308b4510"),
+    "camera_worker_dispatch_entry": (0xD41B30, "558bec83e4f083ec148b450c"),
+    "corner_bounds_consumer_entry": (0x70CA40, "558bec83e4f081ec04080000"),
+    "bounds_dispatch_entry": (0xAB2E80, "558bec83e4f081ec24060000"),
+    "camera_like_constructor_entry": (0xA579E0, "5356578bf1e8d6b4b9ffc706"),
     "engine_present_boundary": (0xA94052, "8b410cffd0"),
+}
+
+
+# Hashes cover complete contiguous instruction listings, not game assets.
+# They let restored installations reproduce the private Ghidra range comparison.
+FUNCTION_RANGES = {
+    0x445E40: (3458, "ade3f3532f3bc43b86affd834f6350656c3af80f8a1a6aef30fe02f93d58509c"),
+    0xC02F50: (312, "e649984ed36163d7ea5a1fd1f8735c7b031d63b9a0b939af98ddfe61b27dbf3b"),
+    0x70CA40: (2114, "ad820f7b66258bc4dee05456b1fca95c396d1c6d6f6cb56ce1f419d08a34afc7"),
+    0xA579E0: (669, "827683b848e4d9a81d04fbe4180101c5494960326c3be7b979738a7efc05055f"),
+    0xD41B30: (587, "fe731de65b85822443eeabafa03fe40b3781e8d24660c06d2c0bcc82cd76ccac"),
+    0xAB2E80: (2593, "26ab0af8abb2f85cb9ed3f536dad034ef0b6fbe1d47841dbb828f73bf0e68054"),
+    0xA93D90: (169, "2739651add00764f61994b8db24bd1d92c8891b03362416c9b3707a6f01f64d0"),
+    0xA31FF0: (201, "04dbb868c695587ae0dcf92089b19446a37fce51f01a916302e0184d74b9b93f"),
+    0xDF53E0: (439, "8a19546954f15a0b399c08ab4d46d96987d66efb90eaed65bc18b966e04b5030"),
+    0xDF3B50: (177, "162a787b4a7e71a1a198941c29444221b809ec4a693923a2b1ed0305d7181a64"),
 }
 
 
@@ -86,10 +110,18 @@ def audit(blob: bytes) -> dict:
             observed = None
         sites.append(dict(label=label, va=f"{va:08X}", expected=pattern,
                           observed=observed, match=observed == pattern))
+    ranges = []
+    for va, (length, expected) in FUNCTION_RANGES.items():
+        try:
+            observed = hashlib.sha256(pe.at_va(va, length)).hexdigest()
+        except ValueError:
+            observed = None
+        ranges.append(dict(va=f"{va:08X}", length=length, sha256=observed, match=observed==expected))
     return dict(sha256=sha, machine=f"{pe.machine:04X}",
                 image_base=f"{pe.base:08X}", timestamp=f"{pe.timestamp:08X}",
                 image_size=f"{pe.image_size:08X}", known_identity=identity,
                 all_sites_match=all(s["match"] for s in sites), sites=sites,
+                all_function_ranges_match=all(r["match"] for r in ranges), function_ranges=ranges,
                 native_projection_proven=False, native_cpu_frustum_proven=False)
 
 
@@ -103,7 +135,7 @@ def main() -> int:
         print(json.dumps({"status": "BLOCKED", "error": str(error)}))
         return 2
     print(json.dumps(result, indent=2))
-    return 0 if result["known_identity"] and result["all_sites_match"] else 3
+    return 0 if result["known_identity"] and result["all_sites_match"] and result["all_function_ranges_match"] else 3
 
 
 if __name__ == "__main__":
