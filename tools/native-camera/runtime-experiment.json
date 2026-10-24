@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "enabled": false,
+  "deploy_allowed": false,
+  "native_patch_enabled": false,
+  "purpose": "Prepare observation of the restored installed executable; this file is not consumed by the mod",
+  "before_launch": [
+    "User resolves and verifies the antivirus detection",
+    "Run audit_camera.py against the restored INSTALLED EXE, not the staged depot file",
+    "Record SHA-256, file size, machine, timestamp, preferred image base, image size and every instruction-site result",
+    "Unknown SHA or any changed instruction bytes blocks all native-address experiments",
+    "Back up DLL and INI and verify their hashes; preserve the accepted SubmitMode=4 baseline"
+  ],
+  "first_experiment": {
+    "mode": "observe-only",
+    "enabled": false,
+    "native_hooks": [],
+    "native_fov_widening": false,
+    "preserve": ["SubmitMode=4", "Present boundary", "HUD", "lighting", "GPU projection and OpenXR FOV calibration"],
+    "capture": [
+      "Same engine-frame/Present ID for both eyes",
+      "Recorded projection Px/Py, replay eye scales/crop, submitted FOV and draw/primitive counts",
+      "Native receiver and lifetime, FOV and units, projection and CPU planes only after producer identity is proved"
+    ]
+  },
+  "widening_experiment": {
+    "enabled": false,
+    "blocked_on": [
+      "Prove active player-camera projection producer; a perspective helper alone is insufficient",
+      "Prove CPU visibility-frustum producer and its consumer",
+      "Prove common-frame propagation, receiver hierarchy and FOV axis/units",
+      "Validate exact executable identity and original instruction bytes before any hook",
+      "Compute residual GPU widening from the measured new projection to prevent double scaling"
+    ],
+    "physical_test": "One stationary PSVR2 baseline/wide comparison only after the above gates pass",
+    "rollback": "On any stereo, lighting, loading, menu or Present regression, restore backed-up DLL and INI and verify hashes"
+  }
+}
