@@ -203,23 +203,28 @@ where $W$ is the local object's model transform (`c4..c7` in the `LitInstance` s
 > [!CAUTION]
 > **Cardinal Rule:** Register identity alone (`c0..c3`, `c20..c23`) **never** proves a rendering pass's purpose. Pass purpose requires correlating render target dimensions, pixel formats, vertex shader bytecode outputs, and upload provenance.
 
-1. **Confirmed Camera WVP (`CONFIRMED_CAMERA_WVP`):**
-   - Active render target is the main HDR scene target (`3076x3140 format=113`) or forward pass (`format=21`).
+1. **Validated Camera WVP (`VALIDATED_CAMERA_WVP`):**
+   - Active render target is the main HDR scene target (`3076x3140 format=113`) or forward pass (`format=21/22`).
    - Active vertex shader drives clip position `o0` from the slot (`guessed=0` or `named=0`).
-   - Projection scales match $P_x \approx 1.768, P_y \approx 1.732$ ($W = I$).
-2. **Correlated Object WVP (`CORRELATED_OBJECT_WVP`):**
-   - Active in 3D geometry passes, driving clip position, but carrying a non-identity model transform $W$ (`c4..c7`). Plane angles describe object-space boundaries.
-3. **Shadow Pass WVP (`SHADOW_PASS_WVP`):**
+   - Projection scales match $P_x \approx 1.768, P_y \approx 1.732$ ($60.0^\circ$ FOV).
+   - **Crucial:** World=Identity ($W = I$) is explicitly verified (e.g. adjacent `LitInstance` model matrix `c4..c7` is identity, or dedicated camera pass).
+2. **Projection-Consistent WVP (`PROJECTION_CONSISTENT_WVP`):**
+   - Projection scales match camera coefficients ($P_x \approx 1.768, P_y \approx 1.732$), but the World=Identity condition is unverified (cannot rule out an uncharacterized model transform or auxiliary camera).
+3. **Correlated Object WVP (`CORRELATED_OBJECT_WVP`):**
+   - Active in 3D geometry passes, driving clip position, but carrying a verified non-identity model transform $W$ (`c4..c7`). Plane angles describe object-space boundaries.
+4. **Shadow Pass WVP (`SHADOW_PASS_WVP`):**
    - Active render target is the shadow map atlas (`4096x4096 format=23`).
    - Used for depth-only rendering from light sources (directional cascade or cubemap).
-4. **Screen Texture Projection (`SCREEN_TEX_PROJ`):**
+5. **Screen Texture Projection (`SCREEN_TEX_PROJ`):**
    - Active vertex shader drives an auxiliary texture coordinate output (e.g. `guessed_stp=4` or `stpBase=20`), used for decals, shadow projection, and deferred lighting lookups.
-5. **Model Transform Affine (`MODEL_RIGID_AFFINE`):**
+6. **Model Transform Affine (`MODEL_RIGID_AFFINE`):**
    - 4x4 or 4x3 rigid transform with orthogonal rotation rows ($l \approx 1.0$) and translation row (e.g. `c4..c7` LitInstance).
-6. **Orthographic UI (`ORTHO_UI`):**
+7. **Orthographic UI (`ORTHO_UI`):**
    - 2D orthographic projection matrix with zero perspective terms and identity $m[15] = 1.0$.
-7. **Skeletal Bone Palette (`BONE_PALETTE`):**
-   - Massive uploads with $\text{count} > 16$ (e.g. 165 constants) uploaded to registers $\ge c32$ (e.g. `c45..c209`). Sub-windows inside these blocks are strictly quarantined.
+8. **Skeletal Bone Palette (`BONE_PALETTE`):**
+   - Massive uploads with $\text{count} > 16$ (e.g. 165 constants) uploaded to registers $\ge c32$ (e.g. `c45..c209`). Quarantined so that sliding 4x4 windows within bone palettes are never evaluated as camera candidates.
+9. **Stale Cross-Pass Constant (`STALE_CROSS_PASS`):**
+   - Constant uploaded during an earlier pass (e.g. shadow atlas) and unrefreshed in the current pass. Flagged to prevent cross-pass contamination.
 
 ---
 
@@ -229,13 +234,15 @@ The updated adapter replaces arbitrary confidence numbers with explicit grounded
 
 ```
 EvidenceLevel:
-  - CONFIRMED_CAMERA_WVP    (Pass, shader bytecode, CTAB name, and Px/Py match camera)
-  - CORRELATED_OBJECT_WVP   (Pass and shader match, but carries per-object model transform W)
+  - VALIDATED_CAMERA_WVP    (Pass, shader bytecode, CTAB name, Px/Py match camera, and W=I verified)
+  - PROJECTION_CONSISTENT_WVP (Px/Py match camera coefficients, but W=I is unverified)
+  - CORRELATED_OBJECT_WVP   (Pass and shader match, but carries verified non-identity model transform W)
   - SHADOW_PASS_WVP         (Verified shadow atlas pass: 4096x4096 R32F)
   - SCREEN_TEX_PROJ         (VS bytecode confirms texture coordinate output)
   - MODEL_RIGID_AFFINE      (Verified rigid 4x4 rotation + translation)
   - ORTHO_UI                (Verified 2D orthographic matrix)
-  - BONE_PALETTE            (Skeletal palette block; sliding windows quarantined)
+  - BONE_PALETTE            (Skeletal palette block; quarantined from camera evaluation)
+  - STALE_CROSS_PASS        (Constant uploaded in an earlier render pass, unrefreshed)
   - UNVERIFIED_CANDIDATE    (Valid 4x4 math, but missing active shader correlation)
   - UNKNOWN                 (Unrecognized or degenerate matrix)
 ```
@@ -246,22 +253,26 @@ To strictly comply with open-source licensing rules, **no code was copied from `
 - Microsoft Direct3D 9 pipeline documentation for row-major matrix transformations.
 
 ### 6.2 Deterministic Unit Test Suite
-We created and verified a dedicated unit test suite:
+We created and verified a dedicated portable unit test suite:
 [`tools/external-toolchain/test_trace_matrix_adapter.py`](file:///C:/Users/Trilex/.codex/worktrees/external-toolchain/Darkness2VR/tools/external-toolchain/test_trace_matrix_adapter.py)
 
-**Test Suite Coverage:**
+**Test Suite Coverage (10 Deterministic Tests):**
 1. `test_synthetic_camera_projection`: Positive test validating FOV recovery on pure $60^\circ$ D3D9 perspective projection.
-2. `test_synthetic_view_projection_apex`: Positive test recovering exact camera eye position $(10.0, 20.0, 30.0)$ from View-Projection matrix.
-3. `test_negative_bone_palette_exclusion`: Negative test verifying that a 165-register skeletal bone palette upload is quarantined and never reported as camera WVP.
-4. `test_negative_stale_constant_isolation`: Negative test verifying that stale constants from pass A are not re-reported at pass B draws without reference.
-5. `test_shadow_atlas_pass_discrimination`: Verifies that matrices in $4096\times 4096$ R32F passes are tagged `SHADOW_PASS_WVP`.
-6. `test_real_darkness2_trace_reconciliation`: Regression test against real Darkness II trace (`run_43052_frame_003_trace.txt`) reconciling camera coefficients $P_x = 1.768, P_y = 1.732$ ($60.0^\circ$ FOV).
+2. `test_transposed_perspective_coefficients`: Validates that transposed (column-major) matrices are normalized consistently to row-vector layout, computing exact identical $P_x, P_y$ scales.
+3. `test_synthetic_view_projection_apex`: Positive test recovering exact camera eye position $(10.0, 20.0, 30.0)$ from View-Projection matrix.
+4. `test_negative_bone_palette_exclusion`: Negative test verifying that a 165-register skeletal bone palette upload is quarantined.
+5. `test_negative_bone_palette_designated_as_wvp`: Negative test verifying that an active shader designating `c45` (inside a bone palette containing perspective-like floats) is quarantined as `BONE_PALETTE_BLOCK` and never reported as camera WVP.
+6. `test_stale_cross_pass_constants`: Negative test verifying that constants from an earlier pass are tagged `STALE_CROSS_PASS`, while legitimate intra-pass constants remain valid across draws.
+7. `test_rt_switching_and_mrt_isolation`: Verifies that pass determination is governed strictly by RT0 (not auxiliary MRTs) and that RT0 unbinding resets pass to `UNKNOWN_PASS`.
+8. `test_world_matrix_distinction`: Validates distinction between `VALIDATED_CAMERA_WVP` ($W = I$), `PROJECTION_CONSISTENT_WVP` (unverified $W$), and `CORRELATED_OBJECT_WVP` ($W \neq I$).
+9. `test_deterministic_synthetic_trace_fixture`: Self-contained multi-pass synthetic trace fixture verifying full pipeline parsing on any machine.
+10. `test_real_darkness2_trace_reconciliation`: Regression test against real Darkness II trace (`run_43052_frame_003_trace.txt`) with explicit `SKIPPED` handling when the local trace file is absent.
 
 **Test Execution:**
 ```powershell
-python tools/external-toolchain/test_trace_matrix_adapter.py
+python tools/external-toolchain/test_trace_matrix_adapter.py -v
 ```
-**Result:** `Ran 6 tests in 0.027s - OK`.
+**Result:** `Ran 10 tests in 0.025s - OK (10 passed, 0 failed, 0 skipped on local fixture; portable skip on remote machines)`.
 
 ---
 
@@ -274,33 +285,34 @@ python tools/external-toolchain/trace_matrix_adapter.py C:\Users\Trilex\Darkness
 
 **Output:**
 ```text
-====================================================================================================
+=========================================================================================================
  DARKNESS2VR PROVENANCE-AWARE MATRIX ANALYSIS
-====================================================================================================
-Slot       Evidence Level             Pass Context              FOV(H x V)       Camera Eye (X, Y, Z)     
+=========================================================================================================
+Slot       Evidence Level               Pass Context              FOV(H x V)       Camera Eye (X, Y, Z)     
 ---------------------------------------------------------------------------------------------------------
-c0..c3     CONFIRMED_CAMERA_WVP       MAIN_FORWARD              58.98 x 60.0     (0.0, 0.02, 0.0)         
-  --> Note: Matches documented engine camera projection diagonal (Px=1.768, Py=1.732, V-FOV=60.0 deg) (Observed in 9 draws)
-c0..c3     CONFIRMED_CAMERA_WVP       MAIN_HDR_SCENE            58.06 x 60.76    (-0.97, 1.18, -30.86)    
-  --> Note: Matches documented engine camera projection diagonal (Px=1.768, Py=1.732, V-FOV=60.0 deg) (Observed in 3 draws)
-c0..c3     CORRELATED_OBJECT_WVP      MAIN_FORWARD              59.31 x 161.72   (-2.86, 19.89, -22.29)   
-  --> Note: Combined WVP carrying non-identity model transform W (LitInstance c4..c7); plane angles are object-space (Observed in 34 draws)
-c0..c3     CORRELATED_OBJECT_WVP      MAIN_HDR_SCENE            120.88 x 69.11   (140.54, -63.14, -182.68)
-  --> Note: Active VS 7070C5BC WVP; plane angles may carry local object scaling (Observed in 97 draws)
-c0..c3     SHADOW_PASS_WVP            SHADOW_ATLAS              79.34 x 128.42   (-0.16, 1.32, -1.43)     
-  --> Note: Shadow depth pass (4096x4096 R32F atlas) (Observed in 1 draws)
-c0..c3     UNVERIFIED_CANDIDATE       POSTFX_DOWNSAMPLE         120.88 x 69.11   (140.54, -63.14, -182.68)
-  --> Note: Uploaded in pass POSTFX_DOWNSAMPLE (Observed in 2 draws)
-c4..c7     SCREEN_TEX_PROJ            MAIN_HDR_SCENE            - x -            -                        
+c0..c3     CORRELATED_OBJECT_WVP        MAIN_FORWARD              59.31 x 161.72   (-2.86, 19.89, -22.29)   
+  --> Note: Combined object WVP carrying non-identity model transform W (LitInstance c4..c7); plane angles are object-space [Uploaded at cmd 2845] (Observed in 32 draws)
+c0..c3     CORRELATED_OBJECT_WVP        MAIN_HDR_SCENE            48.73 x 49.65    (-22.25, 0.09, -8.01)    
+  --> Note: Active VS 12CCC8DB WVP; plane angles may carry local object scaling [Uploaded at cmd 3041] (Observed in 25 draws)
+c0..c3     PROJECTION_CONSISTENT_WVP    MAIN_FORWARD              58.98 x 60.0     (0.0, 0.02, 0.0)         
+  --> Note: Projection scales match camera coefficients (Px=1.768, Py=1.732), but World=Identity condition is unverified [Uploaded at cmd 3618] (Observed in 9 draws)
+c0..c3     PROJECTION_CONSISTENT_WVP    MAIN_HDR_SCENE            58.06 x 60.76    (-0.97, 1.18, -30.86)    
+  --> Note: Projection scales match camera coefficients (Px=1.768, Py=1.732), but World=Identity condition is unverified [Uploaded at cmd 2396] (Observed in 3 draws)
+c0..c3     SHADOW_PASS_WVP              SHADOW_ATLAS              79.34 x 128.42   (-0.16, 1.32, -1.43)     
+  --> Note: Shadow depth pass (4096x4096 R32F atlas) [Uploaded at cmd 36] (Observed in 1 draws)
+c0..c3     UNVERIFIED_CANDIDATE         POSTFX_DOWNSAMPLE         63.11 x 59.5     (-0.29, 0.07, 0.41)      
+  --> Note: Uploaded in pass POSTFX_DOWNSAMPLE [Uploaded at cmd 3286] (Observed in 1 draws)
+c4..c7     SCREEN_TEX_PROJ              MAIN_HDR_SCENE            - x -            -                        
   --> Note: VS designated ScreenTextureProjection slot (guessed/named 4) (Observed in 5 draws)
-====================================================================================================
+=========================================================================================================
 ```
 
-### Key Differences from Initial Unvalidated Run:
-1. **Zero Bone Palette False Positives:** The 58 false sliding windows inside `c45..c209` have been completely eliminated.
+### Key Differences from Initial Prototype:
+1. **Zero Bone Palette False Positives:** The 58 false sliding windows inside `c45..c209` are quarantined.
 2. **Clear Pass Discrimination:** Shadow atlas depth passes ($4096\times 4096$ R32F) are explicitly separated from main scene passes.
-3. **Confirmed Camera Identification:** The gameplay camera is identified with exact FOV: **$58.98^\circ \times 60.00^\circ$**, matching $P_x = 1.768, P_y = 1.732$.
+3. **Camera Projection Consistency Separated from Identity:** Matrices matching $P_x = 1.768, P_y = 1.732$ ($60.0^\circ$ FOV) are reported as `PROJECTION_CONSISTENT_WVP` unless the $W = I$ condition is verified.
 4. **Apparent Object FOVs Clarified:** Non-$60^\circ$ angles are explicitly documented as local object-space viewing volume bounds carrying model transforms $W$.
+5. **Exact Upload Command Recorded:** Every classification reports the exact upload command index (`[Uploaded at cmd ...]`).
 
 ---
 
@@ -309,9 +321,9 @@ c4..c7     SCREEN_TEX_PROJ            MAIN_HDR_SCENE            - x -           
 To inspect any new or existing record-stream trace:
 
 ```powershell
-# Run the validated matrix trace analyzer
+# 1. Run the provenance-aware matrix trace analyzer
 python tools/external-toolchain/trace_matrix_adapter.py test-output/run_<pid>_frame_<num>_trace.txt
 
-# Run the deterministic test suite to verify analyzer integrity
-python tools/external-toolchain/test_trace_matrix_adapter.py
+# 2. Run the deterministic portable test suite
+python tools/external-toolchain/test_trace_matrix_adapter.py -v
 ```
