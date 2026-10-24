@@ -18,7 +18,31 @@ public class CameraEvidence extends GhidraScript {
         try (PrintWriter output = new PrintWriter(args[0])) {
             output.println("Executable SHA256: " + currentProgram.getExecutableSHA256());
             for (int i = 1; i < args.length; i++) {
-                Address address = toAddr(Long.parseLong(args[i], 16));
+                // Optional VA:HEX explicitly asserts an independently verified entry.
+                // Plain VAs remain read-only queries and never invent function starts.
+                String[] query = args[i].split(":", 2);
+                Address address = toAddr(Long.parseLong(query[0], 16));
+                if (query.length == 2) {
+                    String hex = query[1];
+                    if (hex.length() < 12 || hex.length() % 2 != 0)
+                        throw new IllegalArgumentException("Entry assertion needs >=6 bytes");
+                    for (int j = 0; j < hex.length(); j += 2) {
+                        int expected = Integer.parseInt(hex.substring(j, j + 2), 16);
+                        int observed = currentProgram.getMemory().getByte(address.add(j / 2)) & 255;
+                        if (expected != observed)
+                            throw new IllegalArgumentException("Entry bytes differ at " + address);
+                    }
+                    if (!currentProgram.getMemory().getBlock(address).isExecute())
+                        throw new IllegalArgumentException("Entry is not executable: " + address);
+                    Function existing = getFunctionContaining(address);
+                    if (existing != null && !existing.getEntryPoint().equals(address))
+                        throw new IllegalArgumentException("Entry lies inside existing function: " + address);
+                    if (existing == null) {
+                        if (!disassemble(address) || createFunction(address, null) == null)
+                            throw new IllegalStateException("Cannot analyze asserted entry: " + address);
+                    }
+                    output.println("ASSERTED ENTRY BYTES " + address + " " + hex);
+                }
                 output.println("ADDRESS " + address);
                 ReferenceIterator refs = currentProgram.getReferenceManager().getReferencesTo(address);
                 while (refs.hasNext()) {
@@ -49,6 +73,9 @@ public class CameraEvidence extends GhidraScript {
                     output.println("DECOMPILER UNAVAILABLE; disassembly only");
                 }
             }
+            // Headless Ghidra may exit 0 even after a script exception.
+            // Only a complete export contains this final marker.
+            output.println("EVIDENCE COMPLETE");
         } finally {
             decompiler.dispose();
         }
