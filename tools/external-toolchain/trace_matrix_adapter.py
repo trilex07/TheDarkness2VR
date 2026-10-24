@@ -3,7 +3,7 @@
 
 Analyzes Darkness2VR record-stream traces (run_*_trace.txt) by correlating
 shader constant uploads with active vertex shader bytecode reflection, CTAB
-constant table semantics, render target dimensions/formats, and draw call context.
+constant table semantics, render target slot attachments, and draw call context.
 
 Mathematical Foundations (Clean-room implementations of published literature):
   - Frustum plane extraction: Gribb, G. & Hartmann, K. (2001),
@@ -30,13 +30,15 @@ from typing import Sequence
 # --------------------------------------------------------------------------
 
 class EvidenceLevel(str, Enum):
-    PROVENANCE_CONFIRMED_CAMERA_WVP = "CONFIRMED_CAMERA_WVP"
-    PROVENANCE_CORRELATED_WVP = "CORRELATED_OBJECT_WVP"
+    VALIDATED_CAMERA_WVP = "VALIDATED_CAMERA_WVP"
+    PROJECTION_CONSISTENT_WVP = "PROJECTION_CONSISTENT_WVP"
+    CORRELATED_OBJECT_WVP = "CORRELATED_OBJECT_WVP"
     SHADOW_PASS_WVP = "SHADOW_PASS_WVP"
     SCREEN_TEXTURE_PROJECTION = "SCREEN_TEX_PROJ"
     MODEL_TRANSFORM_AFFINE = "MODEL_RIGID_AFFINE"
     ORTHO_UI = "ORTHO_UI"
     BONE_PALETTE_BLOCK = "BONE_PALETTE"
+    STALE_CROSS_PASS = "STALE_CROSS_PASS"
     UNVERIFIED_CANDIDATE = "UNVERIFIED_CANDIDATE"
     UNKNOWN = "UNKNOWN"
 
@@ -134,6 +136,11 @@ def solve_camera_frustum(m: Sequence[float]) -> tuple[float, float, float, Vec3,
     """Solves for FOV_x, FOV_y, aspect, camera eye, and view Z direction.
     Returns (fov_x, fov_y, aspect, eye, view_z) or None.
     """
+    # Perspective w-direction must be along column 3 for D3D row-major: [x,y,z,1] * M
+    col3_dir = (m[3], m[7], m[11])
+    if abs(length3(col3_dir) - 1.0) > 0.2:
+        return None
+
     planes = extract_gribb_hartmann_planes_d3d(m)
     if not planes:
         return None
@@ -188,6 +195,15 @@ def is_rigid_affine(m: Sequence[float]) -> bool:
         return False
     return True
 
+def is_identity_4x4(m: Sequence[float], tol: float = 1e-3) -> bool:
+    """Checks if a 4x4 matrix is identity."""
+    for r in range(4):
+        for c in range(4):
+            expected = 1.0 if r == c else 0.0
+            if abs(m[r * 4 + c] - expected) > tol:
+                return False
+    return True
+
 def is_ortho(m: Sequence[float]) -> bool:
     """Checks if a 4x4 matrix is a 2D orthographic projection."""
     off_diag = (1, 2, 3, 4, 6, 7, 8, 9, 11)
@@ -213,11 +229,15 @@ class TraceAnalyzer:
     def __init__(self):
         self.constants: dict[int, list[float]] = {}
         self.bone_palette_registers: set[int] = set()
-        self.recent_uploads: dict[int, int] = {}  # reg_base -> cmd_idx
 
-        self.current_rt_size: tuple[int, int] = (0, 0)
-        self.current_rt_format: int = 0
+        # Provenance tracking
+        self.reg_upload_cmd: dict[int, int] = {}
+        self.reg_upload_pass: dict[int, RenderPassType] = {}
+
+        # RT attachments tracked strictly by slot (slot -> (w, h, fmt))
+        self.rt_slots: dict[int, tuple[int, int, int]] = {}
         self.current_pass: RenderPassType = RenderPassType.UNKNOWN_PASS
+        self.current_pass_epoch: int = 0
 
         self.active_vs_hash: str = "NONE"
         self.active_vs_guessed_wvp: int = -1
@@ -231,74 +251,135 @@ class TraceAnalyzer:
         self.classifications: list[MatrixClassification] = []
 
     def update_pass_type(self):
-        w, h = self.current_rt_size
-        fmt = self.current_rt_format
-        if w == 4096 and h == 4096 and fmt == 23:
-            self.current_pass = RenderPassType.SHADOW_ATLAS
-        elif w == 3076 and h == 3140 and fmt == 113:
-            self.current_pass = RenderPassType.MAIN_HDR_SCENE
-        elif w == 3076 and h == 3140 and fmt in (21, 22):
-            self.current_pass = RenderPassType.MAIN_FORWARD
-        elif w > 0 and (w <= 1538 or h <= 1570):
-            self.current_pass = RenderPassType.POSTFX_DOWNSAMPLE
-        else:
+        """Pass context is derived strictly from RT0 (primary color target), not arbitrary MRTs."""
+        rt0 = self.rt_slots.get(0)
+        if not rt0:
             self.current_pass = RenderPassType.UNKNOWN_PASS
+            return
+
+        w, h, fmt = rt0
+        new_pass = RenderPassType.UNKNOWN_PASS
+        if w == 4096 and h == 4096 and fmt == 23:
+            new_pass = RenderPassType.SHADOW_ATLAS
+        elif w == 3076 and h == 3140 and fmt == 113:
+            new_pass = RenderPassType.MAIN_HDR_SCENE
+        elif w == 3076 and h == 3140 and fmt in (21, 22):
+            new_pass = RenderPassType.MAIN_FORWARD
+        elif w > 0 and (w <= 1538 or h <= 1570):
+            new_pass = RenderPassType.POSTFX_DOWNSAMPLE
+        else:
+            new_pass = RenderPassType.UNKNOWN_PASS
+
+        if new_pass != self.current_pass:
+            self.current_pass = new_pass
+            self.current_pass_epoch += 1
 
     def process_draw_call(self, cmd_idx: int):
-        # 1. Identify primary candidate WVP slot from active VS metadata
+        # 1. Identify candidate WVP slot from active VS metadata
         wvp_base = self.active_vs_named_wvp if self.active_vs_named_wvp >= 0 else self.active_vs_guessed_wvp
 
         if wvp_base >= 0:
-            if all((wvp_base + i) in self.constants for i in range(4)):
-                mat = []
-                for i in range(4):
-                    mat.extend(self.constants[wvp_base + i])
+            # Accuracy Gate 1: Strict Bone-Palette Exclusion Check
+            if any((wvp_base + i) in self.bone_palette_registers for i in range(4)):
+                self.classifications.append(MatrixClassification(
+                    evidence=EvidenceLevel.BONE_PALETTE_BLOCK,
+                    layout="unknown",
+                    pass_type=self.current_pass,
+                    slot=f"c{wvp_base}..c{wvp_base+3}",
+                    draw_command=cmd_idx,
+                    vs_hash=self.active_vs_hash,
+                    notes=["Quarantined: candidate register belongs to a skeletal bone palette upload (>16 registers)"]
+                ))
+                return
 
-                res = solve_camera_frustum(mat)
+            if all((wvp_base + i) in self.constants for i in range(4)):
+                # Accuracy Gate 2: Cross-Pass Stale Constant Tracking
+                cross_pass_stale = any(
+                    self.reg_upload_pass.get(wvp_base + i) != self.current_pass
+                    for i in range(4)
+                )
+                if cross_pass_stale:
+                    prior_pass = self.reg_upload_pass.get(wvp_base, RenderPassType.UNKNOWN_PASS)
+                    self.classifications.append(MatrixClassification(
+                        evidence=EvidenceLevel.STALE_CROSS_PASS,
+                        layout="unknown",
+                        pass_type=self.current_pass,
+                        slot=f"c{wvp_base}..c{wvp_base+3}",
+                        draw_command=cmd_idx,
+                        vs_hash=self.active_vs_hash,
+                        notes=[f"Stale cross-pass constant: uploaded in {prior_pass.value}, unrefreshed in current {self.current_pass.value}"]
+                    ))
+                    return
+
+                # Normalization to standard D3D row-major row-vector layout
+                raw_mat = []
+                for i in range(4):
+                    raw_mat.extend(self.constants[wvp_base + i])
+
+                res = solve_camera_frustum(raw_mat)
                 layout = "row_major"
+                norm_mat = raw_mat
                 if not res:
-                    mat_t = transpose16(mat)
+                    mat_t = transpose16(raw_mat)
                     res = solve_camera_frustum(mat_t)
                     if res:
-                        mat = mat_t
+                        norm_mat = mat_t
                         layout = "transposed"
 
                 if res:
                     fov_x, fov_y, aspect, eye, vz = res
-                    col0 = mat[0:3] if layout == "transposed" else (mat[0], mat[4], mat[8])
-                    col1 = mat[4:7] if layout == "transposed" else (mat[1], mat[5], mat[9])
-                    col3 = mat[12:15] if layout == "transposed" else (mat[3], mat[7], mat[11])
+
+                    # Accuracy Gate 5: Projection-coefficient calculation on normalized row-major matrix
+                    # Using consistent row-vector convention: [x, y, z, 1] * norm_mat
+                    col0 = (norm_mat[0], norm_mat[4], norm_mat[8])
+                    col1 = (norm_mat[1], norm_mat[5], norm_mat[9])
+                    col3 = (norm_mat[3], norm_mat[7], norm_mat[11])
                     len3 = length3(col3)
                     px = length3(col0) / len3 if len3 > 1e-6 else None
                     py = length3(col1) / len3 if len3 > 1e-6 else None
 
-                    # Check for Model matrix in adjacent registers (LitInstance struct)
+                    # Check for Model matrix in adjacent registers (LitInstance struct c4..c7)
+                    # Model matrix is only correlated if uploaded together with WVP (same upload command)
                     model_rigid = False
-                    if all((wvp_base + 4 + i) in self.constants for i in range(4)):
-                        m_cand = []
-                        for i in range(4):
-                            m_cand.extend(self.constants[wvp_base + 4 + i])
-                        if is_rigid_affine(m_cand):
-                            model_rigid = True
+                    model_is_identity = False
+                    wvp_upload_cmd = max(self.reg_upload_cmd.get(wvp_base + i, 0) for i in range(4))
 
-                    # Classify evidence level based on pass and provenance
+                    if all((wvp_base + 4 + i) in self.constants for i in range(4)):
+                        model_upload_cmd = max(self.reg_upload_cmd.get(wvp_base + 4 + i, 0) for i in range(4))
+                        if model_upload_cmd == wvp_upload_cmd:
+                            m_cand = []
+                            for i in range(4):
+                                m_cand.extend(self.constants[wvp_base + 4 + i])
+                            if is_rigid_affine(m_cand):
+                                model_rigid = True
+                                if is_identity_4x4(m_cand):
+                                    model_is_identity = True
+
+                    # Accuracy Gate 4: Distinguish validated camera identity from projection consistency
+                    proj_matches_engine = bool(px and py and abs(px - 1.768) < 0.05 and abs(py - 1.732) < 0.05)
+
                     if self.current_pass == RenderPassType.SHADOW_ATLAS:
                         ev = EvidenceLevel.SHADOW_PASS_WVP
                         note = "Shadow depth pass (4096x4096 R32F atlas)"
                     elif self.current_pass in (RenderPassType.MAIN_HDR_SCENE, RenderPassType.MAIN_FORWARD):
-                        # Pure camera WVP has W = Identity, where px ~= 1.768 and py ~= 1.732 (60 deg FOV)
-                        if px and py and abs(px - 1.768) < 0.05 and abs(py - 1.732) < 0.05:
-                            ev = EvidenceLevel.PROVENANCE_CONFIRMED_CAMERA_WVP
-                            note = "Matches documented engine camera projection diagonal (Px=1.768, Py=1.732, V-FOV=60.0 deg)"
-                        elif model_rigid:
-                            ev = EvidenceLevel.PROVENANCE_CORRELATED_WVP
-                            note = "Combined WVP carrying non-identity model transform W (LitInstance c4..c7); plane angles are object-space"
+                        if model_rigid and model_is_identity and proj_matches_engine:
+                            ev = EvidenceLevel.VALIDATED_CAMERA_WVP
+                            note = "Camera identity validated: World=Identity verified and projection scales match (Px=1.768, Py=1.732, V-FOV=60.0 deg)"
+                        elif model_rigid and not model_is_identity:
+                            ev = EvidenceLevel.CORRELATED_OBJECT_WVP
+                            note = "Combined object WVP carrying non-identity model transform W (LitInstance c4..c7); plane angles are object-space"
+                        elif proj_matches_engine:
+                            ev = EvidenceLevel.PROJECTION_CONSISTENT_WVP
+                            note = "Projection scales match camera coefficients (Px=1.768, Py=1.732), but World=Identity condition is unverified"
                         else:
-                            ev = EvidenceLevel.PROVENANCE_CORRELATED_WVP
+                            ev = EvidenceLevel.CORRELATED_OBJECT_WVP
                             note = f"Active VS {self.active_vs_hash} WVP; plane angles may carry local object scaling"
                     else:
                         ev = EvidenceLevel.UNVERIFIED_CANDIDATE
                         note = f"Uploaded in pass {self.current_pass.value}"
+
+                    upload_cmd = max(self.reg_upload_cmd.get(wvp_base + i, 0) for i in range(4))
+                    note += f" [Uploaded at cmd {upload_cmd}]"
 
                     self.classifications.append(MatrixClassification(
                         evidence=ev,
@@ -337,8 +418,12 @@ class TraceAnalyzer:
                 # 1. Parse Comments with Render Target, VS, or PS metadata
                 rt_m = RT_RE.match(line)
                 if rt_m:
-                    self.current_rt_size = (int(rt_m.group(2)), int(rt_m.group(3)))
-                    self.current_rt_format = int(rt_m.group(4))
+                    slot = int(rt_m.group(1))
+                    w, h, fmt = int(rt_m.group(2)), int(rt_m.group(3)), int(rt_m.group(4))
+                    if w == 0 or h == 0 or fmt == 0:
+                        self.rt_slots.pop(slot, None)
+                    else:
+                        self.rt_slots[slot] = (w, h, fmt)
                     self.update_pass_type()
                     continue
 
@@ -364,15 +449,26 @@ class TraceAnalyzer:
                     op = int(cmd_m.group(2))
                     args = [int(x) for x in cmd_m.group(3).split(",")]
 
-                    if op == 20:  # SetVertexShaderConstantF
+                    if op == 1:  # SetRenderTarget
+                        slot = args[0]
+                        surf_ptr = args[1]
+                        if surf_ptr == 0:
+                            self.rt_slots.pop(slot, None)
+                            self.update_pass_type()
+
+                    elif op == 20:  # SetVertexShaderConstantF
                         start, count = args[0], args[1]
                         if count > 16:
-                            # Skeletal bone palette upload - mark registers to prevent false sliding windows
+                            # Skeletal bone palette upload - quarantine registers
                             for r in range(start, start + count):
                                 self.bone_palette_registers.add(r)
+                                self.reg_upload_cmd[r] = cmd_idx
+                                self.reg_upload_pass[r] = self.current_pass
                         else:
-                            # Standard uniform upload
-                            self.recent_uploads[start] = cmd_idx
+                            for r in range(start, start + count):
+                                self.bone_palette_registers.discard(r)
+                                self.reg_upload_cmd[r] = cmd_idx
+                                self.reg_upload_pass[r] = self.current_pass
 
                     elif op in (13, 14, 15, 16):  # Draw operations
                         self.process_draw_call(cmd_idx)
@@ -386,9 +482,9 @@ class TraceAnalyzer:
                     self.constants[reg] = vals
 
     def print_summary(self):
-        print("=" * 100)
+        print("=" * 105)
         print(" DARKNESS2VR PROVENANCE-AWARE MATRIX ANALYSIS")
-        print("=" * 100)
+        print("=" * 105)
         if not self.classifications:
             print("No correlated 3D draw matrices identified.")
             return
@@ -398,18 +494,18 @@ class TraceAnalyzer:
         for c in self.classifications:
             grouped[(c.slot, c.evidence, c.pass_type)].append(c)
 
-        print(f"{'Slot':<10} {'Evidence Level':<26} {'Pass Context':<25} {'FOV(H x V)':<16} {'Camera Eye (X, Y, Z)':<25}")
+        print(f"{'Slot':<10} {'Evidence Level':<28} {'Pass Context':<25} {'FOV(H x V)':<16} {'Camera Eye (X, Y, Z)':<25}")
         print("-" * 105)
 
         for (slot, ev, p_type), items in sorted(grouped.items(), key=lambda x: str(x[0])):
             rep = items[-1]
             fov_str = f"{rep.fov_x_deg or '-'} x {rep.fov_y_deg or '-'}"
             eye_str = f"{rep.eye_pos}" if rep.eye_pos else "-"
-            print(f"{slot:<10} {ev.value:<26} {p_type.name:<25} {fov_str:<16} {eye_str:<25}")
+            print(f"{slot:<10} {ev.value:<28} {p_type.name:<25} {fov_str:<16} {eye_str:<25}")
             if rep.notes:
                 print(f"  --> Note: {rep.notes[0]} (Observed in {len(items)} draws)")
 
-        print("=" * 100)
+        print("=" * 105)
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze matrices in Darkness2VR traces with full provenance")
