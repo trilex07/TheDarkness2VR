@@ -374,3 +374,17 @@ The exact remaining chain is: active camera selection/instance -> this producer
 -> world VS upload, plus the SAME instance -> bounds/planes -> real CPU reject.
 No native-wide patch was implemented. See `matched-frame-capture.md` for the
 integrated experiment, the restored-EXE audit and remaining runtime gates.
+
+
+## Same-producer CPU rejection follow-up - 2026-10-24
+
+The worker's composed matrix now has a verified downstream path to six-plane
+construction (607CD0/62DD40), a context bounds update (685050), and hierarchy /
+candidate / triangle bounds rejection (C0F500/BC9230 -> 93F2F0 -> 48B7F0).
+False results skip traversal or index-list appends. This proves a concrete CPU
+rejection path for this matrix, without identifying its camera as the player.
+93F2F0 is zeroed in the depot sample; its genuine instructions were independently
+analyzed in the freshly hash-verified installed original's private Ghidra import.
+The audit now checks 18 ranges. Exact call sites, ABI, provenance, remaining
+ownership/WVP gates and runtime outcome are recorded in
+[runtime readiness receipt](runtime-readiness-20261024.md).

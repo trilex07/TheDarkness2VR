@@ -33,6 +33,13 @@
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
 #include "frame_boundary.h"
+#ifdef D2VR_MATCHED_CAPTURE
+#include "capture_present_witness.h"
+static thread_local d2vr_capture::PresentWitness g_capturePresent;
+static bool g_presentReadiness = false;
+static thread_local uintptr_t g_presentCaller = 0;
+static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
+#endif
 #include "render_pipeline_trace.inl"
 
 #pragma comment(lib, "d3d11.lib")
@@ -4492,6 +4499,10 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
+#ifdef D2VR_MATCHED_CAPTURE
+    g_capturePresent.Reset();
+    InterlockedIncrement(&g_captureResetGeneration); InterlockedExchange(&g_captureResetting,1);
+#endif
     {
         const auto ev = MakePipelineEvent(d2vr_frame::EventType::Reset);
         g_frameBoundary.OnEvent(ev);
@@ -4521,6 +4532,10 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origReset(dev, pp);
+#ifdef D2VR_MATCHED_CAPTURE
+    g_capturePresent.ResetResult(SUCCEEDED(hr));
+    InterlockedExchange(&g_captureResetting,FAILED(hr));
+#endif
     Log("Device Reset (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
         pp ? (int)pp->BackBufferFormat : 0, pp ? (int)pp->Windowed : 0,
@@ -4532,6 +4547,10 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
+#ifdef D2VR_MATCHED_CAPTURE
+    g_capturePresent.Reset();
+    InterlockedIncrement(&g_captureResetGeneration); InterlockedExchange(&g_captureResetting,1);
+#endif
     g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetEx));
     g_gpuTiming.Release();
     if (g_forceWindowedReset && pp) {
@@ -4558,6 +4577,10 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
+#ifdef D2VR_MATCHED_CAPTURE
+    g_capturePresent.ResetResult(g_origResetEx && SUCCEEDED(hr));
+    InterlockedExchange(&g_captureResetting,!g_origResetEx || FAILED(hr));
+#endif
     if (SUCCEEDED(hr)) g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetSucceeded));
     Log("Device ResetEx (%ux%u fmt=%d windowed=%d refresh=%u) -> hr=0x%08lX",
         pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
@@ -4672,7 +4695,17 @@ static void ApplyBoundaryDecision(IDirect3DDevice9* dev, const d2vr_frame::Decis
     if (d.incrementGameFrameId && g_submitMode == 4) InterlockedIncrement(&g_frameId);
     if (strstr(d.reason, "Present") || strstr(d.reason, "SwapChain"))
         InterlockedExchange(&g_stereoPresentBoundarySeen, 1);
+#ifdef D2VR_MATCHED_CAPTURE
+    const bool witnessed = g_presentReadiness && g_insidePresentation && !g_captureResetting &&
+        g_capturePresent.Enter(d.reason,reinterpret_cast<uintptr_t>(dev),g_presentCaller,
+            GetCurrentThreadId(),g_frameId);
+    if (witnessed && (g_capturePresent.serial==1 || g_capturePresent.serial%1000==0))
+        Log("[PresentReadiness] entry kind=%s serial=%llu epoch=%llu frame=%llu device=%p caller=%p tid=%lu engineOwnership=UNKNOWN",
+            d.reason,g_capturePresent.serial,g_capturePresent.epoch,g_capturePresent.frame,dev,
+            reinterpret_cast<void*>(g_presentCaller),GetCurrentThreadId());
+#endif
     VrFrame(dev, d.reason);
+    // Leave at the hook's return, after the original Present HRESULT is known.
 }
 
 HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
@@ -4719,6 +4752,17 @@ HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
         CaptureIntzDepthToD11(dev);
     }
     HRESULT hr = g_origEndScene(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    if (g_presentReadiness) {
+        static unsigned scenes=0;
+        if (++scenes==1 || scenes%600==0) {
+            const auto& stats=g_frameBoundary.Stats();
+            Log("[PresentReadiness] scenes=%u device=%llu ex=%llu swapchain=%llu resetGeneration=%ld slot17=%p slot121=%p swapchainObserver=ABSENT",
+                scenes,stats.devicePresent,stats.presentEx,stats.swapChainPresent,g_captureResetGeneration,
+                (*reinterpret_cast<void***>(dev))[17],(*reinterpret_cast<void***>(dev))[121]);
+        }
+    }
+#endif
     if (FAILED(hr)) Log("!!! EndScene FAILED hr=0x%08lX", hr);
     if ((g_hookMask & 2) && g_swapChainPresentCount == 0 && g_devicePresentCount == 0) {
         static int s_reprobe = 0;
@@ -4754,6 +4798,9 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* dev, const RECT* a, con
                                        const RGNDATA* r) {
     if(g_insidePresentation) return g_origPresent(dev,a,b,w,r);
     PresentationScope presenting;
+#ifdef D2VR_MATCHED_CAPTURE
+    g_presentCaller=reinterpret_cast<uintptr_t>(_ReturnAddress());
+#endif
     PollHotkeys();
     const LONG dp = InterlockedIncrement(&g_devicePresentCount);
     if (dp == 1 || (dp % 600) == 0)
@@ -4777,15 +4824,29 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* dev, const RECT* a, con
         static int s_skipLog = 0;
         if (s_skipLog++ < 5)
             Log("[Display] skipping desktop Present (frame submitted to OpenXR)");
+#ifdef D2VR_MATCHED_CAPTURE
+        matched_capture::PresentReturned(D3D_OK,false);
+        g_capturePresent.Leave();
+#endif
         return D3D_OK;
     }
+#ifdef D2VR_MATCHED_CAPTURE
+    const HRESULT result=g_origPresent(dev, a, b, w, r);
+    matched_capture::PresentReturned(result,true);
+    g_capturePresent.Leave();
+    return result;
+#else
     return g_origPresent(dev, a, b, w, r);
+#endif
 }
 
 HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a, const RECT* b, HWND w,
                                          const RGNDATA* r, DWORD flags) {
     if(g_insidePresentation) return g_origPresentEx ? g_origPresentEx(dev,a,b,w,r,flags):D3D_OK;
     PresentationScope presenting;
+#ifdef D2VR_MATCHED_CAPTURE
+    g_presentCaller=reinterpret_cast<uintptr_t>(_ReturnAddress());
+#endif
     PollHotkeys();
     if (InterlockedCompareExchange(&g_presentSeen, 1, 0) == 0) {
         Log("Hook_PresentEx@121 detected — SubmitMode 4 stereo submits at PresentEx@121 (not EndScene@42)");
@@ -4803,8 +4864,19 @@ HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a,
         else if (!d2vr_trace::g_enabled)
             VrFrame(dev, "PresentEx@121");
     }
+#ifdef D2VR_MATCHED_CAPTURE
+    if (g_suppressDesktopPresent && ShouldRouteDisplayToHeadsetOnly()) {
+        matched_capture::PresentReturned(D3D_OK,false); g_capturePresent.Leave();
+        return D3D_OK;
+    }
+    const HRESULT result=g_origPresentEx ? g_origPresentEx(dev, a, b, w, r, flags) : D3D_OK;
+    matched_capture::PresentReturned(result,g_origPresentEx!=nullptr);
+    g_capturePresent.Leave();
+    return result;
+#else
     if (g_suppressDesktopPresent && ShouldRouteDisplayToHeadsetOnly()) return D3D_OK;
     return g_origPresentEx ? g_origPresentEx(dev, a, b, w, r, flags) : D3D_OK;
+#endif
 }
 
 // Use the actual presentation boundary, not each of the world's/UI's EndScene segments.
@@ -4936,8 +5008,25 @@ void HookDevice(IDirect3DDevice9* dev) {
     // SwapChain present hooks are installed after the first successful Device::Reset only.
 
     void** devVt = *reinterpret_cast<void***>(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    g_presentReadiness=GetPrivateProfileIntA("Diagnostics","PresentReadiness",0,".\\Darkness2VR-diagnostic.ini") ||
+        GetPrivateProfileIntA("Diagnostics","MatchedFrameCapture",0,".\\Darkness2VR-diagnostic.ini");
+    if (g_presentReadiness) {
+        IDirect3DSwapChain9* implicit=nullptr;
+        const HRESULT obtained=dev->GetSwapChain(0,&implicit);
+        void* slot=implicit ? (*reinterpret_cast<void***>(implicit))[3] : nullptr;
+        Log("[PresentReadiness] coverage device=%p vt=%p slot17=%p slot121=%p implicit=%p slot3=%p getHr=0x%08lX swapchainObserver=ABSENT engineDispatchPatch=DISABLED",
+            dev,devVt,devVt[17],devVt[121],implicit,slot,obtained);
+        Log("[PresentReadiness] implicit identity does not establish actual engine swapchain coverage; EndScene cannot certify capture");
+        if (implicit) implicit->Release();
+    }
+#endif
     Log("[EffectiveConfig] SwapChainPresentHook=%s OpenXR=%s TraceCSV=%s",
+#ifdef D2VR_MATCHED_CAPTURE
+        "disabled-native-patch-no-swapchain-observer",
+#else
         g_enginePresentInstalled ? "engine-callsite" : "pending-first-EndScene",
+#endif
         g_disableOpenXR ? "disabled" : "enabled",
         d2vr_trace::g_enabled ? "enabled" : "disabled");
     Log("Method 2 Hooks active on device %p vtable=%p Present@17=%p EndScene@42=%p swapchainsHooked=%zu",

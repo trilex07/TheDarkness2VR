@@ -24,6 +24,10 @@ def validate(folder):
         if hashlib.sha256((folder / name).read_bytes()).hexdigest() != digest:
             raise ValueError(f"hash mismatch: {name}")
     records = [json.loads(line) for line in (folder / "manifest.jsonl").read_text().splitlines()]
+    # Keep draw-order validation linear even for the bounded 32K-draw capture.
+    record_positions = {id(record): index for index, record in enumerate(records)}
+    def position(record):
+        return record_positions[id(record)]
     if not records or records[0]["kind"] != "header" or records[-1]["kind"] != "result":
         raise ValueError("missing header or terminal result")
     frame = records[0]["frame"]
@@ -31,6 +35,25 @@ def validate(folder):
         raise ValueError("mixed frame IDs")
     if any(r["kind"] == "rejection" for r in records) or not records[-1]["complete"]:
         raise ValueError("runtime rejected capture")
+    entries=[r for r in records if r["kind"]=="present_entry"]
+    arms=[r for r in records if r["kind"]=="capture_arm"]
+    completions=[r for r in records if r["kind"]=="present_completion"]
+    staged=[r for r in records if r["kind"]=="staged_result"]
+    if records[0].get("schema")!=2 or len(arms)!=1 or len(entries)!=1 or len(completions)!=1 or len(staged)!=1:
+        raise ValueError("missing current Present witness")
+    entry, completion=entries[0],completions[0]
+    arm=arms[0]
+    if (arm.get("expected_serial")!=entry.get("serial") or
+        arm.get("expected_game_frame")!=entry.get("game_frame") or
+        any(k not in arm or k not in entry or arm[k]!=entry[k] for k in ("epoch","thread","reset_generation","device"))):
+        raise ValueError("capture arm does not match closing Present")
+    if (entry.get("boundary") not in ("DevicePresent","PresentEx","SwapChainPresent") or
+        not isinstance(entry.get("serial"),int) or entry["serial"]<=0 or
+        any(entry.get(k)!=completion.get(k) for k in ("serial","epoch","game_frame")) or
+        not completion.get("same_witness") or not completion.get("forwarded") or completion.get("hr")!=0):
+        raise ValueError("invalid Present completion")
+    if not staged[0].get("complete") or not (position(arm)<position(entry)<position(staged[0])<position(completion)==len(records)-2):
+        raise ValueError("invalid Present boundary ordering")
     if records[-1]["mask"] != 15:
         raise ValueError("incomplete image mask")
     if any(len(records[0].get(k, "")) != 64 for k in
@@ -40,6 +63,8 @@ def validate(folder):
     expected_offset = 0
     for r in records:
         if r["kind"] == "draw":
+            if position(r)<position(arm):
+                raise ValueError("draw outside armed frame")
             if r["eye"] not in (0, 1) or r["bank_offset"] != expected_offset:
                 raise ValueError("invalid draw-bank ordering")
             expected_offset += 4096
@@ -71,10 +96,12 @@ def validate(folder):
                 raise ValueError("truncated BMP pixels")
         if source.get("rt") != by_kind["input"].get("rt"):
             raise ValueError("source differs from production upload")
-        source_i = records.index(source)
-        if not (source_i < records.index(by_kind["input"]) < records.index(by_kind["blit"]) < records.index(final) < records.index(by_kind["submission"])):
+        source_i = position(source)
+        if not (position(entry)<source_i and position(by_kind["submission"])<position(staged[0])):
+            raise ValueError("images outside Present witness")
+        if not (source_i < position(by_kind["input"]) < position(by_kind["blit"]) < position(final) < position(by_kind["submission"])):
             raise ValueError("invalid image/metadata boundary ordering")
-        if any(records.index(d) > source_i for d in draws):
+        if any(position(d) > source_i for d in draws):
             raise ValueError("source captured before its draws completed")
         if eye == 0 and any(r["kind"] == "draw" and r["eye"] == 1 for r in records[:source_i]):
             raise ValueError("left source captured after replay started")

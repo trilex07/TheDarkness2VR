@@ -1,5 +1,6 @@
 // Offline frame-boundary validation: synthetic traces, rc20 regression, pacing, mutations.
 #include "../../src/frame_boundary.h"
+#include "../../src/capture_present_witness.h"
 
 #include <cassert>
 #include <cmath>
@@ -189,7 +190,71 @@ static void test_loading_then_present() {
     CHECK(vr == 2);
 }
 
+static void test_capture_present_witness() {
+    using d2vr_capture::PresentWitness;
+    PresentWitness w;
+    CHECK(!w.Matches(0,0,0,1));
+    const char* invalid[]={"EndScene@42(fallback)","trace-only","reset-active","notPresent",nullptr};
+    for (const char* bad : invalid)
+        CHECK(!w.Enter(bad,0x100,0x200,1,3));
+    CHECK(!w.Enter("DevicePresent",0,0x200,1,3));
+    CHECK(!w.Enter("DevicePresent",0x100,0x200,0,3));
+    for (const char* kind : {"DevicePresent","PresentEx","SwapChainPresent"}) {
+        CHECK(w.Enter(kind,0x100,0x200,1,3));
+        const auto serial=w.serial, epoch=w.epoch;
+        CHECK(w.Matches(serial,epoch,3,1));
+        CHECK(!w.Matches(serial,epoch,3,2)); // other thread
+        CHECK(!w.Matches(serial,epoch,4,1)); // other frame
+        CHECK(!w.Enter(kind,0x100,0x200,1,3)); // nested call
+        w.Leave();
+        CHECK(!w.Matches(serial,epoch,3,1)); // historical Present is insufficient
+        CHECK(w.Enter(kind,0x100,0x200,1,4));
+        CHECK(!w.Matches(serial,epoch,4,1)); // prior call, even on same thread
+        w.Reset();
+        CHECK(!w.Matches(w.serial,w.epoch,4,1));
+        w.ResetResult(false);
+        CHECK(!w.Enter(kind,0x100,0x200,1,5));
+        w.ResetResult(true);
+        CHECK(w.Enter(kind,0x100,0x200,1,5));
+        CHECK(!w.Matches(w.serial,epoch,5,1)); // prior reset generation
+        w.Leave();
+    }
+    // Exercise the actual two-phase schedule, not just an all-in-one callback:
+    // previous Present tail arms -> live draw recording -> next Present closes.
+    CHECK(w.Enter("DevicePresent",0x100,0x200,1,20));
+    auto seq=w.serial+1, epoch=w.epoch;
+    CHECK(w.InCaptureWindow(seq,epoch,21,1,20));
+    w.Leave();
+    CHECK(w.InCaptureWindow(seq,epoch,21,1,20)); // live eye between Present calls
+    CHECK(!w.InCaptureWindow(seq,epoch,21,2,20));
+    CHECK(!w.InCaptureWindow(seq,epoch,21,1,21)); // EndScene fallback isn't closure
+    CHECK(w.Enter("DevicePresent",0x100,0x200,1,21));
+    CHECK(w.InCaptureWindow(seq,epoch,21,1,21)); // source, replay, submission
+    CHECK(w.Matches(seq,epoch,21,1)); // original HRESULT may now finalize receipt
+    w.Leave();
+    CHECK(!w.InCaptureWindow(seq,epoch,21,1,21)); // cannot reuse a closed call
+    CHECK(w.Enter("PresentEx",0x100,0x200,1,22));
+    seq=w.serial+1;
+    w.Leave();
+    w.Reset(); w.ResetResult(true);
+    CHECK(!w.InCaptureWindow(seq,epoch,23,1,22)); // reset during live recording
+    // The real boundary policy and capture gate must agree. EndScene never
+    // produces a witness, including the legacy policy's fallback requests.
+    for (auto policy : {d2vr_frame::Policy::PresentPrimary,d2vr_frame::Policy::LegacyRc20b,d2vr_frame::Policy::TraceOnly}) {
+        d2vr_frame::BoundaryMachine machine(policy);
+        for (auto event : {d2vr_frame::EventType::EndScene,d2vr_frame::EventType::DevicePresent,
+                          d2vr_frame::EventType::Reset,d2vr_frame::EventType::PresentEx,
+                          d2vr_frame::EventType::ResetSucceeded,d2vr_frame::EventType::SwapChainPresent}) {
+            auto d=machine.OnEvent(Ev(event,100));
+            bool entered=d.requestVrFrame && w.Enter(d.reason,0x100,0x200,1,6);
+            CHECK(entered==(d.requestVrFrame && d2vr_capture::IsPresent(d.reason)));
+            w.Leave();
+        }
+    }
+}
+
 int main() {
+    test_capture_present_witness();
     // A failed Reset must suppress submissions until a successful retry;
     // the old machine latched inReset forever, even after successful Reset.
     for (const auto reset : {d2vr_frame::EventType::Reset, d2vr_frame::EventType::ResetEx}) {

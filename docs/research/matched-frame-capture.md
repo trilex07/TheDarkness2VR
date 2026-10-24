@@ -150,3 +150,17 @@ is resolved, re-audit the installation again, back up deployment files, verify
 the candidate hash, and first prove native-patch-free Present observation before
 requesting one stationary physical test. No matched game capture exists yet;
 sharpness, native-wide FOV and visibility success remain unclaimed.
+
+## Follow-up: current status and schema 2
+
+The preceding installation section describes the earlier gate. User now confirms
+AV resolution and fresh identity audit passes. One Steam attempt failed to start
+the game; backed-up deployment was restored. See
+[runtime readiness receipt](runtime-readiness-20261024.md) for exact hashes,
+new evidence and blockers. Capture now requires a current Present witness and
+forwarded original D3D_OK return before COMPLETE publication. Checker tests are
+15/15. A historical sticky Present flag no longer qualifies an EndScene frame.
+The prior Present arms live eye recording; the next matching Present closes
+replay/submission. A pending staged result survives the subsequent XR latch
+until the original COM call returns.
+Opt-in PresentReadiness reports existing COM coverage, not a new swapchain hook.

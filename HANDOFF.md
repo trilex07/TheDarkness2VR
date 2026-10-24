@@ -154,3 +154,18 @@ PASS. No production src/INI/build changes relative to 9c9496f, no Steam changes.
 See external-toolchain-evaluation.md section 9 for exact picks and limitations.
 This diagnostic adapter does not establish player-camera ownership. Next scope
 remains same-frame RT0/eye capture and camera-to-visibility investigation.
+
+## Runtime readiness follow-up - 2026-10-24
+
+Branch codex/runtime-camera-readiness starts at integration 9fe7944. See
+[runtime readiness receipt](docs/research/runtime-readiness-20261024.md).
+Capture schema 2 requires a current Present witness and original S_OK return;
+diagnostic COM coverage still excludes the engine's actual SwapChain Present.
+Same worker matrix is now traced through 607CD0/62DD40 plane construction to
+93F2F0/48B7F0 CPU bounds rejection and BC9230 index-list filtering. Active player
+camera ownership, VS WVP correlation and scene-wide visibility remain open.
+Original EXE re-audit passes 14 sites/18 ranges after user confirmed AV resolved.
+One Steam launch started the client but no game process; test BLOCKED. DLL/INI
+and preexisting diagnostic INI restored with hashes verified. No matched capture
+or headset claim. User considering reboot; repeat identity audit before retry.
+Local x86/D3D11 xrsim preflight verified only; no runtime selection changes.

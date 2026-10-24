@@ -45,6 +45,18 @@ FUNCTION_RANGES = {
     0xA31FF0: (201, "04dbb868c695587ae0dcf92089b19446a37fce51f01a916302e0184d74b9b93f"),
     0xDF53E0: (439, "8a19546954f15a0b399c08ab4d46d96987d66efb90eaed65bc18b966e04b5030"),
     0xDF3B50: (177, "162a787b4a7e71a1a198941c29444221b809ec4a693923a2b1ed0305d7181a64"),
+    # Same producer -> plane set -> CPU candidate/triangle rejection. These
+    # fingerprints do not identify this receiver as the active player camera.
+    0x607CD0: (967, "c1bad01802581d8fd518bcd6de9b395801d0bdf0250114d8f8e29fb2501e574d"),
+    0x685050: (133, "bf1da6d5e905decf77ba414b39bf432fad62990733c5bab3ea84c2a52771a0fe"),
+    0xBC9230: (567, "aee95314eab9effedef03368d471afe534ab5f703620914ad23188e613a44517"),
+    0xC0F500: (226, "5a9f819c598c9ac1639c25288375c74375dcbc081c68553ae6b64a0e4ac03fb6"),
+    0x62DD40: (119, "6c8b4df6e38fe5edae837a0c26b1a461fa3af57b26b9ee375f324c90a69d2652"),
+    # 93F2F0 is zeroed in the old depot sample! Analyzed anew in the private
+    # InstalledCamera20261024 project from the known original 55C8 executable.
+    0x93F2F0: (127, "1b56b152a586844ec68bbe6cda8b976a40ed9fd7bec9c94881ec8cee6765d80f"),
+    0x48B7F0: (194, "d29f0ed33b8fe7c5bf149174e333fa9ae08a8ef642b213578c3df208ef35c98a"),
+    0x8285E0: (122, "cf57d96914fc0f3defe23225f712cff3fc3a6f438f702ba8a87981f868c59ad5"),
 }
 
 

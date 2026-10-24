@@ -4,6 +4,10 @@
 namespace matched_capture {
 static uint64_t frame;
 static bool active, failed;
+static bool pendingPresent;
+static uint64_t presentSerial, presentEpoch, presentFrame;
+static uintptr_t presentDevice;
+static LONG resetGeneration;
 static unsigned mask, draws[2], blits, inputs;
 static uintptr_t sourceIdentities[2];
 static unsigned projectionObserved;
@@ -24,6 +28,10 @@ static void Reject(const char* why) {
 }
 static bool Current() {
     if (!active) return false;
+    if (!g_capturePresent.InCaptureWindow(presentSerial,presentEpoch,presentFrame,GetCurrentThreadId(),g_frameId) ||
+        g_captureResetting || resetGeneration!=g_captureResetGeneration || presentDevice!=g_capturePresent.device) {
+        Reject("capture lost its current Present witness or reset generation"); return false;
+    }
     if (frame != g_trackedFrame.id || !g_trackedFrame.open) {
         Reject("mixed or closed XR frame"); return false;
     }
@@ -60,22 +68,33 @@ static void Pose(const XrPosef& p) {
     float values[]={p.orientation.x,p.orientation.y,p.orientation.z,p.orientation.w,p.position.x,p.position.y,p.position.z};
     Floats(values,7);
 }
-static void Finish(bool submitted) {
-    if (!active) return;
-    Current();
-    const bool complete = !failed && submitted && mask==15 && inputs==3 && blits==3 && projectionObserved==3 && draws[0] && draws[1] && frame==g_trackedFrame.id;
-    if (meta) fprintf(meta,"{\"kind\":\"frame_boundary\",\"frame\":%llu,\"present_counter\":%ld,\"pair_frame\":%llu,\"engine_frame_id\":null}\n",frame,InterlockedCompareExchange(&g_frameId,0,0),g_eyePairFrameId);
-    if (banks && fclose(banks)!=0) failed=true;
-    banks=nullptr;
-    if (meta) {
-        fprintf(meta,"{\"kind\":\"result\",\"frame\":%llu,\"complete\":%s,\"mask\":%u,\"draws\":[%u,%u]}\n",
-            frame,complete&&!failed?"true":"false",mask,draws[0],draws[1]);
-        const bool error=ferror(meta)!=0;
-        const bool closed=fclose(meta)==0;
-        if (error || !closed) failed=true;
-        meta=nullptr;
+// Called only AFTER the observed original COM Present returns. A suppressed,
+// failed or occluded call cannot publish a COMPLETE receipt.
+static void PresentReturned(HRESULT hr, bool forwarded) {
+    const bool same=g_capturePresent.Matches(presentSerial,presentEpoch,presentFrame,GetCurrentThreadId()) &&
+        !g_captureResetting && resetGeneration==g_captureResetGeneration && presentFrame==(uint64_t)g_frameId && presentDevice==g_capturePresent.device;
+    if (g_presentReadiness && g_capturePresent.active &&
+        (g_capturePresent.serial==1 || g_capturePresent.serial%1000==0 || pendingPresent))
+        Log("[PresentReadiness] return serial=%llu epoch=%llu frame=%llu forwarded=%d hr=0x%08lX",
+            g_capturePresent.serial,g_capturePresent.epoch,g_capturePresent.frame,(int)forwarded,hr);
+    if (!pendingPresent) {
+        // An arm at the tail of this call must not survive a failed/suppressed
+        // arming boundary. No files can become COMPLETE from that request.
+        if (active && (!forwarded || hr!=D3D_OK)) Reject("arming Present did not complete successfully");
+        return;
     }
-    if (complete && !failed) {
+    pendingPresent=false;
+    const bool completed=same && forwarded && hr==D3D_OK;
+    FILE* append=nullptr;
+    fopen_s(&append,(directory+"/manifest.jsonl").c_str(),"ab");
+    if (!append) { failed=true; return; }
+    fprintf(append,"{\"kind\":\"present_completion\",\"frame\":%llu,\"serial\":%llu,\"epoch\":%llu,\"game_frame\":%llu,\"same_witness\":%s,\"forwarded\":%s,\"hr\":%ld}\n",
+        frame,presentSerial,presentEpoch,presentFrame,same?"true":"false",forwarded?"true":"false",hr);
+    fprintf(append,"{\"kind\":\"result\",\"frame\":%llu,\"complete\":%s,\"mask\":%u,\"draws\":[%u,%u]}\n",
+        frame,completed?"true":"false",mask,draws[0],draws[1]);
+    const bool error=ferror(append)!=0;
+    if (fclose(append)!=0 || error) failed=true;
+    if (completed && !failed) {
         FILE* receipt=nullptr;
         fopen_s(&receipt,(directory+"/COMPLETE.json").c_str(),"wb");
         if (receipt) {
@@ -90,10 +109,29 @@ static void Finish(bool submitted) {
         } else failed=true;
         if (failed) DeleteFileA((directory+"/COMPLETE.json").c_str());
     }
-    Log("[MatchedCapture] frame=%llu complete=%d path=%s",frame,(int)(complete&&!failed),directory.c_str());
+    Log("[MatchedCapture] frame=%llu complete=%d path=%s",frame,(int)(completed&&!failed),directory.c_str());
+}
+static void Finish(bool submitted) {
+    if (!active) return;
+    Current();
+    const bool complete = !failed && submitted && mask==15 && inputs==3 && blits==3 && projectionObserved==3 && draws[0] && draws[1] && frame==g_trackedFrame.id;
+    if (meta) fprintf(meta,"{\"kind\":\"frame_boundary\",\"frame\":%llu,\"present_counter\":%ld,\"pair_frame\":%llu,\"engine_frame_id\":null}\n",frame,InterlockedCompareExchange(&g_frameId,0,0),g_eyePairFrameId);
+    if (banks && fclose(banks)!=0) failed=true;
+    banks=nullptr;
+    if (meta) {
+        fprintf(meta,"{\"kind\":\"staged_result\",\"frame\":%llu,\"complete\":%s,\"mask\":%u,\"draws\":[%u,%u]}\n",
+            frame,complete&&!failed?"true":"false",mask,draws[0],draws[1]);
+        const bool error=ferror(meta)!=0;
+        const bool closed=fclose(meta)==0;
+        if (error || !closed) failed=true;
+        meta=nullptr;
+    }
+    pendingPresent=complete && !failed;
+    Log("[MatchedCapture] frame=%llu staged=%d awaiting-original-Present-return path=%s",frame,(int)pendingPresent,directory.c_str());
     active=false;
 }
 static void Begin() {
+    if (pendingPresent) return; // do not overwrite a staged capture before its return
     if (active) { Reject("frame expired before complete submission"); Finish(false); }
     // A serial requests ONE next heuristically loaded world frame, never a menu.
     static ULONGLONG polled;
@@ -104,8 +142,9 @@ static void Begin() {
     const int serial=GetPrivateProfileIntA("Diagnostics","MatchedCaptureSerial",0,request);
     if (serial<=0 || serial==lastSerial || !g_in3DGameplayMode) return;
     lastSerial=serial; // consume even unsupported/failed attempts; no automatic retry
-    if (!InterlockedCompareExchange(&g_stereoPresentBoundarySeen,0,0)) {
-        Log("[MatchedCapture] rejected: no observed COM Present boundary; native dispatch patch is suppressed"); return;
+    if (!g_capturePresent.active || g_captureResetting || g_capturePresent.frame!=(uint64_t)g_frameId ||
+        g_capturePresent.thread!=GetCurrentThreadId()) {
+        Log("[MatchedCapture] rejected: no current COM Present witness; prior Present or EndScene is insufficient"); return;
     }
     if (g_submitMode!=4 || g_stereoMode!=1 || g_stereoDebugMode!=0) {
         Log("[MatchedCapture] rejected request: requires SubmitMode=4 StereoMode=1 StereoDebugMode=0"); return;
@@ -120,6 +159,9 @@ static void Begin() {
     fopen_s(&banks,(directory+"/vs-banks.bin").c_str(),"wb");
     configToken=ConfigToken();
     frame=g_trackedFrame.id; active=true; failed=false; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
+    pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;
+    presentFrame=g_capturePresent.frame+1; resetGeneration=g_captureResetGeneration;
+    presentDevice=g_capturePresent.device;
     if (!meta || !banks) { Reject("file creation failed"); Finish(false); return; }
     char dll[MAX_PATH]{}, exe[MAX_PATH]{}; HMODULE module=nullptr;
     if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -127,9 +169,11 @@ static void Begin() {
         Reject("module identity unavailable"); Finish(false); return;
     }
     const std::string dh=HashFile(dll), eh=HashFile(exe), ih=HashFile(iniPath.c_str()), rh=HashFile(request);
-    fprintf(meta,"{\"kind\":\"header\",\"schema\":1,\"frame\":%llu,\"display_time\":%lld,\"dll_sha256\":\"%s\",\"exe_sha256\":\"%s\",\"ini_sha256\":\"%s\",\"request_sha256\":\"%s\",\"native_hooks_suppressed\":true,\"world_state\":\"render heuristic\",\"submit_mode\":%d,\"stereo_mode\":%d,\"shift_mode\":%d,\"layer_pose\":%d,\"stereo_baseline_game_units\":%.9g}\n",
+    fprintf(meta,"{\"kind\":\"header\",\"schema\":2,\"frame\":%llu,\"display_time\":%lld,\"dll_sha256\":\"%s\",\"exe_sha256\":\"%s\",\"ini_sha256\":\"%s\",\"request_sha256\":\"%s\",\"native_hooks_suppressed\":true,\"world_state\":\"render heuristic\",\"submit_mode\":%d,\"stereo_mode\":%d,\"shift_mode\":%d,\"layer_pose\":%d,\"stereo_baseline_game_units\":%.9g}\n",
         frame,g_trackedFrame.state.predictedDisplayTime,dh.c_str(),eh.c_str(),ih.c_str(),rh.c_str(),
         g_submitMode,g_stereoMode,g_stereoShiftMode,g_stereoLayerPose,g_stereoIPD);
+    fprintf(meta,"{\"kind\":\"capture_arm\",\"frame\":%llu,\"expected_serial\":%llu,\"epoch\":%llu,\"expected_game_frame\":%llu,\"reset_generation\":%ld,\"thread\":%lu,\"device\":\"%p\"}\n",
+        frame,presentSerial,presentEpoch,presentFrame,resetGeneration,GetCurrentThreadId(),reinterpret_cast<void*>(presentDevice));
     FILE* saved=meta; FILE* config=nullptr;
     fopen_s(&config,(directory+"/effective-config.json").c_str(),"wb");
     if (!config) { Reject("effective config output failed"); return; }
@@ -167,6 +211,14 @@ static bool Bmp(const char* name, UINT w, UINT h, const void* data, UINT pitch, 
 }
 static void Source(IDirect3DDevice9* dev,int eye) {
     if (!Current()) return;
+    if (eye==0) {
+        if (!g_capturePresent.Matches(presentSerial,presentEpoch,presentFrame,GetCurrentThreadId())) {
+            Reject("source has no matching closing Present"); return;
+        }
+        fprintf(meta,"{\"kind\":\"present_entry\",\"frame\":%llu,\"serial\":%llu,\"epoch\":%llu,\"game_frame\":%llu,\"reset_generation\":%ld,\"thread\":%lu,\"device\":\"%p\",\"caller\":\"%p\",\"boundary\":\"%s\",\"engine_ownership\":\"UNKNOWN\"}\n",
+            frame,presentSerial,presentEpoch,presentFrame,resetGeneration,GetCurrentThreadId(),
+            reinterpret_cast<void*>(g_capturePresent.device),reinterpret_cast<void*>(g_capturePresent.caller),g_capturePresent.kind);
+    }
     if (!(projectionObserved&(1u<<eye))) { Reject("no same-eye current-frame inverse projection witness"); return; }
     if (!g_had3DCameraThisFrame) { Reject("no current world camera witness"); return; }
     if (mask&(1u<<eye)) { Reject("duplicate source eye"); return; }
@@ -221,8 +273,8 @@ static void Submission(const XrCompositionLayerProjectionView* views) {
 } // namespace matched_capture
 static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye) {
     using namespace matched_capture;
-    if (!Current()) return;
     if (d2vr_replay::g_replayEye<0 && !d2vr_replay::g_recActive) return;
+    if (!Current()) return;
     if (eye<0 || eye>1 || draws[eye]>=16384) { Reject("draw budget or eye invalid"); return; }
     float constants[256*4]{}; D3DVIEWPORT9 vp{}; IDirect3DSurface9* rt=nullptr; IDirect3DVertexShader9* vs=nullptr;
     bool ok=SUCCEEDED(dev->GetVertexShaderConstantF(0,constants,256)) && SUCCEEDED(dev->GetViewport(&vp)) &&

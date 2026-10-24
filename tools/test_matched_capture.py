@@ -15,11 +15,16 @@ class MatchedCaptureTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.folder = Path(self.temp.name)
-        self.records = [{"kind": "header", "frame": 7, **{k: "a" * 64 for k in
+        self.records = [{"kind": "header", "frame": 7, "schema":2, **{k: "a" * 64 for k in
                          ("dll_sha256", "exe_sha256", "ini_sha256", "request_sha256")}}]
+        self.records.append(dict(kind="capture_arm",frame=7,expected_serial=12,epoch=1,expected_game_frame=9,
+                                 thread=3,reset_generation=2,device="test-dev"))
         self.config = {"eye_params": [{"head_geometry": False}, {"head_geometry": False}]}
         for eye in (0, 1):
             self.records.append(dict(kind="draw", frame=7, eye=eye, draw=0, bank_offset=eye*4096))
+            if eye==0:
+                self.records.append(dict(kind="present_entry",frame=7,serial=12,epoch=1,game_frame=9,
+                                         thread=3,reset_generation=2,device="test-dev",boundary="DevicePresent"))
             self.records.append(dict(kind="source", frame=7, eye=eye, width=8, height=8, viewport=[0,0,8,8,0,1]))
             self.records.append(dict(kind="input",frame=7,eye=eye,rt="test-rt"))
             self.records[-2]["rt"]="test-rt"
@@ -38,6 +43,8 @@ class MatchedCaptureTests(unittest.TestCase):
         (self.folder/"effective-config.json").write_text(json.dumps(self.config))
         digest = hashlib.sha256((self.folder/"effective-config.json").read_bytes()).hexdigest()
         self.records.extend([dict(kind="config_identity",frame=7,effective_config_sha256=digest),
+                             dict(kind="staged_result",frame=7,complete=True),
+                             dict(kind="present_completion",frame=7,serial=12,epoch=1,game_frame=9,same_witness=True,forwarded=True,hr=0),
                              dict(kind="result",frame=7,complete=True,mask=15,draws=[1,1])])
         self.save()
 
@@ -48,6 +55,43 @@ class MatchedCaptureTests(unittest.TestCase):
 
     def test_complete(self):
         self.assertEqual(validate(self.folder)["frame"], 7)
+
+    def test_no_present_completion(self):
+        self.records=[r for r in self.records if r["kind"]!="present_completion"]
+        self.save()
+        with self.assertRaisesRegex(ValueError,"missing current Present"):
+            validate(self.folder)
+
+    def test_stale_or_failed_present(self):
+        completion=next(r for r in self.records if r["kind"]=="present_completion")
+        for key,value in (("epoch",2),("serial",13),("game_frame",10),("same_witness",False),
+                          ("forwarded",False),("hr",0x88760868),("hr",0x08760868)):
+            with self.subTest(key=key,value=value):
+                original=completion[key];completion[key]=value;self.save()
+                with self.assertRaisesRegex(ValueError,"invalid Present completion"):
+                    validate(self.folder)
+                completion[key]=original
+
+    def test_endscene_is_not_present(self):
+        next(r for r in self.records if r["kind"]=="present_entry")["boundary"]="EndScene@42(fallback)"
+        self.save()
+        with self.assertRaisesRegex(ValueError,"invalid Present completion"):
+            validate(self.folder)
+
+    def test_arm_to_closure_identity(self):
+        arm=self.records[1]
+        for key,value in (("expected_serial",11),("expected_game_frame",8),("thread",4),
+                          ("reset_generation",3),("device","other-dev"),("epoch",2)):
+            with self.subTest(key=key):
+                original=arm[key];arm[key]=value;self.save()
+                with self.assertRaisesRegex(ValueError,"arm does not match closing Present"):
+                    validate(self.folder)
+                arm[key]=original
+
+    def test_completion_before_submission(self):
+        completion=self.records.pop(-2);self.records.insert(2,completion);self.save()
+        with self.assertRaisesRegex(ValueError,"invalid Present boundary ordering"):
+            validate(self.folder)
 
     def test_mixed_frame(self):
         self.records[1]["frame"] = 8
@@ -62,14 +106,17 @@ class MatchedCaptureTests(unittest.TestCase):
             validate(self.folder)
 
     def test_duplicate_eye(self):
-        self.records.insert(-1, self.records[2])
+        index=next(i for i,r in enumerate(self.records) if r["kind"]=="source")
+        self.records.insert(index+1,dict(self.records[index]))
         self.save()
         with self.assertRaisesRegex(ValueError, "missing or duplicate"):
             validate(self.folder)
 
     def test_overwritten_source(self):
-        source = self.records.pop(2)
-        self.records.insert(7, source)
+        index=next(i for i,r in enumerate(self.records) if r["kind"]=="source")
+        source = self.records.pop(index)
+        replay=next(i for i,r in enumerate(self.records) if r["kind"]=="draw" and r["eye"]==1)
+        self.records.insert(replay+1, source)
         self.save()
         with self.assertRaisesRegex(ValueError, "boundary ordering|after replay"):
             validate(self.folder)
