@@ -64,3 +64,15 @@ No COM shadow. Offline x86 instruction/ABI/rollback tests, frame suite, 15 captu
 and 13 audit tests pass; production preprocessing unchanged. No deployment or
 game launch. Explicit user approval required for the in-memory EXE change.
 Details: docs/research/diagnostic-engine-present-candidate.md.
+
+## MAIN 2026-10-25 - Approved mono Present trial, baseline restored
+
+Tested exact 7b5ee3d candidate, XR/capture off. Actual swapchain 0F8A0FE0 differs
+from implicit 0F781760; caller A94057, thread26060. Last sample 44000 entries =
+forwards = returns, recursive0/fault0; all 47 sampled HRESULTs D3D_OK, no logged
+exceptions. Per-call HRESULT history is not available in this candidate.
+Intro/title observed; gameplay and graceful menu shutdown not validated.
+Stopped test PID and restored DLL/both INIs; EXE/local INI hashes unchanged.
+No next VR test. Receipt: docs/research/engine-present-mono-20261025.md.
+Recorded separate prior-PSVR2 issues VR-001 (P0 right tentacles), VR-002 (yellow
+edges), VR-003 (detail loss); prepared one-frame capture plan without execution.
