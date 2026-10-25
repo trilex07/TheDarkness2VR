@@ -162,3 +162,9 @@ native initialization/state producer caused the preceding invisible rest pose,
 or establish that the transfer fix alone resolved VR-001. No post-attack capture
 was requested. Game was still running when this receipt was recorded; restoration
 must wait for normal user exit rather than interrupting gameplay.
+
+Controlled run closed normally by the user. DLL and both game INIs restored from
+the fresh pre-test backup; all three SHA-256 values match the baseline listed
+above. Installed EXE SHA-256 remains D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
+Final log and restoration receipt retained in the private transfer-test backup.
+
