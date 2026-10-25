@@ -995,8 +995,10 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
     // from stereo/FOV changes alone. A shader hash AND reflected register proof
     // limit this experiment to the captured consumer, not arbitrary c4 blocks.
     // Geometric head tracking needs previous-frame headClip history separately.
+    // A CTAB name alone is insufficient: if current WVP compensation was
+    // deselected, transforming only the previous matrix would create motion.
     const int previousBase = vi ? d2vr_stereo::PreviousProjectionBase(vi->hash,
-        vi->reflectedWvp,vi->reflectedPreviousWvp,g_fixMotionVectorProjection,sp.headGeometry) : -1;
+        wvpBase,vi->reflectedPreviousWvp,g_fixMotionVectorProjection,sp.headGeometry) : -1;
     bool modified = false;
     for (int k = 0; k < (previousBase>=0 ? 3 : 2); ++k) {
         const int b = k==0 ? wvpBase : k==1 ? ((wvpBase==stpBase) ? -1 : stpBase) : previousBase;

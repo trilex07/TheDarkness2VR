@@ -34,6 +34,41 @@ static void Transform(const float in[16], float out[16],
     for(int i=0;i<16;i+=4)
         Check(out[i+2]==in[i+2] && out[i+3]==in[i+3], "projection retains z/w exactly");
 }
+static void CapturedProjectionRegression() {
+    // Numeric matrices only, from validated Steam frame 108226, draw 103,
+    // exact VS 73EBA724. Native camera was stationary; c4 retained the flat
+    // projection while c0 had the eye translation/FOV scale. No game assets.
+    const float previous[16]={
+        1.768088579f,-7.450580597e-9f,5.960464478e-8f,5.960464478e-8f,
+        0,1.732050896f,0,7.450580597e-9f,
+        5.960464478e-8f,0,1.000100136f,1.000000119f,
+        -0.002296447754f,-0.0311756134f,-0.1000137329f,0};
+    const float captured[2][16]={
+        {0.5429558158f,-3.236761525e-9f,5.960464478e-8f,5.960464478e-8f,
+         0,0.7524562478f,0,7.450580597e-9f,
+         1.830377094e-8f,0,1.000100136f,1.000000119f,
+         0.01694085076f,-0.01354364585f,-0.1000137329f,0},
+        {0.5429558158f,-3.236761525e-9f,5.960464478e-8f,5.960464478e-8f,
+         0,0.7524562478f,0,7.450580597e-9f,
+         1.830377094e-8f,0,1.000100136f,1.000000119f,
+         -0.01835126802f,-0.01354364585f,-0.1000137329f,0}};
+    const Point points[]={{0,0,2},{0.32f,-0.11f,1},{-0.7f,0.23f,5}};
+    for(int eye=0;eye<2;++eye) {
+        d2vr_stereo::EyeShiftParams sp;
+        sp.fovScaleX=0.307086319f;sp.fovScaleY=0.434430778f;
+        sp.transX=eye==0 ? 0.0324999988f:-0.0324999988f;
+        float corrected[16];
+        Transform(previous,corrected,sp,1.76808822f,1.7320509f);
+        for(int i=0;i<16;++i)
+            Check(Near(corrected[i],captured[eye][i]),"captured static matrices align after same-eye compensation");
+        for(Point p:points) {
+            const auto old=Motion(Project(captured[eye],p),Project(previous,p));
+            const auto fixed=Motion(Project(captured[eye],p),Project(corrected,p));
+            Check(std::fabs(old.x)+std::fabs(old.y)>0.05f,"captured mismatch creates nonzero motion");
+            Check(Near(fixed.x,0) && Near(fixed.y,0),"captured projection-induced motion is removed");
+        }
+    }
+}
 int main() {
     using d2vr_stereo::PreviousProjectionBase;
     Check(PreviousProjectionBase(0x73EBA724u,0,4,true,false)==4,"exact shader/register pair enabled");
@@ -41,6 +76,7 @@ int main() {
     Check(PreviousProjectionBase(0x73EBA724u,0,4,true,true)==-1,"unknown head history excluded");
     Check(PreviousProjectionBase(0x34D4EEE8u,0,4,true,false)==-1,"other tentacle shader excluded");
     Check(PreviousProjectionBase(0x73EBA724u,-1,4,true,false)==-1,"missing current reflection excluded");
+    Check(PreviousProjectionBase(0x73EBA724u,4,4,true,false)==-1,"unselected current compensation excludes previous-only changes");
     Check(PreviousProjectionBase(0x73EBA724u,0,-1,true,false)==-1,"missing previous reflection excluded");
     // Coefficients observed in capture; no native FOV or depth change.
     const float px=1.156956f, py=1.732051f;
@@ -93,5 +129,6 @@ int main() {
             if(mode==0 || p.z!=2.f) Check(std::fabs(disparity)>1e-4f,"stereo not collapsed to mono");
         }
     }
-    std::printf("PASS: %u motion projection checks (both eyes, stationary/real motion, stereo, z/w)\n",checks);
+    CapturedProjectionRegression();
+    std::printf("PASS: %u motion projection checks (captured/static/real motion, both eyes, stereo, z/w)\n",checks);
 }

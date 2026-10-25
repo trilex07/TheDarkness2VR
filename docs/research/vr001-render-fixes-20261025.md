@@ -167,3 +167,51 @@ Controlled run closed normally by the user. DLL and both game INIs restored from
 the fresh pre-test backup; all three SHA-256 values match the baseline listed
 above. Installed EXE SHA-256 remains D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
 Final log and restoration receipt retained in the private transfer-test backup.
+
+## Production-size source capture (frame 108226)
+
+The approved production-resolution opt-in from `31727bc` was exercised after a
+fresh EXE/site audit and DLL/INI backup. The running diagnostic DLL SHA-256 was
+`b8d63c049d4dab5edbb8d9ac647dcc121acae12fe55bdad3e71767d2e14ba326`.
+Only the existing, identity-checked client-size IAT hook was additionally enabled;
+native camera/FOV/gameplay hooks and motion-vector correction stayed disabled.
+
+First request 66816 saved both 3076x3140 sources, but XR was not visible and no
+final eye images were produced. It was rejected as incomplete. MAIN requested
+explicit retry approval, then waited 15 seconds for the user's return to PSVR2.
+The single approved retry produced complete frame 108226 / Present 108227:
+145 draws per eye, all seven receipt hashes valid, matching arm/entry/return,
+forwarded original Present returned D3D_OK. Private folder:
+`%TEMP%/Darkness2VR-matched-33700-2-108226`.
+
+- Source RT0: 3076x3140 X8R8G8B8; final D3D11: 2676x2728 BGRA8, both eyes.
+- Crop 1,1; linear/clamp blit, full XY viewport. World MinZ 0.05 is a depth remap.
+- Both tentacles are visible in the source and final images after the user's
+  earlier attack. The yellow doorway region also persists in source and final.
+- Current native Px/Py candidate 1.76808822/1.7320509 and GPU scales
+  0.307086319/0.434430778 are recorded, not promoted to native-camera ownership.
+- Luna's exact UV/bilinear-reference functions were used without assumed camera
+  bounds: center 500x500, floor 600x430, ceiling 600x400 ROIs. Across both eyes,
+  final/reference luminance MAE 0.0470..0.1078 out of 255; Laplacian RMS deviation
+  -0.0413%..+0.0892%. No material additional blur in this transfer step.
+  This does not measure source-stage blur, compositor optics or headset acuity.
+- Source/final hashes are distinct for each eye. Comparing the wrong source eye
+  gives RGB MAE 12.30..23.95 in those ROIs, consistent with preserved eye identity.
+- Full ray-compare remains withheld until the active world shader/projection
+  proof is independently complete; the inverse-projection candidate is insufficient.
+
+The complete frame additionally confirms the motion-vector mismatch in exact
+VS 73EBA724, draws 103..115: uploaded current c0 has the VR projection while
+previous c4 retains the flat projection. Undoing the eye transform aligns the
+static matrices within approximately 1e-7. Numeric values from draw 103 are now
+a deterministic regression fixture; no raw shader/mesh/image assets are committed.
+The correction now uses the *resolved current compensation base*, so a CTAB
+label cannot enable a previous-only transform when current compensation is
+unselected. 401 C++ checks pass, including the real captured matrices for both
+eyes. Correction stays opt-in; its Steam/PSVR2 A/B is still NOT RUN.
+
+Optional pass-stage acquisition from `a44969b` is prepared offline, but was not
+part of the installed DLL in this run. The yellow-producing pass is therefore
+still unproven. No native FOV, crop, IPD, sharpness or shader toggle was changed.
+The user is evaluating the high-resolution image; normal game exit and hash-
+verified restoration are pending for this run.

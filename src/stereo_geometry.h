@@ -8,6 +8,7 @@
 namespace d2vr_stereo {
 
 // Captured MotionBlur_16 VS, full-byte FNV identity and CTAB register proof.
+// current is the resolved WVP compensation base, not merely its CTAB label.
 // Unknown shaders/registers and head-history-dependent paths remain unchanged.
 inline int PreviousProjectionBase(uint32_t hash, int current, int previous,
                                   bool enabled, bool headGeometry) {
