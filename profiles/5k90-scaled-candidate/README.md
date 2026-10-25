@@ -17,9 +17,18 @@ in four matched gameplay captures (w about zero and z about -0.1); the shared
 shader bytecodes also draw hand and world meshes. Other WVPs retain their
 prior handling. A bounded runtime log records actual head-attachment hits.
 
+`NativeHandsDirtyBoth=1` is a separate opt-in hand correction. The selected
+renderer uses two alternating packed-skin buffers; the current CPU hand IK
+changes the pose but marks only the current skin slot dirty. Verified EXE
+instructions at 0x6C3BC1..0x6C3C04 prepare both packed buffers, while
+0x6C3C71 tests the indexed dirty byte. This profile marks both dirty after a
+real pose change so a later draw cannot use the old packed slot. A physical
+test must establish whether the visible first-person mesh is that renderer.
+
 Offline: diagnostic and production x86 builds PASS, 25 matched-capture tests
 PASS, seven executable-audit tests PASS, D3D9 stereo geometry PASS, and the
 D3D11 WARP NIS test passes both sharpen and 256-to-320 scaling in both eyes.
 Steam and PSVR2 for this candidate: NOT RUN. 90 FPS, visual quality and hand
 tracking are not accepted. The prior trial's DLL and INIs were restored with
-their original hashes. Frozen human hands need a separate correction.
+their original hashes. If the visible hands remain frozen, reject the
+dirty-both hypothesis and trace the first-person GPU skin owner.

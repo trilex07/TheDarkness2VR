@@ -107,12 +107,19 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable) {
         // Skin buffers (448, two slots) rotate independently of pose buffers
         // (424, three slots). Do not use the pose index for this byte.
         renderer[0x580+skinIndex]=1;
+        if(g_nativeHandsDirtyBoth) {
+            // The renderer repacks both 48-byte skin buffers from the selected
+            // pose (6C3BC1..6C3C04), but the current dirty flag follows only
+            // one alternating slot. Mark its partner as well so a later draw
+            // cannot consume the previous packed pose after this CPU edit.
+            renderer[0x580+(1-skinIndex)]=1;
+        }
         // Preserve the actual unchanged left range on tracking loss.
         memcpy(cache.applied,palette+2*16,sizeof(cache.applied));
         ReleaseSRWLockExclusive(&g_nativeHandsLock);
         locked=false;
         static ULONGLONG last=0; auto now=GetTickCount64();
-        if(now-last>1000) { last=now; Log("[NativeHands] wrists/fingers + arm IK applied; skin palette invalidated slot=%lu; pose slot=%lu; left=%s",skinIndex,index,leftValid ? (support ? "support":"free"):"tracking unavailable"); }
+        if(now-last>1000) { last=now; Log("[NativeHands] wrists/fingers + arm IK applied; dirty=%s skin slot=%lu pose slot=%lu left=%s",g_nativeHandsDirtyBoth?"both":"current",skinIndex,index,leftValid ? (support ? "support":"free"):"tracking unavailable"); }
         return true;
     } __except(EXCEPTION_EXECUTE_HANDLER) { if(locked) ReleaseSRWLockExclusive(&g_nativeHandsLock); return false; }
 }

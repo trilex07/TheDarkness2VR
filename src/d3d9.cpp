@@ -82,6 +82,7 @@ bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
 bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
 bool g_nativeHandsEnabled=false;
+bool g_nativeHandsDirtyBoth=false;
 float g_throwAimAssist=.75f;
 static void ResetNativeAim();
 static void ResetNativeThrow();
@@ -435,6 +436,7 @@ void LoadConfig() {
     g_nativeLeftAim = GetPrivateProfileIntA("Input", "NativeLeftAim", 0, chosenIni) != 0;
     g_nativeWeaponPose = GetPrivateProfileIntA("Input", "NativeWeaponPose", 0, chosenIni) != 0;
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
+    g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
     g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 75, chosenIni))*.01f;
     g_headGeometry = GetPrivateProfileIntA("Render", "HeadGeometry", 1, chosenIni) != 0;
     Log("[Tentacle] bridge=%d axisMarker=%d; native grab observer and tracked pistol configured separately",(int)g_tentacleBridge,(int)g_tentacleAimMarker);
