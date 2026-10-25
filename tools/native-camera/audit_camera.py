@@ -12,6 +12,14 @@ import struct
 from pathlib import Path
 
 KNOWN_SHA256 = "55c8d634fcbe2996d8397d15d68ea728c999697f1dd40e8779b5afe8bbb4c339"
+# Exact Steam-produced variant audited on 2026-10-25: valid Valve Authenticode,
+# identical complete .text and all instruction fingerprints. Data/resources and
+# signature differ. This is an explicit pin, NOT acceptance of arbitrary files
+# with matching code. See docs/research/runtime-readiness-20261025.md.
+KNOWN_IDENTITIES = {
+    KNOWN_SHA256: "original-audited-20261024",
+    "d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1": "steam-valve-signed-20261025",
+}
 BASE, TIMESTAMP, IMAGE_SIZE = 0x400000, 0x4F68A875, 0xDEC000
 # These are instruction sites, NOT names of native projection/frustum functions.
 SITES = {
@@ -112,7 +120,7 @@ def audit(blob: bytes) -> dict:
     sha = hashlib.sha256(blob).hexdigest()
     identity = (pe.machine == 0x14C and pe.base == BASE and
                 pe.timestamp == TIMESTAMP and pe.image_size == IMAGE_SIZE and
-                not (pe.dll_characteristics & 0x40) and sha == KNOWN_SHA256)
+                not (pe.dll_characteristics & 0x40) and sha in KNOWN_IDENTITIES)
     sites = []
     for label, (va, pattern) in SITES.items():
         expected = bytes.fromhex(pattern)
@@ -132,6 +140,7 @@ def audit(blob: bytes) -> dict:
     return dict(sha256=sha, machine=f"{pe.machine:04X}",
                 image_base=f"{pe.base:08X}", timestamp=f"{pe.timestamp:08X}",
                 image_size=f"{pe.image_size:08X}", known_identity=identity,
+                identity_label=KNOWN_IDENTITIES.get(sha) if identity else None,
                 all_sites_match=all(s["match"] for s in sites), sites=sites,
                 all_function_ranges_match=all(r["match"] for r in ranges), function_ranges=ranges,
                 native_projection_proven=False, native_cpu_frustum_proven=False)

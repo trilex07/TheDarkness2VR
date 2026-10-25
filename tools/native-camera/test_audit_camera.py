@@ -1,6 +1,10 @@
 """PE evidence-reader tests. Synthetic bytes are parser fixtures, not engine proof."""
+import hashlib
 import struct
 import unittest
+from unittest.mock import patch
+
+import audit_camera
 
 from audit_camera import BASE, PE, audit
 
@@ -37,6 +41,18 @@ class ReaderTests(unittest.TestCase):
         self.assertFalse(result["known_identity"])
         self.assertFalse(result["all_sites_match"])
         self.assertFalse(result["native_cpu_frustum_proven"])
+
+    def test_matching_instruction_evidence_does_not_accept_unlisted_file(self):
+        # Synthetic parser evidence only. Matching all selected code must not
+        # replace the exact full-file identity gate (including non-code bytes).
+        sites = {"fixture": (BASE + 0x1010, b"TEST".hex())}
+        ranges = {BASE + 0x1010: (4, hashlib.sha256(b"TEST").hexdigest())}
+        with patch.dict(audit_camera.SITES, sites, clear=True), patch.dict(audit_camera.FUNCTION_RANGES, ranges, clear=True):
+            result = audit(fixture())
+        self.assertTrue(result["all_sites_match"])
+        self.assertTrue(result["all_function_ranges_match"])
+        self.assertFalse(result["known_identity"])
+        self.assertIsNone(result["identity_label"])
 
     def test_truncation_at_every_header_boundary(self):
         for size in (0, 1, 2, 0x3D, 0x80, 0x84, 0x98, 0x178, 0x19F, 0x3FF):

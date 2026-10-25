@@ -169,3 +169,15 @@ One Steam launch started the client but no game process; test BLOCKED. DLL/INI
 and preexisting diagnostic INI restored with hashes verified. No matched capture
 or headset claim. User considering reboot; repeat identity audit before retry.
 Local x86/D3D11 xrsim preflight verified only; no runtime selection changes.
+
+## Post-restart runtime receipt - 2026-10-25
+
+See [post-restart receipt](docs/research/runtime-readiness-20261025.md).
+Steam now starts the game; title/main menu observed. Existing COM observer
+recorded zero Present callbacks through 39,000 sampled EndScene calls. Actual
+presentation coverage remains the blocker; no capture or PSVR2 test occurred.
+Steam completed its queued update before startup and produced a new EXE hash.
+Offline comparison proves identical .text and instruction ranges; both old and
+new executables have valid Valve signatures. audit_camera.py explicitly pins
+both full hashes, retaining rejection of all other hashes. DLL and both INIs
+were restored and verified after the probe; Steam's replacement EXE preserved.
