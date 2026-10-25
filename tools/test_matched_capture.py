@@ -166,6 +166,23 @@ class MatchedCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"truncated pass stage"):
             validate(self.folder)
 
+    def test_composite_depth_input_and_phase_identity(self):
+        name = "stage-01-draw-0.bin"
+        payload = struct.pack("<f", 1.0) * (512*512)
+        (self.folder/name).write_bytes(payload)
+        record = dict(kind="pass_stage", frame=7, eye=0, last_draw=0,
+                      width=512, height=512, format=114, phase="before_draw_input",
+                      sampler=2, ps_hash=0x33DE98C1, file=name, saved=True, hr=0,
+                      sha256=hashlib.sha256(payload).hexdigest())
+        self.records.insert(3,record); self.save()
+        self.assertEqual(validate(self.folder)["frame"],7)
+        record["sampler"] = 1; self.save()
+        with self.assertRaisesRegex(ValueError,"invalid postprocess input identity"):
+            validate(self.folder)
+        record["sampler"] = 2; record["ps_hash"] = 0; self.save()
+        with self.assertRaisesRegex(ValueError,"invalid postprocess input identity"):
+            validate(self.folder)
+
     def test_failed_optional_stage_is_not_required_image_evidence(self):
         self.records.insert(3,dict(kind="pass_stage",frame=7,saved=False,hr=-1))
         self.save()

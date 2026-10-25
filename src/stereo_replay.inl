@@ -23,6 +23,7 @@
 
 #include "stereo_math.h"
 #include "stereo_geometry.h"
+#include "material_sampling.h"
 
 namespace d2vr_replay {
 
@@ -1146,6 +1147,56 @@ static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWO
     if (g_recActive) RecEmit(OP_SetSamplerState, 0, smp, t, v);
     return g_orig.SetSamplerState(dev, smp, t, v);
 }
+// A MAXANISOTROPY budget alone leaves LINEAR minification bilinear. Restrict
+// promotion to one bytecode-verified world diffuse sampler and restore it at
+// the draw boundary. OFF has no driver queries or additional recorded events.
+struct WorldDiffuseScope {
+    d2vr_sampling::ScopedDiffuseFilter filter;
+    bool applied = false;
+    explicit WorldDiffuseScope(IDirect3DDevice9* dev) {
+        if (!g_worldDiffuseAnisotropy || g_submitMode != 4 || g_stereoMode != 1 ||
+            !g_activeVs || g_activeVs->hash != 0x293F456Bu) return;
+        IDirect3DPixelShader9* ps = nullptr;
+        if (FAILED(dev->GetPixelShader(&ps)) || !ps) return;
+        const auto found = g_psHashByPtr.find(ps);
+        const bool selected = found != g_psHashByPtr.end() &&
+            d2vr_sampling::IsWorldDiffuseMaterial(g_activeVs->hash, found->second);
+        ps->Release();
+        if (!selected || !filter.Apply(dev, g_orig.SetSamplerState, g_textureAnisotropy)) return;
+        applied = true;
+        static unsigned reported = 0;
+        if (reported++ < 4) Log("[WorldDiffuse] applied eye=%d sampler=0 min=ANISOTROPIC; restored after draw", g_replayEye < 0 ? 0 : g_replayEye);
+    }
+};
+// Keep C++ restoration scopes outside Replay's existing SEH boundary.
+static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
+    const WorldDiffuseScope diffuse(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
+#endif
+    return g_orig.DrawPrimitive(dev, t, sv, pc);
+}
+static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
+    const WorldDiffuseScope diffuse(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
+#endif
+    return g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
+}
+static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT pc, const void* vb, UINT stride) {
+    const WorldDiffuseScope diffuse(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
+#endif
+    return g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
+}
+static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
+    const WorldDiffuseScope diffuse(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
+#endif
+    return g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+}
 static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect(IDirect3DDevice9* dev, const RECT* r) {
     if (g_recActive) {
         if (r) { uint32_t off = RecPush(r, sizeof(RECT)); RecEmit(OP_SetScissorRect, 1, off); }
@@ -1209,10 +1260,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPR
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if (g_recActive) RecEmit(OP_DrawPrimitive, 0, t, sv, pc);
     const UiClipState clip = BeginScaledUiClip(dev);
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
-#endif
-    HRESULT hr = g_orig.DrawPrimitive(dev, t, sv, pc);
+    HRESULT hr = DrawPrimitiveWithDiffuse(dev, t, sv, pc);
     EndScaledUiClip(dev, clip);
     return hr;
 }
@@ -1221,10 +1269,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if (g_recActive) RecEmit(OP_DrawIndexedPrimitive, 0, t, (uint32_t)bvi, mvi, nv, si, pc);
     const UiClipState clip = BeginScaledUiClip(dev);
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
-#endif
-    HRESULT hr = g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
+    HRESULT hr = DrawIndexedPrimitiveWithDiffuse(dev, t, bvi, mvi, nv, si, pc);
     EndScaledUiClip(dev, clip);
     return hr;
 }
@@ -1243,10 +1288,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3D
         }
     }
     const UiClipState clip = BeginScaledUiClip(dev);
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
-#endif
-    HRESULT hr = g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
+    HRESULT hr = DrawPrimitiveUPWithDiffuse(dev, t, pc, vb, stride);
     EndScaledUiClip(dev, clip);
     return hr;
 }
@@ -1278,10 +1320,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
         RecEmit(OP_DrawIndexedPrimitiveUP, 0, t, mvi, nv, pc, (uint32_t)fmt, auxOff);
     }
     const UiClipState clip = BeginScaledUiClip(dev);
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
-#endif
-    HRESULT hr = g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+    HRESULT hr = DrawIndexedPrimitiveUPWithDiffuse(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
     EndScaledUiClip(dev, clip);
     return hr;
 }
@@ -1531,20 +1570,14 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_DrawPrimitive: {
             if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
             const UiClipState clip = BeginScaledUiClip(dev);
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
-#endif
-            g_orig.DrawPrimitive(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2]);
+            DrawPrimitiveWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2]);
             EndScaledUiClip(dev, clip);
             break;
         }
         case OP_DrawIndexedPrimitive: {
             if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
             const UiClipState clip = BeginScaledUiClip(dev);
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
-#endif
-            g_orig.DrawIndexedPrimitive(dev, (D3DPRIMITIVETYPE)r.a[0], (INT)r.a[1], r.a[2], r.a[3], r.a[4], r.a[5]);
+            DrawIndexedPrimitiveWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], (INT)r.a[1], r.a[2], r.a[3], r.a[4], r.a[5]);
             EndScaledUiClip(dev, clip);
             break;
         }
@@ -1553,10 +1586,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const void* data = (r.n == 1) ? (const void*)(uintptr_t)r.a[3]
                                           : (const void*)(dataBase + r.a[3]);
             const UiClipState clip = BeginScaledUiClip(dev);
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
-#endif
-            g_orig.DrawPrimitiveUP(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], data, r.a[2]);
+            DrawPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], data, r.a[2]);
             EndScaledUiClip(dev, clip);
             HOOK_MARK(1900 + r.op);
             break;
@@ -1570,10 +1600,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const void* vb = livePtrs ? (const void*)(uintptr_t)aux->vbOff : (const void*)(dataBase + aux->vbOff);
             const void* ib = livePtrs ? (const void*)(uintptr_t)aux->ibOff : (const void*)(dataBase + aux->ibOff);
             const UiClipState clip = BeginScaledUiClip(dev);
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye);
-#endif
-            g_orig.DrawIndexedPrimitiveUP(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
+            DrawIndexedPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
                                          ib, (D3DFORMAT)r.a[4], vb, stride);
             EndScaledUiClip(dev, clip);
             HOOK_MARK(1900 + r.op);

@@ -51,6 +51,12 @@ def validate(folder):
         if record["kind"] == "pass_stage":
             if record.get("eye") != 0 or record.get("hr") != 0:
                 raise ValueError("invalid pass stage eye or HRESULT")
+            phase = record.get("phase", "after_draw")
+            if (phase not in ("after_draw", "before_draw_input") or
+                (phase == "before_draw_input" and
+                 (record.get("sampler") not in (0, 2, 3) or
+                  record.get("ps_hash") not in (0x33DE98C1, 0x75F88E11)))):
+                raise ValueError("invalid postprocess input identity")
             w, h, fmt = record["width"], record["height"], record["format"]
             if w < 512 or h < 512 or w*h > 16*1024*1024:
                 raise ValueError("invalid pass stage dimensions")

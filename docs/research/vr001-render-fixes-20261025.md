@@ -246,3 +246,76 @@ Steam/PSVR2 for this output-size option are NOT RUN at preparation time.
 The next diagnostic variant also contains the existing bounded pass images for
 yellow-region localization. Motion-vector correction remains OFF to isolate
 the resolution change from a separate rendering correction.
+
+## Source-sized output runtime receipt (frame 38224)
+
+Candidate 3be6a54 ran with diagnostic DLL SHA-256
+F6D617F200CF7975109FB5384FB8C699C9B17FB0363AA75025F6A4E7DEC13337.
+One requested unpaused gameplay frame completed, Present serial38225, 122 draws
+per eye. All seven COMPLETE hashes and every optional shader/stage hash pass.
+Private capture: `%TEMP%/Darkness2VR-matched-36500-1-38224`.
+
+Sources and final eyes are all3076x3140. Every RGB component in each entire final
+image equals its corresponding source exactly (MAE0, max error0, no differing
+components). Both tentacles are visible in these captured images after attack.
+
+Actual saved VS12CCC8DB and293F456B bytecode declares row-major WVP c0..c3 and
+uses its x/y/z mul/mad chain plus c3 to write o0. World draw14's uploaded matrix
+has projection basis ratios Px=.542955717354, Py=.752456179471; normalized
+x/y/w cross dot products are below4.3e-8. Same ratios are present in both eyes;
+their translations differ. Full viewport and identity crop establish the image
+ray mapping independently of the native inverse-projection candidate. Native
+camera object ownership remains unproven.
+
+Luna ray-compare runs through the receipt checker, using this rendered-source
+frustum, pass for left wall ROI950,650,500,500 and right floor
+ROI1100,1900,600,430. Max submitted-FOV/crop tangent error2.01e-7; aligned
+pixel MAE/RMSE/max0, gradient and Laplacian RMS unchanged. These results rule
+out extra loss in this application's RT0-to-eye transfer for this frame, not
+source-stage filtering or compositor/optics effects.
+
+User's physical result: blur still remains, including while fully stationary.
+Resolution alone has not fixed VR-003. Known DOF/FXAA bypass creation succeeded
+in the log. Motion-vector correction was OFF. No headset sharpness success claim.
+After normal user exit, original DLL/game INI/diagnostic INI SHA-256 values were
+restored and verified; EXE remainsD46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
+Restoration receipt: `%TEMP%/d2vr-eye1to1-20261025-122411/restoration-verified.json`.
+
+Seven bounded intermediate targets were saved. Full HDR color after draw75 and
+half-resolution color after94 do not contain the bright yellow doorway; final
+source RT0 does. This narrows its introduction to later postprocessing. It does
+not prove CPU culling, absence of submitted doorway geometry, or which later
+shader is responsible. The normal buffer's neutral doorway value alone is not
+an object-rejection witness.
+
+## Narrow material-sampling correction and next controlled candidate
+
+Historical recorded stream run43052/frame003 contains VS293F456B / PSCA08BDC4
+draws with s0.MINFILTER=LINEAR (3 draws) as well as ANISOTROPIC (8 draws),
+with s0.MAXANISOTROPY16. The maximum alone cannot promote LINEAR sampling.
+New actual saved PSCA08BDC4 bytecode independently declares DiffuseMap=s0 and
+samples material UV there; world VS293F456B writes WVP-transformed position.
+
+`[Render] WorldDiffuseAnisotropy=1` (default OFF) now promotes LINEAR minification
+only for that exact world shader pair, s0, a mipmapped non-RT/non-depth 2D
+texture at least64x64, and supported driver capabilities. Existing anisotropic,
+point, unknown, postprocess, lightmap, normal-map and UI paths are unchanged.
+MAXANISOTROPY is hardware-clamped. Both sampler values restore after each draw;
+the same scope runs in live and replay and adds no recorded sampler events.
+LOD bias, mip/mag filters and all texture contents are preserved. Capture records
+the actual per-draw filter and whether this scope applied. This is a bounded
+candidate for distance-texture loss, not a proven explanation for all blur.
+
+Real D3D9 HAL regression:424 checks PASS, including exact shader exclusions,
+every sampler state on s0/s1, repeated eye/draw scope, stateblock restoration,
+unsupported inputs and partial setter failure rollback. No Steam or XR used.
+Production and diagnostic x86 builds PASS; motion401, matched-capture21 and
+transfer-order3 regression checks PASS. Physical material-sampling A/B pending.
+
+`[Diagnostics] CapturePassStages=2` reuses the existing one-frame capture and
+8-attempt/256MiB limits but reserves them for the late postprocess interval.
+It saves the exact final composite's s0 Frame/s2 Depth/s3 DOFScene inputs before
+its draw, c0..c15 PS constants, actual shader bytecode and later target output.
+R32F depth is explicit, with no format conversion or unsupported fallback.
+Input/output phase and sampler identity are distinguished and validated. Mode1
+retains general pass capture; default0 still has no GPU readbacks.

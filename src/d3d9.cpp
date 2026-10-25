@@ -68,6 +68,7 @@ bool g_disableDepthOfField = true;
 bool g_disableFxaa = true;
 bool g_clipScaledUi = true;
 bool g_fixMotionVectorProjection = false;
+bool g_worldDiffuseAnisotropy = false;
 bool g_gestureBridge = false; // diagnostic detection until native context/weapon state is verified
 bool g_tentacleBridge = false; // separate, opt-in stock-game action bridge
 bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
@@ -403,6 +404,8 @@ void LoadConfig() {
     g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
     if (g_submitMode < 0 || g_submitMode > 4) g_submitMode = 0;
     g_textureAnisotropy = std::clamp((int)GetPrivateProfileIntA("Render", "TextureAnisotropy", 16, chosenIni), 1, 16);
+    g_worldDiffuseAnisotropy = GetPrivateProfileIntA("Render", "WorldDiffuseAnisotropy", 0, chosenIni) != 0;
+    Log("[WorldDiffuse] scoped anisotropy=%d (exact VS293F456B/PSCA08BDC4, s0 only)", (int)g_worldDiffuseAnisotropy);
     Log("[Sharpness] texture anisotropy target=%d", g_textureAnisotropy);
     g_disableFxaa = GetPrivateProfileIntA("Render", "DisableFXAA", 1, chosenIni) != 0;
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
@@ -1218,7 +1221,7 @@ namespace d2vr_replay { struct StereoParams; }
 static d2vr_replay::StereoParams MakeEyeParams(int eye);
 #ifdef D2VR_MATCHED_CAPTURE
 extern volatile LONG g_frameId;
-static void MatchedCaptureDraw(IDirect3DDevice9*,int);
+static void MatchedCaptureDraw(IDirect3DDevice9*,int,bool);
 static void MatchedCaptureBlit(int,const StereoCBData&);
 static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT);
 static void MatchedCaptureInput(IDirect3DSurface9*,bool);

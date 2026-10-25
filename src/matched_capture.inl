@@ -13,7 +13,7 @@ static uintptr_t sourceIdentities[2];
 static unsigned projectionObserved;
 static std::vector<uintptr_t> geometrySaved;
 // Optional one-frame pass localization. No reads or allocations when disabled.
-static bool passStages;
+static bool passStages, postStagesOnly, postInputsSaved;
 static IDirect3DSurface9* stageTarget;
 static unsigned stagesSaved, stageLastDraw, stageVs, stagePs;
 static uint64_t stageBytes;
@@ -28,7 +28,7 @@ static std::string ConfigToken() {
     sprintf_s(token,"%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%.9g/%.9g/%.9g/%.9g/%d",
         g_submitMode,g_stereoMode,g_stereoDebugMode,g_stereoShiftMode,g_projectionFix,g_noInvProj,g_lightPosShift,g_skipLightVsShift,
         (int)g_headGeometry,g_stereoLayerPose,g_stereoPolarity,g_stereoIPD,g_gameUnitsPerMeter,g_fovWidenX,g_fovWidenY,g_lightingPreset);
-    return std::string(token)+"/"+(g_matchEyeResolutionToSource?"1":"0");
+    return std::string(token)+"/"+(g_matchEyeResolutionToSource?"1":"0")+"/"+(g_worldDiffuseAnisotropy?"1":"0")+"/"+std::to_string(g_textureAnisotropy);
 }
 static std::string directory, iniPath;
 static FILE *meta, *banks;
@@ -172,6 +172,8 @@ static void Begin() {
     configToken=ConfigToken(); geometrySaved.clear();
     ReleaseStage(); stagesSaved=0; stageBytes=0; shadersSaved.clear();
     passStages=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)!=0;
+    postStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==2;
+    postInputsSaved=false;
     frame=g_trackedFrame.id; active=true; failed=false; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;
     presentFrame=g_capturePresent.frame+1; resetGeneration=g_captureResetGeneration;
@@ -199,10 +201,10 @@ static void Begin() {
         fprintf(meta,"%s{\"head_geometry\":%s,\"mode\":%d,\"values\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],\"head_clip\":",eye?",":"",sp.headGeometry?"true":"false",sp.mode,sp.separation,sp.convergence,sp.transX,sp.transY,sp.fovScaleX,sp.fovScaleY,(double)g_stereoPolarity);
         Floats(sp.headClip,16); fprintf(meta,",\"inverse_head_clip\":"); Floats(sp.inverseHeadClip,16); fputc('}',meta);
     }
-    fprintf(meta,"],\"fix_motion_vector_projection\":%s,\"production_resolution_requested\":%s,\"client_rect_hooked\":%s,\"requested_render_size\":[%d,%d],\"match_eye_resolution_to_source\":%s,\"xr_recommended_size\":[%u,%u],\"xr_max_both_eyes\":[%u,%u]}\n",
+    fprintf(meta,"],\"fix_motion_vector_projection\":%s,\"production_resolution_requested\":%s,\"client_rect_hooked\":%s,\"requested_render_size\":[%d,%d],\"match_eye_resolution_to_source\":%s,\"xr_recommended_size\":[%u,%u],\"xr_max_both_eyes\":[%u,%u],\"world_diffuse_anisotropy\":%s,\"texture_anisotropy\":%d}\n",
         g_fixMotionVectorProjection?"true":"false",g_diagnosticProductionResolution?"true":"false",
         g_getClientRectHooked?"true":"false",g_renderW,g_renderH,g_matchEyeResolutionToSource?"true":"false",
-        g_steamVrRecW,g_steamVrRecH,g_xrMaxEyeW,g_xrMaxEyeH); const bool configError=ferror(meta)!=0;
+        g_steamVrRecW,g_steamVrRecH,g_xrMaxEyeW,g_xrMaxEyeH,g_worldDiffuseAnisotropy?"true":"false",g_textureAnisotropy); const bool configError=ferror(meta)!=0;
     const bool configClosed=fclose(meta)==0; meta=saved;
     if(configError || !configClosed) Reject("effective config write failed");
     const std::string ch=HashFile((directory+"/effective-config.json").c_str());
@@ -226,22 +228,23 @@ static bool Bmp(const char* name, UINT w, UINT h, const void* data, UINT pitch, 
     }
     const bool closed=fclose(f)==0; return ok&&closed;
 }
-static void FlushStage(IDirect3DDevice9* dev) {
-    if(!passStages || !stageTarget || stagesSaved>=8) return;
+static void SaveStageSurface(IDirect3DDevice9* dev,IDirect3DSurface9* target,unsigned draw,
+                             unsigned vs,unsigned ps,const char* phase,int sampler=-1) {
+    if(!passStages || !target || stagesSaved>=8) return;
     D3DSURFACE_DESC d{};
-    if(FAILED(stageTarget->GetDesc(&d)) || d.Width<(UINT)std::max(512,g_renderW/2) || d.Height<(UINT)std::max(512,g_renderH/2) ||
+    if(FAILED(target->GetDesc(&d)) || d.Width<(UINT)std::max(512,g_renderW/2) || d.Height<(UINT)std::max(512,g_renderH/2) ||
         (uint64_t)d.Width*d.Height>16u*1024u*1024u || d.MultiSampleType!=D3DMULTISAMPLE_NONE) return;
     unsigned bytesPerPixel=0;
-    if(d.Format==D3DFMT_A8R8G8B8 || d.Format==D3DFMT_X8R8G8B8 || d.Format==D3DFMT_G16R16F) bytesPerPixel=4;
+    if(d.Format==D3DFMT_A8R8G8B8 || d.Format==D3DFMT_X8R8G8B8 || d.Format==D3DFMT_G16R16F || d.Format==D3DFMT_R32F) bytesPerPixel=4;
     if(d.Format==D3DFMT_A16B16G16R16F) bytesPerPixel=8;
     const uint64_t size=(uint64_t)d.Width*d.Height*bytesPerPixel;
     if(!size || size>256u*1024u*1024u-stageBytes) return;
     ++stagesSaved; stageBytes+=size; // attempts bounded too, including failures
     IDirect3DSurface9* sys=nullptr; D3DLOCKED_RECT lock{};
     HRESULT hr=dev->CreateOffscreenPlainSurface(d.Width,d.Height,d.Format,D3DPOOL_SYSTEMMEM,&sys,nullptr);
-    if(SUCCEEDED(hr)) hr=dev->GetRenderTargetData(stageTarget,sys);
+    if(SUCCEEDED(hr)) hr=dev->GetRenderTargetData(target,sys);
     if(SUCCEEDED(hr)) hr=sys->LockRect(&lock,nullptr,D3DLOCK_READONLY);
-    char name[64]; sprintf_s(name,"stage-%02u-draw-%u.%s",stagesSaved,stageLastDraw,
+    char name[64]; sprintf_s(name,"stage-%02u-draw-%u.%s",stagesSaved,draw,
         d.Format==D3DFMT_A8R8G8B8 || d.Format==D3DFMT_X8R8G8B8?"bmp":"bin");
     bool saved=false;
     if(SUCCEEDED(hr)) {
@@ -259,9 +262,34 @@ static void FlushStage(IDirect3DDevice9* dev) {
         sys->UnlockRect();
     }
     if(sys) sys->Release();
-    fprintf(meta,"{\"kind\":\"pass_stage\",\"frame\":%llu,\"eye\":0,\"last_draw\":%u,\"rt\":\"%p\",\"width\":%u,\"height\":%u,\"format\":%u,\"vs_hash\":%u,\"ps_hash\":%u,\"file\":\"%s\",\"saved\":%s,\"hr\":%ld,\"sha256\":\"%s\"}\n",
-        frame,stageLastDraw,stageTarget,d.Width,d.Height,(unsigned)d.Format,stageVs,stagePs,name,
+    fprintf(meta,"{\"kind\":\"pass_stage\",\"frame\":%llu,\"eye\":0,\"last_draw\":%u,\"rt\":\"%p\",\"width\":%u,\"height\":%u,\"format\":%u,\"vs_hash\":%u,\"ps_hash\":%u,\"phase\":\"%s\",\"sampler\":%d,\"file\":\"%s\",\"saved\":%s,\"hr\":%ld,\"sha256\":\"%s\"}\n",
+        frame,draw,target,d.Width,d.Height,(unsigned)d.Format,vs,ps,phase,sampler,name,
         saved?"true":"false",hr,saved?HashFile((directory+"/"+name).c_str()).c_str():"unavailable");
+}
+static bool IsPostStage(unsigned ps) {
+    return ps==0x33DE98C1u || ps==0x75F88E11u || ps==0x309E99B6u || ps==0x2B17CF23u ||
+           ps==0x120C78F8u || ps==0x5104FEF7u;
+}
+static void FlushStage(IDirect3DDevice9* dev) {
+    if(postStagesOnly && !IsPostStage(stagePs)) return;
+    SaveStageSurface(dev,stageTarget,stageLastDraw,stageVs,stagePs,"after_draw");
+}
+static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,unsigned ps) {
+    if(!postStagesOnly || postInputsSaved || (ps!=0x33DE98C1u && ps!=0x75F88E11u)) return;
+    postInputsSaved=true;
+    float values[16*4]{};
+    const HRESULT hr=dev->GetPixelShaderConstantF(0,values,16);
+    fprintf(meta,"{\"kind\":\"post_constants\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"ps_hash\":%u,\"hr\":%ld,\"c0_to_c15\":",frame,draw,ps,hr);
+    Floats(values,64);fprintf(meta,"}\n");
+    // Exact composite's CTAB: Frame=s0, Depth=s2, DOFScene=s3. Read its inputs
+    // before the draw; never infer them from an opaque texture pointer alone.
+    for(unsigned slot:{0u,2u,3u}) {
+        IDirect3DBaseTexture9* base=nullptr;IDirect3DSurface9* surface=nullptr;
+        if(SUCCEEDED(dev->GetTexture(slot,&base)) && base && base->GetType()==D3DRTYPE_TEXTURE &&
+            SUCCEEDED(static_cast<IDirect3DTexture9*>(base)->GetSurfaceLevel(0,&surface)))
+            SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
+        if(surface)surface->Release();if(base)base->Release();
+    }
 }
 template<class Shader> static void SaveStageShader(Shader* shader,unsigned declaredHash,bool pixel) {
     if(!passStages || !shader || shadersSaved.size()>=32) return;
@@ -343,7 +371,7 @@ static void Submission(const XrCompositionLayerProjectionView* views) {
     }
 }
 } // namespace matched_capture
-static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye) {
+static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseApplied) {
     using namespace matched_capture;
     if (d2vr_replay::g_replayEye<0 && !d2vr_replay::g_recActive) return;
     if (!Current()) return;
@@ -364,12 +392,25 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye) {
         SUCCEEDED(dev->GetIndices(&ib)) && SUCCEEDED(dev->GetPixelShader(&ps)) && SUCCEEDED(dev->GetTexture(0,&texture));
     const auto psHash=d2vr_replay::g_psHashByPtr.find(ps);
     const unsigned pixelHash=psHash==d2vr_replay::g_psHashByPtr.end()?0:psHash->second;
+    if (d2vr_sampling::IsWorldDiffuseMaterial(hash,pixelHash)) {
+        DWORD min=0,mag=0,mip=0,quality=0,bias=0;
+        const bool sampler=SUCCEEDED(dev->GetSamplerState(0,D3DSAMP_MINFILTER,&min)) &&
+            SUCCEEDED(dev->GetSamplerState(0,D3DSAMP_MAGFILTER,&mag)) &&
+            SUCCEEDED(dev->GetSamplerState(0,D3DSAMP_MIPFILTER,&mip)) &&
+            SUCCEEDED(dev->GetSamplerState(0,D3DSAMP_MAXANISOTROPY,&quality)) &&
+            SUCCEEDED(dev->GetSamplerState(0,D3DSAMP_MIPMAPLODBIAS,&bias));
+        fprintf(meta,"{\"kind\":\"material_sampler\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"min\":%lu,\"mag\":%lu,\"mip\":%lu,\"max_anisotropy\":%lu,\"lod_bias_bits\":%lu,\"scoped_fix_enabled\":%s,\"scoped_fix_applied\":%s}\n",
+            frame,eye,draws[eye]-1,sampler?"true":"false",min,mag,mip,quality,bias,g_worldDiffuseAnisotropy?"true":"false",worldDiffuseApplied?"true":"false");
+    }
     if(eye==0 && passStages) {
         if(stageTarget!=rt) {
             FlushStage(dev); ReleaseStage(); stageTarget=rt; if(stageTarget) stageTarget->AddRef();
         }
         stageLastDraw=draws[eye]-1; stageVs=hash; stagePs=pixelHash;
-        SaveStageShader(vs,hash,false); SaveStageShader(ps,pixelHash,true);
+        if(!postStagesOnly || IsPostStage(pixelHash) || d2vr_sampling::IsWorldDiffuseMaterial(hash,pixelHash)) {
+            SaveStageShader(vs,hash,false); SaveStageShader(ps,pixelHash,true);
+        }
+        CapturePostInputs(dev,draws[eye]-1,hash,pixelHash);
     }
     DWORD cull=0,scissor=0;RECT clip{};
     dev->GetRenderState(D3DRS_CULLMODE,&cull);dev->GetRenderState(D3DRS_SCISSORTESTENABLE,&scissor);dev->GetScissorRect(&clip);

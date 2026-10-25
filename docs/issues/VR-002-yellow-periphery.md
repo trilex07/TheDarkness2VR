@@ -20,3 +20,10 @@ check, then physical headset confirmation. No fix claimed yet.
 left-eye D3D9 RT0. Final-D3D11-only origin ruled out for this region. Capture
 incomplete; exact D3D9 pass/geometry/background cause remains unproven.
 See ../research/staged-capture-20261025.md. No FOV/lighting change made.
+
+Complete frame38224, seven intermediate images: yellow doorway absent from HDR
+color through draw75 and half-resolution color through94, present in final
+source and eye. Its introduction is narrowed to later postprocessing, not final
+D3D11 crop. Exact late shader/input cause remains unproven; no CPU-culling claim.
+Bounded CapturePassStages=2 now targets the composite's actual Frame/Depth/DOF
+inputs and PS constants. No native FOV or speculative fog correction applied.
