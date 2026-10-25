@@ -220,6 +220,27 @@ class MatchedCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"unavailable postprocess surface"):
             validate(self.folder)
 
+    def test_selected_native_camera_requires_matching_frame_and_both_eyes(self):
+        self.config["native_camera_cover"] = True
+        payload = json.dumps(self.config).encode()
+        (self.folder/"effective-config.json").write_bytes(payload)
+        next(r for r in self.records if r["kind"] == "config_identity")["effective_config_sha256"] = hashlib.sha256(payload).hexdigest()
+        for r in self.records:
+            if r["kind"] == "source": r["native_px_py_candidate"] = [.5,.7]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "same-frame selected"): validate(self.folder)
+        camera = dict(kind="selected_native_camera",frame=7,camera_frame=7,
+                      projection=[.5,0,0,0,0,.7,0,0,0,0,1,1,0,0,-.1,0],view_projection=[1]*16)
+        self.records.insert(-3,camera)
+        self.save();validate(self.folder)
+        camera["camera_frame"] = 6
+        self.save()
+        with self.assertRaisesRegex(ValueError, "same-frame selected"): validate(self.folder)
+        camera["camera_frame"] = 7
+        next(r for r in self.records if r["kind"] == "source" and r["eye"] == 1)["native_px_py_candidate"] = [1.7,1.8]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "GPU projection disagree"): validate(self.folder)
+
     def test_luna_ray_compare(self):
         command = [sys.executable,str(Path(__file__).with_name("check_matched_capture.py")),str(self.folder),
                    "--eye","0","--source-fov-tan","-.54630249",".54630249",".54630249","-.54630249",

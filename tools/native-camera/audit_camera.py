@@ -48,6 +48,16 @@ SITES = {
     "render_context_camera_vp_source": (0x816DA1, "0f28404083c0400f2986a0020000"),
     "model_wvp_payload_copy": (0x76F9CC, "0f28070f2946100f2847100f2946200f2847200f2946300f2847300f294640"),
     "renderer_camera_bind_entry": (0xCA2150, "56578b7c240c8bf1578d4e30"),
+    # Selected render-camera construction, proven statically on 2026-10-25.
+    # Live primary-view execution and peripheral acceptance are still pending.
+    "selected_camera_reference": (0x985E3A, "8b83f40300008338008dbbf4030000"),
+    "selected_camera_near_call": (0x986135, "8b0f8b09e8e2413b00d99e68010000"),
+    "selected_camera_type_constructor": (0x927020, "568bf1e8d80bccffc7060028ff00"),
+    "selected_camera_fov_setter": (0xC813B0, "f30f10442404568bf1"),
+    "selected_camera_fov_rebuilds": (0xC813CA, "e8817df2ff8bcee8eacc83ff"),
+    "selected_camera_projection_builder": (0xBA9193, "d986f8050000d91c246a00e84d8ee8ff"),
+    "selected_camera_frustum_builder": (0x4BE13A, "8d9e20060000528bcbe8889b1400"),
+    "selected_camera_frustum_getter": (0x9962D0, "8d8120060000c3"),
     # Mono 679ef63 recorded the native bridge's exact exception parameters.
     # This provenance does NOT waive the conservative live NO_GO.
     "native_exception_bridge_entry": (0xEEA420, "558bec6820a6ee0068f0a2ee00"),
@@ -60,6 +70,11 @@ SITES = {
 # Hashes cover complete contiguous instruction listings, not game assets.
 # They let restored installations reproduce the private Ghidra range comparison.
 FUNCTION_RANGES = {
+    0x4BE0C0: (231, "e9fb6f6c4db8c73dd44b6913dae9c42a7bbc4e24d19df717c1ff350a1aee85e6"),
+    0xC813B0: (42, "f66f6ed562ac572305e5cef01a5dc2f4e1e2662cc6028f23f75c9f0d01e2938d"),
+    0x927020: (688, "326b241da83519f0c2a40f5951088b47c1d7cd3148fc5ead30646e0a6fe51b98"),
+    0xBCA310: (126, "46003c50ae38d213395356967f0f11c929a30bf14ab8bcfa4c253d2558dee0d2"),
+    0x985D80: (3934, "9be970e99d826ed77a1a471f8c3cbe026b6683dfa09184af6ce097503be9c50a"),
     0x445E40: (3458, "ade3f3532f3bc43b86affd834f6350656c3af80f8a1a6aef30fe02f93d58509c"),
     0xC02F50: (312, "e649984ed36163d7ea5a1fd1f8735c7b031d63b9a0b939af98ddfe61b27dbf3b"),
     0x70CA40: (2114, "ad820f7b66258bc4dee05456b1fca95c396d1c6d6f6cb56ce1f419d08a34afc7"),

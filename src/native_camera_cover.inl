@@ -1,0 +1,116 @@
+// Included only in the opt-in diagnostic build. No game addresses are touched
+// until the SHA/PE/site gate installs the single selected-view call site.
+static bool g_nativeCameraCoverInstalled=false, g_nativeCameraCoverConfirmed=false;
+static float g_nativeCoveredPx=0, g_nativeCoveredPy=0;
+static float g_nativeUiReferencePx=0,g_nativeUiReferencePy=0;
+static uint64_t g_nativeCoveredFrame=0, g_nativeCoverChanges=0;
+static uintptr_t g_nativeCoveredCamera=0;
+static float g_nativeCoveredProjection[16]{},g_nativeCoveredViewProjection[16]{};
+static void NativeCameraCaptureChanged();
+static void NativeCameraUiScale(float& x,float& y) {
+    if(g_nativeCameraCoverInstalled && g_nativeCameraCoverConfirmed && g_nativeUiReferencePx>0 && g_nativeUiReferencePy>0) {
+        // Pixel-space HUD is not rebuilt by the native camera setter. Preserve
+        // its original angular scale and the BOSS NAME scissor fix independently.
+        x*=g_nativeCoveredPx/g_nativeUiReferencePx;y*=g_nativeCoveredPy/g_nativeUiReferencePy;
+    }
+}
+
+static bool NativeCameraEyeScale(int eye,float& x,float& y) {
+    if(!g_nativeCameraCoverInstalled || !g_nativeCameraCoverConfirmed || !g_haveViews) return false;
+    const auto& f=g_eyeFov[eye&1];
+    const float angles[4]={f.angleLeft,f.angleRight,f.angleUp,f.angleDown};
+    // Native frustum is the conservative union. Contract excess coverage in
+    // one axis when necessary; the legacy widen-only clamp cannot do this.
+    return d2vr_camera_cover::EyeScale(g_nativeCoveredPx,g_nativeCoveredPy,angles,g_autoFovCoverage,1+g_edgeCrop,x,y);
+}
+
+struct NativeCameraFields {
+    float aspect,fov,nearZ,farZ,projection[16];
+};
+static bool ReadSelectedRenderCamera(void* camera,void* owner,NativeCameraFields& out) {
+    __try {
+        const auto c=static_cast<const unsigned char*>(camera);
+        const auto o=static_cast<const unsigned char*>(owner);
+        // EBX owns the selected-camera strong reference throughout 985D80.
+        // Never scan arbitrary objects or retain this reference after return.
+        if(!c || !o || *reinterpret_cast<const uint32_t*>(c)!=d2vr_camera_cover::cameraVtable ||
+           **reinterpret_cast<void***>(const_cast<unsigned char*>(o)+0x3f4)!=camera || c[0x614]!=0) return false;
+        std::memcpy(&out.aspect,c+0x5f4,4*sizeof(float));
+        std::memcpy(out.projection,c+0x4c0,sizeof(out.projection));
+        return d2vr_camera_cover::Projection(out.projection,out.fov,out.aspect,out.nearZ,out.farZ);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
+}
+
+static void __fastcall CoverSelectedRenderCamera(void* camera,void* owner) {
+    if(!g_nativeCameraCoverInstalled || GetCurrentThreadId()!=g_renderThreadId ||
+       !g_trackedFrame.open || !g_haveViews || !g_in3DGameplayMode ||
+       g_submitMode!=4 || g_stereoMode!=1) return;
+    // At most one selected render camera per XR frame. Reflections and shadow
+    // cameras do not enter this call site; reject any unexpected second owner.
+    if(g_nativeCoveredFrame==g_trackedFrame.id) {
+        if(g_nativeCoveredCamera!=reinterpret_cast<uintptr_t>(camera)) {
+            g_trackedFrame.renderTrackingValid=false;NativeCameraCaptureChanged();
+            Log("[NativeCameraCover] REFUSED multiple selected cameras in frame=%llu",g_trackedFrame.id);
+        }
+        return;
+    }
+    if(g_had3DCameraThisFrame) return;
+    NativeCameraFields before{};
+    if(!ReadSelectedRenderCamera(camera,owner,before)) return;
+    float angles[2][4];
+    for(int e=0;e<2;++e) {
+        const auto& f=g_eyeFov[e];
+        angles[e][0]=f.angleLeft;angles[e][1]=f.angleRight;angles[e][2]=f.angleUp;angles[e][3]=f.angleDown;
+    }
+    d2vr_camera_cover::Plan plan;
+    if(!d2vr_camera_cover::Cover(before.fov,before.aspect,angles,g_autoFovCoverage,1+g_edgeCrop,plan)) return;
+    using Setter=void(__thiscall*)(void*,float);
+    const auto setFov=reinterpret_cast<Setter>(0xC813B0);
+    if(std::fabs(before.fov-plan.fov)>1e-4f) setFov(camera,plan.fov);
+    NativeCameraFields after{};
+    if(!ReadSelectedRenderCamera(camera,owner,after) || std::fabs(after.fov-plan.fov)>1e-3f ||
+       after.aspect!=before.aspect || after.nearZ!=before.nearZ || after.farZ!=before.farZ) {
+        setFov(camera,before.fov);
+        Log("[NativeCameraCover] FATAL setter result mismatch; restoring original FOV then stopping candidate");
+        RaiseFailFastException(nullptr,nullptr,0);return;
+    }
+    float inverse[16];
+    if(!d2vr_math::Invert(after.projection,inverse)) {
+        setFov(camera,before.fov);RaiseFailFastException(nullptr,nullptr,0);return;
+    }
+    // Freeze the actual native projection and both eye transforms BEFORE any
+    // 3D command is recorded. No previous-frame widen may be applied to it.
+    const bool changed=!g_nativeCameraCoverConfirmed ||
+        g_nativeCoveredPx!=after.projection[0] || g_nativeCoveredPy!=after.projection[5];
+    if(!g_nativeCameraCoverConfirmed) {
+        g_nativeUiReferencePx=before.projection[0];g_nativeUiReferencePy=before.projection[5];
+    }
+    g_nativeCoveredPx=after.projection[0];g_nativeCoveredPy=after.projection[5];
+    g_nativeCameraCoverConfirmed=true;g_nativeCoveredFrame=g_trackedFrame.id;
+    g_nativeCoveredCamera=reinterpret_cast<uintptr_t>(camera);
+    std::memcpy(g_nativeCoveredProjection,after.projection,sizeof(after.projection));
+    std::memcpy(g_nativeCoveredViewProjection,static_cast<const unsigned char*>(camera)+0x500,64);
+    if(changed) {
+        d2vr_replay::g_cameraPx=g_estPx=g_nativeCoveredPx;
+        d2vr_replay::g_cameraPy=g_estPy=g_nativeCoveredPy;
+        d2vr_replay::g_cameraProjectionKnown=true;
+        std::memcpy(d2vr_replay::g_cameraInverseProjection,inverse,sizeof(inverse));
+        InterlockedExchange(&g_estValid,1);
+        g_frameEyeParamsValid=false;
+        for(int e=0;e<2;++e) g_frameEyeParams[e]=BuildEyeParams(e);
+        g_frameEyeParamsValid=true;
+        for(int e=0;e<2;++e) g_perEyeCropX[e]=g_perEyeCropY[e]=1/(1+g_edgeCrop);
+        NativeCameraCaptureChanged();
+    }
+    // First transition cannot masquerade as a matched capture whose header
+    // was emitted before this camera was known. A later stable frame can pass.
+    if(++g_nativeCoverChanges<=3 || g_nativeCoverChanges%300==0)
+        Log("[NativeCameraCover] frame=%llu camera=%p owner=%p fov=%.6g->%.6g aspect=%.6g PxPy=%.7g,%.7g eyesScale=%.7g,%.7g/%.7g,%.7g projection+VP+frustum=native-rebuilt",
+            g_trackedFrame.id,camera,owner,before.fov,after.fov,after.aspect,g_nativeCoveredPx,g_nativeCoveredPy,
+            g_frameEyeParams[0].fovScaleX,g_frameEyeParams[0].fovScaleY,g_frameEyeParams[1].fovScaleX,g_frameEyeParams[1].fovScaleY);
+}
+
+static void* g_nativeNearGetter=reinterpret_cast<void*>(0xD3A320);
+// The original leaf getter only returns ST(0). Preserve even volatile registers
+// and the complete x87/SSE state; tail-call that getter for the exact near value.
+D2VR_SELECTED_CAMERA_SHIM(SelectedRenderCameraNear,CoverSelectedRenderCamera,g_nativeNearGetter)

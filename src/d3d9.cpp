@@ -37,7 +37,10 @@
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
 #include "diagnostic_present_patch.h"
+#include "tracked_gameplay_gate.h"
+#include "native_camera_cover.h"
 #include "exception_record_witness.h"
+static bool g_restoredTrackedGameplay = false;
 static thread_local d2vr_capture::PresentWitness g_capturePresent;
 static bool g_presentReadiness = false;
 static thread_local uintptr_t g_presentCaller = 0;
@@ -1239,6 +1242,9 @@ static void MatchedCaptureBlit(int,const StereoCBData&);
 static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT);
 static void MatchedCaptureInput(IDirect3DSurface9*,bool);
 #endif
+#ifdef D2VR_MATCHED_CAPTURE
+static void NativeCameraUiScale(float& x,float& y);
+#endif
 #include "stereo_replay.inl"
 
 static void UpdateHeadGeometry(const XrPosef& head) {
@@ -1301,6 +1307,9 @@ static void SyncStereoIpdFromOpenXr() {
         g_stereoIPD = d2vr_stereo::GameUnitsFromMeters(ipdM, g_gameUnitsPerMeter);
 }
 
+#ifdef D2VR_MATCHED_CAPTURE
+static bool NativeCameraEyeScale(int eye,float& x,float& y);
+#endif
 static d2vr_replay::StereoParams BuildEyeParams(int eye) {
     d2vr_replay::StereoParams sp;
     if (g_diagnosticSameEye >= 0) eye = g_diagnosticSameEye;
@@ -1321,6 +1330,9 @@ static d2vr_replay::StereoParams BuildEyeParams(int eye) {
     const float widenY = g_fovWidenEyeY[ei] > 1.0f ? g_fovWidenEyeY[ei] : g_fovWidenY;
     sp.fovScaleX = widenX > 1.0f ? (1.0f / widenX) : 1.0f;
     sp.fovScaleY = widenY > 1.0f ? (1.0f / widenY) : 1.0f;
+#ifdef D2VR_MATCHED_CAPTURE
+    NativeCameraEyeScale(eye,sp.fovScaleX,sp.fovScaleY);
+#endif
     const bool allowHeadClip = g_nativeStereoHeadGeometry ||
                                (g_submitMode != 4 && g_headGeometry);
     if (g_headDeltaValid && g_stereoMode == 1 && allowHeadClip) {
@@ -1419,6 +1431,10 @@ static void UpdateSubmissionFovFromMatrices() {
         }
     }
 }
+
+#ifdef D2VR_MATCHED_CAPTURE
+#include "native_camera_cover.inl"
+#endif
 
 // ---------------------------------------------------------------- SetVertexShaderConstantF Hook (Slot 94 - Read-Only 3D Detector)
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SetVertexShaderConstantF)(IDirect3DDevice9*, UINT, const float*, UINT);
@@ -2747,8 +2763,20 @@ static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
 
 #ifdef D2VR_MATCHED_CAPTURE
 #include "matched_capture.inl"
+static void NativeCameraCaptureChanged() {
+    if(matched_capture::active) matched_capture::Reject("selected native camera changed after capture header; request a stable frame");
+}
 #endif
 static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
+#ifdef D2VR_MATCHED_CAPTURE
+    if(g_nativeCameraCoverInstalled && g_nativeCameraCoverConfirmed && g_had3DCameraThisFrame &&
+       g_nativeCoveredFrame!=g_trackedFrame.id) {
+        g_trackedFrame.renderTrackingValid=false;
+        NativeCameraCaptureChanged();
+        Log("[NativeCameraCover] REFUSED stale camera frame=%llu expected=%llu; no XR world layer",
+            g_nativeCoveredFrame,g_trackedFrame.id);
+    }
+#endif
     // Seal engine commands BEFORE our own capture/transfer calls. In particular,
     // the left-eye StretchRect into g_sharedSurf9 must never enter the replay:
     // replaying that copy overwrites the shared texture while D3D11 may still
@@ -4498,6 +4526,10 @@ static void BeginTrackedFrame() {
             ? std::min(1.0f, g_fovCoverEyeX[e] / g_fovWidenEyeX[e]) : 1.0f;
         g_perEyeCropY[e] = g_fovWidenEyeY[e] > 0.0f
             ? std::min(1.0f, g_fovCoverEyeY[e] / g_fovWidenEyeY[e]) : 1.0f;
+#ifdef D2VR_MATCHED_CAPTURE
+        if(g_nativeCameraCoverInstalled && g_nativeCameraCoverConfirmed)
+            g_perEyeCropX[e]=g_perEyeCropY[e]=1/(1+g_edgeCrop);
+#endif
     }
     g_frameEyeParamsValid=false;
     for(int e=0;e<2;++e) g_frameEyeParams[e]=BuildEyeParams(e);
@@ -5133,6 +5165,92 @@ static void InstallDiagnosticEnginePresent() {
     // half-installed entry point to the engine or silently claim recovery.
     if(patch.rollbackUncertain) RaiseFailFastException(nullptr,nullptr,0);
 }
+
+// Explicit playable-candidate opt-in. Install once before the first CreateDevice
+// returns, never from DllMain, a frame callback or an asynchronous INI reload.
+// Retain the diagnostic build's suppression of ALL historical native FOV probes.
+static void InstallDiagnosticTrackedGameplay() {
+    const bool requested=GetPrivateProfileIntA("Diagnostics","RestoreTrackedGameplay",0,
+        ".\\Darkness2VR-diagnostic.ini")!=0;
+    if(!requested) return;
+    char path[MAX_PATH]{};
+    if(!GetModuleFileNameA(nullptr,path,MAX_PATH)) return;
+    HANDLE locked=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
+    if(locked==INVALID_HANDLE_VALUE) {Log("[TrackedGameplay] REFUSED executable read lock");return;}
+    const std::string sha=matched_capture::HashFile(path);
+    const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
+    const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+    const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(image+dos->e_lfanew);
+    const bool identity=reinterpret_cast<uintptr_t>(image)==0x400000 &&
+        dos->e_magic==IMAGE_DOS_SIGNATURE && pe->Signature==IMAGE_NT_SIGNATURE &&
+        d2vr_present_patch::Identity(sha.c_str(),pe->FileHeader.Machine,pe->FileHeader.TimeDateStamp,
+            pe->OptionalHeader.SizeOfImage,pe->OptionalHeader.ImageBase,pe->OptionalHeader.Magic);
+    const bool ready=d2vr_tracked_gameplay::Ready(requested,identity,g_enginePresentInstalled,
+        !g_disableOpenXR,g_submitMode,g_stereoMode,g_headGeometry,g_nativeStereoHeadGeometry!=0,
+        g_nativeLeftAim,g_nativeWeaponPose,g_nativeHandsEnabled,g_tentacleBridge);
+    uint32_t failed=0;
+    const auto read=[](uint32_t address,void* out,size_t size) {
+        __try {memcpy(out,reinterpret_cast<const void*>(address),size);return true;}
+        __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
+    };
+    if(!ready || !d2vr_tracked_gameplay::Validate(read,failed)) {
+        Log("[TrackedGameplay] REFUSED identity/config/sites ready=%d failed=%08X sha=%s",ready,failed,sha.c_str());
+        CloseHandle(locked); return;
+    }
+    const bool installed=InstallNativeAimHook() && InstallNativeThrowHook() &&
+        InstallNativeWeaponHook() && InstallNativePistolHook() && InstallNativeHandsHook();
+    if(!installed) {
+        RemoveNativeHandsHook(); RemoveNativePistolHook(); RemoveNativeWeaponHook();
+        RemoveNativeThrowHook(); RemoveNativeAimHook();
+        if(!d2vr_tracked_gameplay::Validate(read,failed)) {
+            Log("[TrackedGameplay] FATAL rollback mismatch at %08X",failed);
+            CloseHandle(locked); RaiseFailFastException(nullptr,nullptr,0); return;
+        }
+    }
+    CloseHandle(locked);
+    g_restoredTrackedGameplay=installed;
+    Log("[TrackedGameplay] restored=%d sha=%s head6DoF=%d hands=%d gestures=%d; legacy native FOV hooks remain OFF; IN_MEMORY_EXE_PATCH=21_BYTES",
+        installed,sha.c_str(),g_headGeometry && g_nativeStereoHeadGeometry,g_nativeHandsEnabled,g_tentacleBridge);
+}
+
+static void InstallDiagnosticCameraCover() {
+    if(!GetPrivateProfileIntA("Diagnostics","NativeCameraCover",0,".\\Darkness2VR-diagnostic.ini")) return;
+    if(!g_enginePresentInstalled || g_disableOpenXR || g_submitMode!=4 || g_stereoMode!=1 ||
+       !g_autoFovWiden || g_engineFovFactor>1 || g_diagnosticFovWiden!=0) {
+        Log("[NativeCameraCover] REFUSED incompatible config/Present");return;
+    }
+    char path[MAX_PATH]{};if(!GetModuleFileNameA(nullptr,path,MAX_PATH)) return;
+    HANDLE locked=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
+    if(locked==INVALID_HANDLE_VALUE) return;
+    const auto image=reinterpret_cast<const unsigned char*>(GetModuleHandleW(nullptr));
+    const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+    const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(image+dos->e_lfanew);
+    const auto sha=matched_capture::HashFile(path);
+    const bool identity=reinterpret_cast<uintptr_t>(image)==0x400000 && dos->e_magic==IMAGE_DOS_SIGNATURE &&
+        pe->Signature==IMAGE_NT_SIGNATURE && d2vr_present_patch::Identity(sha.c_str(),pe->FileHeader.Machine,
+        pe->FileHeader.TimeDateStamp,pe->OptionalHeader.SizeOfImage,pe->OptionalHeader.ImageBase,pe->OptionalHeader.Magic);
+    uint32_t failed=0;
+    const auto read=[](uint32_t a,void* out,size_t n) {
+        __try {std::memcpy(out,reinterpret_cast<const void*>(a),n);return true;}
+        __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
+    };
+    if(!identity || !d2vr_camera_cover::Validate(read,failed)) {
+        Log("[NativeCameraCover] REFUSED identity/sites sha=%s failed=%08X",sha.c_str(),failed);
+        CloseHandle(locked);return;
+    }
+    struct Memory {
+        DWORD old=0;unsigned char* bytes(){return reinterpret_cast<unsigned char*>(d2vr_camera_cover::site);}
+        bool writable(){return VirtualProtect(bytes(),5,PAGE_EXECUTE_READWRITE,&old)!=FALSE;}
+        bool flush(){return FlushInstructionCache(GetCurrentProcess(),bytes(),5)!=FALSE;}
+        bool restore(){DWORD ignored;return VirtualProtect(bytes(),5,old,&ignored)!=FALSE;}
+    } memory;
+    static d2vr_camera_cover::Patch patch;
+    g_nativeCameraCoverInstalled=patch.Install(memory,static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&SelectedRenderCameraNear)));
+    CloseHandle(locked);
+    Log("[NativeCameraCover] installed=%d rollbackUncertain=%d sha=%s site=00986139 IN_MEMORY_EXE_PATCH=5_BYTES; experimental OFF by default",
+        g_nativeCameraCoverInstalled,patch.rollbackUncertain,sha.c_str());
+    if(patch.rollbackUncertain) RaiseFailFastException(nullptr,nullptr,0);
+}
 #endif
 
 static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
@@ -5223,6 +5341,8 @@ void HookDevice(IDirect3DDevice9* dev) {
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
     InstallDiagnosticEnginePresent();
+    InstallDiagnosticTrackedGameplay();
+    InstallDiagnosticCameraCover();
 #endif
     Log("[EffectiveConfig] SwapChainPresentHook=%s OpenXR=%s TraceCSV=%s",
 #ifdef D2VR_MATCHED_CAPTURE
@@ -5435,7 +5555,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         LoadConfig();
         LogStartupStage(3, "LoadConfig");
 #ifdef D2VR_MATCHED_CAPTURE
-        Log("[MatchedCapture] diagnostic build: native gameplay and FOV hooks suppressed");
+        Log("[MatchedCapture] diagnostic build: legacy FOV probes suppressed; RestoreTrackedGameplay and NativeCameraCover OFF unless explicitly opted in and verified at CreateDevice");
         if (false) {
 #else
         if (g_startupMode < 1) {

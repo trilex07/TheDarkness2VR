@@ -949,16 +949,20 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
         const float* wvp = src + (wvpBase - (int)start) * 4;
         const float perspective = wvp[3] * wvp[3] + wvp[7] * wvp[7] + wvp[11] * wvp[11];
         if (perspective < 1e-8f) {
+            float uiX=sp.fovScaleX,uiY=sp.fovScaleY;
+#ifdef D2VR_MATCHED_CAPTURE
+            NativeCameraUiScale(uiX,uiY);
+#endif
             const float lin = std::max(std::fabs(wvp[0]), std::max(std::fabs(wvp[1]),
                  std::max(std::fabs(wvp[4]), std::fabs(wvp[5]))));
             const bool sprite = g_scale2DContent && lin > 0.0f && lin < 0.05f &&
-                                (sp.fovScaleX != 1.0f || sp.fovScaleY != 1.0f);
+                                (uiX != 1.0f || uiY != 1.0f);
             if (!sprite) return false;
             memcpy(dst, src, sizeof(float) * 4 * count);
             float* matrix = dst + (wvpBase - (int)start) * 4;
             for (int i = 0; i < 4; ++i) {
-                matrix[i * 4 + 0] *= sp.fovScaleX;
-                matrix[i * 4 + 1] *= sp.fovScaleY;
+                matrix[i * 4 + 0] *= uiX;
+                matrix[i * 4 + 1] *= uiY;
             }
             ++g_shiftCount;
             return true;
@@ -1203,7 +1207,10 @@ static UiClipState BeginScaledUiClip(IDirect3DDevice9* dev) {
     UiClipState state{};
     if (!g_clipScaledUi || !g_scale2DContent || g_submitMode != 4 || g_stereoMode != 1 ||
         !g_activeVs || g_activeVs->hash != 0x7070C5BCu) return state;
-    const StereoParams sp = MakeEyeParams(g_replayEye >= 0 ? g_replayEye : 0);
+    StereoParams sp = MakeEyeParams(g_replayEye >= 0 ? g_replayEye : 0);
+#ifdef D2VR_MATCHED_CAPTURE
+    NativeCameraUiScale(sp.fovScaleX,sp.fovScaleY);
+#endif
     if (sp.fovScaleX >= 1 && sp.fovScaleY >= 1) return state;
     float m[16]; D3DVIEWPORT9 vp{};
     if (FAILED(dev->GetVertexShaderConstantF(0, m, 4)) ||

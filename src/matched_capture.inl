@@ -28,7 +28,7 @@ static std::string ConfigToken() {
     sprintf_s(token,"%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%.9g/%.9g/%.9g/%.9g/%d",
         g_submitMode,g_stereoMode,g_stereoDebugMode,g_stereoShiftMode,g_projectionFix,g_noInvProj,g_lightPosShift,g_skipLightVsShift,
         (int)g_headGeometry,g_stereoLayerPose,g_stereoPolarity,g_stereoIPD,g_gameUnitsPerMeter,g_fovWidenX,g_fovWidenY,g_lightingPreset);
-    return std::string(token)+"/"+(g_matchEyeResolutionToSource?"1":"0")+"/"+(g_worldDiffuseAnisotropy?"1":"0")+"/"+std::to_string(g_textureAnisotropy)+"/"+(g_disableCompositeHeightFog?"1":"0");
+    return std::string(token)+"/"+(g_matchEyeResolutionToSource?"1":"0")+"/"+(g_worldDiffuseAnisotropy?"1":"0")+"/"+std::to_string(g_textureAnisotropy)+"/"+(g_disableCompositeHeightFog?"1":"0")+"/"+std::to_string(g_nativeStereoHeadGeometry)+"/"+(g_restoredTrackedGameplay?"1":"0")+"/"+(g_nativeCameraCoverInstalled?"1":"0");
 }
 static std::string directory, iniPath;
 static FILE *meta, *banks;
@@ -125,6 +125,20 @@ static void Finish(bool submitted) {
     if (!active) return;
     Current();
     ReleaseStage();
+    if(g_nativeCameraCoverInstalled) {
+        if(!g_nativeCameraCoverConfirmed || g_nativeCoveredFrame!=frame || projectionObserved!=3)
+            Reject("no same-frame selected native camera and both GPU projection witnesses");
+        else for(int e=0;e<2;++e) {
+            const float px=1/nativeProjection[e][0],py=1/nativeProjection[e][5];
+            if(!std::isfinite(px) || !std::isfinite(py) || std::fabs(px-g_nativeCoveredPx)>1e-4f ||
+               std::fabs(py-g_nativeCoveredPy)>1e-4f) Reject("native selected camera and GPU projection disagree");
+        }
+        if(meta) {
+            fprintf(meta,"{\"kind\":\"selected_native_camera\",\"frame\":%llu,\"camera_frame\":%llu,\"camera\":\"%p\",\"projection\":",frame,g_nativeCoveredFrame,reinterpret_cast<void*>(g_nativeCoveredCamera));
+            Floats(g_nativeCoveredProjection,16);fprintf(meta,",\"view_projection\":");
+            Floats(g_nativeCoveredViewProjection,16);fprintf(meta,"}\n");
+        }
+    }
     const bool complete = !failed && submitted && mask==15 && inputs==3 && blits==3 && projectionObserved==3 && draws[0] && draws[1] && frame==g_trackedFrame.id;
     if (meta) fprintf(meta,"{\"kind\":\"frame_boundary\",\"frame\":%llu,\"present_counter\":%ld,\"pair_frame\":%llu,\"engine_frame_id\":null}\n",frame,InterlockedCompareExchange(&g_frameId,0,0),g_eyePairFrameId);
     if (banks && fclose(banks)!=0) failed=true;
@@ -185,9 +199,9 @@ static void Begin() {
         Reject("module identity unavailable"); Finish(false); return;
     }
     const std::string dh=HashFile(dll), eh=HashFile(exe), ih=HashFile(iniPath.c_str()), rh=HashFile(request);
-    fprintf(meta,"{\"kind\":\"header\",\"schema\":2,\"frame\":%llu,\"display_time\":%lld,\"dll_sha256\":\"%s\",\"exe_sha256\":\"%s\",\"ini_sha256\":\"%s\",\"request_sha256\":\"%s\",\"native_hooks_suppressed\":true,\"world_state\":\"render heuristic\",\"submit_mode\":%d,\"stereo_mode\":%d,\"shift_mode\":%d,\"layer_pose\":%d,\"stereo_baseline_game_units\":%.9g}\n",
+    fprintf(meta,"{\"kind\":\"header\",\"schema\":2,\"frame\":%llu,\"display_time\":%lld,\"dll_sha256\":\"%s\",\"exe_sha256\":\"%s\",\"ini_sha256\":\"%s\",\"request_sha256\":\"%s\",\"native_hooks_suppressed\":%s,\"world_state\":\"render heuristic\",\"submit_mode\":%d,\"stereo_mode\":%d,\"shift_mode\":%d,\"layer_pose\":%d,\"stereo_baseline_game_units\":%.9g}\n",
         frame,g_trackedFrame.state.predictedDisplayTime,dh.c_str(),eh.c_str(),ih.c_str(),rh.c_str(),
-        g_submitMode,g_stereoMode,g_stereoShiftMode,g_stereoLayerPose,g_stereoIPD);
+        (g_restoredTrackedGameplay||g_nativeCameraCoverInstalled)?"false":"true",g_submitMode,g_stereoMode,g_stereoShiftMode,g_stereoLayerPose,g_stereoIPD);
     fprintf(meta,"{\"kind\":\"capture_arm\",\"frame\":%llu,\"expected_serial\":%llu,\"epoch\":%llu,\"expected_game_frame\":%llu,\"reset_generation\":%ld,\"thread\":%lu,\"device\":\"%p\"}\n",
         frame,presentSerial,presentEpoch,presentFrame,resetGeneration,GetCurrentThreadId(),reinterpret_cast<void*>(presentDevice));
     FILE* saved=meta; FILE* config=nullptr;
@@ -201,11 +215,11 @@ static void Begin() {
         fprintf(meta,"%s{\"head_geometry\":%s,\"mode\":%d,\"values\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],\"head_clip\":",eye?",":"",sp.headGeometry?"true":"false",sp.mode,sp.separation,sp.convergence,sp.transX,sp.transY,sp.fovScaleX,sp.fovScaleY,(double)g_stereoPolarity);
         Floats(sp.headClip,16); fprintf(meta,",\"inverse_head_clip\":"); Floats(sp.inverseHeadClip,16); fputc('}',meta);
     }
-    fprintf(meta,"],\"fix_motion_vector_projection\":%s,\"production_resolution_requested\":%s,\"client_rect_hooked\":%s,\"requested_render_size\":[%d,%d],\"match_eye_resolution_to_source\":%s,\"xr_recommended_size\":[%u,%u],\"xr_max_both_eyes\":[%u,%u],\"world_diffuse_anisotropy\":%s,\"texture_anisotropy\":%d,\"disable_composite_height_fog\":%s}\n",
+    fprintf(meta,"],\"fix_motion_vector_projection\":%s,\"production_resolution_requested\":%s,\"client_rect_hooked\":%s,\"requested_render_size\":[%d,%d],\"match_eye_resolution_to_source\":%s,\"xr_recommended_size\":[%u,%u],\"xr_max_both_eyes\":[%u,%u],\"world_diffuse_anisotropy\":%s,\"texture_anisotropy\":%d,\"disable_composite_height_fog\":%s,\"native_stereo_head_geometry\":%d,\"restored_tracked_gameplay\":%s,\"native_camera_cover\":%s}\n",
         g_fixMotionVectorProjection?"true":"false",g_diagnosticProductionResolution?"true":"false",
         g_getClientRectHooked?"true":"false",g_renderW,g_renderH,g_matchEyeResolutionToSource?"true":"false",
         g_steamVrRecW,g_steamVrRecH,g_xrMaxEyeW,g_xrMaxEyeH,g_worldDiffuseAnisotropy?"true":"false",g_textureAnisotropy,
-        g_disableCompositeHeightFog?"true":"false"); const bool configError=ferror(meta)!=0;
+        g_disableCompositeHeightFog?"true":"false",g_nativeStereoHeadGeometry,g_restoredTrackedGameplay?"true":"false",g_nativeCameraCoverInstalled?"true":"false"); const bool configError=ferror(meta)!=0;
     const bool configClosed=fclose(meta)==0; meta=saved;
     if(configError || !configClosed) Reject("effective config write failed");
     const std::string ch=HashFile((directory+"/effective-config.json").c_str());

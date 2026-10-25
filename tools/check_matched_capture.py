@@ -157,6 +157,20 @@ def validate(folder):
     if len(identities) != 1 or identities[0]["effective_config_sha256"] != receipt["effective-config.json"]:
         raise ValueError("effective config identity mismatch")
     result["config"] = config
+    if config.get("native_camera_cover"):
+        cameras = [r for r in records if r["kind"] == "selected_native_camera"]
+        if len(cameras) != 1 or cameras[0].get("camera_frame") != frame:
+            raise ValueError("missing same-frame selected native camera")
+        camera = cameras[0]
+        for key in ("projection", "view_projection"):
+            matrix = camera.get(key, [])
+            if len(matrix) != 16 or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in matrix):
+                raise ValueError("invalid native camera matrix")
+        for eye in result["eyes"]:
+            coefficients = eye["source"].get("native_px_py_candidate", [])
+            if len(coefficients) != 2 or any(not math.isfinite(v) or abs(v - p) > 1e-4 for v, p in
+                    zip(coefficients, (camera["projection"][0], camera["projection"][5]))):
+                raise ValueError("native selected camera and GPU projection disagree")
     return result
 
 
