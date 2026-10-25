@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -35,6 +36,27 @@ def validate(folder):
         raise ValueError("mixed frame IDs")
     if any(r["kind"] == "rejection" for r in records) or not records[-1]["complete"]:
         raise ValueError("runtime rejected capture")
+    auxiliary = [r for r in records if r["kind"] in ("pass_stage", "stage_shader")]
+    if sum(r["kind"] == "pass_stage" for r in auxiliary) > 8 or sum(r["kind"] == "stage_shader" for r in auxiliary) > 32:
+        raise ValueError("auxiliary capture budget exceeded")
+    for record in auxiliary:
+        if not record.get("saved"):
+            continue  # explicit unsupported/readback failure is not valid image evidence
+        name = record.get("file", "")
+        if not re.fullmatch(r"(?:stage-\d{2}-draw-\d+\.(?:bmp|bin)|[vp]s-[0-9A-F]{8}\.bin)", name):
+            raise ValueError("invalid auxiliary filename")
+        payload = (folder / name).read_bytes()
+        if hashlib.sha256(payload).hexdigest() != record.get("sha256"):
+            raise ValueError(f"auxiliary hash mismatch: {name}")
+        if record["kind"] == "pass_stage":
+            if record.get("eye") != 0 or record.get("hr") != 0:
+                raise ValueError("invalid pass stage eye or HRESULT")
+            w, h, fmt = record["width"], record["height"], record["format"]
+            if w < 512 or h < 512 or w*h > 16*1024*1024:
+                raise ValueError("invalid pass stage dimensions")
+            pixel_bytes = {21:4, 22:4, 112:4, 113:8, 114:4}.get(fmt)
+            if pixel_bytes is None or len(payload) != w*h*pixel_bytes + (54 if fmt in (21,22) else 0):
+                raise ValueError("unsupported or truncated pass stage")
     entries=[r for r in records if r["kind"]=="present_entry"]
     arms=[r for r in records if r["kind"]=="capture_arm"]
     completions=[r for r in records if r["kind"]=="present_completion"]

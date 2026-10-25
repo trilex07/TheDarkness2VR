@@ -143,6 +143,34 @@ class MatchedCaptureTests(unittest.TestCase):
         with self.assertRaises(OSError):
             validate(self.folder)
 
+    def test_optional_pass_stage_hash_and_payload(self):
+        name = "stage-01-draw-0.bin"
+        payload = bytes(512*512*8)
+        (self.folder/name).write_bytes(payload)
+        record = dict(kind="pass_stage",frame=7,eye=0,last_draw=0,width=512,height=512,format=113,
+                      file=name,saved=True,hr=0,sha256=hashlib.sha256(payload).hexdigest())
+        self.records.insert(3,record);self.save()
+        self.assertEqual(validate(self.folder)["frame"],7)
+        (self.folder/name).write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError,"auxiliary hash mismatch"):
+            validate(self.folder)
+
+    def test_auxiliary_paths_and_truncation_rejected(self):
+        record = dict(kind="pass_stage",frame=7,eye=0,width=512,height=512,format=113,
+                      file="../outside.bin",saved=True,hr=0,sha256=hashlib.sha256(b"bad").hexdigest())
+        self.records.insert(3,record);self.save()
+        with self.assertRaisesRegex(ValueError,"invalid auxiliary filename"):
+            validate(self.folder)
+        record["file"]="stage-01-draw-0.bin"
+        (self.folder/record["file"]).write_bytes(b"bad");self.save()
+        with self.assertRaisesRegex(ValueError,"truncated pass stage"):
+            validate(self.folder)
+
+    def test_failed_optional_stage_is_not_required_image_evidence(self):
+        self.records.insert(3,dict(kind="pass_stage",frame=7,saved=False,hr=-1))
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"],7)
+
     def test_luna_ray_compare(self):
         command = [sys.executable,str(Path(__file__).with_name("check_matched_capture.py")),str(self.folder),
                    "--eye","0","--source-fov-tan","-.54630249",".54630249",".54630249","-.54630249",

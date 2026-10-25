@@ -12,6 +12,14 @@ static unsigned mask, draws[2], blits, inputs;
 static uintptr_t sourceIdentities[2];
 static unsigned projectionObserved;
 static std::vector<uintptr_t> geometrySaved;
+// Optional one-frame pass localization. No reads or allocations when disabled.
+static bool passStages;
+static IDirect3DSurface9* stageTarget;
+static unsigned stagesSaved, stageLastDraw, stageVs, stagePs;
+static uint64_t stageBytes;
+static std::unordered_set<uint64_t> shadersSaved;
+static void FlushStage(IDirect3DDevice9* dev);
+static void ReleaseStage() { if(stageTarget) stageTarget->Release(); stageTarget=nullptr; }
 static float nativeProjection[2][16]{};
 static int lastSerial;
 static std::string configToken;
@@ -116,11 +124,13 @@ static void PresentReturned(HRESULT hr, bool forwarded) {
 static void Finish(bool submitted) {
     if (!active) return;
     Current();
+    ReleaseStage();
     const bool complete = !failed && submitted && mask==15 && inputs==3 && blits==3 && projectionObserved==3 && draws[0] && draws[1] && frame==g_trackedFrame.id;
     if (meta) fprintf(meta,"{\"kind\":\"frame_boundary\",\"frame\":%llu,\"present_counter\":%ld,\"pair_frame\":%llu,\"engine_frame_id\":null}\n",frame,InterlockedCompareExchange(&g_frameId,0,0),g_eyePairFrameId);
     if (banks && fclose(banks)!=0) failed=true;
     banks=nullptr;
     if (meta) {
+        if(passStages) fprintf(meta,"{\"kind\":\"pass_stage_summary\",\"frame\":%llu,\"attempts\":%u,\"bytes_budgeted\":%llu,\"attempt_limit\":8,\"byte_limit\":268435456}\n",frame,stagesSaved,stageBytes);
         fprintf(meta,"{\"kind\":\"staged_result\",\"frame\":%llu,\"complete\":%s,\"mask\":%u,\"draws\":[%u,%u]}\n",
             frame,complete&&!failed?"true":"false",mask,draws[0],draws[1]);
         const bool error=ferror(meta)!=0;
@@ -160,6 +170,8 @@ static void Begin() {
     fopen_s(&meta,(directory+"/manifest.jsonl").c_str(),"wb");
     fopen_s(&banks,(directory+"/vs-banks.bin").c_str(),"wb");
     configToken=ConfigToken(); geometrySaved.clear();
+    ReleaseStage(); stagesSaved=0; stageBytes=0; shadersSaved.clear();
+    passStages=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)!=0;
     frame=g_trackedFrame.id; active=true; failed=false; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;
     presentFrame=g_capturePresent.frame+1; resetGeneration=g_captureResetGeneration;
@@ -213,9 +225,64 @@ static bool Bmp(const char* name, UINT w, UINT h, const void* data, UINT pitch, 
     }
     const bool closed=fclose(f)==0; return ok&&closed;
 }
+static void FlushStage(IDirect3DDevice9* dev) {
+    if(!passStages || !stageTarget || stagesSaved>=8) return;
+    D3DSURFACE_DESC d{};
+    if(FAILED(stageTarget->GetDesc(&d)) || d.Width<(UINT)std::max(512,g_renderW/2) || d.Height<(UINT)std::max(512,g_renderH/2) ||
+        (uint64_t)d.Width*d.Height>16u*1024u*1024u || d.MultiSampleType!=D3DMULTISAMPLE_NONE) return;
+    unsigned bytesPerPixel=0;
+    if(d.Format==D3DFMT_A8R8G8B8 || d.Format==D3DFMT_X8R8G8B8 || d.Format==D3DFMT_G16R16F) bytesPerPixel=4;
+    if(d.Format==D3DFMT_A16B16G16R16F) bytesPerPixel=8;
+    const uint64_t size=(uint64_t)d.Width*d.Height*bytesPerPixel;
+    if(!size || size>256u*1024u*1024u-stageBytes) return;
+    ++stagesSaved; stageBytes+=size; // attempts bounded too, including failures
+    IDirect3DSurface9* sys=nullptr; D3DLOCKED_RECT lock{};
+    HRESULT hr=dev->CreateOffscreenPlainSurface(d.Width,d.Height,d.Format,D3DPOOL_SYSTEMMEM,&sys,nullptr);
+    if(SUCCEEDED(hr)) hr=dev->GetRenderTargetData(stageTarget,sys);
+    if(SUCCEEDED(hr)) hr=sys->LockRect(&lock,nullptr,D3DLOCK_READONLY);
+    char name[64]; sprintf_s(name,"stage-%02u-draw-%u.%s",stagesSaved,stageLastDraw,
+        d.Format==D3DFMT_A8R8G8B8 || d.Format==D3DFMT_X8R8G8B8?"bmp":"bin");
+    bool saved=false;
+    if(SUCCEEDED(hr)) {
+        if(d.Format==D3DFMT_A8R8G8B8 || d.Format==D3DFMT_X8R8G8B8)
+            saved=Bmp(name,d.Width,d.Height,lock.pBits,lock.Pitch,false);
+        else {
+            FILE* f=nullptr;
+            if(!fopen_s(&f,(directory+"/"+name).c_str(),"wb") && f) {
+                saved=true;
+                for(UINT y=0;y<d.Height;++y)
+                    if(fwrite((unsigned char*)lock.pBits+y*lock.Pitch,bytesPerPixel,d.Width,f)!=d.Width) {saved=false;break;}
+                if(fclose(f)!=0) saved=false;
+            }
+        }
+        sys->UnlockRect();
+    }
+    if(sys) sys->Release();
+    fprintf(meta,"{\"kind\":\"pass_stage\",\"frame\":%llu,\"eye\":0,\"last_draw\":%u,\"rt\":\"%p\",\"width\":%u,\"height\":%u,\"format\":%u,\"vs_hash\":%u,\"ps_hash\":%u,\"file\":\"%s\",\"saved\":%s,\"hr\":%ld,\"sha256\":\"%s\"}\n",
+        frame,stageLastDraw,stageTarget,d.Width,d.Height,(unsigned)d.Format,stageVs,stagePs,name,
+        saved?"true":"false",hr,saved?HashFile((directory+"/"+name).c_str()).c_str():"unavailable");
+}
+template<class Shader> static void SaveStageShader(Shader* shader,unsigned declaredHash,bool pixel) {
+    if(!passStages || !shader || shadersSaved.size()>=32) return;
+    const uint64_t key=((uint64_t)pixel<<32)|declaredHash;
+    if(!shadersSaved.insert(key).second) return;
+    UINT size=0;
+    if(FAILED(shader->GetFunction(nullptr,&size)) || !size || size>128*1024 || size%4) return;
+    std::vector<DWORD> code(size/4);
+    if(FAILED(shader->GetFunction(code.data(),&size))) return;
+    const unsigned actual=d2vr_replay::HashBytes(code.data(),size);
+    char name[48];sprintf_s(name,"%s-%08X.bin",pixel?"ps":"vs",actual);
+    FILE* f=nullptr;bool ok=false;
+    if(!fopen_s(&f,(directory+"/"+name).c_str(),"wb") && f) {
+        ok=fwrite(code.data(),1,size,f)==size; if(fclose(f)!=0) ok=false;
+    }
+    fprintf(meta,"{\"kind\":\"stage_shader\",\"frame\":%llu,\"pixel\":%s,\"declared_hash\":%u,\"actual_hash\":%u,\"file\":\"%s\",\"saved\":%s,\"sha256\":\"%s\"}\n",
+        frame,pixel?"true":"false",declaredHash,actual,name,ok?"true":"false",ok?HashFile((directory+"/"+name).c_str()).c_str():"unavailable");
+}
 static void Source(IDirect3DDevice9* dev,int eye) {
     if (!Current()) return;
     if (eye==0) {
+        FlushStage(dev); ReleaseStage();
         if (!g_capturePresent.Matches(presentSerial,presentEpoch,presentFrame,GetCurrentThreadId())) {
             Reject("source has no matching closing Present"); return;
         }
@@ -294,10 +361,20 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye) {
     IDirect3DBaseTexture9* texture=nullptr;UINT streamOffset=0,stride=0;
     const bool geometry=SUCCEEDED(dev->GetStreamSource(0,&vb,&streamOffset,&stride)) &&
         SUCCEEDED(dev->GetIndices(&ib)) && SUCCEEDED(dev->GetPixelShader(&ps)) && SUCCEEDED(dev->GetTexture(0,&texture));
+    const auto psHash=d2vr_replay::g_psHashByPtr.find(ps);
+    const unsigned pixelHash=psHash==d2vr_replay::g_psHashByPtr.end()?0:psHash->second;
+    if(eye==0 && passStages) {
+        if(stageTarget!=rt) {
+            FlushStage(dev); ReleaseStage(); stageTarget=rt; if(stageTarget) stageTarget->AddRef();
+        }
+        stageLastDraw=draws[eye]-1; stageVs=hash; stagePs=pixelHash;
+        SaveStageShader(vs,hash,false); SaveStageShader(ps,pixelHash,true);
+    }
     DWORD cull=0,scissor=0;RECT clip{};
     dev->GetRenderState(D3DRS_CULLMODE,&cull);dev->GetRenderState(D3DRS_SCISSORTESTENABLE,&scissor);dev->GetScissorRect(&clip);
     fprintf(meta,"{\"kind\":\"draw_geometry\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"vb\":\"%p\",\"ib\":\"%p\",\"ps\":\"%p\",\"texture0\":\"%p\",\"stream_offset\":%u,\"stride\":%u,\"cull\":%lu,\"scissor\":%lu,\"clip\":[%ld,%ld,%ld,%ld]}\n",
         frame,eye,draws[eye]-1,geometry?"true":"false",vb,ib,ps,texture,streamOffset,stride,cull,scissor,clip.left,clip.top,clip.right,clip.bottom);
+    fprintf(meta,"{\"kind\":\"draw_ps\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"shader_hash\":%u}\n",frame,eye,draws[eye]-1,pixelHash);
     // One bounded read-only snapshot of the first-person buffers. Private output,
     // never included in a commit; no locks outside an explicit capture request.
     if (eye==0 && vp.MaxZ<=0.05f && vb && ib && geometrySaved.size()<8 &&
