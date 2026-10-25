@@ -32,7 +32,7 @@ static long __stdcall Original(unsigned a,unsigned b,unsigned c,unsigned d,unsig
 }
 static long __stdcall Wrapper(unsigned a,unsigned b,unsigned c,unsigned d,unsigned e,unsigned f) {
     if(!dispatch.Enter()) return static_cast<long>(0x8876086c);
-    ++dispatch.forwarded;long hr=Original(a,b,c,d,e,f);++dispatch.returned;
+    ++dispatch.forwarded;long hr=Original(a,b,c,d,e,f);dispatch.Returned(static_cast<int32_t>(hr));
     dispatch.Leave();return hr;
 }
 int main(){
@@ -74,6 +74,14 @@ int main(){
         desired=hr;int prior=calls;assert(run()==hr && calls==prior+1);
     }
     assert(dispatch.entries==3 && dispatch.forwarded==3 && dispatch.returned==3);
+    assert(dispatch.ok==1 && dispatch.statuses==1 && dispatch.errors==1 && dispatch.fault);
+    // An isolated error at entry 17 must not disappear between 1000-call logs.
+    Dispatch status;status.entries=17;
+    assert(!status.Returned(0));
+    assert(status.Returned(0x08760878) && !status.fault);
+    assert(status.Returned(static_cast<int32_t>(0x88760868)) && status.fault);
+    assert(status.Returned(0) && status.fault); // Successful retry cannot rearm capture.
+    assert(status.returned==4 && status.ok==2 && status.statuses==1 && status.errors==1);
     recurse=true;int prior=calls;assert(run()==static_cast<long>(0x8876086c) && calls==prior+1);
     assert(dispatch.recursive==1 && dispatch.fault && !dispatch.active);
     recurse=false;assert(patch.Remove(memory));assert(!memcmp(memory.bytes(),original,5));

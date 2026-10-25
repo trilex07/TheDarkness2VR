@@ -76,3 +76,12 @@ Stopped test PID and restored DLL/both INIs; EXE/local INI hashes unchanged.
 No next VR test. Receipt: docs/research/engine-present-mono-20261025.md.
 Recorded separate prior-PSVR2 issues VR-001 (P0 right tentacles), VR-002 (yellow
 edges), VR-003 (detail loss); prepared one-frame capture plan without execution.
+
+## MAIN 2026-10-25 - Complete HRESULT accounting, next candidate offline
+
+Every diagnostic Present return now contributes to ok/status/error counters;
+nonzero HRESULTs log immediately and negative results latch capture rejection.
+Added readiness checker with seven tests; x86 ABI/rollback and 15 capture tests
+pass. Previous sampled log correctly remains insufficient for full HR proof.
+Built isolated candidate; no deployment or new game/VR run. Concrete bounded
+test: docs/research/matched-capture-next-candidate.md. P0 remains right tentacles.

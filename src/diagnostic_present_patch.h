@@ -43,7 +43,17 @@ struct Patch {
 struct Dispatch {
     bool active=false, fault=false;
     uint64_t entries=0, forwarded=0, returned=0, recursive=0;
+    uint64_t ok=0, statuses=0, errors=0;
     bool Enter() {++entries;if(active){++recursive;fault=true;return false;}active=true;return true;}
+    bool Returned(int32_t hr) {
+        ++returned;
+        if(hr==0) ++ok;
+        else if(hr<0) {++errors;fault=true;}
+        else ++statuses;
+        // Every non-OK return is emitted immediately, including between samples.
+        // A failed HRESULT permanently disarms this thread's capture witness.
+        return hr!=0 || entries<=3 || entries%1000==0 || fault;
+    }
     void Leave() {active=false;}
 };
 }

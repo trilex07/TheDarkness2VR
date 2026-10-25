@@ -4923,16 +4923,18 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
     }
     ++dispatch.forwarded;
     const HRESULT hr=next(sc,a,b,w,r,flags); // Exactly one call; no live slot re-read.
-    ++dispatch.returned;
+    const bool reportReturn=dispatch.Returned(static_cast<int32_t>(hr));
     InterlockedIncrement(&g_swapChainPresentCount);InterlockedExchange(&g_presentSeen,1);
     if(outer) {
-        matched_capture::PresentReturned(hr,!dispatch.fault && exactCaller);
+        if(dispatch.fault || !exactCaller) matched_capture::Reject("Present dispatch fault or unexpected caller");
+        matched_capture::PresentReturned(hr,true); // The original really was forwarded.
         g_capturePresent.Leave();
     }
     if(owner) owner->Release();
-    if(dispatch.entries<=3 || dispatch.entries%1000==0 || dispatch.fault)
-        Log("[DiagnosticEnginePresent] entries=%llu forwarded=%llu returned=%llu recursive=%llu hr=%08lX sc=%p tid=%lu fault=%d",
-            dispatch.entries,dispatch.forwarded,dispatch.returned,dispatch.recursive,hr,sc,GetCurrentThreadId(),dispatch.fault);
+    if(reportReturn)
+        Log("[DiagnosticEnginePresent] entries=%llu forwarded=%llu returned=%llu recursive=%llu hr=%08lX sc=%p tid=%lu fault=%d ok=%llu statuses=%llu errors=%llu",
+            dispatch.entries,dispatch.forwarded,dispatch.returned,dispatch.recursive,hr,sc,GetCurrentThreadId(),dispatch.fault,
+            dispatch.ok,dispatch.statuses,dispatch.errors);
     dispatch.Leave();
     return hr;
 #else
