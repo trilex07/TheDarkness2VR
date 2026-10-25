@@ -49,7 +49,13 @@ static void PublishNativeWeaponPoses(bool context) {
     const auto& r=g_hands[1].grip.position;
     const float dx=l.x-r.x,dy=l.y-r.y,dz=l.z-r.z;
     const bool oldSupport=g_handSupport.active;
-    const bool support=g_handSupport.Update(GetTickCount64()/1000.0,both,
+    // A left grip belongs to the demon arm. Drop the optional pistol support
+    // before its grab pulse: the native skin packer deliberately leaves human
+    // IK alone while an object is held, so a support pose would otherwise stay
+    // visible until the object is released.
+    const bool supportEligible=both && sample.grab!=d2vr_input::GrabFeedback::Busy &&
+        !g_tentacles.holdingIntent && g_hands[0].squeeze<.35f;
+    const bool support=g_handSupport.Update(GetTickCount64()/1000.0,supportEligible,
         both && sample.offHandEquipped,std::sqrt(dx*dx+dy*dy+dz*dz));
     if(support!=oldSupport) Log("[HandSupport] %s; left near right, no grip required",support ? "two-handed":"free left");
     AcquireSRWLockExclusive(&g_nativeWeaponLock);

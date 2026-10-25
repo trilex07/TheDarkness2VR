@@ -87,7 +87,7 @@ static bool g_nativeHandsPackInstalled=false;
 #ifdef D2VR_MATCHED_CAPTURE
 static PVOID volatile g_nativeHandsSelectedResource=nullptr;
 #endif
-float g_throwAimAssist=.75f;
+float g_throwAimAssist=.20f;
 static void ResetNativeAim();
 static void ResetNativeThrow();
 static void RecordRecenterDiagnostic(const char* source);
@@ -467,7 +467,7 @@ void LoadConfig() {
     g_nativeWeaponPose = GetPrivateProfileIntA("Input", "NativeWeaponPose", 0, chosenIni) != 0;
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
-    g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 75, chosenIni))*.01f;
+    g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
     g_headGeometry = GetPrivateProfileIntA("Render", "HeadGeometry", 1, chosenIni) != 0;
     Log("[Tentacle] bridge=%d axisMarker=%d; native grab observer and tracked pistol configured separately",(int)g_tentacleBridge,(int)g_tentacleAimMarker);
     g_clipScaledUi = GetPrivateProfileIntA("Render", "ClipScaledUI", 1, chosenIni) != 0;

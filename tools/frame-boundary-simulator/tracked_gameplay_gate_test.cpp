@@ -91,5 +91,12 @@ int main(int argc,char** argv) {
     check(!support.Update(0,true,false,.1f));check(support.Update(.13,true,false,.1f));
     check(support.Update(.14,true,false,.22f));check(!support.Update(.15,true,false,.3f));
     check(!support.Update(.16,true,false,.1f));check(!support.Update(.29,false,false,.1f));
+    // Left squeeze/active demon grab makes support ineligible immediately,
+    // even while the controllers remain close together.
+    check(!support.Update(.30,true,false,.1f));check(support.Update(.43,true,false,.1f));
+    check(!support.Update(.44,false,false,.1f));
+    d2vr_input::Vec3 throwDirection{};
+    check(d2vr_input::ThrowDirection({1,0,0},{0,0,-1},.20f,throwDirection));
+    check(throwDirection.x>.9f && throwDirection.z<-.2f);
     std::printf("tracked gameplay gate: %u checks PASS\n",checks);
 }
