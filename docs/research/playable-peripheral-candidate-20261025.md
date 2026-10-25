@@ -181,3 +181,44 @@ explains why gesture button pulses could be generated without reaching the game.
 Run the new source-body regression with
 `tools/frame-boundary-simulator/build-xinput-bridge.ps1`. Private trial logs,
 captured buffers, symbols and rollback receipts remain outside Git.
+
+## 6008c1e controlled input trial
+
+The user subsequently approved the deferred trial. Fresh EXE identity/site audit
+and candidate hashes passed; no other Steam game was running. One launch used
+the unchanged experiment INIs with capture OFF. The XInput Delay-IAT installer
+reported success, followed by an engine port-0 poll and an active XR packet
+actually forwarded. The user confirmed locomotion, turning and gesture attacks
+work. The pistol followed the controller and could be aimed independently.
+
+Physical acceptance is **PARTIAL**, not a complete gameplay PASS:
+
+- Human arm models remain frozen in the centre despite 23 logged native IK
+  applications. CPU palette writes alone do not prove visible GPU skin updates.
+- Throw direction still differs from the user's intended controller direction.
+  Four of nine armed tokens reached the verified ordinary-object velocity hook;
+  five additional requests had no eligible held entity. Successful applications
+  changed native velocity while preserving speed. Do not label all throws
+  camera-directed or relax entity/branch checks without identifying the skipped
+  cases. The implementation currently blends controller aim with swing velocity
+  at assist 0.75.
+- User reported some image instability and intermittent small artifacts. Heavy
+  segments logged roughly 47–55 submitted layers/second and 12–17 ms D3D9 GPU
+  time, excluding D3D11/XR. This supports investigating frame-time pressure, but
+  does not establish the cause of every artifact or justify head-pose smoothing.
+- User requested tentacles follow head rotation; this is not implemented by the
+  existing world-relative tentacle pose. Keep independent hand/weapon aim intact
+  when designing that behavior.
+
+Last full Present snapshot: 7,000 equal entry/forward/return/OK counts, no
+recursion, status or error; detach count 7,083. Two first-chance E06D7363 records
+had the previously recorded 91930520/EEA1D7 bridge signature. No C0000005 null
+model fault was recorded in this trial; this is bounded evidence, not lifetime
+proof. Game exited; DLL, both game INIs, LocalAppData INI and EXE hashes match
+the preserved baseline after restoration. No capture or second launch occurred.
+
+Next targeted work: connect the written human palette to the actual visible skin
+upload, identify unconsumed throw-token branches, and measure the heavy rendering
+passes before changing resolution or filtering. Native camera coverage remains
+the previously headset-tested improvement; do not reset its settings to chase
+these separate control and frame-time defects.
