@@ -127,3 +127,29 @@ Rollback verified against original backups:
 Local INI and EXE hashes also unchanged. Private backup/candidates/logs:
 `%TEMP%/d2vr-p0-20261025-103334`. No game assets, raw shaders, logs, meshes,
 large traces or DLLs are committed. Production INI is not edited.
+
+## Controlled transfer-fix runtime receipt (2026-10-25 11:30)
+
+After the user confirmed the VR session was free, fresh EXE identity, all audited
+instruction sites and function ranges passed. DLL/INIs were backed up before
+launch. Diagnostic DLL SHA-256:
+`2366c3f2c6a73ec12dd36d637a434a907ac3082a50dd090db93eccdc575ef153`.
+Motion-vector correction remained OFF; native FOV hooks remained disabled.
+
+User confirmed unpaused gameplay in the headset. One request produced frame
+23138 (Present serial 23139), 242 draws per eye. COMPLETE.json's seven hashes,
+frame identities and matching forwarded Present returning D3D_OK passed the
+existing validator. Both source hashes and both final-eye hashes are distinct.
+Bilinear source-to-final RGB MAE (8-bit values):
+- final left / source left: 0.066954; final left / source right: 3.357288.
+- final right / source right: 0.066760; final right / source left: 3.358118.
+
+This validates the transfer correction at runtime: each final eye now carries its
+corresponding source instead of both finals carrying the right source. It does
+not establish physical stereo comfort, camera ownership or a right-tentacle fix.
+The unpaused source preview still lacks the right tentacle; its pose/animation
+cause remains unresolved. Attack observation and end-of-run rollback are pending.
+No automatic capture retry or motion-vector/FOV/sharpness parameter change was made.
+Luna ray comparison remains NOT RUN because camera ownership is unproven.
+Private capture: `%TEMP%/Darkness2VR-matched-34952-1-23138`.
+Private backup: `%TEMP%/d2vr-transfer-test-20261025-113016`.
