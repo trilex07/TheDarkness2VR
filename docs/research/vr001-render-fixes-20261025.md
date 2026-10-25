@@ -479,3 +479,45 @@ The previous installation stays restored. The next useful physical test is
 this concrete composite variant; another mono exception investigation is not
 needed to evaluate its image. Earlier NO_GO is not silently reclassified or
 used as authorization for a new launch.
+
+## Approved81dee71 VR trial: visible improvement, incomplete capture
+
+Fresh installed EXE identity/27 site/24 range audit passed; SteamVR/fpsVR were
+the only active Steam applications. The user explicitly approved one VR trial
+with one capture and restoration. Diagnostic DLL93A4AD7BF658A8BB6F0EF6A9A512E80279B09D64E469D5AB2F2239D0912C89A8
+ran in PID35124 with native gameplay/FOV hooks suppressed. The log confirms
+3076x3140 source/output and successful height-fog replacement creation. Private
+receipt: `%TEMP%/d2vr-composite-fog-test-20261025-152713`.
+
+User PSVR2 feedback: yellow is no longer visible; it apparently becomes a black
+gap, peripheral objects disappear, and graphics are definitely sharper. This
+supports keeping the targeted fog bypass candidate for clarity. It does not
+repair or identify the cause of the remaining geometry visibility failure.
+
+The pre-capture check initially stopped on the logger's broad EXCEPTION marker.
+Read-only inspection matched each event to the already audited native SEH
+handoff: E06D7363/flags1/count3/91930520, returnEEA1D7 and callerEEA5E6. These
+are recorded as known first-chance control-flow notifications, not suppressed,
+and the old mono NO_GO result/checker is unchanged. Subsequent Present counters
+continued equal with no nonzero HRESULT, recursion or fault. The new approved
+VR trial proceeded after this distinction; no new mono trial was started.
+
+One request produced frame26047,632 draws per eye. The delay while checking
+those known entries meant the saved source already had a pause menu. Only the
+two source eyes were saved (mask3); finals/submission/COMPLETE are absent and
+the validator rejects it. No second request was made. Luna was NOT RUN. Do not
+call this a complete capture, an unpaused measurement, or a quantitative A/B.
+Both tentacles and a peripheral gap are visible in the partial source image.
+
+Eighteen auxiliary file hashes pass individually. Actual composite draw606 is
+C0A6F934, SHA2560A77289C2275D66AAE82D5E077F060573120BF6DA7F4D3FBA87D9ED7A84180CA.
+Depth s2 is positively identified as3076x3140 INTZ (1515474505/0x5A544E49),
+usageDEPTHSTENCIL, with successful texture/surface/descriptor retrieval but
+unsupported raw readback. This establishes its identity, not its pixel values.
+
+The observed Present prefix covers34000 equal entries/forwards/returns/OK,
+with statuses/errors/recursion/fault0. Detach count34204 is not full-session
+HRESULT coverage. At15:40:17 Europe/Warsaw, after the user's normal exit,
+DLL/game INI/diagnostic INI were restored to9C96DC85/C802439A/586F536A (full
+hashes in the restoration receipt and earlier baseline). EXE/local INI are
+unchanged. No additional launch or capture is authorized by this receipt.

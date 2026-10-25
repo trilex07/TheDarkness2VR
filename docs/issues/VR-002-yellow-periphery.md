@@ -43,3 +43,15 @@ Other shader hashes, FOV, culling, stereo, depth buffers and lighting are unchan
 With fog bypass OFF, the DOF-only shader is byte-identical to the captured
 A69BDC80. Both options ON produce C0A6F934; the actual D3D9 driver accepts it.
 Steam/PSVR2 result for this candidate: NOT RUN; no installation changes.
+
+Follow-up physical test of81dee71,2026-10-25: the user reports no yellow area,
+apparently a black gap instead, with objects disappearing at the visual periphery.
+The exact replacement C0A6F934 was created successfully and appears in the
+saved draw606 shader. Thus keep the useful fog bypass candidate, but do not
+close the visibility defect or claim CPU culling as its cause. The partial
+source image shows a peripheral gap and both tentacles, but also a pause menu.
+The single capture26047 is INCOMPLETE (mask3, no final eyes/COMPLETE); no retry
+was made. A quantitative matched-frame comparison is invalid for this attempt.
+The actual depth input is now identified as3076x3140 INTZ, not readable by the
+existing raw-surface saver; depth pixels remain unavailable. Original DLL and
+both INIs were restored with verified hashes after normal exit at15:40:17 local.

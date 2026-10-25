@@ -44,3 +44,12 @@ draws already use anisotropy16. Source/final RGB remain pixel-exact3076x3140.
 User PSVR2 result: "maybe slightly better"; full clarity acceptance is pending.
 Actual final shader bytecode also proves the DOF/ghost RGB bypass is active.
 No generic sharpening added.
+
+Physical test81dee71 with DisableCompositeHeightFog=1: the user reports that
+graphics are "definitely sharper". Source/output dimensions remain3076x3140;
+the targeted fog-blend removal is the only intended rendering change from the
+previous diffuse-anisotropy trial. This is qualitative headset improvement,
+not a measured resolution increase or full visual acceptance: peripheral
+geometry still disappears. The single capture26047 is paused and incomplete,
+so Luna ray-compare was not run for this attempt. Candidate retained separately;
+the original installed DLL/INIs were restored and hash-verified.
