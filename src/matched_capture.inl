@@ -28,7 +28,7 @@ static std::string ConfigToken() {
     sprintf_s(token,"%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%.9g/%.9g/%.9g/%.9g/%d",
         g_submitMode,g_stereoMode,g_stereoDebugMode,g_stereoShiftMode,g_projectionFix,g_noInvProj,g_lightPosShift,g_skipLightVsShift,
         (int)g_headGeometry,g_stereoLayerPose,g_stereoPolarity,g_stereoIPD,g_gameUnitsPerMeter,g_fovWidenX,g_fovWidenY,g_lightingPreset);
-    return std::string(token)+"/"+(g_matchEyeResolutionToSource?"1":"0")+"/"+(g_worldDiffuseAnisotropy?"1":"0")+"/"+std::to_string(g_textureAnisotropy);
+    return std::string(token)+"/"+(g_matchEyeResolutionToSource?"1":"0")+"/"+(g_worldDiffuseAnisotropy?"1":"0")+"/"+std::to_string(g_textureAnisotropy)+"/"+(g_disableCompositeHeightFog?"1":"0");
 }
 static std::string directory, iniPath;
 static FILE *meta, *banks;
@@ -201,10 +201,11 @@ static void Begin() {
         fprintf(meta,"%s{\"head_geometry\":%s,\"mode\":%d,\"values\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],\"head_clip\":",eye?",":"",sp.headGeometry?"true":"false",sp.mode,sp.separation,sp.convergence,sp.transX,sp.transY,sp.fovScaleX,sp.fovScaleY,(double)g_stereoPolarity);
         Floats(sp.headClip,16); fprintf(meta,",\"inverse_head_clip\":"); Floats(sp.inverseHeadClip,16); fputc('}',meta);
     }
-    fprintf(meta,"],\"fix_motion_vector_projection\":%s,\"production_resolution_requested\":%s,\"client_rect_hooked\":%s,\"requested_render_size\":[%d,%d],\"match_eye_resolution_to_source\":%s,\"xr_recommended_size\":[%u,%u],\"xr_max_both_eyes\":[%u,%u],\"world_diffuse_anisotropy\":%s,\"texture_anisotropy\":%d}\n",
+    fprintf(meta,"],\"fix_motion_vector_projection\":%s,\"production_resolution_requested\":%s,\"client_rect_hooked\":%s,\"requested_render_size\":[%d,%d],\"match_eye_resolution_to_source\":%s,\"xr_recommended_size\":[%u,%u],\"xr_max_both_eyes\":[%u,%u],\"world_diffuse_anisotropy\":%s,\"texture_anisotropy\":%d,\"disable_composite_height_fog\":%s}\n",
         g_fixMotionVectorProjection?"true":"false",g_diagnosticProductionResolution?"true":"false",
         g_getClientRectHooked?"true":"false",g_renderW,g_renderH,g_matchEyeResolutionToSource?"true":"false",
-        g_steamVrRecW,g_steamVrRecH,g_xrMaxEyeW,g_xrMaxEyeH,g_worldDiffuseAnisotropy?"true":"false",g_textureAnisotropy); const bool configError=ferror(meta)!=0;
+        g_steamVrRecW,g_steamVrRecH,g_xrMaxEyeW,g_xrMaxEyeH,g_worldDiffuseAnisotropy?"true":"false",g_textureAnisotropy,
+        g_disableCompositeHeightFog?"true":"false"); const bool configError=ferror(meta)!=0;
     const bool configClosed=fclose(meta)==0; meta=saved;
     if(configError || !configClosed) Reject("effective config write failed");
     const std::string ch=HashFile((directory+"/effective-config.json").c_str());

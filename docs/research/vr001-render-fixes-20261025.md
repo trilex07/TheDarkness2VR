@@ -441,3 +441,41 @@ Read-only audit adds the outer scope and six complete handoff ranges to make
 this provenance reproducible. It does not change the readiness classifier,
 production rendering, FOV, stereo, shaders or installed configuration. No new
 capture or PSVR2 test occurred; VR-002/VR-003 are not visually fixed by this trial.
+
+## Targeted composite rendering change after the mono investigation
+
+`DisableCompositeHeightFog=1` now replaces the exact PS33DE98C1 height-fog
+blend (`lrp_pp r1.xyz,r0.x,c5,r3`) with its input scene RGB. It is OFF by default
+and needs a restart, like the existing DOF/FXAA overrides. It does not change
+depth reconstruction, native FOV, visibility, lighting, stereo matrices, bloom,
+color grading or texture sampling. Both live and replay bind the same created
+replacement shader. If the driver rejects it, the existing DOF-only replacement
+is tried before the original game shader. There is no new native hook.
+
+This is an actual, narrow rendering A/B candidate prompted by complete
+frame28216/draw135, not proof that height fog is the sole source of its yellow
+region. Removing fog may expose a dark gap; missing geometry remains a separate
+unresolved issue. The effect is removed across this composite, not selectively
+masked by screen coordinates or pixel color. No distance-detail acceptance is
+claimed: the prior full-resolution source-to-eye transfer was already exact.
+
+The new shared bytecode patcher verifies full original length/hash, unique
+instruction boundaries and operands; it ignores CTAB/comments and retains all
+other tokens. Existing DOF-only outputs stay A69BDC80 (33DE98C1) and D39791EC
+(75F88E11). Fog is supported only on the witnessed33DE98C1, producing88F23DC1
+alone and C0A6F934 with DOF bypass. No shader dumps/assets are committed.
+
+Offline validation:2496 checks PASS using a real D3D9 HAL fixture plus both
+private original game shaders. Driver accepts every supported replacement;
+GPU pixel readback verifies independent DOF/fog controls, retained downstream
+gain/offset and alpha, and repeated-eye consistency. Synthetic red-channel
+contrast is16 with fog versus80 without; this is a fixture result, not a game
+or headset measurement. Default-off historical bytecode identity is checked.
+Matched-capture regression24 PASS. Production/diagnostic builds are checked
+separately. The option is included in effective capture metadata/config identity.
+
+No Steam launch, DLL/INI deployment or PSVR2 test was performed for this change.
+The previous installation stays restored. The next useful physical test is
+this concrete composite variant; another mono exception investigation is not
+needed to evaluate its image. Earlier NO_GO is not silently reclassified or
+used as authorization for a new launch.

@@ -31,3 +31,15 @@ to final composite draw135 (declared PS33DE98C1, actual PSA69BDC80). Its DOF RGB
 bypass is active in the actual bytecode. Depth input format/pixels remain unknown;
 unsupported input identities will now be reported explicitly. Native camera
 ownership/visibility remains unproven; no speculative fog or FOV correction.
+
+Targeted rendering candidate: `[Render] DisableCompositeHeightFog=1` (default0,
+restart required) removes only the height-fog RGB blend in exact PS33DE98C1.
+The blend at token340 consumes the reconstructed-depth fog weight and
+HeightFogColor c5, then feeds the preserved HDR/bloom/grade chain. This is a
+reversible effect bypass, not a proven correction of the depth/visibility cause.
+It may reveal a dark geometry gap instead of the yellow fill, and deliberately
+removes this atmospheric effect throughout this one composite's image.
+Other shader hashes, FOV, culling, stereo, depth buffers and lighting are unchanged.
+With fog bypass OFF, the DOF-only shader is byte-identical to the captured
+A69BDC80. Both options ON produce C0A6F934; the actual D3D9 driver accepts it.
+Steam/PSVR2 result for this candidate: NOT RUN; no installation changes.

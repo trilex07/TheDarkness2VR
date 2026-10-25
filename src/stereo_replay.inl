@@ -631,29 +631,6 @@ static void SyncActiveShader(IDirect3DDevice9* dev) {
     }
 }
 
-// Known final composites: replace only DOF/ghost blend with the sharp Frame.
-// Keep token offsets and CTAB intact; preserve fog, bloom and colour grading.
-static bool BuildSharpComposite(const DWORD* fn, size_t count, std::vector<DWORD>& out) {
-    out.clear();
-    if (!fn || count < 6 || fn[0] != 0xffff0300u) return false;
-    const uint32_t hash = HashBytes(fn, count * sizeof(DWORD));
-    if (hash != 0x33DE98C1u && hash != 0x75F88E11u) return false;
-    const DWORD blend[] = {0x04000012u, 0x80270003u, 0x80550000u, 0x80e40001u, 0x80e40002u};
-    size_t match = count;
-    for (size_t i = 1; i + 5 <= count; ++i) {
-        if (memcmp(fn + i, blend, sizeof(blend)) == 0) {
-            if (match != count) return false;
-            match = i;
-        }
-    }
-    if (match == count) return false;
-    out.assign(fn, fn + count);
-    out[match] = 0x02000001u; // mov_pp r3.xyz, r2
-    out[match + 2] = blend[4];
-    out[match + 3] = out[match + 4] = 0; // two NOPs replace spare operands
-    return true;
-}
-
 // Stock FXAA PS5104FEF7: retain declarations/CTAB and its own centre sample,
 // including alpha and explicit LOD zero. Remove only the offset edge filtering.
 static bool BuildUnfilteredFxaa(const DWORD* fn, size_t count, std::vector<DWORD>& out) {
@@ -688,18 +665,30 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
             }
         }
     }
+    std::vector<DWORD> composite;
     std::vector<DWORD> sharp;
     const size_t originalWords = fn ? SafeShaderTokenCount(fn) : 0;
-    const bool sharpOverride = !screenDepthOverride && g_disableDepthOfField &&
-        g_submitMode == 4 && originalWords && BuildSharpComposite(fn, originalWords + 1, sharp);
-    const bool fxaaOverride = !screenDepthOverride && !sharpOverride && g_disableFxaa &&
+    const unsigned compositePatch = !screenDepthOverride && g_submitMode == 4 && originalWords ?
+        d2vr_composite::Build(fn, originalWords + 1,
+            g_disableDepthOfField, g_disableCompositeHeightFog, composite) : 0;
+    const bool fxaaOverride = !screenDepthOverride && !compositePatch && g_disableFxaa &&
         g_submitMode == 4 && originalWords && BuildUnfilteredFxaa(fn, originalWords + 1, sharp);
     HRESULT hr = g_orig.CreatePixelShader(dev,
-        (sharpOverride || fxaaOverride) ? sharp.data() : (screenDepthOverride ? replacement : fn), out);
-    if (sharpOverride || fxaaOverride) {
-        Log("[Sharpness] %s bypass hash=%08X result=%08X",
-            fxaaOverride ? "FXAA" : "DOF/ghost blend",
-            HashBytes(fn, (originalWords + 1)*4), (unsigned)hr);
+        compositePatch ? composite.data() :
+        fxaaOverride ? sharp.data() : (screenDepthOverride ? replacement : fn), out);
+    if (compositePatch || fxaaOverride) {
+        if (fxaaOverride || (compositePatch & d2vr_composite::Dof))
+            Log("[Sharpness] %s bypass hash=%08X result=%08X",
+                fxaaOverride ? "FXAA" : "DOF/ghost blend",
+                HashBytes(fn, (originalWords + 1)*4), (unsigned)hr);
+        if (compositePatch & d2vr_composite::HeightFog)
+            Log("[Composite] height-fog blend bypass hash=%08X result=%08X (bloom/grade retained)",
+                HashBytes(fn, (originalWords + 1)*4), (unsigned)hr);
+        if (FAILED(hr) && (compositePatch & d2vr_composite::HeightFog) && g_disableDepthOfField &&
+            d2vr_composite::Build(fn, originalWords + 1, true, false, composite)) {
+            hr = g_orig.CreatePixelShader(dev, composite.data(), out);
+            Log("[Composite] fog bypass rejected; previous DOF-only shader result=%08X", (unsigned)hr);
+        }
         if (FAILED(hr)) hr = g_orig.CreatePixelShader(dev, fn, out);
     }
     if (FAILED(hr) && screenDepthOverride) {

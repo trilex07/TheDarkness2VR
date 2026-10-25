@@ -32,6 +32,7 @@
 #include "vr_input.h"
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
+#include "composite_shader_patch.h"
 #include "frame_boundary.h"
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
@@ -66,6 +67,7 @@ int g_testMode = 0;
 //   4 = VR_NATIVE_STEREO  (TRUE same-frame dual-eye geometry stereo, draw replay + matrix shear)
 int g_submitMode = 0;
 bool g_disableDepthOfField = true;
+bool g_disableCompositeHeightFog = false;
 bool g_disableFxaa = true;
 bool g_clipScaledUi = true;
 bool g_fixMotionVectorProjection = false;
@@ -425,6 +427,9 @@ void LoadConfig() {
     g_clipScaledUi = GetPrivateProfileIntA("Render", "ClipScaledUI", 1, chosenIni) != 0;
     Log("[Sharpness] DisableFXAA=%d ClipScaledUI=%d", (int)g_disableFxaa, (int)g_clipScaledUi);
     g_disableDepthOfField = GetPrivateProfileIntA("Render", "DisableDepthOfField", 1, chosenIni) != 0;
+    g_disableCompositeHeightFog = GetPrivateProfileIntA("Render", "DisableCompositeHeightFog", 0, chosenIni) != 0;
+    Log("[Composite] DisableCompositeHeightFog=%d (exact PS33DE98C1; restart required)",
+        (int)g_disableCompositeHeightFog);
     g_fixMotionVectorProjection = GetPrivateProfileIntA("Render", "FixMotionVectorProjection", 0, chosenIni) != 0;
     Log("[MotionVectors] FixMotionVectorProjection=%d (verified 73EBA724; head geometry excluded)",
         (int)g_fixMotionVectorProjection);
