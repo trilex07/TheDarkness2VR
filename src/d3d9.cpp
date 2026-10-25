@@ -3446,6 +3446,11 @@ volatile LONG g_xinputRemapLogged = 0;
 
 DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
     if (!state) return ERROR_DEVICE_NOT_CONNECTED;
+#ifdef D2VR_MATCHED_CAPTURE
+    static LONG firstPoll = 0;
+    if (InterlockedCompareExchange(&firstPoll, 1, 0) == 0)
+        Log("[TrackedInput] engine XInput poll port=%lu restored=%d", userIndex, g_restoredTrackedGameplay);
+#endif
 
     XINPUT_STATE real{};
     DWORD r = ERROR_DEVICE_NOT_CONNECTED;
@@ -3483,6 +3488,13 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
         } else {
             *state = g_cachedXrPad;
             res = ERROR_SUCCESS;
+#ifdef D2VR_MATCHED_CAPTURE
+            static LONG firstActivePacket = 0;
+            if (PadHasInput(state->Gamepad) && InterlockedCompareExchange(&firstActivePacket, 1, 0) == 0)
+                Log("[TrackedInput] active XR packet forwarded port=0 sticks=(%d,%d)/(%d,%d) buttons=%04X",
+                    state->Gamepad.sThumbLX, state->Gamepad.sThumbLY,
+                    state->Gamepad.sThumbRX, state->Gamepad.sThumbRY, state->Gamepad.wButtons);
+#endif
         }
     } else if (r == ERROR_SUCCESS) {
         *state = real;
@@ -3610,7 +3622,10 @@ static bool HookStandardIATOrdinal(HMODULE module, const char* dllName, WORD ord
 
 void TryInstallXInputHook() {
 #ifdef D2VR_MATCHED_CAPTURE
-    return; // no game IAT changes in the diagnostic build
+    // The default capture build stays isolated. The playable opt-in has already
+    // passed SHA/PE/site checks at CreateDevice before opening this gate. Do not
+    // consume the one-shot attempt during DllMain/factory calls before that gate.
+    if (!g_restoredTrackedGameplay) return;
 #endif
     if (InterlockedCompareExchange(&g_xinputAttempted, 1, 0) != 0) return;
     HMODULE exe = GetModuleHandleW(nullptr);
@@ -5209,8 +5224,12 @@ static void InstallDiagnosticTrackedGameplay() {
     }
     CloseHandle(locked);
     g_restoredTrackedGameplay=installed;
-    Log("[TrackedGameplay] restored=%d sha=%s head6DoF=%d hands=%d gestures=%d; legacy native FOV hooks remain OFF; IN_MEMORY_EXE_PATCH=21_BYTES",
-        installed,sha.c_str(),g_headGeometry && g_nativeStereoHeadGeometry,g_nativeHandsEnabled,g_tentacleBridge);
+    // The native pose hooks do not deliver locomotion, turning or gesture button
+    // pulses. Install the existing XInput bridge here, outside the loader lock.
+    if(installed) TryInstallXInputHook();
+    Log("[TrackedGameplay] restored=%d sha=%s head6DoF=%d hands=%d gestures=%d xinput=%ld; legacy native FOV hooks remain OFF; IN_MEMORY_EXE_PATCH=21_BYTES",
+        installed,sha.c_str(),g_headGeometry && g_nativeStereoHeadGeometry,g_nativeHandsEnabled,g_tentacleBridge,
+        (long)InterlockedCompareExchange(&g_xinputHooked,0,0));
 }
 
 static void InstallDiagnosticCameraCover() {

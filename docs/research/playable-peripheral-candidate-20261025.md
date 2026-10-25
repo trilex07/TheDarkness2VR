@@ -106,3 +106,78 @@ need a subsequent native pose/visibility correction. Animation/hand IK, occlusio
 LOD, secondary views and lighting under the wider native camera need live
 validation. This is a real rendering candidate, not a claim that those defects
 are already fixed in the headset.
+
+## Controlled bc47dab trial and input follow-up
+
+The user explicitly approved one full VR trial of bc47dab. Installed EXE SHA/PE
+and 35 instruction sites/29 ranges passed a fresh audit. DLL and both game INIs
+were backed up before the single Steam launch. Diagnostic DLL SHA-256 was
+`64b1c40feb4af6ab1cfa2ba6734ca57d083f52160e006242ceeab5f3908aef9f`.
+The trial ended through the game menu. All three original file hashes, the
+separate LocalAppData INI and the unchanged EXE hash were verified after restore.
+
+**PSVR2 result, user report:** objects no longer disappeared at the sides in the
+tested scene. The sticks did not move/turn the player. This is a visible
+peripheral improvement, not complete acceptance of controls or every head pose.
+
+**Runtime evidence:** the selected gameplay camera changed from vertical FOV
+60 to 123.984 degrees at aspect 0.979618. Its native P coefficients were
+`Px=0.542955637, Py=0.531889021`; both eye GPU inverse-projection witnesses agree
+in recorded frame 25308. Eye scaling is `(1.00000012, 1.41468644)` and crop `(1,1)`.
+Native rebuilt projection/VP/frustum messages continued through gameplay.
+Thirty-four stale-camera refusals occurred around transitions; the guard withheld
+the world layer on those frames. The last full Present snapshot had 34,000 equal
+entry/forward/return/OK counts, zero status/error/recursion; detach recorded
+34,736 calls. Do not extend the last full HRESULT snapshot to the unlogged tail.
+
+The single capture is **INCOMPLETE**: two 3076x3140 RT0 sources, 814 draws per eye,
+image mask 3, no final-eye images or COMPLETE.json. OpenXR was not submitting a
+visible world layer around the request (session state 3/layers 0). The checker
+rejects it. It was not retried. The native/GPU matrix agreement is partial source
+evidence only; no Luna final-eye sharpness result is claimed. A future request
+must verify active XR rendering immediately before arming, not just wait a fixed
+number of seconds after the user's message.
+
+### Actual defects corrected after the trial
+
+1. `TryInstallXInputHook` still returned unconditionally under
+   `D2VR_MATCHED_CAPTURE`, despite `RestoreTrackedGameplay=1`. Nonzero XR stick
+   packets and generated grip pulses were logged, but no XInput IAT installation
+   occurred. The existing bridge now installs immediately after the verified
+   gameplay opt-in succeeds at CreateDevice. Earlier DllMain/factory calls and
+   the default isolated diagnostic configuration still return without consuming
+   the install attempt. No new native hook or controller remapping is introduced.
+   The restoration log includes XInput status; bounded diagnostic messages show
+   the first engine poll and first active XR packet actually forwarded.
+2. A first-chance null read occurred in the old weapon hook. The **exact tested
+   DLL/PDB** resolves RVA `2B0C3` to `TryNativeWeaponMatrix`; disassembly is
+   `cmp dword ptr [esi],0FD6BC0h`, with logged `ESI=0`. A null model matched a null
+   `entities[]` slot and reached the vtable read. An early null model/output guard
+   now returns before slot matching. The existing SEH was catching the fault;
+   that does not make it a valid successful trial. Two separately logged
+   E06D7363 records match the previously investigated native bridge signature.
+
+The runtime also logged pistol model updates and `NativeHands` wrist/finger/IK
+application in both free-left and support states. Those logs are not a physical
+acceptance of every hand or gesture interaction. The missing XInput bridge also
+explains why gesture button pulses could be generated without reaching the game.
+
+### Follow-up validation
+
+- Diagnostic and production x86 builds: PASS.
+- Real installer, input-forwarding and weapon-matrix function bodies compiled
+  against synthetic providers: 29 diagnostic + 28 production checks PASS.
+  Coverage includes pre-verification isolation, delayed opt-in, one install,
+  import fallback/failure, unchanged VR stick/trigger/button packets, physical-pad
+  priority, disconnected tracking, null model rejection and a valid tracked model.
+- Existing capture/Present/transfer suite: 36 tests PASS. The actual partial
+  capture is correctly rejected, not counted as a successful capture test.
+- Follow-up diagnostic DLL SHA-256:
+  `b8862093976ffcd3db0c74c7b2beb0a6703128dd04b014e76f00f4c7a88d02f2`.
+- Steam/PSVR2 for the follow-up fixes: NOT RUN. The approved single trial was
+  consumed; the game remains restored. Native FOV math, stereo, fog correction,
+  resolution, crop and experiment INIs are unchanged from the tested candidate.
+
+Run the new source-body regression with
+`tools/frame-boundary-simulator/build-xinput-bridge.ps1`. Private trial logs,
+captured buffers, symbols and rollback receipts remain outside Git.

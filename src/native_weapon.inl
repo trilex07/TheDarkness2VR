@@ -58,7 +58,9 @@ static void PublishNativeWeaponPoses(bool context) {
     ReleaseSRWLockExclusive(&g_nativeWeaponLock);
 }
 static bool TryNativeWeaponMatrix(void* self,float world[16],DWORD cameraVtable=0xFFC7C0) {
-    if(!g_nativeWeaponPose || !g_nativeWeaponInstalled) return false;
+    // An unequipped model is null and otherwise matches an empty entities[]
+    // slot, reaching the vtable read below. Reject it before matching the hand.
+    if(!self || !world || !g_nativeWeaponPose || !g_nativeWeaponInstalled) return false;
     NativeGameplaySample sample;
     if(!CopyNativeGameplay(sample)) return false;
     int hand=-1;
