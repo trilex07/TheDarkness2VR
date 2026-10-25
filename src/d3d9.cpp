@@ -1149,6 +1149,9 @@ static void ResolveHeadGeometryBackgroundPose(bool world, bool geometry) {
 }
 static void BeginTrackedFrame();
 #include "gpu_timing.inl"
+#ifdef D2VR_MATCHED_CAPTURE
+#include "cpu_sync_timing.inl"
+#endif
 int g_frames = 0;
 volatile LONG g_xrInitTried = 0;
 
@@ -2140,6 +2143,9 @@ static bool RenderStereoEyeD11(
     float posOffsetX,
     float posOffsetY)
 {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::Scope cpuEye(d2vr_cpu_sync::D3D11Eye);
+#endif
     if (!EnsureD11StereoPipeline() || !g_eyeRTV[eyeIdx] || !g_uploadSRV) return false;
     EnsureDepthTexture11();
 
@@ -2670,6 +2676,9 @@ static void ReleaseSharedCapture() {
 }
 
 static bool WaitSharedReader() {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::Scope cpuReader(d2vr_cpu_sync::SharedReader);
+#endif
     if (!g_sharedFence11) return false;
     g_ctx11->End(g_sharedFence11);
     g_ctx11->Flush();
@@ -2733,6 +2742,9 @@ static bool EnsureSharedCapture(IDirect3DDevice9* dev) {
 }
 
 static bool CaptureBackbufferToShared(IDirect3DDevice9* dev) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::Scope cpuCapture(d2vr_cpu_sync::SharedCapture);
+#endif
     if (!g_sharedSurf9 || !g_sharedFence9 || !WaitSharedReader()) return false;
     IDirect3DSurface9* src = nullptr;
     // Darkness II renders offscreen; check active RenderTarget0 first
@@ -2747,6 +2759,9 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev) {
     if (FAILED(hr)) return false;
 
     // GPU fence: D3D9Ex and D3D11 run on separate queues; flush D3D9 batch before D3D11 reads
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::Scope cpuProducer(d2vr_cpu_sync::D3D9Fence);
+#endif
     if (FAILED(g_sharedFence9->Issue(D3DISSUE_END))) return false;
     const ULONGLONG start = GetTickCount64();
     while ((hr = g_sharedFence9->GetData(nullptr, 0, D3DGETDATA_FLUSH)) == S_FALSE) {
@@ -4222,13 +4237,23 @@ bool CopyFrame(IDirect3DDevice9* dev) {
 }
 
 static bool WriteTextureToSwapchain(XrSwapchain sc, ID3D11Texture2D** scImages, ID3D11Texture2D* srcTex) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::Scope cpuSwapchain(d2vr_cpu_sync::XrSwapchainTotal);
+#endif
     uint32_t idx = 0;
     XrSwapchainImageAcquireInfo ai{ XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
     if (XR_FAILED(xrAcquireSwapchainImage(sc, &ai, &idx))) return false;
     XrSwapchainImageWaitInfo wi{ XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
     wi.timeout = XR_INFINITE_DURATION;
     bool ok = false;
-    if (XR_SUCCEEDED(xrWaitSwapchainImage(sc, &wi))) {
+    XrResult waitResult;
+    {
+#ifdef D2VR_MATCHED_CAPTURE
+        d2vr_cpu_sync::Scope cpuSwapWait(d2vr_cpu_sync::XrSwapWait);
+#endif
+        waitResult=xrWaitSwapchainImage(sc, &wi);
+    }
+    if (XR_SUCCEEDED(waitResult)) {
         g_ctx11->CopyResource(scImages[idx], srcTex);
         ok = true;
     }
@@ -4588,7 +4613,13 @@ void SubmitXR(IDirect3DDevice9* dev) {
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     fei.layerCount = layerCount;
     fei.layers = layerCount ? layers : nullptr;
-    const XrResult endR = xrEndFrame(g_xrSession, &fei);
+    XrResult endR;
+    {
+#ifdef D2VR_MATCHED_CAPTURE
+        d2vr_cpu_sync::Scope cpuEnd(d2vr_cpu_sync::XrEnd);
+#endif
+        endR=xrEndFrame(g_xrSession, &fei);
+    }
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1 && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
 #endif
@@ -4642,7 +4673,13 @@ static void BeginTrackedFrame() {
     PumpXR();
     if (!g_xrRunning) { g_haveViews = false; return; }
     XrFrameState fs{ XR_TYPE_FRAME_STATE };
-    XrResult r = xrWaitFrame(g_xrSession, nullptr, &fs);
+    XrResult r;
+    {
+#ifdef D2VR_MATCHED_CAPTURE
+        d2vr_cpu_sync::Scope cpuFrameWait(d2vr_cpu_sync::XrFrameWait);
+#endif
+        r=xrWaitFrame(g_xrSession, nullptr, &fs);
+    }
     if (XR_FAILED(r)) { g_haveViews = false; return; }
     r = xrBeginFrame(g_xrSession, nullptr);
     if (XR_FAILED(r)) { g_haveViews = false; Log("[FrameContext] begin failed %d", (int)r); return; }
@@ -5213,7 +5250,10 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
     const bool exactCaller=caller==reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr))+0x694057;
     if(outer && exactCaller && SUCCEEDED(ownerHr) && owner && !dispatch.fault && !g_captureResetting) {
         const auto decision=g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent));
-        if(g_submitMode==4) ApplyBoundaryDecision(owner,decision);
+        if(g_submitMode==4) {
+            d2vr_cpu_sync::Scope cpuBoundary(d2vr_cpu_sync::BoundaryWork);
+            ApplyBoundaryDecision(owner,decision);
+        }
     }
     if(dispatch.entries==1) {
         HMODULE module=nullptr;char path[MAX_PATH]={};
@@ -5224,8 +5264,15 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
             sc,*reinterpret_cast<void***>(sc),owner,ownerHr,reinterpret_cast<void*>(next),path,caller,exactCaller,GetCurrentThreadId());
     }
     ++dispatch.forwarded;
-    const HRESULT hr=next(sc,a,b,w,r,flags); // Exactly one call; no live slot re-read.
+    HRESULT hr;
+    {
+        d2vr_cpu_sync::Scope cpuPresent(d2vr_cpu_sync::PresentForward);
+        hr=next(sc,a,b,w,r,flags); // Exactly one call; no live slot re-read.
+    }
     const bool reportReturn=dispatch.Returned(static_cast<int32_t>(hr));
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::timing.Report(g_srcW,g_srcH,g_trackedFrame.id);
+#endif
     InterlockedIncrement(&g_swapChainPresentCount);InterlockedExchange(&g_presentSeen,1);
     if(outer) {
         if(dispatch.fault || !exactCaller) matched_capture::Reject("Present dispatch fault or unexpected caller");
@@ -5295,6 +5342,8 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
 // Called only from the first CreateDevice callback before returning the device
 // to the engine. Never install/reinstall asynchronously from EndScene/Reset.
 static void InstallDiagnosticEnginePresent() {
+    d2vr_cpu_sync::timing.Enable(GetPrivateProfileIntA("Diagnostics","CpuSyncTiming",0,
+        ".\\Darkness2VR-diagnostic.ini")!=0);
     if(!GetPrivateProfileIntA("Diagnostics","EnginePresentCallsite",0,".\\Darkness2VR-diagnostic.ini")) return;
     auto image=reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr));
     char path[MAX_PATH]={};if(!GetModuleFileNameA(nullptr,path,MAX_PATH)) return;
