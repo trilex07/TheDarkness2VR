@@ -388,3 +388,54 @@ analyzed in the freshly hash-verified installed original's private Ghidra import
 The audit now checks 18 ranges. Exact call sites, ABI, provenance, remaining
 ownership/WVP gates and runtime outcome are recorded in
 [runtime readiness receipt](runtime-readiness-20261024.md).
+
+
+## Original world upload and native context dataflow - 2026-10-25
+
+Mono frame75761 observed four original VS293F456B c0/count12 API payloads at
+0EC56F80, caller return00B74740, stack return0071F71F, HRESULT D3D_OK. No
+camera object was read. The selected semantic index and context/camera instance
+are not sampled.
+
+Byte-asserted private Ghidra exports and independent disassembly establish:
+
+- 00B74720 is a thiscall wrapper (ret0C). Device comes from receiver+1A4;
+  B7473E calls its vtable+178, D3D9 SetVertexShaderConstantF slot94. B74740
+  is the exact observed return. This receiver is not a camera.
+- 0071F690 invokes VS semantic dispatcher00571670 at71F71A; the observed
+  71F71F return matches. Binding+1C supplies the context and its +5BC
+  generation. PS semantics use a separate list and00AD3380.
+- 00571670 switch case1 (jumptable573760 entry1 ->571713) sends12 vectors
+  from context+10 through wrapper vslot+C. Descriptor byte+1 supplies the
+  start register. This matches the observed upload shape without proving the
+  selected live case from stack addresses alone.
+- 00816D50 stores its camera argument at context+5D8 (816D60), then copies
+  camera+40..70 into context+2A0..2D0 (816DA1..816DC9). 0085FBD0 can refresh
+  or override this state for a selected render stage; stage branches matter.
+- 0076F8B0 increments context+5BC, combines model and context+2A0 through
+  C02F50 at76F924, then copies result+4B0..4E0 to upload payload+10..40
+  at76F9CC..76F9E7. A flagged-model branch uses another matrix. 00BBA890
+  has a related model update with stage overrides.
+- 00CA2150 receives the camera argument and calls816D50 with an embedded
+  context at receiver+30. Two static vtables reference it. Owning class,
+  camera lifetime, active player-camera instance and the producer of that
+  instance's +40 matrix remain unproven. No object scan was added.
+
+BF4E30 is a matrix copy, not a projection builder. Additional A31FF0 callers
+8D3EA0/4675F0/BA9150 do not become player-camera producers merely by calling it
+or constructing planes. The SAME live camera's CPU rejection remains open.
+Native FOV is unchanged.
+
+Private exports end in EVIDENCE COMPLETE: d2vr-live-world-upload-callers.txt,
+d2vr-upload-context-producers.txt, d2vr-upload-camera-selection.txt and
+d2vr-upload-owner-camera.txt. Their input55C8 EXE and installed D46B EXE have
+identical complete .text:11442176 bytes, SHA-256
+e7eed44cbfa7424de59b9b79a7206404ed3d6d1da7a6710f3332d12d7ddb56d4.
+Decompilation has switch/unmodeled-call warnings; these claims use explicit
+instruction/dataflow evidence, not inferred decompiler types.
+
+Read-only audit now pins26 instruction sites and18 existing ranges, including
+original upload, context copy and exception bridge, and passes the installed
+EXE. These pins authorize no new native hook/FOV patch. The mono trial stopped
+on a first-chance exception and restored the installation; see
+vr001-render-fixes-20261025.md for the NO_GO and next live blocker.

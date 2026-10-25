@@ -355,3 +355,49 @@ Normal user exit was followed by verified DLL/game INI/diagnostic INI restoratio
 to 9C96DC85 / C802439A / 586F536A respectively (full baseline hashes above).
 EXE SHA remains D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
 Private restoration receipt: `%TEMP%/d2vr-diffuse-test-20261025-130050`.
+
+## Mono upload witness: stopped, baseline restored
+
+Candidate c0f680e diagnostic DLL SHA-256
+4159D879CE3AF1D7D53F5FB9C34B78B736C670440C4CE9D266F70A38F2229927
+ran mono, OpenXR OFF, capture OFF and native FOV OFF. Installed EXE D46BB6CB
+passed the fresh identity/byte audit; no other game was running. The user loaded
+gameplay and closed the game normally after the stop request. No stereo capture
+or headset acceptance took place in this trial.
+
+Four original VS293F456B c0/count12 uploads at frame75761 returned D3D_OK.
+Their source pointer was0EC56F80, original caller return00B74740 and OS stack
+included00B74740 and0071F71F. This is an actual engine upload witness, not an
+inference from a shader name. Static dataflow is recorded in the native-camera
+audit below; active camera ownership and the selected live semantic remain open.
+
+The final sampled Present prefix covers155000 entries/forwards/returns/OK,
+with recursion/status/error/fault all0. However, a render-thread first-chance
+E06D7363 occurred; `check_present_readiness.py` returned **NO_GO**. Two further
+first-chance notifications on another thread include UIAutomationCore during
+shutdown. Counter success does not waive these observations or prove all returns
+through exit. The game continued after the first notification; this is not
+evidence of an unhandled crash. No automatic relaunch followed.
+
+Focused byte-verified disassembly found an explicit native RaiseException/SEH
+bridge: EEA420 -> EEA5A0 -> imported RaiseException, with a local SEH chain and
+EEA5F0 consumer. The static template107B7A0 carries E06D7363, count3 and
+91930520; the first saved stack contains91930520,00EEA1D7,015EEB0C and return
+EEA5E6. This strongly supports that bridge as the source. The old logger omitted
+the actual ExceptionInformation fields, so the runtime record and consumed
+continuation are not independently proven. The NO_GO result is retained.
+
+The diagnostic build now logs the OS record's flags/count and at most15 numeric
+information values, without dereferencing any throw object, ThrowInfo or nested
+record. Its header is compiled out of production. A real locally caught Windows
+exception and boundary/invalid-address tests pass22 checks. Present readiness
+passes8 tests, including retention of NO_GO with the new metadata; native audit
+tests pass13. Both x86 production and diagnostic builds pass. No new rendering,
+shader, FOV, stereo, filter or installed-INI change was made in this follow-up.
+
+At13:30:51 local, DLL/game INI/diagnostic INI restored with full baseline hashes
+9C96DC85/C802439A/586F536A (prefixes; full hashes recorded above). The current
+installed EXE still hashes D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
+Private run, full log, checker output and restoration receipt:
+`%TEMP%/d2vr-camera-mono-20261025-132419`. Further Steam testing remains stopped
+after this NO_GO; the exception witness has been built offline, not deployed.

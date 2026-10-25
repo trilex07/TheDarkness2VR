@@ -38,6 +38,21 @@ SITES = {
     "camera_like_constructor_entry": (0xA579E0, "5356578bf1e8d6b4b9ffc706"),
     "engine_present_boundary": (0xA94052, "8b410cffd0"),
     "engine_client_size_import_call": (0xC9646E, "ff1578b4ee00"),
+    # The original world-VS upload stack was observed live on 2026-10-25.
+    # These static dataflow pins do not identify the owning player camera.
+    "world_vs_constant_wrapper": (0xB74720, "8b54240c8b81a40100008b08"),
+    "world_vs_constant_dispatch": (0xB74738, "8b8178010000ffd0"),
+    "vs_semantics_upload_case1": (0x571713, "8b531cddd98b0fddd98b01ddd88b400c6a0c83c210520fb6560152ffd0"),
+    "render_context_camera_bind": (0x816D50, "558bec83e4f083ec0856578b7d08"),
+    "render_context_camera_field": (0x816D60, "89bed8050000"),
+    "render_context_camera_vp_source": (0x816DA1, "0f28404083c0400f2986a0020000"),
+    "model_wvp_payload_copy": (0x76F9CC, "0f28070f2946100f2847100f2946200f2847200f2946300f2847300f294640"),
+    "renderer_camera_bind_entry": (0xCA2150, "56578b7c240c8bf1578d4e30"),
+    # An explicit native RaiseException/SEH bridge is a candidate explanation
+    # for the first-chance notification. It does NOT waive the live NO_GO.
+    "native_exception_bridge_entry": (0xEEA420, "558bec6820a6ee0068f0a2ee00"),
+    "native_exception_raise": (0xEEA5D3, "8d45f450ff75f0ff75e4ff75e0ff15d4b0ee00"),
+    "native_exception_filter_entry": (0xEEA5F0, "558bec8b4508813863736de0750e"),
 }
 
 

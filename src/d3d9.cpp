@@ -36,6 +36,7 @@
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
 #include "diagnostic_present_patch.h"
+#include "exception_record_witness.h"
 static thread_local d2vr_capture::PresentWitness g_capturePresent;
 static bool g_presentReadiness = false;
 static thread_local uintptr_t g_presentCaller = 0;
@@ -309,8 +310,8 @@ static void LogStartupStage(int stage, const char* name) {
 LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
     if (!ep || !ep->ExceptionRecord || !ep->ContextRecord) return EXCEPTION_CONTINUE_SEARCH;
     const DWORD code = ep->ExceptionRecord->ExceptionCode;
-    // Log all serious exceptions (>= 0xC0000000). Benign first-chance codes
-    // (thread name 0x406D1388, MSVC C++ 0xE06D7363, DBG_*) are below that.
+    // This includes MSVC C++ 0xE06D7363. A first-chance notification alone
+    // does not establish an unhandled crash; do not discard its provenance.
     if (code < 0xC0000000) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
@@ -334,6 +335,9 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
             code, addr, modName, (unsigned long)((uintptr_t)addr - modBase),
             GetCurrentThreadId(), g_renderThreadId, g_lastStage, g_lastHookId);
         Log("  (first-chance: may be handled by our SEH guards - game continues)");
+#ifdef D2VR_MATCHED_CAPTURE
+        d2vr_exception_witness::LogRecord(*ep->ExceptionRecord, Log);
+#endif
         if (code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2) {
             Log("  AccessViolation type=%lu targetAddr=%p",
                 (unsigned long)ep->ExceptionRecord->ExceptionInformation[0],

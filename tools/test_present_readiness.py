@@ -42,6 +42,18 @@ class PresentReadinessTests(unittest.TestCase):
     def test_counter_regression(self):
         self.assertEqual(assess(HEADER + ROW + ROW.replace('1000', '999'))['status'], 'NO_GO')
 
+    def test_exception_parameters_do_not_waive_first_chance_stop(self):
+        text = HEADER + ROW + '''!!! EXCEPTION 0xE06D7363
+[ExceptionWitness] code=E06D7363 flags=00000000 parameters=3 logged=3 nested=00000000
+[ExceptionWitness] information[0]=91930520
+[ExceptionWitness] information[1]=00EEA1D7
+[ExceptionWitness] information[2]=015EEB0C
+'''
+        result = assess(text)
+        self.assertEqual(result['status'], 'NO_GO')
+        self.assertIn('exception or dispatch failure', result['reasons'])
+        self.assertFalse(result['vr_approved'])
+
 
 if __name__ == '__main__':
     unittest.main()
