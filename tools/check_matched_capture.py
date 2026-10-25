@@ -125,6 +125,37 @@ def validate(folder):
                     not draw_positions[key] < position(witness) < source_positions.get(key[0], -1)):
                 raise ValueError("invalid hand palette witness draw identity")
             seen_witnesses.add(key)
+    uploads = [r for r in records if r["kind"] == "hand_skin_upload"]
+    summaries = [r for r in records if r["kind"] == "hand_skin_upload_summary"]
+    if uploads or summaries:
+        if len(summaries) != 1 or len(uploads) > 256 or summaries[0].get("saved") != len(uploads):
+            raise ValueError("invalid hand skin upload budget")
+        seen = summaries[0].get("seen")
+        if (not isinstance(seen, int) or seen < len(uploads) or
+                summaries[0].get("truncated") is not (seen > len(uploads))):
+            raise ValueError("invalid hand skin upload summary")
+        source0 = next((position(r) for r in records if r["kind"] == "source" and r.get("eye") == 0), -1)
+        if not position(arm) < position(summaries[0]) < position(staged[0]):
+            raise ValueError("hand skin upload summary outside capture")
+        prior_draws = 0
+        for r in records:
+            if r["kind"] == "draw" and r["eye"] == 0:
+                prior_draws += 1
+            elif r["kind"] == "hand_skin_upload":
+                start, count = r.get("start"), r.get("count")
+                if (r.get("eye") != 0 or r.get("before_draw") != prior_draws or
+                        not position(arm) < position(r) < source0 or r.get("hr") != 0 or
+                        not isinstance(start, int) or not isinstance(count, int) or
+                        start < 0 or count <= 0 or count > 256 or start >= 249 or start + count <= 45 or
+                        r.get("bank_first") != max(start, 45) or
+                        r.get("bank_count") != min(start + count, 249) - max(start, 45) or
+                        not isinstance(r.get("bank_fnv64"), str) or
+                        not re.fullmatch(r"[0-9a-f]{16}", r["bank_fnv64"]) or
+                        not isinstance(r.get("vs_hash"), int) or
+                        not isinstance(r.get("caller"), str) or
+                        (r.get("caller_exe_rva") is not None and
+                         (not isinstance(r["caller_exe_rva"], int) or r["caller_exe_rva"] < 0))):
+                    raise ValueError("invalid hand skin upload identity")
     if (folder / "vs-banks.bin").stat().st_size != expected_offset:
         raise ValueError("truncated or extra draw banks")
     for eye in (0, 1):

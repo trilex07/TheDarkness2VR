@@ -1527,6 +1527,17 @@ static void EndCameraUploadWitness(const CameraUploadWitness& sample,HRESULT hr)
 }
 #endif
 
+#ifdef D2VR_MATCHED_CAPTURE
+struct MatchedSkinUploadWitness {
+    bool valid=false;
+    uint64_t frame=0,bankHash=0;
+    unsigned beforeDraw=0,vsHash=0;
+    UINT start=0,count=0,bankFirst=0,bankCount=0;
+    void* caller=nullptr;
+};
+static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float*,UINT,UINT,void*);
+static void EndMatchedSkinUpload(const MatchedSkinUploadWitness&,HRESULT);
+#endif
 HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     IDirect3DDevice9* dev,
     UINT StartRegister,
@@ -1536,6 +1547,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
 #ifdef D2VR_MATCHED_CAPTURE
     CameraUploadWitness cameraSample;
     const bool witness=BeginCameraUploadWitness(cameraSample,pConstantData,StartRegister,Vector4fCount,_ReturnAddress());
+    const auto skinUpload=BeginMatchedSkinUpload(pConstantData,StartRegister,Vector4fCount,_ReturnAddress());
 #endif
     // Detect perspective WVP independently of desktop aspect ratio. The VR render
     // target is near-square; the old 1.2..2.4 gate marked real world frames as UI.
@@ -1610,6 +1622,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     const HRESULT result=g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
 #ifdef D2VR_MATCHED_CAPTURE
     if(witness) EndCameraUploadWitness(cameraSample,result);
+    EndMatchedSkinUpload(skinUpload,result);
 #endif
     return result;
 }
@@ -2806,6 +2819,48 @@ static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
 static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9*,IDirect3DIndexBuffer9*,
     UINT,const D3DVIEWPORT9&,unsigned,const float*,int,unsigned);
 #include "matched_capture.inl"
+static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float* data,UINT start,UINT count,void* caller) {
+    MatchedSkinUploadWitness w{};
+    // A full upload may begin below c45. Record its intersection with the
+    // 68-matrix arm skin bank, on the live eye only and in one requested frame.
+    const uint64_t end=(uint64_t)start+count;
+    if(!data || !count || start>=249 || end<=45 || d2vr_replay::g_replayEye>=0 ||
+       !matched_capture::active || g_capturePresent.thread!=GetCurrentThreadId() ||
+       !matched_capture::Current()) return w;
+    ++matched_capture::skinUploadsSeen;
+    if(count>256 || matched_capture::skinUploadsSeen>256) return w;
+    const UINT first=std::max(start,45u),last=(UINT)std::min(end,(uint64_t)249);
+    const auto* bytes=(const unsigned char*)(data+4*(first-start));
+    uint64_t hash=14695981039346656037ull;
+    for(size_t i=0;i<(size_t)(last-first)*16;++i) hash=(hash^bytes[i])*1099511628211ull;
+    w.valid=true;w.frame=matched_capture::frame;w.beforeDraw=matched_capture::draws[0];
+    w.start=start;w.count=count;w.bankFirst=first;w.bankCount=last-first;
+    w.bankHash=hash;w.caller=caller;
+    w.vsHash=d2vr_replay::g_activeVs ? d2vr_replay::g_activeVs->hash:0;
+    return w;
+}
+static void EndMatchedSkinUpload(const MatchedSkinUploadWitness& w,HRESULT hr) {
+    if(!w.valid || !matched_capture::Current() || !matched_capture::meta) return;
+    const uintptr_t base=(uintptr_t)GetModuleHandleA(nullptr),addr=(uintptr_t)w.caller;
+    unsigned long rva=0;bool exeCaller=false;
+    if(base) {
+        const auto* dos=(const IMAGE_DOS_HEADER*)base;
+        if(dos->e_magic==IMAGE_DOS_SIGNATURE && dos->e_lfanew>0 && dos->e_lfanew<0x1000) {
+            const auto* nt=(const IMAGE_NT_HEADERS32*)(base+dos->e_lfanew);
+            if(nt->Signature==IMAGE_NT_SIGNATURE && addr>=base && addr-base<nt->OptionalHeader.SizeOfImage) {
+                exeCaller=true;rva=(unsigned long)(addr-base);
+            }
+        }
+    }
+    fprintf(matched_capture::meta,
+        "{\"kind\":\"hand_skin_upload\",\"frame\":%llu,\"eye\":0,\"before_draw\":%u,"
+        "\"start\":%u,\"count\":%u,\"bank_first\":%u,\"bank_count\":%u,"
+        "\"bank_fnv64\":\"%016llx\",\"vs_hash\":%u,\"caller\":\"%p\","
+        "\"caller_exe_rva\":%s,\"hr\":%ld}\n",
+        w.frame,w.beforeDraw,w.start,w.count,w.bankFirst,w.bankCount,
+        w.bankHash,w.vsHash,w.caller,exeCaller?std::to_string(rva).c_str():"null",hr);
+    ++matched_capture::skinUploadsSaved;
+}
 static void NativeCameraCaptureChanged() {
     if(matched_capture::active) matched_capture::Reject("selected native camera changed after capture header; request a stable frame");
 }

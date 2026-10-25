@@ -112,6 +112,12 @@ renderer's selected `+3F4` pose vector. This connects a native animation write
 to the selected CPU pose and dirty flag, but does not prove which caller updates
 the first-person avatar or when that pose reaches its visible D3D9 draw.
 
+The further private read-only export `%TEMP%/d2vr-rootcause-upload-link.txt`
+(SHA-256 `1e61e5a302d3dccd49cfb970a0d0b64ce0072bfa75ccb82e5b7537968e53cab0`)
+confirms `0071F690 -> 00AD3380 -> 006C36B0` is a shader-semantic
+dispatch path, but `006C36B0` only initializes/copies a structure in the
+examined case. It does not connect the avatar packer to the c45 upload.
+
 **Matched draw evidence.** In the private stock capture, draw 11/12 in eye 0
 share a 114,400-byte VB and 85,818-byte IB at 40-byte stride in the
 first-person viewport; their VS hashes are `C745D63B` and `1CB7CEE2`. The
@@ -158,8 +164,26 @@ diagnostic capture and never changes the GPU bank. The regular production build
 does not include it. Both x86 builds pass offline, and the capture validator
 rejects a mixed-frame witness. It also rejects a witness with an unknown draw
 identity or one recorded before its draw. The focused validator suite passes
-27 tests. The diagnostic has not run in the game and cannot yet classify the
+30 tests. The diagnostic has not run in the game and cannot yet classify the
 visible hand failure.
+
+**Upload-origin witness, still unrun.** The opt-in diagnostic build now records
+each live-eye `SetVertexShaderConstantF` upload intersecting c45..c248 during
+the one requested capture frame. Its bounded `hand_skin_upload` record contains
+the original data's intersecting-bank hash, register range, bound VS hash,
+upload return address and current-EXE RVA where applicable, draw count before
+the upload, and the original HRESULT. A summary reports dropped/truncated
+records. The capture validator rejects failed uploads, wrong frame/order,
+invalid register intersections, and inconsistent totals. This should identify
+the actual native caller to inspect in Ghidra and show whether the final hand
+draw consumed the same bank. It still cannot by itself prove the CPU renderer
+owns the mesh or that controller movement reached the GPU. It is compiled out
+of the ordinary DLL; no Steam installation or PSVR2 run occurred for it.
+
+The earlier pistol/IK log records `dirty=both` during repeated successful CPU
+hand writes, while the user reported stationary hands. Marking the second
+skin slot dirty alone therefore failed in that trial; repeating that toggle
+without a CPU-to-GPU comparison is rejected.
 
 **Rejected/pending.** Replacing the pistol gate with an arbitrary camera
 callback was considered and reverted before this branch. It would not prove

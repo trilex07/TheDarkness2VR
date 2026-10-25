@@ -9,6 +9,7 @@ static uint64_t presentSerial, presentEpoch, presentFrame;
 static uintptr_t presentDevice;
 static LONG resetGeneration;
 static unsigned mask, draws[2], blits, inputs;
+static unsigned skinUploadsSeen, skinUploadsSaved;
 static uintptr_t sourceIdentities[2];
 static unsigned projectionObserved;
 static std::vector<uintptr_t> geometrySaved;
@@ -144,6 +145,8 @@ static void Finish(bool submitted) {
     if (banks && fclose(banks)!=0) failed=true;
     banks=nullptr;
     if (meta) {
+        fprintf(meta,"{\"kind\":\"hand_skin_upload_summary\",\"frame\":%llu,\"seen\":%u,\"saved\":%u,\"truncated\":%s}\n",
+            frame,skinUploadsSeen,skinUploadsSaved,skinUploadsSeen>skinUploadsSaved?"true":"false");
         if(passStages) fprintf(meta,"{\"kind\":\"pass_stage_summary\",\"frame\":%llu,\"attempts\":%u,\"bytes_budgeted\":%llu,\"attempt_limit\":8,\"byte_limit\":268435456}\n",frame,stagesSaved,stageBytes);
         fprintf(meta,"{\"kind\":\"staged_result\",\"frame\":%llu,\"complete\":%s,\"mask\":%u,\"draws\":[%u,%u]}\n",
             frame,complete&&!failed?"true":"false",mask,draws[0],draws[1]);
@@ -189,6 +192,7 @@ static void Begin() {
     postStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==2;
     postInputsSaved=false;
     frame=g_trackedFrame.id; active=true; failed=false; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
+    skinUploadsSeen=skinUploadsSaved=0;
     pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;
     presentFrame=g_capturePresent.frame+1; resetGeneration=g_captureResetGeneration;
     presentDevice=g_capturePresent.device;
