@@ -153,3 +153,12 @@ No automatic capture retry or motion-vector/FOV/sharpness parameter change was m
 Luna ray comparison remains NOT RUN because camera ownership is unproven.
 Private capture: `%TEMP%/Darkness2VR-matched-34952-1-23138`.
 Private backup: `%TEMP%/d2vr-transfer-test-20261025-113016`.
+
+User physical observation after this capture: executing a right-tentacle attack
+made the right tentacle visible, and both tentacles remained visible at the time
+of the reply. This establishes that the right tentacle can render through the
+current stereo path after an animation/state transition. It does not prove which
+native initialization/state producer caused the preceding invisible rest pose,
+or establish that the transfer fix alone resolved VR-001. No post-attack capture
+was requested. Game was still running when this receipt was recorded; restoration
+must wait for normal user exit rather than interrupting gameplay.
