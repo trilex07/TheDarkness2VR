@@ -24,6 +24,31 @@ static bool NativeCameraEyeScale(int eye,float& x,float& y) {
     return d2vr_camera_cover::EyeScale(g_nativeCoveredPx,g_nativeCoveredPy,angles,g_autoFovCoverage,1+g_edgeCrop,x,y);
 }
 
+static void RefreshSelectedEyeParams(const float* inverse,bool changed) {
+    // Shader inverse-projection probes can replace the shared estimate between
+    // selected-camera callbacks. Restore this frame's complete native matrix,
+    // even at constant FOV; its clip planes may have changed independently too.
+    const auto previousLeft=g_frameEyeParams[0],previousRight=g_frameEyeParams[1];
+    d2vr_replay::g_cameraPx=g_estPx=g_nativeCoveredPx;
+    d2vr_replay::g_cameraPy=g_estPy=g_nativeCoveredPy;
+    d2vr_replay::g_cameraProjectionKnown=true;
+    std::memcpy(d2vr_replay::g_cameraInverseProjection,inverse,16*sizeof(float));
+    InterlockedExchange(&g_estValid,1);
+    g_frameEyeParamsValid=false;
+    for(int e=0;e<2;++e) g_frameEyeParams[e]=BuildEyeParams(e);
+    g_frameEyeParamsValid=true;
+    for(int e=0;e<2;++e) g_perEyeCropX[e]=g_perEyeCropY[e]=1/(1+g_edgeCrop);
+    // A capture header written before this callback must not describe different
+    // eye transforms than the draws. Compare fields, never structure padding.
+    const auto differs=[](const d2vr_replay::StereoParams& a,const d2vr_replay::StereoParams& b) {
+        return a.headGeometry!=b.headGeometry || a.fovScaleX!=b.fovScaleX || a.fovScaleY!=b.fovScaleY ||
+            std::memcmp(a.headClip,b.headClip,sizeof(a.headClip)) ||
+            std::memcmp(a.inverseHeadClip,b.inverseHeadClip,sizeof(a.inverseHeadClip));
+    };
+    if(changed || differs(previousLeft,g_frameEyeParams[0]) || differs(previousRight,g_frameEyeParams[1]))
+        NativeCameraCaptureChanged();
+}
+
 struct NativeCameraFields {
     float aspect,fov,nearZ,farZ,projection[16];
 };
@@ -81,7 +106,7 @@ static void __fastcall CoverSelectedRenderCamera(void* camera,void* owner) {
     // Freeze the actual native projection and both eye transforms BEFORE any
     // 3D command is recorded. No previous-frame widen may be applied to it.
     const bool changed=!g_nativeCameraCoverConfirmed ||
-        g_nativeCoveredPx!=after.projection[0] || g_nativeCoveredPy!=after.projection[5];
+        std::memcmp(g_nativeCoveredProjection,after.projection,sizeof(after.projection))!=0;
     if(!g_nativeCameraCoverConfirmed) {
         g_nativeUiReferencePx=before.projection[0];g_nativeUiReferencePy=before.projection[5];
     }
@@ -90,18 +115,7 @@ static void __fastcall CoverSelectedRenderCamera(void* camera,void* owner) {
     g_nativeCoveredCamera=reinterpret_cast<uintptr_t>(camera);
     std::memcpy(g_nativeCoveredProjection,after.projection,sizeof(after.projection));
     std::memcpy(g_nativeCoveredViewProjection,static_cast<const unsigned char*>(camera)+0x500,64);
-    if(changed) {
-        d2vr_replay::g_cameraPx=g_estPx=g_nativeCoveredPx;
-        d2vr_replay::g_cameraPy=g_estPy=g_nativeCoveredPy;
-        d2vr_replay::g_cameraProjectionKnown=true;
-        std::memcpy(d2vr_replay::g_cameraInverseProjection,inverse,sizeof(inverse));
-        InterlockedExchange(&g_estValid,1);
-        g_frameEyeParamsValid=false;
-        for(int e=0;e<2;++e) g_frameEyeParams[e]=BuildEyeParams(e);
-        g_frameEyeParamsValid=true;
-        for(int e=0;e<2;++e) g_perEyeCropX[e]=g_perEyeCropY[e]=1/(1+g_edgeCrop);
-        NativeCameraCaptureChanged();
-    }
+    RefreshSelectedEyeParams(inverse,changed);
     // First transition cannot masquerade as a matched capture whose header
     // was emitted before this camera was known. A later stable frame can pass.
     if(++g_nativeCoverChanges<=3 || g_nativeCoverChanges%300==0)
