@@ -26,3 +26,24 @@ cover checks including x86 shim; 57 XInput/null-model checks; 36 Python Present,
 matched-capture and transfer-order tests PASS. Physical 90 FPS acceptance pending.
 Frozen human arms, throw-direction consistency, and tentacle head following
 remain unresolved; this candidate does not claim fixes for them.
+
+## Controlled Steam trial, 2026-10-25
+
+User authorized and participated in one VR trial of f8d7846. Fresh EXE SHA/PE
+and instruction audit passed; no other game process was active. Source RT0
+and stereo transfer logs confirmed 2560x2614. No capture was requested.
+Actual world-layer cadence samples ranged roughly 48-76/s in gameplay;
+late samples were 53.8, 60.6, 54.3, 48.2/s. Runtime period alternated between
+11.111 and 22.222 ms. Sustained 90 FPS: FAIL / not achieved. D3D9 timestamp
+intervals still exceeded 11.11 ms (late means 11.782-16.329 ms); these exclude
+D3D11/XR and are not an isolated pass-cost breakdown.
+Last full Present sample: 7000 entries = forwards = returns = D3D_OK,
+recursion/status/error/fault counters zero; detach count 7457. Do not extend
+those full counters to the final 457 calls. E06D7363 exception witnesses
+were logged, including the known native 91930520/00EEA1D7 signature and an
+additional 19930520 witness on another thread near shutdown. Therefore this
+is not an exception-free acceptance. User visual feedback remains pending.
+After process exit, DLL and both INIs were restored and all three SHA-256
+hashes matched backups. Private logs/binaries are intentionally not committed.
+Next performance experiment must isolate D3D9/D3D11 shared-surface waits
+and replay GPU work; pixel-count reduction alone did not meet the target.
