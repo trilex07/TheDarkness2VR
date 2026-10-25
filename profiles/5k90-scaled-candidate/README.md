@@ -23,7 +23,10 @@ make the human hands follow the controllers. It also exposed a world-pose
 regression: non-tentacle draws using the same skinned shader skipped their
 normal head transform. The current candidate removes that skip and applies the
 tentacle exception at the identified mesh draw only. `NativeHandsDirtyBoth=0`
-rejects the unsuccessful hand experiment. A physical retest is pending.
+rejects the unsuccessful hand experiment. Hand IK now resolves the avatar model
+through its previously verified +1F8C reference, checks its renderer and
+130-bone skeleton, then writes there; the old path followed the pistol model's
+parent. This source-level owner correction still needs a physical retest.
 
 `GpuSplitTiming=1` adds one optional D3D9 timestamp between the live render
 and right-eye replay. The prior headset trial measured around 49-53 world
@@ -38,5 +41,7 @@ Steam and PSVR2 for the corrected candidate: NOT RUN. The previous 9dfb2c1
 trial demonstrated actual NIS output, slight physical sharpness improvement,
 frozen hands, incorrect world/head behavior, a displaced pistol, and FPS below
 90. The game exited and its DLL and INIs were restored with original hashes.
-The visible hand mesh still needs its GPU skin owner identified before another
-palette or native hook change.
+The avatar skin owner is selected by validated object links, but visible hand
+motion is unconfirmed until the next headset run. If it remains frozen, compare
+this renderer to the D3D9 hand draw and its uploaded c45 palette before any
+further palette or native hook change.

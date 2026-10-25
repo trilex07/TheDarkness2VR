@@ -29,7 +29,16 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable) {
     ReleaseSRWLockShared(&g_nativeWeaponLock);
     bool locked=false;
     __try {
-        auto parent=**(BYTE***)((BYTE*)sample.entities[0]+0x3C4);
+        // The pistol model's +3C4 parent is not proof of ownership of the
+        // visible first-person arms. The recenter observer established the
+        // avatar's strong model reference at +1F8C and its 130-bone skeleton.
+        // Resolve that same renderer here; refuse any missing/type-mismatched
+        // link instead of writing an unrelated skin palette.
+        auto camera=(BYTE*)sample.camera;
+        if(!camera || !NativeAimOwnerMatches(camera,cameraVtable)) return false;
+        auto avatar=**(BYTE***)(camera+0x30);
+        if(!avatar || **(BYTE***)(avatar+0x630)!=(BYTE*)sample.inventory) return false;
+        auto parent=**(BYTE***)(avatar+0x1F8C);
         if(!parent || *(DWORD*)parent!=0xFFC300) return false;
         auto actor=**(BYTE***)(parent+0xF8);
         if(!actor || *(DWORD*)actor!=0xFC5F30) return false;
@@ -129,11 +138,21 @@ static bool NativeHandsFromWeapon(void* model,DWORD cameraVtable) {
     if(!CopyNativeGameplay(sample) || sample.entities[0]!=(DWORD)(uintptr_t)model) return false;
     __try {
         if(*(DWORD*)model!=0xFD6BC0) return false;
-        auto parent=**(BYTE***)((BYTE*)model+0x3C4);
+        auto camera=(BYTE*)sample.camera;
+        if(!camera || !NativeAimOwnerMatches(camera,cameraVtable)) return false;
+        auto avatar=**(BYTE***)(camera+0x30);
+        if(!avatar || **(BYTE***)(avatar+0x630)!=(BYTE*)sample.inventory) return false;
+        auto parent=**(BYTE***)(avatar+0x1F8C);
         if(!parent || *(DWORD*)parent!=0xFFC300) return false;
         auto actor=**(BYTE***)(parent+0xF8);
         if(!actor || *(DWORD*)actor!=0xFC5F30) return false;
         auto renderer=**(BYTE***)(actor+8);
+        static void* reportedRenderer=nullptr;
+        if(renderer && renderer!=reportedRenderer) {
+            reportedRenderer=renderer;
+            Log("[NativeHands] selected avatar skin renderer=%p parent=%p (weapon model=%p)",
+                renderer,parent,model);
+        }
         return ApplyNativeHandsChecked(renderer,cameraVtable);
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
