@@ -33,6 +33,7 @@
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
 #include "composite_shader_patch.h"
+#include "nis_upscale.h"
 #include "frame_boundary.h"
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
@@ -379,6 +380,9 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
 static std::string g_matchedIniPath;
 static volatile LONG g_cameraUploadWitnessBudget=0;
 #endif
+static int g_nisMode = 0; // 0=off, 2=per-eye native-size sharpening
+static float g_nisSharpness = .20f;
+static bool g_headAttachedTentacles = false;
 void LoadConfig() {
     char localIni[MAX_PATH] = ".\\Darkness2VR.ini";
     const char* chosenIni = g_iniPath;
@@ -418,6 +422,12 @@ void LoadConfig() {
     Log("[WorldDiffuse] scoped anisotropy=%d (exact VS293F456B/PSCA08BDC4, s0 only)", (int)g_worldDiffuseAnisotropy);
     Log("[Sharpness] texture anisotropy target=%d", g_textureAnisotropy);
     g_disableFxaa = GetPrivateProfileIntA("Render", "DisableFXAA", 1, chosenIni) != 0;
+    g_nisMode = GetPrivateProfileIntA("Render", "NisMode", 0, chosenIni)==2 ? 2 : 0;
+    char nisSharpness[32]{};
+    GetPrivateProfileStringA("Render", "NisSharpness", "0.20", nisSharpness, sizeof(nisSharpness), chosenIni);
+    g_nisSharpness = nis_upscale::ClampSharpness((float)atof(nisSharpness));
+    Log("[NIS] mode=%d sharpness=%.2f (native-size per-eye filter)",g_nisMode,g_nisSharpness);
+    g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
     g_tentacleAimMarker = GetPrivateProfileIntA("Input", "TentacleAimMarker", 1, chosenIni) != 0;
@@ -1026,6 +1036,7 @@ uint32_t g_scCount[2] = { 0, 0 };
 
 ID3D11Texture2D* g_eyeCache[2] = { nullptr, nullptr };
 ID3D11RenderTargetView* g_eyeRTV[2] = { nullptr, nullptr };
+#include "nis_eye.inl"
 
 IDirect3DSurface9* g_sysmem = nullptr;
 ID3D11Texture2D* g_upload = nullptr;
@@ -2884,6 +2895,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     }
     const bool historyOk = SeedRightEyeBackground(dev, liveEnd.targets[0], g_had3DCameraThisFrame);
     d2vr_replay::g_frameStart.Apply(dev);
+    d2vr_replay::InvalidateShadowAtlasPass();
     d2vr_replay::ReplayStream(dev, 1, sp1);
     QueryPerformanceCounter(&perf[2]);
 
@@ -2902,6 +2914,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     if (FAILED(dev->StretchRect(g_liveColorBackup, nullptr, liveEnd.targets[0], nullptr, D3DTEXF_NONE)))
         eye1Ok = false;
     liveEnd.Apply(dev);
+    d2vr_replay::InvalidateShadowAtlasPass();
     liveEnd.Release();
     QueryPerformanceCounter(&perf[3]);
 
@@ -3801,6 +3814,7 @@ bool EnsureSwapchains(UINT w, UINT h) {
     static bool reportedNoFormats = false;
     const ULONGLONG now = GetTickCount64();
     if (now < retryAfter) return false;
+    NisEyeReleaseSources();
     for (int e = 0; e < 2; ++e) {
         if (g_swapchain[e]) {
             xrDestroySwapchain(g_swapchain[e]);
@@ -4238,12 +4252,17 @@ void SubmitXR(IDirect3DDevice9* dev) {
         if (g_submitMode == 4) {
             const int leftIdx = (g_stereoDebugMode == 4) ? 1 : 0;
             const int rightIdx = (g_stereoDebugMode == 4) ? 0 : 1;
+            ID3D11Texture2D* submitted[2]={g_eyeCache[leftIdx],g_eyeCache[rightIdx]};
+            ID3D11Texture2D* sharpened[2]{};
+            if(NisEyeProcess(submitted[0],submitted[1],sharpened)) {
+                submitted[0]=sharpened[0]; submitted[1]=sharpened[1];
+            }
 #ifdef D2VR_MATCHED_CAPTURE
-            matched_capture::Final(0,g_eyeCache[leftIdx]);
-            matched_capture::Final(1,g_eyeCache[rightIdx]);
+            matched_capture::Final(0,submitted[0]);
+            matched_capture::Final(1,submitted[1]);
 #endif
-            if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], g_eyeCache[leftIdx]) &&
-                WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], g_eyeCache[rightIdx])) {
+            if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], submitted[0]) &&
+                WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], submitted[1])) {
                 // Clip-shift renders encode IPD in pixels; default layer pose is head center
                 // (OpenVR-style). Per-eye poses are optional (StereoLayerPose=1).
                 const XrPosef headSubmit = g_pairSubmitMetaValid ? g_pairSubmitHead
@@ -4662,6 +4681,8 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         EmitPipelineTrace(ev, dev);
     }
     g_gpuTiming.Release();
+    NisEyeShutdown();
+    d2vr_replay::InvalidateShadowAtlasPass();
     if (g_forceWindowedReset && pp) {
         TweakPresentParams(pp);
     }
@@ -4706,6 +4727,8 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
 #endif
     g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetEx));
     g_gpuTiming.Release();
+    NisEyeShutdown();
+    d2vr_replay::InvalidateShadowAtlasPass();
     if (g_forceWindowedReset && pp) {
         TweakPresentParams(pp);
         dm = nullptr;

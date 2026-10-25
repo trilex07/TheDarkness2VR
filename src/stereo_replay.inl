@@ -886,13 +886,25 @@ static bool IsShadowAtlas(const D3DSURFACE_DESC& rt, const D3DVIEWPORT9& vp) {
     return rt.Format == D3DFMT_R5G6B5 && rt.Width == rt.Height &&
         vp.Width == vp.Height && vp.Width > 0 && vp.Width < rt.Width;
 }
+struct ShadowPassState {
+    IDirect3DDevice9* device=nullptr;
+    bool valid=false,shadow=false;
+};
+static thread_local ShadowPassState g_shadowPassState;
+static void InvalidateShadowAtlasPass() { g_shadowPassState.valid=false; }
 static bool IsShadowAtlasPass(IDirect3DDevice9* dev) {
+    if(g_shadowPassState.valid && g_shadowPassState.device==dev)
+        return g_shadowPassState.shadow;
     IDirect3DSurface9* rt = nullptr;
     if (FAILED(dev->GetRenderTarget(0, &rt)) || !rt) return false;
     D3DSURFACE_DESC desc{}; D3DVIEWPORT9 vp{};
     HRESULT a = rt->GetDesc(&desc), b = dev->GetViewport(&vp);
     rt->Release();
-    return SUCCEEDED(a) && SUCCEEDED(b) && IsShadowAtlas(desc, vp);
+    const bool shadow=SUCCEEDED(a) && SUCCEEDED(b) && IsShadowAtlas(desc, vp);
+    // Cache only successful reads. Hooks invalidate whenever RT0, viewport or
+    // a state block can change the classification, including replay restores.
+    if(SUCCEEDED(a) && SUCCEEDED(b)) g_shadowPassState={dev,true,shadow};
+    return shadow;
 }
 // Returns true if the upload was modified (copies into caller buffer).
 // Register semantics (verified from captured runtime traces + extracted shader CTABs):
@@ -1036,6 +1048,15 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
         // Only positively identified WVP blocks may refine the projection estimate used
         // for the OpenXR submission FOV.
         StereoParams matrixParams = sp;
+        // These three exact VS bytecodes were captured with the player Darkness
+        // tentacle head, teeth and tail. The native model is camera-attached;
+        // applying the HMD world-view delta makes it remain in world space as
+        // the player turns. Keep the eye translation and FOV correction, but
+        // leave that local model in head space. The opt-in limits this A/B
+        // experiment to the identified skinned WVP, never light/STP passes.
+        if(k==0 && g_headAttachedTentacles && vi && vi->hasBones &&
+           (vi->hash==0x1CB7CEE2u || vi->hash==0x34D4EEE8u || vi->hash==0xE3259C61u))
+            matrixParams.headGeometry=false;
         if (k == 1 && g_lightingPreset == 8) {
             matrixParams.transX = matrixParams.transY = matrixParams.separation = 0.0f;
         }
@@ -1076,6 +1097,7 @@ typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateSurface)(IDirect3DDevice9*, IDirect
 typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateTexture)(IDirect3DDevice9*, IDirect3DBaseTexture9*, IDirect3DBaseTexture9*);
 
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWORD idx, IDirect3DSurface9* s) {
+    if(idx==0) InvalidateShadowAtlasPass();
     if (d2vr_trace::g_enabled) {
         d2vr_trace::Emit(GetTickCount64(), GetCurrentThreadId(), "SetRenderTarget", 0,
                          (uint32_t)g_rec.size(), dev, s, nullptr, idx, nullptr, 0, "");
@@ -1111,6 +1133,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetTransform(IDirect3DDevice9* dev, D3DTRA
     return g_orig.SetTransform(dev, st, m);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetViewport(IDirect3DDevice9* dev, const D3DVIEWPORT9* vp) {
+    InvalidateShadowAtlasPass();
     if (g_recActive) { uint32_t off = RecPush(vp, sizeof(D3DVIEWPORT9)); RecEmit(OP_SetViewport, 0, off); }
     return g_orig.SetViewport(dev, vp);
 }
@@ -1521,6 +1544,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         __try {
         switch ((RecOp)r.op) {
         case OP_SetRenderTarget:
+            if(r.a[0]==0) InvalidateShadowAtlasPass();
             g_orig.SetRenderTarget(dev, r.a[0], (IDirect3DSurface9*)(uintptr_t)r.a[1]);
             break;
         case OP_SetDepthStencilSurface:
@@ -1542,6 +1566,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             g_orig.SetTransform(dev, (D3DTRANSFORMSTATETYPE)r.a[0], (const D3DMATRIX*)(dataBase + r.a[1]));
             break;
         case OP_SetViewport:
+            InvalidateShadowAtlasPass();
             g_orig.SetViewport(dev, (const D3DVIEWPORT9*)(dataBase + r.a[0]));
             break;
         case OP_SetClipPlane:
@@ -1709,6 +1734,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_UpdateTexture:
             break;
         case OP_ApplyStateBlock: {
+            InvalidateShadowAtlasPass();
             HOOK_MARK(900 + r.op);
             IDirect3DStateBlock9* sb = (IDirect3DStateBlock9*)(uintptr_t)r.a[0];
             // call the ORIGINAL Apply: the vtable points at our hook which would try to
@@ -1737,6 +1763,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 
 // ------------------------------------------------------------- state block hooks
 static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
+    InvalidateShadowAtlasPass();
     if (g_recActive) RecEmit(OP_ApplyStateBlock, 0, (uint32_t)(uintptr_t)sb);
     return g_origSBApply ? g_origSBApply(sb) : D3D_OK;
 }
