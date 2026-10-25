@@ -1,6 +1,48 @@
 // Matched-capture only. Compare the selected avatar renderer's already packed
 // skin matrices with the D3D9 VS bank of the captured human-arm mesh candidate.
 // This reads native memory but never changes a pose, render state, or game file.
+struct MatchedPackedOverlap {
+    size_t count=0;
+    unsigned matches=0,unique=0,nontrivial=0;
+    int pairGpu[12]{},pairCpu[12]{};
+};
+static MatchedPackedOverlap MatchedCountPackedOverlap(const float* packed,size_t count,const float* constants) {
+    MatchedPackedOverlap out{};
+    out.count=count;
+    int distinctCpu[68]{};
+    // BoneMatrices c45..c248 is a 68-matrix window. The selected renderer's
+    // two packed buffers rotate independently of its three pose buffers.
+    for(unsigned gi=0;gi<68;++gi) {
+        const float* gpu=constants+(45+3*gi)*4;
+        float magnitude=0,identityDelta=0;
+        const float identity[12]={1,0,0,0,0,1,0,0,0,0,1,0};
+        bool finite=true;
+        for(int k=0;k<12;++k) {
+            finite=finite && std::isfinite(gpu[k]);
+            magnitude+=std::fabs(gpu[k]);
+            identityDelta+=std::fabs(gpu[k]-identity[k]);
+        }
+        if(!finite || magnitude<.1f || identityDelta<.05f) continue;
+        ++out.nontrivial;
+        for(size_t pi=0;pi<count;++pi) {
+            const float* cpu=packed+pi*12;
+            bool same=true;
+            for(int k=0;k<12;++k)
+                if(!std::isfinite(cpu[k]) || std::fabs(cpu[k]-gpu[k])>1e-5f)
+                    {same=false;break;}
+            if(same) {
+                if(out.matches<12) {out.pairGpu[out.matches]=(int)gi;out.pairCpu[out.matches]=(int)pi;}
+                ++out.matches;
+                bool unique=true;
+                for(unsigned u=0;u<out.unique;++u)
+                    if(distinctCpu[u]==(int)pi) {unique=false;break;}
+                if(unique) distinctCpu[out.unique++]=(int)pi;
+                break;
+            }
+        }
+    }
+    return out;
+}
 static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9* vb,IDirect3DIndexBuffer9* ib,
     UINT stride,const D3DVIEWPORT9& vp,unsigned shaderHash,const float* constants,int eye,unsigned draw) {
     if(!matched_capture::Current() || !vb || !ib || !constants || stride!=40 || vp.MaxZ>0.050001f ||
@@ -20,10 +62,8 @@ static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9* vb,IDirect3DIndex
     const char* rightPose="no_write",*leftPose="no_write";
     void* renderer=nullptr;
     DWORD poseSlot=0,skinSlot=0;
-    size_t packedCount=0;
-    unsigned matches=0,uniqueMatches=0,nontrivial=0;
-    int uniqueCpu[68]{};
-    int pairGpu[12]{},pairCpu[12]{};
+    MatchedPackedOverlap overlap[2]{};
+    bool packedValid[2]{};
     int dirty=-1;
     __try {
         if(fresh && NativeAimOwnerMatches((void*)sample.camera,0xFFC7C0)) {
@@ -68,45 +108,18 @@ static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9* vb,IDirect3DIndex
                                         }
                                     }
                                 }
-                                auto vec=r+0x428+16*skinSlot;
-                                auto begin=*(float**)vec;
-                                auto end=*(float**)(vec+4);
-                                const uintptr_t b=(uintptr_t)begin,e=(uintptr_t)end;
-                                if(b && e>=b && e-b<=512*48 && (e-b)%48==0 && !(b&15)) {
-                                    renderer=r;packedCount=(e-b)/48;status="compared";
-                                    // c45..c248 is the 68-bone shader window. A
-                                    // distinct nonzero/nonidentity match is evidence;
-                                    // unused/stale constant slots are not evidence.
-                                    for(unsigned gi=0;gi<68;++gi) {
-                                        const float* gpu=constants+(45+3*gi)*4;
-                                        float magnitude=0,identityDelta=0;
-                                        const float identity[12]={1,0,0,0,0,1,0,0,0,0,1,0};
-                                        bool finite=true;
-                                        for(int k=0;k<12;++k) {
-                                            finite=finite && std::isfinite(gpu[k]);
-                                            magnitude+=std::fabs(gpu[k]);
-                                            identityDelta+=std::fabs(gpu[k]-identity[k]);
-                                        }
-                                        if(!finite || magnitude<.1f || identityDelta<.05f) continue;
-                                        ++nontrivial;
-                                        for(size_t pi=0;pi<packedCount;++pi) {
-                                            const float* cpu=begin+pi*12;
-                                            bool same=true;
-                                            for(int k=0;k<12;++k)
-                                                if(!std::isfinite(cpu[k]) || std::fabs(cpu[k]-gpu[k])>1e-5f)
-                                                    {same=false;break;}
-                                            if(same) {
-                                                if(matches<12) {pairGpu[matches]=(int)gi;pairCpu[matches]=(int)pi;}
-                                                ++matches;
-                                                bool unique=true;
-                                                for(unsigned u=0;u<uniqueMatches;++u)
-                                                    if(uniqueCpu[u]==(int)pi) {unique=false;break;}
-                                                if(unique) uniqueCpu[uniqueMatches++]=(int)pi;
-                                                break;
-                                            }
-                                        }
+                                renderer=r;
+                                for(DWORD slot=0;slot<2;++slot) {
+                                    auto vec=r+0x428+16*slot;
+                                    auto begin=*(float**)vec;
+                                    auto end=*(float**)(vec+4);
+                                    const uintptr_t b=(uintptr_t)begin,e=(uintptr_t)end;
+                                    if(b && e>=b && e-b<=512*48 && (e-b)%48==0 && !(b&15)) {
+                                        packedValid[slot]=true;
+                                        overlap[slot]=MatchedCountPackedOverlap(begin,(e-b)/48,constants);
                                     }
-                                } else status="invalid_or_large_packed_vector";
+                                }
+                                status=packedValid[skinSlot]?"compared":"invalid_or_large_packed_vector";
                             } else status="invalid_slots";
                         } else status="wrong_skeleton";
                     } else status="wrong_resource";
@@ -114,20 +127,27 @@ static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9* vb,IDirect3DIndex
             }
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) {
-        status="native_read_exception";renderer=nullptr;packedCount=matches=uniqueMatches=nontrivial=0;
+        status="native_read_exception";renderer=nullptr;
+        packedValid[0]=packedValid[1]=false;overlap[0]={};overlap[1]={};
     }
+    const auto& active=overlap[skinSlot<2?skinSlot:0];
+    const auto& alternate=overlap[skinSlot<2?1-skinSlot:1];
     fprintf(matched_capture::meta,
         "{\"kind\":\"avatar_palette_overlap\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,"
         "\"vb\":\"%p\",\"ib\":\"%p\",\"renderer\":\"%p\",\"status\":\"%s\","
         "\"sample_age_ms\":%llu,\"pose_slot\":%lu,\"skin_slot\":%lu,\"dirty\":%d,"
         "\"packed_count\":%u,\"nontrivial_gpu\":%u,\"matches\":%u,\"unique_matches\":%u,"
+        "\"alternate_packed_valid\":%s,\"alternate_packed_count\":%u,"
+        "\"alternate_matches\":%u,\"alternate_unique_matches\":%u,"
         "\"cpu_write_seq\":%ld,\"write_frame\":%llu,\"write_age_ms\":%llu,"
         "\"right_pose\":\"%s\",\"left_pose\":\"%s\",\"pairs\":[",
         matched_capture::frame,eye,draw,vb,ib,renderer,status,
-        sampleAge,poseSlot,skinSlot,dirty,(unsigned)packedCount,nontrivial,matches,uniqueMatches,
+        sampleAge,poseSlot,skinSlot,dirty,(unsigned)active.count,active.nontrivial,active.matches,active.unique,
+        packedValid[skinSlot<2?1-skinSlot:1]?"true":"false",(unsigned)alternate.count,
+        alternate.matches,alternate.unique,
         stamp.sequence,stamp.frame,stamp.sequence ? GetTickCount64()-stamp.time:~0ULL,
         rightPose,leftPose);
-    for(unsigned i=0;i<matches && i<12;++i)
-        fprintf(matched_capture::meta,"%s[%d,%d]",i?",":"",pairGpu[i],pairCpu[i]);
+    for(unsigned i=0;i<active.matches && i<12;++i)
+        fprintf(matched_capture::meta,"%s[%d,%d]",i?",":"",active.pairGpu[i],active.pairCpu[i]);
     fputs("]}\n",matched_capture::meta);
 }

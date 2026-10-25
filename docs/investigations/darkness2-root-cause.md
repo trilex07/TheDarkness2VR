@@ -114,7 +114,9 @@ the pose survives animation before making a new hook or offset change.
 `avatar_palette_overlap` only for the captured arm-mesh candidates. It records
 the selected avatar renderer, pose and skin slots, dirty byte, controller-pose
 write stamp, pose survival at draw time, and distinct nonidentity matches
-between the packed CPU matrices and the D3D9 c45 skin bank. The stamp only
+between **both** independently rotating packed CPU skin slots and the D3D9
+c45 skin bank. Both slots are checked so one rotated slot cannot create a
+false negative for the capture. The stamp only
 counts as a same-frame survival check when renderer, palette pointer, pose slot
 and XR frame all match; a rotated slot or a stale gameplay sample is explicitly
 reported. Exact matrix overlap from multiple distinct bones is supporting
