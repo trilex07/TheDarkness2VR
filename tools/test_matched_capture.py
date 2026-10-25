@@ -118,7 +118,7 @@ class MatchedCaptureTests(unittest.TestCase):
         summary = dict(kind="hand_skin_upload_summary", frame=7, seen=1, saved=1, truncated=False)
         self.records.insert(-3, summary)
         for key, value, message in (("hr", -1, "identity"), ("bank_count", 2, "identity"),
-                                    ("start", 250, "identity")):
+                                    ("start", 147, "identity")):
             with self.subTest(key=key):
                 old=upload[key];upload[key]=value;self.save()
                 with self.assertRaisesRegex(ValueError, f"invalid hand skin upload {message}"):
@@ -131,6 +131,22 @@ class MatchedCaptureTests(unittest.TestCase):
         summary["truncated"] = True
         self.save()
         self.assertEqual(validate(self.folder)["frame"], 7)
+
+    def test_hand_skin_upload_stops_at_last_consumed_matrix(self):
+        upload = dict(kind="hand_skin_upload", frame=7, eye=0, before_draw=0,
+                      start=146, count=2, bank_first=146, bank_count=1,
+                      bank_fnv64="1234567890abcdef", forwarded_bank_fnv64="fedcba0987654321",
+                      vs_hash=0, caller="0x1234", caller_exe_rva=None, hr=0)
+        first_draw = next(i for i, record in enumerate(self.records) if record["kind"] == "draw")
+        self.records.insert(first_draw, upload)
+        self.records.insert(-3, dict(kind="hand_skin_upload_summary", frame=7,
+                                     seen=1, saved=1, truncated=False))
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"], 7)
+        upload["bank_count"] = 2
+        self.save()
+        with self.assertRaisesRegex(ValueError, "invalid hand skin upload identity"):
+            validate(self.folder)
 
     def test_no_present_completion(self):
         self.records=[r for r in self.records if r["kind"]!="present_completion"]

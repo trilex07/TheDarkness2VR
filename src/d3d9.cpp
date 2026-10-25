@@ -2828,14 +2828,14 @@ static uint64_t MatchedSkinHash(const float* data,UINT vectorCount) {
 static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float* data,UINT start,UINT count,void* caller) {
     MatchedSkinUploadWitness w{};
     // A full upload may begin below c45. Record its intersection with the
-    // 68-matrix arm skin bank, on the live eye only and in one requested frame.
+    // 34 matrices consumed by the verified arm VB, on the live eye only.
     const uint64_t end=(uint64_t)start+count;
-    if(!data || !count || start>=249 || end<=45 || d2vr_replay::g_replayEye>=0 ||
+    if(!data || !count || start>=147 || end<=45 || d2vr_replay::g_replayEye>=0 ||
        !matched_capture::active || g_capturePresent.thread!=GetCurrentThreadId() ||
        !matched_capture::Current()) return w;
     ++matched_capture::skinUploadsSeen;
     if(count>256 || matched_capture::skinUploadsSeen>256) return w;
-    const UINT first=std::max(start,45u),last=(UINT)std::min(end,(uint64_t)249);
+    const UINT first=std::max(start,45u),last=(UINT)std::min(end,(uint64_t)147);
     w.valid=true;w.frame=matched_capture::frame;w.beforeDraw=matched_capture::draws[0];
     w.start=start;w.count=count;w.bankFirst=first;w.bankCount=last-first;
     w.bankHash=MatchedSkinHash(data+4*(first-start),last-first);w.caller=caller;

@@ -9,10 +9,11 @@ struct MatchedPackedOverlap {
 static MatchedPackedOverlap MatchedCountPackedOverlap(const float* packed,size_t count,const float* constants) {
     MatchedPackedOverlap out{};
     out.count=count;
-    int distinctCpu[68]{};
-    // BoneMatrices c45..c248 is a 68-matrix window. The selected renderer's
-    // two packed buffers rotate independently of its three pose buffers.
-    for(unsigned gi=0;gi<68;++gi) {
+    int distinctCpu[34]{};
+    // The verified arm VB has weighted indices 0..33. c147..c248 can contain
+    // constants retained from earlier tentacle draws and cannot prove ownership.
+    // The selected renderer's two packed buffers rotate independently.
+    for(unsigned gi=0;gi<34;++gi) {
         const float* gpu=constants+(45+3*gi)*4;
         float magnitude=0,identityDelta=0;
         const float identity[12]={1,0,0,0,0,1,0,0,0,0,1,0};

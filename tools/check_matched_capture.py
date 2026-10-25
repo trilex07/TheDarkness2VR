@@ -146,9 +146,9 @@ def validate(folder):
                 if (r.get("eye") != 0 or r.get("before_draw") != prior_draws or
                         not position(arm) < position(r) < source0 or r.get("hr") != 0 or
                         not isinstance(start, int) or not isinstance(count, int) or
-                        start < 0 or count <= 0 or count > 256 or start >= 249 or start + count <= 45 or
+                        start < 0 or count <= 0 or count > 256 or start >= 147 or start + count <= 45 or
                         r.get("bank_first") != max(start, 45) or
-                        r.get("bank_count") != min(start + count, 249) - max(start, 45) or
+                        r.get("bank_count") != min(start + count, 147) - max(start, 45) or
                         not isinstance(r.get("bank_fnv64"), str) or
                         not re.fullmatch(r"[0-9a-f]{16}", r["bank_fnv64"]) or
                         not isinstance(r.get("forwarded_bank_fnv64"), str) or

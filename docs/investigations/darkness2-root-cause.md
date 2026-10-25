@@ -121,7 +121,8 @@ examined case. It does not connect the avatar packer to the c45 upload.
 **Matched draw evidence.** In the private stock capture, draw 11/12 in eye 0
 share a 114,400-byte VB and 85,818-byte IB at 40-byte stride in the
 first-person viewport; their VS hashes are `C745D63B` and `1CB7CEE2`. The
-saved VB has nonzero skin weights with local indices 0..33. Draw 13 uses a
+saved VB has nonzero skin weights at every local index 0..33 (2,860
+vertices). Draw 13 uses a
 distinct 124,440-byte VB and local indices 0..4. Draws 0..6 use the known
 tentacle VB and local indices 0..24. The first-person image visibly contains
 the human arms and pistol. Draws 11/12 are thus **human-arm candidates**, and
@@ -141,6 +142,16 @@ loss of those sampled skin constants **during stereo replay in these two
 frames**. It does not establish that a controller pose entered the constants:
 the historical candidate predates the hand writer and contains no CPU-palette
 witness. It also does not identify either draw as a specific left/right hand.
+
+In the complete stock capture, arm-candidate draw 11 and tentacle draws
+0/1/2/6 have the same 34 nonidentity c45-bank matrices at local indices
+34..67. The arm VB has no weighted index above 33, so these matches cannot
+prove avatar ownership of the arm draw. Arm draws 11 and 12 instead differ at
+local indices 2..11. The shared upper bank is consistent with persistent D3D9
+constants, though that older capture has no upload history to establish why.
+The diagnostic comparison now examines only the 34 matrices consumed by the
+verified arm mesh. The private source VB is `vb-195BC860.bin` in the same
+capture directory and remains outside Git.
 
 The existing writer edits bones 2..45 in a 130-matrix CPU pose vector and
 marks one or both skin slots dirty. That does not establish GPU consumption.
@@ -164,11 +175,11 @@ diagnostic capture and never changes the GPU bank. The regular production build
 does not include it. Both x86 builds pass offline, and the capture validator
 rejects a mixed-frame witness. It also rejects a witness with an unknown draw
 identity or one recorded before its draw. The focused validator suite passes
-30 tests. The diagnostic has not run in the game and cannot yet classify the
+31 tests. The diagnostic has not run in the game and cannot yet classify the
 visible hand failure.
 
 **Upload-origin witness, still unrun.** The opt-in diagnostic build now records
-each live-eye `SetVertexShaderConstantF` upload intersecting c45..c248 during
+each live-eye `SetVertexShaderConstantF` upload intersecting c45..c146 during
 the one requested capture frame. Its bounded `hand_skin_upload` record contains
 both the original and D3D9-forwarded intersecting-bank hashes, register range, bound VS hash,
 upload return address and current-EXE RVA where applicable, draw count before
