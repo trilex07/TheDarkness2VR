@@ -132,7 +132,12 @@ def main():
             raise ValueError("ray comparison requires independently verified source frustum and camera proof note")
         eye = result["eyes"][args.eye]
         source, final, blit = eye["source"], eye["final"], eye["blit"]
-        if source["viewport"] != [0, 0, source["width"], source["height"], 0, 1]:
+        viewport = source["viewport"]
+        # MinZ/MaxZ only remap depth. The engine's world range [0.05,1]
+        # still covers the full color image and does not change its XY rays.
+        if (len(viewport) != 6 or viewport[:4] != [0, 0, source["width"], source["height"]]
+                or not all(isinstance(z, (int, float)) and math.isfinite(z) for z in viewport[4:])
+                or not 0 <= viewport[4] < viewport[5] <= 1):
             raise ValueError("Luna full-viewport assumption not satisfied")
         if result["config"]["eye_params"][args.eye]["head_geometry"]:
             raise ValueError("head geometry requires an independently established source/target common pose")

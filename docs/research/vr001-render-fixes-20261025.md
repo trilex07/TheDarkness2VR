@@ -167,4 +167,3 @@ Controlled run closed normally by the user. DLL and both game INIs restored from
 the fresh pre-test backup; all three SHA-256 values match the baseline listed
 above. Installed EXE SHA-256 remains D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
 Final log and restoration receipt retained in the private transfer-test backup.
-

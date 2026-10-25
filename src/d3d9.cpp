@@ -172,6 +172,8 @@ int g_scale2DContent = 1;         // keep 2D UI/sprites at their native angular 
 int g_renderW = 2560;              // Config: Render.RenderWidth (VR backbuffer forced size)
 int g_renderH = 1440;              // Config: Render.RenderHeight
 int g_fakeClientRect = 1;          // report the VR size to the engine via GetClientRect (RE_FINDINGS)
+static bool g_diagnosticProductionResolution = false; // explicit diagnostic opt-in, never enables FOV/gameplay hooks
+static HWND g_renderSizeHwnd = nullptr;
 typedef BOOL(WINAPI* PFN_GetClientRect)(HWND, LPRECT);
 static PFN_GetClientRect g_origGetClientRect = nullptr;
 
@@ -182,7 +184,7 @@ static PFN_GetClientRect g_origGetClientRect = nullptr;
 // the whole engine render at the VR resolution.
 static BOOL WINAPI Hook_GetClientRect(HWND hwnd, LPRECT rc) {
     BOOL ok = g_origGetClientRect ? g_origGetClientRect(hwnd, rc) : FALSE;
-    if (ok && rc && g_fakeClientRect && g_renderW >= 1280) {
+    if (ok && rc && hwnd == g_renderSizeHwnd && g_fakeClientRect && g_renderW >= 1280) {
         rc->left = 0;
         rc->top = 0;
         rc->right = g_renderW;
@@ -5147,32 +5149,42 @@ void HookDevice(IDirect3DDevice9* dev) {
         Log("[FovRE] engine device global not readable");
     }
 
-    // RE: render-target sizing follows the window client rect - patch the game's IAT for
-    // GetClientRect (fixed slot, no ASLR) so the engine renders at the VR resolution.
-#ifndef D2VR_MATCHED_CAPTURE
-    if (!g_getClientRectHooked && g_fakeClientRect) {
+    // Existing production resolution path. Diagnostic captures can explicitly
+    // match it without enabling the unrelated native gameplay/FOV patches.
+#ifdef D2VR_MATCHED_CAPTURE
+    g_diagnosticProductionResolution = g_enginePresentInstalled &&
+        GetPrivateProfileIntA("Diagnostics", "ProductionResolution", 0, ".\\Darkness2VR-diagnostic.ini") != 0;
+    const bool resolutionAllowed = g_diagnosticProductionResolution;
+#else
+    const bool resolutionAllowed = true;
+#endif
+    if (resolutionAllowed && !g_getClientRectHooked && g_fakeClientRect) {
         __try {
             void** slot = (void**)0x00EEB478;
             void* cur = *slot;
-            // sanity: the IAT slot must hold a system-DLL function
-            if (cur && (uintptr_t)cur > 0x70000000) {
+            // Verified USER32!GetClientRect import and engine call at C9646E.
+            // An arbitrary high address or another interceptor is insufficient.
+            void* expected = reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetClientRect"));
+            const unsigned char call[] = {0xff,0x15,0x78,0xb4,0xee,0x00};
+            if (cur && cur == expected && !memcmp(reinterpret_cast<void*>(0x00C9646E), call, sizeof(call))) {
                 g_origGetClientRect = reinterpret_cast<PFN_GetClientRect>(cur);
                 DWORD old = 0;
                 if (VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) {
                     *slot = reinterpret_cast<void*>(&Hook_GetClientRect);
                     VirtualProtect(slot, sizeof(void*), old, &old);
                     g_getClientRectHooked = true;
-                    Log("[VrRes] GetClientRect IAT@0x00EEB478 hooked (orig=%p) -> engine renders %dx%d",
-                        cur, g_renderW, g_renderH);
+                    Log("[VrRes] GetClientRect IAT@0x00EEB478 hooked (orig=%p hwnd=%p) request=%dx%d; actual RT0 must be measured",
+                        cur, g_renderSizeHwnd, g_renderW, g_renderH);
                 }
             } else {
-                Log("[VrRes] IAT slot 0x00EEB478 does not look like GetClientRect (%p) - skipped", cur);
+                Log("[VrRes] GetClientRect import/call fingerprint mismatch (%p expected=%p) - skipped", cur, expected);
             }
         } __except (1) {
             Log("[VrRes] GetClientRect IAT hook failed");
         }
     }
-#endif // no game IAT changes in diagnostic build
+    Log("[VrRes] diagnosticOptIn=%d hooked=%d request=%dx%d", (int)g_diagnosticProductionResolution,
+        (int)g_getClientRectHooked, g_renderW, g_renderH);
 }
 
 static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp) {
@@ -5188,6 +5200,7 @@ static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp) {
 HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT ad, D3DDEVTYPE type, HWND hwnd,
                                             DWORD flags, D3DPRESENT_PARAMETERS* pp,
                                             IDirect3DDevice9** out) {
+    g_renderSizeHwnd = pp && pp->hDeviceWindow ? pp->hDeviceWindow : hwnd;
     Log("Hook_CreateDevice adapter=%u flags=0x%lX", ad, flags);
     TweakPresentParams(pp);
     HRESULT hr = g_origCreateDevice(self, ad, type, hwnd, flags, pp, out);
@@ -5200,6 +5213,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDeviceEx(IDirect3D9Ex* self, UINT ad, D3DDE
                                               DWORD flags, D3DPRESENT_PARAMETERS* pp,
                                               D3DDISPLAYMODEEX* fullMode, IDirect3DDevice9Ex** out) {
     if (hwnd) g_gameHwnd = hwnd;
+    g_renderSizeHwnd = pp && pp->hDeviceWindow ? pp->hDeviceWindow : hwnd;
     Log("Hook_CreateDeviceEx adapter=%u flags=0x%lX windowed=%d hwnd=%p", ad, flags,
         pp ? (int)pp->Windowed : -1, hwnd);
     TweakPresentParams(pp);

@@ -110,3 +110,7 @@ Present witness,15 capture+7 readiness+3 transfer tests and336 math checks PASS.
 Fixed renderer not yet run: another Steam/PSVR2 game active. DLL/INIs restored with
 hash verification; no native FOV/EXE disk write, no merge. VR-001 remains OPEN.
 Receipt: docs/research/vr001-render-fixes-20261025.md.
+
+### 2026-10-25: production-resolution capture candidate
+
+Added explicit OFF-by-default diagnostic ProductionResolution to exercise the existing production GetClientRect sizing path without enabling native FOV/gameplay hooks. Restrict spoofing to the actual device window and require the USER32 GetProcAddress result plus C9646E call fingerprint. Audit includes that exact call. Capture config records requested size and hook state. Initial real Steam startup: depth target 3076x3140 (previous diagnostic 1280x855), matched color/eye capture pending user-ready. No native FOV or sharpening change. Both x86 builds pass; camera audit 7 tests and matched capture 17 tests pass. Luna viewport check now accepts valid full-XY world depth range [0.05,1]; rejects partial XY and invalid depth.

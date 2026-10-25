@@ -187,7 +187,9 @@ static void Begin() {
         fprintf(meta,"%s{\"head_geometry\":%s,\"mode\":%d,\"values\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],\"head_clip\":",eye?",":"",sp.headGeometry?"true":"false",sp.mode,sp.separation,sp.convergence,sp.transX,sp.transY,sp.fovScaleX,sp.fovScaleY,(double)g_stereoPolarity);
         Floats(sp.headClip,16); fprintf(meta,",\"inverse_head_clip\":"); Floats(sp.inverseHeadClip,16); fputc('}',meta);
     }
-    fprintf(meta,"],\"fix_motion_vector_projection\":%s}\n",g_fixMotionVectorProjection?"true":"false"); const bool configError=ferror(meta)!=0;
+    fprintf(meta,"],\"fix_motion_vector_projection\":%s,\"production_resolution_requested\":%s,\"client_rect_hooked\":%s,\"requested_render_size\":[%d,%d]}\n",
+        g_fixMotionVectorProjection?"true":"false",g_diagnosticProductionResolution?"true":"false",
+        g_getClientRectHooked?"true":"false",g_renderW,g_renderH); const bool configError=ferror(meta)!=0;
     const bool configClosed=fclose(meta)==0; meta=saved;
     if(configError || !configClosed) Reject("effective config write failed");
     const std::string ch=HashFile((directory+"/effective-config.json").c_str());

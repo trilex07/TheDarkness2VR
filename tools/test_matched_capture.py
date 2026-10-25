@@ -151,6 +151,25 @@ class MatchedCaptureTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn("synthetic symmetric projection",result.stdout)
 
+    def test_luna_world_depth_range_preserves_color_rays(self):
+        next(r for r in self.records if r["kind"] == "source")["viewport"][4] = 0.05
+        self.save()
+        self.test_luna_ray_compare()
+
+    def test_luna_rejects_partial_color_viewport_or_invalid_depth(self):
+        source = next(r for r in self.records if r["kind"] == "source")
+        command = [sys.executable, str(Path(__file__).with_name("check_matched_capture.py")), str(self.folder),
+                   "--eye", "0", "--source-fov-tan", "-.54630249", ".54630249", ".54630249", "-.54630249",
+                   "--camera-proof-note", "synthetic symmetric projection"]
+        for viewport in ([1,0,8,8,0,1], [0,0,7,8,0,1], [0,0,8,8,1,0], [0,0,8,8,-.1,1],
+                         [0,0,8,8,0,float('nan')]):
+            with self.subTest(viewport=viewport):
+                source["viewport"] = viewport
+                self.save()
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("full-viewport", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -37,6 +37,7 @@ SITES = {
     "bounds_dispatch_entry": (0xAB2E80, "558bec83e4f081ec24060000"),
     "camera_like_constructor_entry": (0xA579E0, "5356578bf1e8d6b4b9ffc706"),
     "engine_present_boundary": (0xA94052, "8b410cffd0"),
+    "engine_client_size_import_call": (0xC9646E, "ff1578b4ee00"),
 }
 
 
