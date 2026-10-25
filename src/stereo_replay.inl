@@ -1022,18 +1022,9 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
         if (b < 0) continue;
         if ((int)start > b || (int)(start + count) < b + 4) continue;
         const float* orig = src + (b - (int)start) * 4;
-        const bool playerTentacleShader=vi && g_headAttachedTentacles &&
-            (vi->hash==0x1CB7CEE2u || vi->hash==0x34D4EEE8u || vi->hash==0xE3259C61u);
-        // These bytecodes are shared with other skinned meshes. Four matched
-        // gameplay captures separate the player tentacle WVP (c3.w about 0,
-        // c3.z about -0.1) from the hand model (c3.w about -0.1) and world
-        // characters (c3.w >= 0.4). Keep this opt-in off unrelated meshes.
-        const bool playerTentacleWvp=playerTentacleShader &&
-            std::isfinite(orig[12]) && std::isfinite(orig[13]) &&
-            std::isfinite(orig[14]) && std::isfinite(orig[15]) &&
-            std::fabs(orig[12])<0.15f && std::fabs(orig[13])<0.15f &&
-            orig[14]>-0.16f && orig[14]<-0.06f && std::fabs(orig[15])<0.05f;
-        if(k==0 && playerTentacleShader && !playerTentacleWvp) continue;
+        // These bytecodes are shared by the player and world objects. Apply
+        // the ordinary world transform to every upload here. A draw-time
+        // scope below can cancel it only after confirming the actual mesh.
 
         bool screenProjection = false;
         if (k == 1) {
@@ -1071,21 +1062,6 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
         // Only positively identified WVP blocks may refine the projection estimate used
         // for the OpenXR submission FOV.
         StereoParams matrixParams = sp;
-        // These three exact VS bytecodes were captured with the player Darkness
-        // tentacle head, teeth and tail. Their BoneMatrices are indexed through
-        // manually generated c45[a0.x] instructions, not M3x4/M4x3 opcodes.
-        // AnalyzeVsTokenStream therefore leaves hasBones=false for them. The
-        // old hasBones gate silently skipped this head attachment entirely.
-        // Keep the eye translation and FOV correction, but leave the local
-        // model in head space. Restrict this opt-in to exact captured bytecodes.
-        if(k==0 && playerTentacleWvp) {
-            if(matrixParams.headGeometry) {
-                static volatile LONG logged=0;
-                if(InterlockedIncrement(&logged)<=3)
-                    Log("[HeadAttachedTentacles] applied VS=%08X eyeHeadClip=1 WVP=c%d",vi->hash,b);
-            }
-            matrixParams.headGeometry=false;
-        }
         if (k == 1 && g_lightingPreset == 8) {
             matrixParams.transX = matrixParams.transY = matrixParams.separation = 0.0f;
         }
@@ -1213,6 +1189,57 @@ struct WorldDiffuseScope {
         if (reported++ < 4) Log("[WorldDiffuse] applied eye=%d sampler=0 min=ANISOTROPIC; restored after draw", g_replayEye < 0 ? 0 : g_replayEye);
     }
 };
+// The player tentacle and world characters share all three skinned shaders.
+// A WVP c3 test alone incorrectly head-attached enemies in the 9dfb2c1 VR
+// trial. The captured player mesh instead has a 302920-byte VB, 213588-byte
+// IB, stride 40 and these seven stream byte offsets in both eyes. Check the
+// bound resources at the actual DIP, after all state-block restores, before
+// cancelling the world head transform. Any mismatch keeps the ordinary world
+// pose. This profile-specific opt-in leaves the default renderer unchanged.
+struct TentacleHeadScope {
+    IDirect3DDevice9* dev=nullptr;
+    float original[16]{};
+    bool applied=false;
+    explicit TentacleHeadScope(IDirect3DDevice9* device) : dev(device) {
+        if(!g_headAttachedTentacles || !dev || g_submitMode!=4 || g_stereoMode!=1 ||
+           !g_activeVs || (g_activeVs->hash!=0x1CB7CEE2u &&
+                            g_activeVs->hash!=0x34D4EEE8u &&
+                            g_activeVs->hash!=0xE3259C61u)) return;
+        const StereoParams sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
+        if(!sp.headGeometry || IsShadowAtlasPass(dev)) return;
+        IDirect3DVertexBuffer9* vb=nullptr;
+        IDirect3DIndexBuffer9* ib=nullptr;
+        UINT offset=0,stride=0;
+        if(FAILED(dev->GetStreamSource(0,&vb,&offset,&stride)) || !vb) return;
+        if(FAILED(dev->GetIndices(&ib)) || !ib) {vb->Release();return;}
+        D3DVERTEXBUFFER_DESC vd{};D3DINDEXBUFFER_DESC id{};
+        const bool geometry=SUCCEEDED(vb->GetDesc(&vd)) && SUCCEEDED(ib->GetDesc(&id)) &&
+            vd.Size==302920 && id.Size==213588 && stride==40 &&
+            (offset==0 || offset==2640 || offset==120400 || offset==158040 ||
+             offset==160920 || offset==267560 || offset==285240);
+        ib->Release();vb->Release();
+        if(!geometry || FAILED(dev->GetVertexShaderConstantF(0,original,4))) return;
+        float attached[16];d2vr_math::Multiply(original,sp.inverseHeadClip,attached);
+        // After cancellation, the captured camera-local player WVP has c3.z
+        // near -0.1 and c3.w near zero. This secondary gate rejects a buffer
+        // recycled for another model, without modifying its draw.
+        if(!std::isfinite(attached[12]) || !std::isfinite(attached[13]) ||
+           !std::isfinite(attached[14]) || !std::isfinite(attached[15]) ||
+           std::fabs(attached[12])>=0.15f || std::fabs(attached[13])>=0.15f ||
+           attached[14]<=-0.16f || attached[14]>=-0.06f ||
+           std::fabs(attached[15])>=0.05f) return;
+        applied=SUCCEEDED(g_orig.SetVertexShaderConstantF(dev,0,attached,4));
+        if(applied) {
+            static volatile LONG reported=0;
+            if(InterlockedIncrement(&reported)<=4)
+                Log("[HeadAttachedTentacles] mesh-scoped eye=%d VS=%08X VB=%u IB=%u offset=%u",
+                    g_replayEye<0?0:g_replayEye,g_activeVs->hash,vd.Size,id.Size,offset);
+        }
+    }
+    ~TentacleHeadScope() {
+        if(applied) g_orig.SetVertexShaderConstantF(dev,0,original,4);
+    }
+};
 // Keep C++ restoration scopes outside Replay's existing SEH boundary.
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
     const WorldDiffuseScope diffuse(dev);
@@ -1223,6 +1250,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
 }
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
     const WorldDiffuseScope diffuse(dev);
+    const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif

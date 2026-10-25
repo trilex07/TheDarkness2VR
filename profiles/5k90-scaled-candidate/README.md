@@ -9,26 +9,34 @@ If NIS initialization fails, the full-size eye blit is used; a later scaling
 failure drops one world layer and rebuilds the full-size cache next frame.
 The previous native-size NIS profile and ordinary default remain unchanged.
 
-`HeadAttachedTentacles=1` now identifies WVP c0 for the three exact captured
-player tentacle shaders, whose CTAB nests it under `Instance`. Their manually
-indexed c45 bone instructions do not set the old `hasBones` flag. The head
-attachment is limited further by the player tentacle WVP c3 signature observed
-in four matched gameplay captures (w about zero and z about -0.1); the shared
-shader bytecodes also draw hand and world meshes. Other WVPs retain their
-prior handling. A bounded runtime log records actual head-attachment hits.
+`HeadAttachedTentacles=1` identifies WVP c0 for three captured skinned shaders,
+whose CTAB nests it under `Instance`. These shaders also draw other meshes.
+Every upload gets the ordinary world head transform. Only at an indexed draw
+does the mod cancel that transform, after checking the bound VB/IB sizes,
+stride, exact stream offset and player WVP c3 signature. The captured frame
+selects all 12 player tentacle draws and rejects 13 other draws sharing those
+shaders. Unknown meshes retain the ordinary world pose. A bounded runtime log
+records actual mesh-scoped hits.
 
-`NativeHandsDirtyBoth=1` is a separate opt-in hand correction. The selected
-renderer uses two alternating packed-skin buffers; the current CPU hand IK
-changes the pose but marks only the current skin slot dirty. Verified EXE
-instructions at 0x6C3BC1..0x6C3C04 prepare both packed buffers, while
-0x6C3C71 tests the indexed dirty byte. This profile marks both dirty after a
-real pose change so a later draw cannot use the old packed slot. A physical
-test must establish whether the visible first-person mesh is that renderer.
+The 2026-10-25 headset run of 9dfb2c1 showed that both dirty bytes did not
+make the human hands follow the controllers. It also exposed a world-pose
+regression: non-tentacle draws using the same skinned shader skipped their
+normal head transform. The current candidate removes that skip and applies the
+tentacle exception at the identified mesh draw only. `NativeHandsDirtyBoth=0`
+rejects the unsuccessful hand experiment. A physical retest is pending.
+
+`GpuSplitTiming=1` adds one optional D3D9 timestamp between the live render
+and right-eye replay. The prior headset trial measured around 49-53 world
+layers/s and 15 ms D3D9 GPU time in the heavy scene, excluding D3D11/OpenXR.
+The split will identify whether the live or replay half dominates on the next
+controlled run. It does not change rendering or enable a performance shortcut.
 
 Offline: diagnostic and production x86 builds PASS, 25 matched-capture tests
 PASS, seven executable-audit tests PASS, D3D9 stereo geometry PASS, and the
 D3D11 WARP NIS test passes both sharpen and 256-to-320 scaling in both eyes.
-Steam and PSVR2 for this candidate: NOT RUN. 90 FPS, visual quality and hand
-tracking are not accepted. The prior trial's DLL and INIs were restored with
-their original hashes. If the visible hands remain frozen, reject the
-dirty-both hypothesis and trace the first-person GPU skin owner.
+Steam and PSVR2 for the corrected candidate: NOT RUN. The previous 9dfb2c1
+trial demonstrated actual NIS output, slight physical sharpness improvement,
+frozen hands, incorrect world/head behavior, a displaced pistol, and FPS below
+90. The game exited and its DLL and INIs were restored with original hashes.
+The visible hand mesh still needs its GPU skin owner identified before another
+palette or native hook change.

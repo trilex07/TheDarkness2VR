@@ -2,16 +2,18 @@
 // and runtime compositor are excluded. No GetData(FLUSH), busy wait or readback.
 struct GpuFrameTiming {
     struct Slot {
-        IDirect3DQuery9 *start=nullptr,*end=nullptr,*frequency=nullptr,*disjoint=nullptr;
-        bool pending=false;
+        IDirect3DQuery9 *start=nullptr,*mid=nullptr,*end=nullptr,*frequency=nullptr,*disjoint=nullptr;
+        bool pending=false,midIssued=false;
     } slots[8];
     int active=-1,next=0;
     bool unavailable=false;
     double totalMs=0,maxMs=0;
+    double liveMs=0,replayMs=0;
+    unsigned splitSamples=0;
     unsigned samples=0;
     void Release() {
         for(auto& s:slots) {
-            if(s.start) s.start->Release(); if(s.end) s.end->Release();
+            if(s.start) s.start->Release(); if(s.mid) s.mid->Release(); if(s.end) s.end->Release();
             if(s.frequency) s.frequency->Release(); if(s.disjoint) s.disjoint->Release();
             s={};
         }
@@ -24,11 +26,21 @@ struct GpuFrameTiming {
                s.frequency->GetData(&f,sizeof(f),0)!=S_OK || s.disjoint->GetData(&disjoint,sizeof(disjoint),0)!=S_OK) continue;
             s.pending=false;
             if(!disjoint && f && b>=a) {
+                UINT64 mid=0;
+                if(s.midIssued && s.mid && s.mid->GetData(&mid,sizeof(mid),0)==S_OK &&
+                   mid>=a && mid<=b) {
+                    liveMs+=(mid-a)*1000.0/f;
+                    replayMs+=(b-mid)*1000.0/f;
+                    ++splitSamples;
+                }
                 const double ms=(b-a)*1000.0/f;
                 totalMs+=ms; maxMs=std::max(maxMs,ms); ++samples;
                 if(samples>=120) {
                     Log("[GPUFrame] D3D9 live+replay mean=%.3fms max=%.3fms n=%u (excludes D3D11/XR)",totalMs/samples,maxMs,samples);
+                    if(splitSamples) Log("[GPUFrameSplit] live=%.3fms replay=%.3fms n=%u (D3D9 only)",
+                        liveMs/splitSamples,replayMs/splitSamples,splitSamples);
                     samples=0; totalMs=maxMs=0;
+                    splitSamples=0; liveMs=replayMs=0;
                 }
             }
         }
@@ -46,9 +58,18 @@ struct GpuFrameTiming {
                 Release(); unavailable=true; Log("[GPUFrame] timestamp queries unavailable"); return;
             }
         }
+        if(g_gpuSplitTiming && !s.mid && FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMP,&s.mid))) {
+            Log("[GPUFrameSplit] timestamp unavailable; total timing retained");
+            g_gpuSplitTiming=false;
+        }
         if(FAILED(s.disjoint->Issue(D3DISSUE_BEGIN))) return;
         if(FAILED(s.start->Issue(D3DISSUE_END))) { s.disjoint->Issue(D3DISSUE_END); return; }
+        s.midIssued=false;
         active=next; next=(next+1)%8;
+    }
+    void MarkLiveEnd() {
+        if(active>=0 && g_gpuSplitTiming && slots[active].mid)
+            slots[active].midIssued=SUCCEEDED(slots[active].mid->Issue(D3DISSUE_END));
     }
     void End() {
         if(active<0) return;

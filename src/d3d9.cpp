@@ -384,6 +384,7 @@ static volatile LONG g_cameraUploadWitnessBudget=0;
 static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
+static bool g_gpuSplitTiming = false;
 void LoadConfig() {
     char localIni[MAX_PATH] = ".\\Darkness2VR.ini";
     const char* chosenIni = g_iniPath;
@@ -430,6 +431,7 @@ void LoadConfig() {
     g_nisSharpness = nis_upscale::ClampSharpness((float)atof(nisSharpness));
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
+    g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
     g_tentacleAimMarker = GetPrivateProfileIntA("Input", "TentacleAimMarker", 1, chosenIni) != 0;
@@ -2899,6 +2901,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     }
     const bool historyOk = SeedRightEyeBackground(dev, liveEnd.targets[0], g_had3DCameraThisFrame);
     d2vr_replay::g_frameStart.Apply(dev);
+    g_gpuTiming.MarkLiveEnd();
     d2vr_replay::InvalidateShadowAtlasPass();
     d2vr_replay::ReplayStream(dev, 1, sp1);
     QueryPerformanceCounter(&perf[2]);
