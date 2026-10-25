@@ -21,6 +21,16 @@ preserved unchanged.
   `97f23db40adc7f7cb03e4d821364b5fac5034a91be2f4fcb547734a4013a8a34`.
   Its header states `native_hooks_suppressed=true`; it can identify stock draws,
   but cannot prove this hand writer's effect.
+- A second private D3D9 capture is
+  `%TEMP%/Darkness2VR-matched-37812-1-25308/manifest.jsonl`, SHA-256
+  `74abee85dfce6d003558627e41d51f473bca0e16388fdf3aae4f6211b2003a69`.
+  Its DLL SHA-256 is
+  `64b1c40feb4af6ab1cfa2ba6734ca57d083f52160e006242ceeab5f3908aef9f`:
+  the earlier `bc47dab` peripheral-camera candidate, before the accepted
+  hand/tentacle trial. `native_hooks_suppressed=false`, but the capture is
+  **incomplete** (mask 3, no final D3D11 eyes or `COMPLETE.json`). Its two
+  source images and D3D9 draw banks are usable as limited historical evidence,
+  not as a matched final-eye capture or a test of the current hand writer.
 - Ghidra projects with SHA `55c8...` are an older executable and are excluded
   from current-address conclusions. The current private Ghidra project is
   `%TEMP%/d2vr-rootcause-ghidra/RootCause.gpr`; its exported evidence files
@@ -91,6 +101,16 @@ order, are `1e742de502ca80f28f9d3aa9a03dcc5a47bee4519153b1ed637f519b981f589a`,
 `5dd53979a51f3744e691369a9e90cafac7d3e0ab0f88158cc31931398a545db8`,
 `48029e22ccc8db8109b890a6c1017c1ed6a3073a152a93bbe5d0a4a34072484f`,
 and `06918b6c886a7eec3832c8a26140f43dc7e5cd258a9d6ba93e882e19418ae730`.
+The targeted read-only `CameraEvidence.java` export
+`%TEMP%/d2vr-rootcause-pose-callers-2.txt` (SHA-256
+`3dedb6dbc53aedb2d31316072349e85f0b481deb401dada11bfbf22c84a58696`)
+contains the same EXE identity and `EVIDENCE COMPLETE`. It confirms three
+direct callers of pose setter `007990B0`: `004EA5D1`, `0089DC2D`, and
+`00B73D38`. `0089D110` loops through mapped bones, passing renderer, bone
+index, and aligned matrix to the setter; `004EA2D0` subsequently reads that
+renderer's selected `+3F4` pose vector. This connects a native animation write
+to the selected CPU pose and dirty flag, but does not prove which caller updates
+the first-person avatar or when that pose reaches its visible D3D9 draw.
 
 **Matched draw evidence.** In the private stock capture, draw 11/12 in eye 0
 share a 114,400-byte VB and 85,818-byte IB at 40-byte stride in the
@@ -103,6 +123,18 @@ draw 13 is a pistol candidate; no draw-isolation result or CPU-renderer/GPU-bank
 identity yet proves the precise object owner. The shader consumes c45-based
 skin matrices, but the capture has `native_hooks_suppressed=true` and cannot
 show whether the modified CPU palette reaches those constants.
+
+The separate historical `bc47dab` source capture shows the same candidate
+mesh dimensions (VB 114,400 bytes, IB 85,818 bytes, stride 40) at eye-0 draws
+47/48 and eye-1 draws 47/48, with the same respective VS hashes `C745D63B`
+and `1CB7CEE2`. For each paired draw, all 816 floats in `c45..c248` are
+bit-identical between eyes; their per-draw skin-bank SHA-256 prefixes are
+`a2818b38a7afcfbc7065` and `9088a6afa86822733146`. The complete stock
+capture likewise has bit-identical eye pairs for draws 11/12. This rules out
+loss of those sampled skin constants **during stereo replay in these two
+frames**. It does not establish that a controller pose entered the constants:
+the historical candidate predates the hand writer and contains no CPU-palette
+witness. It also does not identify either draw as a specific left/right hand.
 
 The existing writer edits bones 2..45 in a 130-matrix CPU pose vector and
 marks one or both skin slots dirty. That does not establish GPU consumption.
@@ -174,6 +206,12 @@ therefore no throw-velocity write is demonstrated at the fault. The
 `00E37C10` hash/relocation routine has many unrelated callers. Raw-stack
 `00A1DF9B` is a return after an animation-vector insert but is not in the
 validated EBP chain and cannot be used to blame animation data.
+Current-EXE disassembly of the native aim consumer `00C62F50` shows its
+camera-matrix getter call at `00C6300F`, followed immediately by `MOVAPS`
+copies of the forward and origin rows at `00C63011..00C63015` into its local
+query setup. This rejects the narrow hypothesis that this call site retains
+the mod's temporary matrix pointer for a later asynchronous read. It does not
+explain the invalid buffer in the unrelated hash/relocation call chain.
 Next evidence must connect the invalid buffer's producer and lifetime to a
 specific call/interaction branch before choosing a correction. The existing
 VEH record is first-chance; the user's report establishes that the play session
