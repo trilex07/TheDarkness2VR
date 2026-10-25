@@ -202,10 +202,10 @@ static void RemoveNativeHandsHook() {
 // Current-EXE resource vtable 00FC2578+EC -> 006C3890. The method takes one
 // renderer smart-reference argument (ret 4); forwarding once preserves its
 // native reference release and all renderer side effects.
-using NativeHandsPackMethod=uintptr_t(__thiscall*)(void*,void*);
+using NativeHandsPackMethod=void(__thiscall*)(void*,void*);
 static NativeHandsPackMethod g_nativeHandsPackOriginal=(NativeHandsPackMethod)0x006C3890;
 static thread_local bool g_insideNativeHandsPack=false;
-static uintptr_t __fastcall NativeHandsPackHook(void* resource,void*,void* rendererRef) {
+static void __fastcall NativeHandsPackHook(void* resource,void*,void* rendererRef) {
     const bool outermost=!g_insideNativeHandsPack;
     if(outermost) g_insideNativeHandsPack=true;
     if(outermost && g_nativeHandsPackInstalled && g_restoredTrackedGameplay &&
@@ -215,9 +215,8 @@ static uintptr_t __fastcall NativeHandsPackHook(void* resource,void*,void* rende
         __except(EXCEPTION_EXECUTE_HANDLER) { renderer=nullptr; }
         if(renderer) ApplyNativeHandsChecked(renderer,0xFFC7C0,resource);
     }
-    const uintptr_t result=g_nativeHandsPackOriginal(resource,rendererRef);
+    g_nativeHandsPackOriginal(resource,rendererRef);
     if(outermost) g_insideNativeHandsPack=false;
-    return result;
 }
 static bool InstallNativeHandsPackHook() {
     if(!g_nativeHandsInstalled || g_nativeHandsPackInstalled) return g_nativeHandsPackInstalled;
