@@ -56,6 +56,31 @@ class MatchedCaptureTests(unittest.TestCase):
     def test_complete(self):
         self.assertEqual(validate(self.folder)["frame"], 7)
 
+    def test_optional_hand_palette_witness_keeps_frame_identity(self):
+        witness = dict(kind="avatar_palette_overlap", frame=7, eye=0, draw=0,
+                       status="compared", unique_matches=3, right_pose="survived")
+        first_draw = next(i for i, record in enumerate(self.records) if record["kind"] == "draw")
+        self.records.insert(first_draw + 1, witness)
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"], 7)
+        witness["frame"] = 8
+        self.save()
+        with self.assertRaisesRegex(ValueError, "mixed frame IDs"):
+            validate(self.folder)
+
+    def test_hand_palette_witness_must_follow_its_draw(self):
+        witness = dict(kind="avatar_palette_overlap", frame=7, eye=0, draw=0,
+                       status="compared", unique_matches=3)
+        first_draw = next(i for i, record in enumerate(self.records) if record["kind"] == "draw")
+        self.records.insert(first_draw, witness)
+        self.save()
+        with self.assertRaisesRegex(ValueError, "invalid hand palette witness draw identity"):
+            validate(self.folder)
+        witness["draw"] = 8
+        self.save()
+        with self.assertRaisesRegex(ValueError, "invalid hand palette witness draw identity"):
+            validate(self.folder)
+
     def test_no_present_completion(self):
         self.records=[r for r in self.records if r["kind"]!="present_completion"]
         self.save()

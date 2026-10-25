@@ -1,10 +1,26 @@
 #include "native_hands_math.h"
-// Reuse the accepted pistol WORLD-pose callback. Native parent/socket resolution
-// has already consumed the animated model-space palette at that point. No new
-// engine code patch: both failed palette/renderer sites remain strictly stock.
+// Current trigger: the accepted pistol WORLD-pose callback. Its order relative
+// to the avatar skin-pack and visible draw is still unproven; do not treat a
+// successful CPU palette write as evidence that the rendered hand moved.
+// No additional engine code patch: both failed palette/renderer sites stay stock.
 static bool g_nativeHandsInstalled=false;
+#ifdef D2VR_MATCHED_CAPTURE
+static volatile LONG g_nativeHandsWriteSeq=0; // completed CPU palette edits, diagnostic only
+#endif
 static bool NativeHandsAvailable() { return g_nativeHandsEnabled && g_nativeHandsInstalled; }
 static SRWLOCK g_nativeHandsLock=SRWLOCK_INIT;
+#ifdef D2VR_MATCHED_CAPTURE
+struct NativeHandsWriteStamp {
+    LONG sequence=0;
+    ULONGLONG frame=0,time=0;
+    void* renderer=nullptr;
+    void* palette=nullptr;
+    DWORD poseSlot=0,skinSlot=0;
+    bool rightWritten=false,leftWritten=false;
+    float rightWrist[16]{},leftWrist[16]{};
+};
+static NativeHandsWriteStamp g_nativeHandsLastWrite;
+#endif
 struct NativeHandCalibration {
     void* parent=nullptr; void* skeleton=nullptr;
     float right[16]{},left[16]{},support[16]{};
@@ -125,6 +141,16 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable) {
         }
         // Preserve the actual unchanged left range on tracking loss.
         memcpy(cache.applied,palette+2*16,sizeof(cache.applied));
+#ifdef D2VR_MATCHED_CAPTURE
+        auto& stamp=g_nativeHandsLastWrite;
+        stamp.frame=g_trackedFrame.id; stamp.time=GetTickCount64();
+        stamp.renderer=renderer; stamp.palette=palette;
+        stamp.poseSlot=index; stamp.skinSlot=skinIndex;
+        stamp.rightWritten=rightChanged; stamp.leftWritten=leftChanged;
+        memcpy(stamp.rightWrist,palette+27*16,sizeof(stamp.rightWrist));
+        if(leftChanged) memcpy(stamp.leftWrist,palette+5*16,sizeof(stamp.leftWrist));
+        stamp.sequence=InterlockedIncrement(&g_nativeHandsWriteSeq);
+#endif
         ReleaseSRWLockExclusive(&g_nativeHandsLock);
         locked=false;
         static ULONGLONG last=0; auto now=GetTickCount64();

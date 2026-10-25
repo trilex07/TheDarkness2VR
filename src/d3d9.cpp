@@ -349,6 +349,14 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
             Log("  AccessViolation type=%lu targetAddr=%p",
                 (unsigned long)ep->ExceptionRecord->ExceptionInformation[0],
                 reinterpret_cast<void*>(ep->ExceptionRecord->ExceptionInformation[1]));
+#ifdef D2VR_MATCHED_CAPTURE
+            MEMORY_BASIC_INFORMATION region{};
+            const void* target=reinterpret_cast<const void*>(ep->ExceptionRecord->ExceptionInformation[1]);
+            if(VirtualQuery(target,&region,sizeof(region))==sizeof(region))
+                Log("[ExceptionWitness] targetPage base=%p allocation=%p size=%lu state=%08lX protect=%08lX type=%08lX",
+                    region.BaseAddress,region.AllocationBase,(unsigned long)region.RegionSize,
+                    region.State,region.Protect,region.Type);
+#endif
         }
         Log("  EAX=%08lX EBX=%08lX ECX=%08lX EDX=%08lX ESI=%08lX EDI=%08lX EBP=%08lX ESP=%08lX EIP=%08lX",
             c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp, c->Eip);
@@ -373,6 +381,22 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
                 break;
             }
         }
+#ifdef D2VR_MATCHED_CAPTURE
+        // The raw stack scan above is not an unwind. Follow only a bounded,
+        // monotonic x86 EBP chain and label it as a candidate; omit FPO frames.
+        uintptr_t frame=c->Ebp;
+        for(int depth=0;depth<12;++depth) {
+            if(frame<c->Esp || frame-c->Esp>0x10000 || (frame&3)) break;
+            __try {
+                const auto words=reinterpret_cast<const uintptr_t*>(frame);
+                const uintptr_t next=words[0],returnAddress=words[1];
+                Log("[ExceptionWitness] ebpFrame=%d ebp=%p return=%p next=%p",
+                    depth,(void*)frame,(void*)returnAddress,(void*)next);
+                if(next<=frame || next-frame>0x10000 || (next&3)) break;
+                frame=next;
+            } __except(EXCEPTION_EXECUTE_HANDLER) { break; }
+        }
+#endif
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -2779,6 +2803,8 @@ static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
 }
 
 #ifdef D2VR_MATCHED_CAPTURE
+static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9*,IDirect3DIndexBuffer9*,
+    UINT,const D3DVIEWPORT9&,unsigned,const float*,int,unsigned);
 #include "matched_capture.inl"
 static void NativeCameraCaptureChanged() {
     if(matched_capture::active) matched_capture::Reject("selected native camera changed after capture header; request a stable frame");
@@ -3018,6 +3044,9 @@ static void ResetPoseInput() {
 #include "native_weapon.inl"
 #include "native_hands.inl"
 #include "native_recenter.inl"
+#ifdef D2VR_MATCHED_CAPTURE
+#include "native_hands_witness.inl"
+#endif
 static void LocateTrackedHands();
 static WORD GestureButtons(const XINPUT_GAMEPAD&);
 static void ApplyTentacleGestures(XINPUT_GAMEPAD&);

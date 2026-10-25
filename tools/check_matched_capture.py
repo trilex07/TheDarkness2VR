@@ -114,6 +114,17 @@ def validate(folder):
             if r["eye"] not in (0, 1) or r["bank_offset"] != expected_offset:
                 raise ValueError("invalid draw-bank ordering")
             expected_offset += 4096
+    witnesses = [r for r in records if r["kind"] == "avatar_palette_overlap"]
+    if witnesses:
+        draw_positions = {(r["eye"], r["draw"]): position(r) for r in records if r["kind"] == "draw"}
+        source_positions = {r["eye"]: position(r) for r in records if r["kind"] == "source"}
+        seen_witnesses = set()
+        for witness in witnesses:
+            key = (witness.get("eye"), witness.get("draw"))
+            if (key in seen_witnesses or key not in draw_positions or key[0] not in (0, 1) or
+                    not draw_positions[key] < position(witness) < source_positions.get(key[0], -1)):
+                raise ValueError("invalid hand palette witness draw identity")
+            seen_witnesses.add(key)
     if (folder / "vs-banks.bin").stat().st_size != expected_offset:
         raise ValueError("truncated or extra draw banks")
     for eye in (0, 1):

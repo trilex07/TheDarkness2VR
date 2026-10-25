@@ -450,6 +450,7 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
     fprintf(meta,"{\"kind\":\"draw_geometry\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"vb\":\"%p\",\"ib\":\"%p\",\"ps\":\"%p\",\"texture0\":\"%p\",\"stream_offset\":%u,\"stride\":%u,\"cull\":%lu,\"scissor\":%lu,\"clip\":[%ld,%ld,%ld,%ld]}\n",
         frame,eye,draws[eye]-1,geometry?"true":"false",vb,ib,ps,texture,streamOffset,stride,cull,scissor,clip.left,clip.top,clip.right,clip.bottom);
     fprintf(meta,"{\"kind\":\"draw_ps\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"shader_hash\":%u}\n",frame,eye,draws[eye]-1,pixelHash);
+    if(geometry) MatchedCaptureHandsWitness(vb,ib,stride,vp,hash,constants,eye,draws[eye]-1);
     // One bounded read-only snapshot of the first-person buffers. Private output,
     // never included in a commit; no locks outside an explicit capture request.
     if (eye==0 && vp.MaxZ<=0.05f && vb && ib && geometrySaved.size()<8 &&
