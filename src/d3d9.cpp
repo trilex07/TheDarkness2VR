@@ -380,7 +380,7 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
 static std::string g_matchedIniPath;
 static volatile LONG g_cameraUploadWitnessBudget=0;
 #endif
-static int g_nisMode = 0; // 0=off, 2=per-eye native-size sharpening
+static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
 void LoadConfig() {
@@ -422,11 +422,12 @@ void LoadConfig() {
     Log("[WorldDiffuse] scoped anisotropy=%d (exact VS293F456B/PSCA08BDC4, s0 only)", (int)g_worldDiffuseAnisotropy);
     Log("[Sharpness] texture anisotropy target=%d", g_textureAnisotropy);
     g_disableFxaa = GetPrivateProfileIntA("Render", "DisableFXAA", 1, chosenIni) != 0;
-    g_nisMode = GetPrivateProfileIntA("Render", "NisMode", 0, chosenIni)==2 ? 2 : 0;
+    const int requestedNisMode=GetPrivateProfileIntA("Render", "NisMode", 0, chosenIni);
+    g_nisMode=(requestedNisMode==2 || requestedNisMode==3) ? requestedNisMode : 0;
     char nisSharpness[32]{};
     GetPrivateProfileStringA("Render", "NisSharpness", "0.20", nisSharpness, sizeof(nisSharpness), chosenIni);
     g_nisSharpness = nis_upscale::ClampSharpness((float)atof(nisSharpness));
-    Log("[NIS] mode=%d sharpness=%.2f (native-size per-eye filter)",g_nisMode,g_nisSharpness);
+    Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
@@ -1036,6 +1037,7 @@ uint32_t g_scCount[2] = { 0, 0 };
 
 ID3D11Texture2D* g_eyeCache[2] = { nullptr, nullptr };
 ID3D11RenderTargetView* g_eyeRTV[2] = { nullptr, nullptr };
+static UINT g_eyeCacheW=0,g_eyeCacheH=0;
 #include "nis_eye.inl"
 
 IDirect3DSurface9* g_sysmem = nullptr;
@@ -2139,8 +2141,8 @@ static bool RenderStereoEyeD11(
     D3D11_VIEWPORT vp{};
     vp.TopLeftX = 0.0f;
     vp.TopLeftY = 0.0f;
-    vp.Width = (float)g_scW;
-    vp.Height = (float)g_scH;
+    vp.Width = (float)g_eyeCacheW;
+    vp.Height = (float)g_eyeCacheH;
     vp.MinDepth = 0.0f;
     vp.MaxDepth = 1.0f;
     g_ctx11->RSSetViewports(1, &vp);
@@ -3809,12 +3811,26 @@ void PumpXR() {
 }
 
 bool EnsureSwapchains(UINT w, UINT h) {
-    if (g_swapchain[0] && g_swapchain[1] && w == g_scW && h == g_scH) return true;
+    UINT cacheW=w,cacheH=h;
+    if(g_nisMode==3 && g_submitMode==4 && !g_nisScalerFailed) {
+        if(NisInit(&g_nisEye,g_dev11,kNisScalerCS,sizeof(kNisScalerCS),
+                   kNisSharpenCS,sizeof(kNisSharpenCS),nullptr,NisEyeLog)) {
+            cacheW=std::min(w,(UINT)g_renderW);
+            cacheH=std::min(h,(UINT)g_renderH);
+        } else {
+            g_nisScalerFailed=true;
+            Log("[NIS] scaler init failed; preserving full-size eye blit");
+        }
+    }
+    if (g_swapchain[0] && g_swapchain[1] && w == g_scW && h == g_scH &&
+        cacheW==g_eyeCacheW && cacheH==g_eyeCacheH) return true;
     static ULONGLONG retryAfter = 0;
     static bool reportedNoFormats = false;
     const ULONGLONG now = GetTickCount64();
     if (now < retryAfter) return false;
+    g_eyePairReady=false;
     NisEyeReleaseSources();
+    g_eyeCacheW=g_eyeCacheH=0;
     for (int e = 0; e < 2; ++e) {
         if (g_swapchain[e]) {
             xrDestroySwapchain(g_swapchain[e]);
@@ -3880,8 +3896,8 @@ bool EnsureSwapchains(UINT w, UINT h) {
         delete[] imgs;
 
         D3D11_TEXTURE2D_DESC td{};
-        td.Width = w;
-        td.Height = h;
+        td.Width = cacheW;
+        td.Height = cacheH;
         td.MipLevels = 1;
         td.ArraySize = 1;
         td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -3900,7 +3916,8 @@ bool EnsureSwapchains(UINT w, UINT h) {
 
     g_scW = w;
     g_scH = h;
-    Log("Stereo swapchains [0,1] + RTVs created %ux%u count=(%u,%u)", w, h, g_scCount[0], g_scCount[1]);
+    g_eyeCacheW=cacheW;g_eyeCacheH=cacheH;
+    Log("Stereo swapchains [0,1] %ux%u eyeCache=%ux%u count=(%u,%u)", w, h,cacheW,cacheH,g_scCount[0],g_scCount[1]);
     return true;
 }
 
@@ -4254,14 +4271,26 @@ void SubmitXR(IDirect3DDevice9* dev) {
             const int rightIdx = (g_stereoDebugMode == 4) ? 0 : 1;
             ID3D11Texture2D* submitted[2]={g_eyeCache[leftIdx],g_eyeCache[rightIdx]};
             ID3D11Texture2D* sharpened[2]{};
-            if(NisEyeProcess(submitted[0],submitted[1],sharpened)) {
+            const bool scaleRequired=g_nisMode==3 && !g_nisScalerFailed &&
+                (g_eyeCacheW!=g_scW || g_eyeCacheH!=g_scH);
+            if((g_nisMode==2 || scaleRequired) && NisEyeProcess(submitted[0],submitted[1],sharpened)) {
                 submitted[0]=sharpened[0]; submitted[1]=sharpened[1];
+            } else if(scaleRequired) {
+                // A small cache cannot be copied into the full-size XR images.
+                // Drop this one world layer and rebuild full-size eye caches on
+                // the next frame. Never submit stale or mismatched eye images.
+                g_nisScalerFailed=true;
+                submitted[0]=submitted[1]=nullptr;
+                Log("[NIS] scale failed; one layer dropped, full-size fallback next frame");
             }
 #ifdef D2VR_MATCHED_CAPTURE
-            matched_capture::Final(0,submitted[0]);
-            matched_capture::Final(1,submitted[1]);
+            if(submitted[0] && submitted[1]) {
+                matched_capture::Final(0,submitted[0]);
+                matched_capture::Final(1,submitted[1]);
+            }
 #endif
-            if (WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], submitted[0]) &&
+            if (submitted[0] && submitted[1] &&
+                WriteTextureToSwapchain(g_swapchain[0], g_scImages[0], submitted[0]) &&
                 WriteTextureToSwapchain(g_swapchain[1], g_scImages[1], submitted[1])) {
                 // Clip-shift renders encode IPD in pixels; default layer pose is head center
                 // (OpenVR-style). Per-eye poses are optional (StereoLayerPose=1).

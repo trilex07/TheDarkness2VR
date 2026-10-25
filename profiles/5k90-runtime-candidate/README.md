@@ -39,3 +39,13 @@ the pistol comparison callback; this disassembly alone does not prove that the
 visible FP skin consumes the edited human bones in time. No new native hook is
 installed from these addresses. Previous direct palette patch caused an intro
 crash, so this candidate keeps the last accepted hand code unchanged.
+
+2026-10-25 controlled PSVR2 trial: NIS sharpen mode 2 was slightly sharper,
+but 2560x2614 per-eye rendering remained below 90 FPS (late scene about 49-50
+world layers/s and about 15 ms D3D9 GPU, before D3D11/XR). Tentacles did not
+follow head rotation. Captured shader disassembly and bank records subsequently
+showed the head attachment never ran: the three shaders use manual c45 bone
+indexing (hasBones=false), their WVP is nested under CTAB Instance (wvpBase=-1),
+and the same bytecodes are reused by hand/world meshes. The next opt-in profile
+addresses these gates and uses actual NIS scaling. Installed DLL and both INIs
+were restored and SHA-256 checked after the trial.

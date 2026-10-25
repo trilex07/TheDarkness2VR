@@ -59,6 +59,25 @@ int main() {
     std::printf("WARP debug changed=%d input=%u output=%u edgeIn=%u edgeOut=%u\n", changed,pixels[0],output[0][0],pixels[4*(W*16+15)],output[0][4*(W*16+15)]);
     Check(changed>W,"sharpen pass changed actual pixels");
     std::printf("PASS per-eye WARP NIS: %d changed byte components\n",changed);
+    for(auto* r:readback) r->Release();
+    constexpr UINT OUT_W=320,OUT_H=320;
+    Check(NisEnsureOutput(&nis,dev,W,H,OUT_W,OUT_H),"scaler output pair");
+    for(int eye=0;eye<2;++eye)
+        Check(NisDispatchEye(&nis,ctx,view,W,H,eye,OUT_W,OUT_H,.2f,false),"shared-source scale");
+    td.Width=OUT_W;td.Height=OUT_H;
+    for(int eye=0;eye<2;++eye) {
+        Check(SUCCEEDED(dev->CreateTexture2D(&td,nullptr,&readback[eye])),"scaled staging");
+        ctx->CopyResource(readback[eye],nis.outTex[eye]);
+        D3D11_MAPPED_SUBRESOURCE m{};
+        Check(SUCCEEDED(ctx->Map(readback[eye],0,D3D11_MAP_READ,0,&m)),"scaled map");
+        output[eye].resize(OUT_W*OUT_H*4);
+        for(UINT y=0;y<OUT_H;++y) std::memcpy(output[eye].data()+y*OUT_W*4,
+            (const unsigned char*)m.pData+y*m.RowPitch,OUT_W*4);
+        ctx->Unmap(readback[eye],0);
+    }
+    Check(output[0]==output[1],"scaled eyes identical for same source");
+    Check(output[0][4*(OUT_W*OUT_H/2+OUT_W/2)]!=0,"scaled center contains pixels");
+    std::printf("PASS per-eye WARP NIS scaler: %ux%u -> %ux%u\n",W,H,OUT_W,OUT_H);
     for(auto* r:readback) r->Release();view->Release();source->Release();
     NisShutdown(&nis);ctx->Release();dev->Release();
 }

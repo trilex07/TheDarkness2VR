@@ -823,6 +823,17 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
             vi.reflectedStp = FindNamedMatrix(fn, n + 1, "ScreenTextureProjection", nullptr);
             vi.reflectedPreviousWvp = FindNamedMatrix(fn, n + 1, "PrevWorldProj", nullptr);
         }
+        if(g_headAttachedTentacles &&
+           (h==0x1CB7CEE2u || h==0x34D4EEE8u || h==0xE3259C61u)) {
+            // Captured CTAB nests WorldViewProjection under Instance, so the
+            // top-level name lookup returns -1. Exact bytecode disassembly
+            // proves c0..c3 feeds o0 for all three player tentacle shaders.
+            // Without this register identity ApplyShiftToUpload never reaches
+            // the head-attached branch, regardless of the hasBones predicate.
+            vi.wvpBase=vi.reflectedWvp=0;
+            vi.reflected=true;
+            Log("[HeadAttachedTentacles] verified VS=%08X WVP=c0 (nested Instance)",h);
+        }
         bool isNew = false;
         {
             RecLockGuard lock;   // shader map is shared - the engine creates shaders off-thread
@@ -1011,6 +1022,18 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
         if (b < 0) continue;
         if ((int)start > b || (int)(start + count) < b + 4) continue;
         const float* orig = src + (b - (int)start) * 4;
+        const bool playerTentacleShader=vi && g_headAttachedTentacles &&
+            (vi->hash==0x1CB7CEE2u || vi->hash==0x34D4EEE8u || vi->hash==0xE3259C61u);
+        // These bytecodes are shared with other skinned meshes. Four matched
+        // gameplay captures separate the player tentacle WVP (c3.w about 0,
+        // c3.z about -0.1) from the hand model (c3.w about -0.1) and world
+        // characters (c3.w >= 0.4). Keep this opt-in off unrelated meshes.
+        const bool playerTentacleWvp=playerTentacleShader &&
+            std::isfinite(orig[12]) && std::isfinite(orig[13]) &&
+            std::isfinite(orig[14]) && std::isfinite(orig[15]) &&
+            std::fabs(orig[12])<0.15f && std::fabs(orig[13])<0.15f &&
+            orig[14]>-0.16f && orig[14]<-0.06f && std::fabs(orig[15])<0.05f;
+        if(k==0 && playerTentacleShader && !playerTentacleWvp) continue;
 
         bool screenProjection = false;
         if (k == 1) {
@@ -1049,14 +1072,20 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
         // for the OpenXR submission FOV.
         StereoParams matrixParams = sp;
         // These three exact VS bytecodes were captured with the player Darkness
-        // tentacle head, teeth and tail. The native model is camera-attached;
-        // applying the HMD world-view delta makes it remain in world space as
-        // the player turns. Keep the eye translation and FOV correction, but
-        // leave that local model in head space. The opt-in limits this A/B
-        // experiment to the identified skinned WVP, never light/STP passes.
-        if(k==0 && g_headAttachedTentacles && vi && vi->hasBones &&
-           (vi->hash==0x1CB7CEE2u || vi->hash==0x34D4EEE8u || vi->hash==0xE3259C61u))
+        // tentacle head, teeth and tail. Their BoneMatrices are indexed through
+        // manually generated c45[a0.x] instructions, not M3x4/M4x3 opcodes.
+        // AnalyzeVsTokenStream therefore leaves hasBones=false for them. The
+        // old hasBones gate silently skipped this head attachment entirely.
+        // Keep the eye translation and FOV correction, but leave the local
+        // model in head space. Restrict this opt-in to exact captured bytecodes.
+        if(k==0 && playerTentacleWvp) {
+            if(matrixParams.headGeometry) {
+                static volatile LONG logged=0;
+                if(InterlockedIncrement(&logged)<=3)
+                    Log("[HeadAttachedTentacles] applied VS=%08X eyeHeadClip=1 WVP=c%d",vi->hash,b);
+            }
             matrixParams.headGeometry=false;
+        }
         if (k == 1 && g_lightingPreset == 8) {
             matrixParams.transX = matrixParams.transY = matrixParams.separation = 0.0f;
         }

@@ -7,6 +7,7 @@
 static NisRuntime g_nisEye;
 static ID3D11ShaderResourceView* g_nisEyeSource[2]{};
 static ID3D11Texture2D* g_nisEyeSourceOwner[2]{};
+static bool g_nisScalerFailed=false;
 
 static void NisEyeLog(const char* message) { Log("[NIS] %s",message); }
 
@@ -22,11 +23,12 @@ static void NisEyeReleaseSources() {
 static void NisEyeShutdown() {
     NisEyeReleaseSources();
     NisShutdown(&g_nisEye);
+    g_nisScalerFailed=false;
 }
 
 static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
                           ID3D11Texture2D* filtered[2]) {
-    if(g_nisMode!=2 || !g_dev11 || !g_ctx11 || !left || !right) return false;
+    if((g_nisMode!=2 && g_nisMode!=3) || !g_dev11 || !g_ctx11 || !left || !right) return false;
     ID3D11Texture2D* originals[2]={left,right};
     D3D11_TEXTURE2D_DESC desc[2]{};
     originals[0]->GetDesc(&desc[0]); originals[1]->GetDesc(&desc[1]);
@@ -46,12 +48,21 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
         }
         g_nisEyeSourceOwner[eye]=originals[eye]; originals[eye]->AddRef();
     }
-    if(!NisEnsureOutput(&g_nisEye,g_dev11,desc[0].Width,desc[0].Height,
-                        desc[0].Width,desc[0].Height)) return false;
+    const UINT outW=g_nisMode==3 ? g_scW : desc[0].Width;
+    const UINT outH=g_nisMode==3 ? g_scH : desc[0].Height;
+    if(!NisEnsureOutput(&g_nisEye,g_dev11,desc[0].Width,desc[0].Height,outW,outH)) return false;
     for(int eye=0;eye<2;++eye)
         if(!NisDispatchEye(&g_nisEye,g_ctx11,g_nisEyeSource[eye],
                            desc[eye].Width,desc[eye].Height,eye,
-                           desc[eye].Width,desc[eye].Height,g_nisSharpness,true)) return false;
+                           outW,outH,g_nisSharpness,g_nisMode==2)) return false;
+    if(g_nisMode==3) {
+        static UINT loggedInW=0,loggedInH=0,loggedOutW=0,loggedOutH=0;
+        if(loggedInW!=desc[0].Width || loggedInH!=desc[0].Height ||
+           loggedOutW!=outW || loggedOutH!=outH) {
+            Log("[NIS] eye pair %ux%u -> %ux%u; mode=3",desc[0].Width,desc[0].Height,outW,outH);
+            loggedInW=desc[0].Width;loggedInH=desc[0].Height;loggedOutW=outW;loggedOutH=outH;
+        }
+    }
     filtered[0]=g_nisEye.outTex[0];filtered[1]=g_nisEye.outTex[1];
     return true;
 }
