@@ -22,6 +22,13 @@ inline constexpr Site sites[] = {
     {0x1010B44,"\xA0\xBB\xCF\x00",4},
     {0xC47570,"\x55\x8B\xEC\x83\xE4\xF0\x83\xEC\x64",9},
 };
+// Optional hand-packer candidate: verified x86 resource vtable entry and
+// thiscall prolog. It is checked only when the separate INI opt-in is set.
+inline constexpr Site handPackSites[] = {
+    {0xFC2664,"\x90\x38\x6C\x00",4},
+    {0x6C3890,"\x55\x8B\xEC\x83\xE4\xF0\x83\xEC\x74",9},
+    {0x6C3ED9,"\xC2\x04\x00",3},
+};
 template<class Read> bool Validate(Read read, uint32_t& failedAddress) {
     unsigned char bytes[32];
     for (const auto& site : sites) {
@@ -36,5 +43,14 @@ inline bool Ready(bool requested, bool identity, bool present, bool xr,
                   bool aim, bool weapon, bool hands, bool gestures) {
     return requested && identity && present && xr && submit==4 && stereo==1 &&
         head && nativeHead && aim && weapon && hands && gestures;
+}
+template<class Read> bool ValidateHandPack(Read read, uint32_t& failedAddress) {
+    unsigned char bytes[16];
+    for(const auto& site:handPackSites) {
+        if(!read(site.address,bytes,site.size) || std::memcmp(bytes,site.bytes,site.size)) {
+            failedAddress=site.address; return false;
+        }
+    }
+    failedAddress=0; return true;
 }
 }

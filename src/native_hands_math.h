@@ -42,7 +42,11 @@ inline bool PoseArm(float bones[][16],int upper,int elbow,int wrist,int lowerTwi
     for(int i=upper;i<=upperTwist;++i) if(!Valid(bones[i])) return false;
     V s=Position(bones[upper]),e=Position(bones[elbow]),h=Position(bones[wrist]),t=Position(target);
     const float a=Length(e-s),b=Length(h-e); V axis=t-s; float d=Length(axis);
-    if(a<.02f || b<.02f || a>1 || b>1 || d<.005f || d>2) return false;
+    // A target inside |upper-lower| cannot be reached with rigid segments.
+    // Reject it before touching any bones; clamping only the elbow would
+    // separate the forearm from the tracked wrist.
+    if(a<.02f || b<.02f || a>1 || b>1 || d<.005f || d>2 ||
+       d<std::fabs(a-b)+.001f) return false;
     axis=axis*(1/d);
     // Limited shoulder translation beyond reach; full clavicle/body IK is separate.
     if(d>a+b-.001f) { s=s+axis*(d-(a+b-.001f)); d=a+b-.001f; }

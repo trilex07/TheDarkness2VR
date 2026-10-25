@@ -28,6 +28,16 @@ int main(int argc,char** argv) {
     };
     uint32_t failed=0;
     check(Validate(read,failed) && failed==0);
+    for(const auto& s:handPackSites) std::memcpy(mapped.data()+s.address-0x400000,s.bytes,s.size);
+    check(ValidateHandPack(read,failed) && failed==0);
+    for(const auto& s:handPackSites) for(size_t i=0;i<s.size;++i) {
+        auto& b=mapped[s.address-0x400000+i];b^=0x80;
+        check(!ValidateHandPack(read,failed) && failed==s.address);b^=0x80;
+    }
+    for(const auto& s:handPackSites)
+        check(!ValidateHandPack([&](uint32_t a,void* p,size_t n){return a!=s.address && read(a,p,n);},failed)
+              && failed==s.address);
+    check(ValidateHandPack(read,failed));
     for(const auto& s:sites) for(size_t i=0;i<s.size;++i) {
         auto& b=mapped[s.address-0x400000+i];b^=0x80;
         check(!Validate(read,failed) && failed==s.address);b^=0x80;
@@ -64,6 +74,9 @@ int main(int argc,char** argv) {
         };
         check(Validate(readPE,failed));
         std::printf("Installed EXE gameplay sites: PASS (%zu sites)\n",sizeof(sites)/sizeof(sites[0]));
+        check(ValidateHandPack(readPE,failed));
+        std::printf("Installed EXE hand pack sites: PASS (%zu sites)\n",
+            sizeof(handPackSites)/sizeof(handPackSites[0]));
         if(!d2vr_camera_cover::Validate(readPE,failed)) std::printf("Camera pin mismatch: %08X\n",failed);
         check(d2vr_camera_cover::Validate(readPE,failed));
         std::printf("Installed EXE camera sites: PASS (%zu sites)\n",sizeof(d2vr_camera_cover::pins)/sizeof(d2vr_camera_cover::pins[0]));

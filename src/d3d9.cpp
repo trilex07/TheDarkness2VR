@@ -83,6 +83,10 @@ bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
 bool g_nativeHandsEnabled=false;
 bool g_nativeHandsDirtyBoth=false;
+static bool g_nativeHandsPackInstalled=false;
+#ifdef D2VR_MATCHED_CAPTURE
+static PVOID volatile g_nativeHandsSelectedResource=nullptr;
+#endif
 float g_throwAimAssist=.75f;
 static void ResetNativeAim();
 static void ResetNativeThrow();
@@ -5358,12 +5362,21 @@ static void InstallDiagnosticTrackedGameplay() {
         Log("[TrackedGameplay] REFUSED identity/config/sites ready=%d failed=%08X sha=%s",ready,failed,sha.c_str());
         CloseHandle(locked); return;
     }
+    const bool handPackRequested=GetPrivateProfileIntA("Diagnostics","NativeHandsPackHook",0,
+        ".\\Darkness2VR-diagnostic.ini")!=0;
+    if(handPackRequested && !d2vr_tracked_gameplay::ValidateHandPack(read,failed)) {
+        Log("[NativeHandsPack] REFUSED original bytes at %08X",failed);
+        CloseHandle(locked); return;
+    }
     const bool installed=InstallNativeAimHook() && InstallNativeThrowHook() &&
-        InstallNativeWeaponHook() && InstallNativePistolHook() && InstallNativeHandsHook();
+        InstallNativeWeaponHook() && InstallNativePistolHook() && InstallNativeHandsHook() &&
+        (!handPackRequested || InstallNativeHandsPackHook());
     if(!installed) {
+        const bool packRemoved=RemoveNativeHandsPackHook();
         RemoveNativeHandsHook(); RemoveNativePistolHook(); RemoveNativeWeaponHook();
         RemoveNativeThrowHook(); RemoveNativeAimHook();
-        if(!d2vr_tracked_gameplay::Validate(read,failed)) {
+        if(!packRemoved || !d2vr_tracked_gameplay::Validate(read,failed) ||
+           (handPackRequested && !d2vr_tracked_gameplay::ValidateHandPack(read,failed))) {
             Log("[TrackedGameplay] FATAL rollback mismatch at %08X",failed);
             CloseHandle(locked); RaiseFailFastException(nullptr,nullptr,0); return;
         }
@@ -5373,9 +5386,10 @@ static void InstallDiagnosticTrackedGameplay() {
     // The native pose hooks do not deliver locomotion, turning or gesture button
     // pulses. Install the existing XInput bridge here, outside the loader lock.
     if(installed) TryInstallXInputHook();
-    Log("[TrackedGameplay] restored=%d sha=%s head6DoF=%d hands=%d gestures=%d xinput=%ld; legacy native FOV hooks remain OFF; IN_MEMORY_EXE_PATCH=21_BYTES",
-        installed,sha.c_str(),g_headGeometry && g_nativeStereoHeadGeometry,g_nativeHandsEnabled,g_tentacleBridge,
-        (long)InterlockedCompareExchange(&g_xinputHooked,0,0));
+    Log("[TrackedGameplay] restored=%d sha=%s head6DoF=%d hands=%d handPack=%d gestures=%d xinput=%ld; legacy native FOV hooks remain OFF; IN_MEMORY_EXE_PATCH=21_BYTES%s",
+        installed,sha.c_str(),g_headGeometry && g_nativeStereoHeadGeometry,g_nativeHandsEnabled,
+        g_nativeHandsPackInstalled,g_tentacleBridge,(long)InterlockedCompareExchange(&g_xinputHooked,0,0),
+        g_nativeHandsPackInstalled?"+4_BYTE_VTABLE":"");
 }
 
 static void InstallDiagnosticCameraCover() {
@@ -5753,6 +5767,9 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         Log("[RenderPipelineTrace] attempted=%ld dropped=%ld (last worker flush may be lost at process exit)",
             (long)InterlockedCompareExchange(&d2vr_trace::g_count,0,0),
             (long)InterlockedCompareExchange(&d2vr_trace::g_dropped,0,0));
+#ifdef D2VR_MATCHED_CAPTURE
+        if(!RemoveNativeHandsPackHook()) RaiseFailFastException(nullptr,nullptr,0);
+#endif
         RemoveNativeHandsHook();
         RemoveNativePistolHook();
         RemoveNativeWeaponHook();

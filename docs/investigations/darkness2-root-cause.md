@@ -201,10 +201,41 @@ callback was considered and reverted before this branch. It would not prove
 correct timing or GPU consumption. Prior broad palette hooks caused startup
 regressions. The existing recenter observer can resolve the avatar without a
 pistol, but it runs on a button event and is read-only; it is not an animation
-or render synchronization point. No new palette writer or hook has been
-installed here. A hand correction requires a same-frame witness showing whether
+or render synchronization point. The earlier diagnostic branch installed no
+new palette hook. A confirmed hand correction still requires a same-frame
+witness showing whether
 the CPU edit survives, whether the avatar's packed matrices match the live arm
 draw's c45 bank, and which verified native callback precedes that upload.
+
+**New test candidate.** The diagnostic build now offers
+`[Diagnostics] NativeHandsPackHook=1`, OFF by default. On the pinned EXE only,
+it validates vtable `00FC2664 -> 006C3890`, packer entry bytes and `ret 4`,
+then redirects that one vtable entry in process memory. The wrapper edits the
+selected avatar's human-bone pose immediately before the original packer and
+forwards the original exactly once. It uses tracked controller poses with no
+pistol equipped, skips busy or alternate grab states, and leaves the legacy
+pistol trigger inactive while installed. On rollback it restores the exact
+vtable pointer. The ordinary DLL never installs this hook. A cached resource
+identity limits the wrapper's work to the selected avatar, while the complete
+camera/avatar/renderer ownership chain is checked again before any write.
+
+The private Ghidra export `d2vr-rootcause-current-exe.txt` (SHA-256
+`5573df1aba71d7a40a293108812744bbdaf47202e8abeb8c3ba67dbeb95d1ff8`)
+identifies the installed EXE and ends with `EVIDENCE COMPLETE`. It decompiles
+`006C3890` as a thiscall method with one pointer argument: that argument's
+first dword is the renderer, the method selects pose `+3F4` via `+424`,
+checks packed-skin slot `+428` via `+448` and dirty byte `+580`, and calls
+`00B1E500` to pack 48-byte matrices. Its original x86 epilog is `ret 4`.
+This establishes the wrapper ABI and the immediate pack boundary; whether
+the selected renderer supplies the visible hand draw remains a headset gate.
+
+Offline: both x86 DLL builds passed; the exact installed-EXE audit passed
+1,329 checks; ten fixed seeds covered 502,400 left/right hand-geometry cases
+and 43,368,640 checks; and the 31 matched-capture tests passed. The geometry
+suite found and fixed an unreachable folded-arm case before any bone write.
+Steam and PSVR2 verification are pending. This is a rendering correction
+candidate, not yet proof of visible hand movement or a fix for the enemy-grab
+crash.
 
 ## Crash while lifting an enemy
 

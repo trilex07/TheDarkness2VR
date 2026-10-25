@@ -1,8 +1,7 @@
 #include "native_hands_math.h"
-// Current trigger: the accepted pistol WORLD-pose callback. Its order relative
-// to the avatar skin-pack and visible draw is still unproven; do not treat a
-// successful CPU palette write as evidence that the rendered hand moved.
-// No additional engine code patch: both failed palette/renderer sites stay stock.
+// The legacy pistol-pose trigger remains the default. The diagnostic opt-in
+// moves the same guarded IK edit immediately before the avatar skin packer.
+// It changes one verified resource vtable entry, never the failed code sites.
 static bool g_nativeHandsInstalled=false;
 #ifdef D2VR_MATCHED_CAPTURE
 static volatile LONG g_nativeHandsWriteSeq=0; // completed CPU palette edits, diagnostic only
@@ -31,18 +30,21 @@ struct NativeHandsPaletteCache {
     float original[44][16]{},applied[44][16]{};
 };
 static NativeHandsPaletteCache g_nativeHandsCache[3];
-static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable) {
+static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expectedResource=nullptr) {
     if(!g_nativeHandsEnabled || !g_nativeHandsInstalled) return false;
     NativeGameplaySample sample;
-    if(!CopyNativeGameplay(sample) || !sample.entities[0]) return false;
+    if(!CopyNativeGameplay(sample) || (!expectedResource && !sample.entities[0])) return false;
     // Grab/attach animations rewrite the same palette; defer human IK until empty.
-    if(sample.grab==d2vr_input::GrabFeedback::Busy) return false;
-    float gunWorld[16];
-    if(!TryNativeWeaponMatrix((void*)sample.entities[0],gunWorld,cameraVtable)) return false;
-    NativeWeaponPose left; bool support;
+    if(sample.grab==d2vr_input::GrabFeedback::Busy || sample.alternateHeldTarget ||
+       (expectedResource && sample.grab!=d2vr_input::GrabFeedback::Empty)) return false;
+    float gunWorld[16]{};
+    if(!expectedResource &&
+       !TryNativeWeaponMatrix((void*)sample.entities[0],gunWorld,cameraVtable)) return false;
+    NativeWeaponPose left,right; bool support;
     if(!TryAcquireSRWLockShared(&g_nativeWeaponLock)) return false;
-    left=g_nativeWeaponPoses[0]; support=g_nativeSupport;
+    left=g_nativeWeaponPoses[0]; right=g_nativeWeaponPoses[1]; support=g_nativeSupport;
     ReleaseSRWLockShared(&g_nativeWeaponLock);
+    if(expectedResource && (!right.valid || GetTickCount64()-right.time>=100)) return false;
     bool locked=false;
     __try {
         // The pistol model's +3C4 parent is not proof of ownership of the
@@ -59,12 +61,16 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable) {
         auto actor=**(BYTE***)(parent+0xF8);
         if(!actor || *(DWORD*)actor!=0xFC5F30) return false;
         auto renderer=**(BYTE***)(actor+8);
+        if(renderer!=receiver) return false;
         const DWORD index=*(DWORD*)(renderer+0x424);
         const DWORD skinIndex=*(DWORD*)(renderer+0x448);
-        if(renderer!=receiver || index>=3 || skinIndex>=2) return false;
+        if(index>=3 || skinIndex>=2) return false;
         auto outputVector=renderer+0x3F4+16*index;
         auto resource=**(BYTE***)(renderer+0x5BC);
-        if(!resource || *(DWORD*)resource!=0xFC2578) return false;
+        if(!resource || (expectedResource && resource!=expectedResource) ||
+           *(DWORD*)resource!=0xFC2578) return false;
+        if(expectedResource && !d2vr_aim::BuildWeaponMatrix((float*)(camera+0x80),right.local,gunWorld))
+            return false;
         auto skeleton=**(BYTE***)(resource+0x5E0);
         if(!skeleton || *(DWORD*)skeleton!=0xFC2338) return false;
         auto records=*(BYTE**)(skeleton+0x90);
@@ -159,7 +165,7 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable) {
     } __except(EXCEPTION_EXECUTE_HANDLER) { if(locked) ReleaseSRWLockExclusive(&g_nativeHandsLock); return false; }
 }
 static bool NativeHandsFromWeapon(void* model,DWORD cameraVtable) {
-    if(!NativeHandsAvailable()) return false;
+    if(!NativeHandsAvailable() || g_nativeHandsPackInstalled) return false;
     NativeGameplaySample sample;
     if(!CopyNativeGameplay(sample) || sample.entities[0]!=(DWORD)(uintptr_t)model) return false;
     __try {
@@ -185,9 +191,75 @@ static bool NativeHandsFromWeapon(void* model,DWORD cameraVtable) {
 static bool InstallNativeHandsHook() {
     if(!g_nativeHandsEnabled || !g_nativeWeaponInstalled || g_nativeHandsInstalled) return g_nativeHandsInstalled;
     g_nativeHandsInstalled=true;
-    Log("[NativeHands] human bone adapter enabled on accepted pistol-pose hook; NO additional engine patch; both failed sites untouched; in-level application pending");
+    Log("[NativeHands] human bone adapter enabled; legacy pistol-pose trigger active unless verified packer opt-in is installed");
     return true;
 }
 static void RemoveNativeHandsHook() {
     g_nativeHandsInstalled=false;
 }
+
+#ifdef D2VR_MATCHED_CAPTURE
+// Current-EXE resource vtable 00FC2578+EC -> 006C3890. The method takes one
+// renderer smart-reference argument (ret 4); forwarding once preserves its
+// native reference release and all renderer side effects.
+using NativeHandsPackMethod=uintptr_t(__thiscall*)(void*,void*);
+static NativeHandsPackMethod g_nativeHandsPackOriginal=(NativeHandsPackMethod)0x006C3890;
+static thread_local bool g_insideNativeHandsPack=false;
+static uintptr_t __fastcall NativeHandsPackHook(void* resource,void*,void* rendererRef) {
+    const bool outermost=!g_insideNativeHandsPack;
+    if(outermost) g_insideNativeHandsPack=true;
+    if(outermost && g_nativeHandsPackInstalled && g_restoredTrackedGameplay &&
+       resource==g_nativeHandsSelectedResource) {
+        void* renderer=nullptr;
+        __try { if(rendererRef) renderer=*(void**)rendererRef; }
+        __except(EXCEPTION_EXECUTE_HANDLER) { renderer=nullptr; }
+        if(renderer) ApplyNativeHandsChecked(renderer,0xFFC7C0,resource);
+    }
+    const uintptr_t result=g_nativeHandsPackOriginal(resource,rendererRef);
+    if(outermost) g_insideNativeHandsPack=false;
+    return result;
+}
+static bool InstallNativeHandsPackHook() {
+    if(!g_nativeHandsInstalled || g_nativeHandsPackInstalled) return g_nativeHandsPackInstalled;
+    auto slot=(void* volatile*)0x00FC2664;
+    const void* expected=(void*)0x006C3890;
+    __try {
+        const BYTE prolog[]={0x55,0x8B,0xEC,0x83,0xE4,0xF0,0x83,0xEC,0x74};
+        if(*slot!=expected || memcmp((void*)0x006C3890,prolog,sizeof(prolog))!=0) {
+            Log("[NativeHandsPack] REFUSED resource vtable or packer bytes mismatch"); return false;
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+    DWORD old=0;
+    if(!VirtualProtect((void*)slot,sizeof(void*),PAGE_READWRITE,&old)) return false;
+    void* prior=InterlockedCompareExchangePointer(slot,(void*)&NativeHandsPackHook,(void*)expected);
+    DWORD ignored=0;
+    const bool restored=VirtualProtect((void*)slot,sizeof(void*),old,&ignored)!=FALSE;
+    if(prior!=expected || !restored) {
+        if(prior==expected) {
+            DWORD writable=0;
+            if(VirtualProtect((void*)slot,sizeof(void*),PAGE_READWRITE,&writable)) {
+                InterlockedCompareExchangePointer(slot,(void*)expected,(void*)&NativeHandsPackHook);
+                VirtualProtect((void*)slot,sizeof(void*),writable,&ignored);
+            }
+        }
+        if(*slot!=(void*)expected) RaiseFailFastException(nullptr,nullptr,0);
+        return false;
+    }
+    g_nativeHandsPackInstalled=true;
+    Log("[NativeHandsPack] active: guarded controller IK before selected avatar skin pack; resource vtable slot=%p",slot);
+    return true;
+}
+static bool RemoveNativeHandsPackHook() {
+    if(!g_nativeHandsPackInstalled) return true;
+    auto slot=(void* volatile*)0x00FC2664;
+    DWORD old=0;
+    if(!VirtualProtect((void*)slot,sizeof(void*),PAGE_READWRITE,&old)) return false;
+    void* prior=InterlockedCompareExchangePointer(slot,(void*)g_nativeHandsPackOriginal,(void*)&NativeHandsPackHook);
+    DWORD ignored=0;
+    const bool restored=VirtualProtect((void*)slot,sizeof(void*),old,&ignored)!=FALSE;
+    if(prior!=(void*)&NativeHandsPackHook || !restored || *slot!=(void*)g_nativeHandsPackOriginal)
+        return false;
+    g_nativeHandsPackInstalled=false;
+    return true;
+}
+#endif

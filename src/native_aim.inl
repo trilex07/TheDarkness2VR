@@ -21,6 +21,9 @@ struct NativeGameplaySample {
     DWORD camera=0,inventory=0,entities[2]{}; // primary/right, secondary/left
     bool offHandEquipped=false;
     DWORD grabFire=0,grabEntity=0;
+#ifdef D2VR_MATCHED_CAPTURE
+    DWORD avatarSkinResource=0; // fast hint only; full ownership checked at the packer
+#endif
     // Character/weapon holds do not use the ordinary prop throw path.
     bool alternateHeldTarget=false;
 };
@@ -44,6 +47,9 @@ static void ResetNativeAim() {
     ReleaseSRWLockExclusive(&g_nativeAimLock);
     InterlockedExchange(&g_nativeAimAppliedAt,0);
     AcquireSRWLockExclusive(&g_nativeGameplayLock); g_nativeGameplay={}; ReleaseSRWLockExclusive(&g_nativeGameplayLock);
+#ifdef D2VR_MATCHED_CAPTURE
+    InterlockedExchangePointer(&g_nativeHandsSelectedResource,nullptr);
+#endif
     ResetNativeWeaponPoses();
 }
 static bool CopyNativeAim(NativeAimSnapshot& out) {
@@ -148,10 +154,24 @@ static void CaptureNativeGameplay(void* self) {
             auto entity=**(BYTE***)(gun+0xE0+0x4C); // native A1DA90(0,0)
             if(entity && *(DWORD*)entity==0xFD6BC0) s.entities[hand]=(DWORD)(uintptr_t)entity;
         }
+#ifdef D2VR_MATCHED_CAPTURE
+        __try {
+            auto parent=**(BYTE***)(avatar+0x1F8C);
+            auto actor=parent && *(DWORD*)parent==0xFFC300 ? **(BYTE***)(parent+0xF8):nullptr;
+            auto renderer=actor && *(DWORD*)actor==0xFC5F30 ? **(BYTE***)(actor+8):nullptr;
+            auto resource=renderer ? **(BYTE***)(renderer+0x5BC):nullptr;
+            if(resource && *(DWORD*)resource==0xFC2578)
+                s.avatarSkinResource=(DWORD)(uintptr_t)resource;
+        } __except(EXCEPTION_EXECUTE_HANDLER) { s.avatarSkinResource=0; }
+#endif
         s.time=GetTickCount64();
     } __except(EXCEPTION_EXECUTE_HANDLER) { s={}; }
     if(TryAcquireSRWLockExclusive(&g_nativeGameplayLock)) {
-        g_nativeGameplay=s; ReleaseSRWLockExclusive(&g_nativeGameplayLock);
+        g_nativeGameplay=s;
+#ifdef D2VR_MATCHED_CAPTURE
+        InterlockedExchangePointer(&g_nativeHandsSelectedResource,(void*)(uintptr_t)s.avatarSkinResource);
+#endif
+        ReleaseSRWLockExclusive(&g_nativeGameplayLock);
     }
     static int last=-1;
     const int state=int(s.grab);
