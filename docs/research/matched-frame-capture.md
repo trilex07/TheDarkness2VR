@@ -164,3 +164,13 @@ The prior Present arms live eye recording; the next matching Present closes
 replay/submission. A pending staged result survives the subsequent XR latch
 until the original COM call returns.
 Opt-in PresentReadiness reports existing COM coverage, not a new swapchain hook.
+
+## Prepared exception: explicit in-memory engine call-site observer
+
+The later `EnginePresentCallsite=1` diagnostic opt-in is OFF by default and
+requires explicit approval before deployment. It changes five loaded EXE bytes
+at the audited A94052 dispatch, without changing the on-disk EXE or COM tables.
+Other native hooks remain disabled. This is an explicit exception to the older
+no-executable-patches statements above, not an automatic capture prerequisite
+or a claim of live success. See diagnostic-engine-present-candidate.md for the
+identity gates, offline tests, startup-only installation and remaining risks.

@@ -54,3 +54,13 @@ Removed the unsafe runtime prototype, restored installed DLL/INIs with matching
 hashes, and stopped further live testing. Added reproducible EXE/module byte
 audit and six fail-closed regression tests. Actual Present callbacks remain zero.
 Details: docs/research/actual-swapchain-observer-20261025.md. No FOV work or merge.
+
+## MAIN 2026-10-25 - Isolated engine Present candidate, approval pending
+
+Prepared OFF-by-default EnginePresentCallsite diagnostic exception using the
+historical A94052 CALL dispatch, exact SHA/PE/site checks, first-CreateDevice-only
+installation, recursion rejection and current capture witness/return gate.
+No COM shadow. Offline x86 instruction/ABI/rollback tests, frame suite, 15 capture
+and 13 audit tests pass; production preprocessing unchanged. No deployment or
+game launch. Explicit user approval required for the in-memory EXE change.
+Details: docs/research/diagnostic-engine-present-candidate.md.

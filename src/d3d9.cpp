@@ -35,6 +35,7 @@
 #include "frame_boundary.h"
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
+#include "diagnostic_present_patch.h"
 static thread_local d2vr_capture::PresentWitness g_capturePresent;
 static bool g_presentReadiness = false;
 static thread_local uintptr_t g_presentCaller = 0;
@@ -4757,9 +4758,10 @@ HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
         static unsigned scenes=0;
         if (++scenes==1 || scenes%600==0) {
             const auto& stats=g_frameBoundary.Stats();
-            Log("[PresentReadiness] scenes=%u device=%llu ex=%llu swapchain=%llu resetGeneration=%ld slot17=%p slot121=%p swapchainObserver=ABSENT",
+            Log("[PresentReadiness] scenes=%u device=%llu ex=%llu swapchain=%llu resetGeneration=%ld slot17=%p slot121=%p observer=%s",
                 scenes,stats.devicePresent,stats.presentEx,stats.swapChainPresent,g_captureResetGeneration,
-                (*reinterpret_cast<void***>(dev))[17],(*reinterpret_cast<void***>(dev))[121]);
+                (*reinterpret_cast<void***>(dev))[17],(*reinterpret_cast<void***>(dev))[121],
+                g_enginePresentInstalled ? "EXPLICIT_ENGINE_CALLSITE" : "ABSENT");
         }
     }
 #endif
@@ -4886,6 +4888,54 @@ typedef HRESULT(STDMETHODCALLTYPE* PFN_SwapChainPresent)(IDirect3DSwapChain9*, c
 // slot for each call, so we never retain an entry subsequently detoured back to us.
 static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
     const RECT* a, const RECT* b, HWND w, const RGNDATA* r, DWORD flags) {
+#ifdef D2VR_MATCHED_CAPTURE
+    static thread_local d2vr_present_patch::Dispatch dispatch;
+    if(!dispatch.Enter()) {
+        Log("[DiagnosticEnginePresent] FAIL recursion entries=%llu forwarded=%llu returned=%llu",dispatch.entries,dispatch.forwarded,dispatch.returned);
+        matched_capture::PresentReturned(D3DERR_INVALIDCALL,false);
+        return D3DERR_INVALIDCALL; // Never forward an already recursive cycle.
+    }
+    const auto next=sc ? reinterpret_cast<PFN_SwapChainPresent>((*reinterpret_cast<void***>(sc))[3]) : nullptr;
+    if(!next || next==&EngineSwapChainPresent) {
+        dispatch.fault=true;dispatch.Leave();
+        Log("[DiagnosticEnginePresent] FAIL invalid/self target sc=%p",sc);
+        matched_capture::PresentReturned(D3DERR_INVALIDCALL,false);
+        return D3DERR_INVALIDCALL;
+    }
+    const bool outer=!g_insidePresentation;
+    PresentationScope presenting;
+    void* caller=_ReturnAddress();
+    g_presentCaller=reinterpret_cast<uintptr_t>(caller);
+    IDirect3DDevice9* owner=nullptr;
+    const HRESULT ownerHr=sc->GetDevice(&owner);
+    const bool exactCaller=caller==reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr))+0x694057;
+    if(outer && exactCaller && SUCCEEDED(ownerHr) && owner && !dispatch.fault && !g_captureResetting) {
+        const auto decision=g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent));
+        if(g_submitMode==4) ApplyBoundaryDecision(owner,decision);
+    }
+    if(dispatch.entries==1) {
+        HMODULE module=nullptr;char path[MAX_PATH]={};
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(next),&module);
+        if(module) GetModuleFileNameA(module,path,MAX_PATH);
+        Log("[DiagnosticEnginePresent] identity sc=%p vt=%p device=%p getHr=%08lX next=%p module=%s caller=%p exactCaller=%d tid=%lu",
+            sc,*reinterpret_cast<void***>(sc),owner,ownerHr,reinterpret_cast<void*>(next),path,caller,exactCaller,GetCurrentThreadId());
+    }
+    ++dispatch.forwarded;
+    const HRESULT hr=next(sc,a,b,w,r,flags); // Exactly one call; no live slot re-read.
+    ++dispatch.returned;
+    InterlockedIncrement(&g_swapChainPresentCount);InterlockedExchange(&g_presentSeen,1);
+    if(outer) {
+        matched_capture::PresentReturned(hr,!dispatch.fault && exactCaller);
+        g_capturePresent.Leave();
+    }
+    if(owner) owner->Release();
+    if(dispatch.entries<=3 || dispatch.entries%1000==0 || dispatch.fault)
+        Log("[DiagnosticEnginePresent] entries=%llu forwarded=%llu returned=%llu recursive=%llu hr=%08lX sc=%p tid=%lu fault=%d",
+            dispatch.entries,dispatch.forwarded,dispatch.returned,dispatch.recursive,hr,sc,GetCurrentThreadId(),dispatch.fault);
+    dispatch.Leave();
+    return hr;
+#else
     const auto next = reinterpret_cast<PFN_SwapChainPresent>((*reinterpret_cast<void***>(sc))[3]);
     PresentationScope presenting;
     // Complete the recorded game frame while its backbuffer is still valid,
@@ -4933,11 +4983,54 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
             static_cast<uint32_t>(d2vr_replay::g_rec.size()), nullptr, sc, nullptr,
             static_cast<uint32_t>(hr), _ReturnAddress(), flags, "engine-dispatch-completed");
     return hr;
+#endif
 }
+
+#ifdef D2VR_MATCHED_CAPTURE
+// Explicit exception: changes five bytes in the LOADED EXE, never its file.
+// Called only from the first CreateDevice callback before returning the device
+// to the engine. Never install/reinstall asynchronously from EndScene/Reset.
+static void InstallDiagnosticEnginePresent() {
+    if(!GetPrivateProfileIntA("Diagnostics","EnginePresentCallsite",0,".\\Darkness2VR-diagnostic.ini")) return;
+    auto image=reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr));
+    char path[MAX_PATH]={};if(!GetModuleFileNameA(nullptr,path,MAX_PATH)) return;
+    HANDLE locked=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
+    if(locked==INVALID_HANDLE_VALUE) {Log("[DiagnosticEnginePresent] REFUSED executable read lock");return;}
+    const std::string sha=matched_capture::HashFile(path);
+    auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+    auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(image+dos->e_lfanew);
+    if(dos->e_magic!=IMAGE_DOS_SIGNATURE || pe->Signature!=IMAGE_NT_SIGNATURE ||
+        !d2vr_present_patch::Identity(sha.c_str(),pe->FileHeader.Machine,pe->FileHeader.TimeDateStamp,
+            pe->OptionalHeader.SizeOfImage,pe->OptionalHeader.ImageBase,pe->OptionalHeader.Magic)) {
+        Log("[DiagnosticEnginePresent] REFUSED SHA/PE sha=%s",sha.c_str());CloseHandle(locked);return;
+    }
+    HMODULE pinned=nullptr;
+    if(!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
+        reinterpret_cast<LPCSTR>(&EngineSwapChainPresent),&pinned)) {CloseHandle(locked);return;}
+    struct Memory {
+        unsigned char* site;DWORD old=0;
+        unsigned char* bytes(){return site;}
+        bool writable(){return VirtualProtect(site,5,PAGE_EXECUTE_READWRITE,&old)!=FALSE;}
+        bool flush(){return FlushInstructionCache(GetCurrentProcess(),site,5)!=FALSE;}
+        bool restore(){DWORD ignored=0;return VirtualProtect(site,5,old,&ignored)!=FALSE;}
+    } memory{image+0x694052};
+    static d2vr_present_patch::Patch patch;
+    const bool installed=patch.Install(memory,static_cast<uint32_t>(reinterpret_cast<uintptr_t>(memory.site)),
+        static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&EngineSwapChainPresent)));
+    CloseHandle(locked);
+    g_enginePresentInstalled=installed;
+    if(installed) g_presentReadiness=true;
+    Log("[DiagnosticEnginePresent] installed=%d rollbackUncertain=%d site=%p sha=%s IN_MEMORY_EXE_PATCH=5_BYTES",
+        installed,patch.rollbackUncertain,memory.site,sha.c_str());
+    // A failed rollback is not a runnable experiment. Do not return a possibly
+    // half-installed entry point to the engine or silently claim recovery.
+    if(patch.rollbackUncertain) RaiseFailFastException(nullptr,nullptr,0);
+}
+#endif
 
 static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
 #ifdef D2VR_MATCHED_CAPTURE
-    return; // no executable code patches in the diagnostic build
+    return; // explicit diagnostic opt-in installs only before CreateDevice returns
 #endif
     if (!(g_hookMask & 2) || !dev) return;
     static bool attempted = false;
@@ -5021,9 +5114,12 @@ void HookDevice(IDirect3DDevice9* dev) {
         if (implicit) implicit->Release();
     }
 #endif
+#ifdef D2VR_MATCHED_CAPTURE
+    InstallDiagnosticEnginePresent();
+#endif
     Log("[EffectiveConfig] SwapChainPresentHook=%s OpenXR=%s TraceCSV=%s",
 #ifdef D2VR_MATCHED_CAPTURE
-        "disabled-native-patch-no-swapchain-observer",
+        g_enginePresentInstalled ? "diagnostic-explicit-engine-callsite" : "disabled-native-patch-no-swapchain-observer",
 #else
         g_enginePresentInstalled ? "engine-callsite" : "pending-first-EndScene",
 #endif
