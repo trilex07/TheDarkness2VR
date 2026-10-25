@@ -3,6 +3,20 @@
 #include <initializer_list>
 
 int main() {
+    // Real captured resolution pair. OFF preserves the old allocation exactly;
+    // ON removes the 3076x3140 -> 2676x2728 downsample without changing FOV.
+    using d2vr_stereo::SelectEyeOutputSize;
+    using d2vr_stereo::EyeOutputSize;
+    const EyeOutputSize rec{2676,2728},source{3076,3140},limits{8192,8192};
+    auto same=[](EyeOutputSize a,EyeOutputSize b){return a.width==b.width && a.height==b.height;};
+    if (!same(SelectEyeOutputSize(rec,source,limits,false),rec) ||
+        !same(SelectEyeOutputSize(rec,source,limits,true),source)) return 20;
+    for (const auto invalid : {EyeOutputSize{0,3140},{3076,0},{1280,855},
+                              {3076,2600},{2600,3140},{16385,3140},{8192,8192}})
+        if (!same(SelectEyeOutputSize(rec,invalid,{32768,32768},true),rec)) return 21;
+    for (const auto invalid : {EyeOutputSize{0,8192},{8192,0},{3000,8192},{8192,3000}})
+        if (!same(SelectEyeOutputSize(rec,source,invalid,true),rec)) return 22;
+    if (!same(SelectEyeOutputSize(rec,{4096,4096},limits,true),{4096,4096})) return 23;
     // Actual unmodified inverse projection, PS c27..c30, captured in
     // run_43052_frame_003_trace.txt at command 2431 (barber level).
     const float inv[16] = {
@@ -47,5 +61,6 @@ int main() {
         d2vr_stereo::RenderedHalfFov(1,0,1,&h) ||
         d2vr_stereo::RenderedHalfFov(1,1,0,&h)) return 5;
     std::printf("PASS: %u rays from captured production projection match submitted FOV\n",checks);
+    std::puts("PASS: eye output resolution OFF/native-source/unknown/limited/invalid bounds");
     return 0;
 }

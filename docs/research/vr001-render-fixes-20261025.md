@@ -1,8 +1,9 @@
 # VR-001 capture and narrow renderer corrections — 2026-10-25
 
 Branch: codex/fix-right-tentacles, based on 6f103a8. No merge.
-VR-001 remains OPEN: a native right-tentacle pose problem is not solved by
-the independent stereo-transfer correction below. No improved PSVR2 result claimed.
+VR-001 remains OPEN for the initial invisible rest state. Both tentacles after
+an attack and improved high-resolution clarity are now physically confirmed;
+the receipts below separate those observations from untested corrections.
 
 ## Runtime evidence
 
@@ -213,5 +214,35 @@ eyes. Correction stays opt-in; its Steam/PSVR2 A/B is still NOT RUN.
 Optional pass-stage acquisition from `a44969b` is prepared offline, but was not
 part of the installed DLL in this run. The yellow-producing pass is therefore
 still unproven. No native FOV, crop, IPD, sharpness or shader toggle was changed.
-The user is evaluating the high-resolution image; normal game exit and hash-
-verified restoration are pending for this run.
+The user subsequently confirmed in PSVR2: tentacles, hands and gun are sharp;
+the near area is acceptable and distant detail is improved, with more resolution
+requested. This is a subjective physical result, not a controlled sharpness A/B.
+After normal user exit, all three original DLL/INI hashes were restored and
+verified; EXE SHA-256 is unchanged. Final log and restoration receipt remain in
+the private high-resolution backup. Present counters through 147000 had equal
+entry/forward/return/OK counts and no recursive dispatch/status/error/fault.
+
+## Prepared source-sized eye output
+
+`[Render] MatchEyeResolutionToSource=1` is a new opt-in (default OFF), limited
+to same-frame native stereo. The measured 3076x3140 source was being reduced to
+the runtime recommendation of 2676x2728 before submission. The option preserves
+the actual source dimensions through final D3D11 and XR images: approximately
+32.3% more output pixels for this installation, without a FOV/crop/IPD change.
+It only raises both dimensions together; smaller, unknown, over-budget or
+runtime-unsupported sources retain the previous recommendation. Limits use the
+minimum maximum dimensions of both XR views. The x86 experiment is bounded to
+16M pixels per eye.
+
+Sizing reads the current RT0 rather than stale prior-frame upload dimensions.
+The completed pair's allocation is latched; SubmitXR cannot recreate a differently
+sized swapchain and erase completed eye images at a first frame/reset. Both
+capture and submission report their actual dimensions. Other submission modes
+and default OFF retain the previous resolution policy.
+
+Offline: output-size boundary cases and 1206 existing rendered-FOV rays PASS;
+20 matched-capture tests PASS. Production and diagnostic x86 builds PASS.
+Steam/PSVR2 for this output-size option are NOT RUN at preparation time.
+The next diagnostic variant also contains the existing bounded pass images for
+yellow-region localization. Motion-vector correction remains OFF to isolate
+the resolution change from a separate rendering correction.

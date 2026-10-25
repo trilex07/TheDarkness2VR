@@ -148,6 +148,7 @@ volatile LONG g_trueStereoFrames = 0;
 int g_blitPass = 0;                // 1 = RenderStereoEyeD11 does a 1:1 blit (true-stereo mode)
 bool g_eyePairReady = false;       // both eye images captured this frame (SubmitMode 4)
 uint64_t g_eyePairFrameId = 0;
+uint32_t g_eyePairW = 0, g_eyePairH = 0;
 int g_dumpEyeFrames = 0;           // F12: dump N eye pairs to test-output/*.bmp for offline analysis
 int g_dumpDelay = 300;             // wait this many frames before dumping (skip black startup)
 int g_zeroCopyEnabled = 0;         // Config: Render.ZeroCopy (0 = CPU CopyFrame, 1 = D3D9Ex shared texture)
@@ -218,9 +219,11 @@ int g_enableVRGamepad = 1;
 int g_remapPhysical = 1;
 int g_forceWindowedReset = 0;
 
-// SteamVR / OpenXR recommended view resolution (native headset resolution per eye)
+// Runtime recommendation includes its configured supersampling/lens overhead.
 uint32_t g_steamVrRecW = 0;
 uint32_t g_steamVrRecH = 0;
+uint32_t g_xrMaxEyeW = 0, g_xrMaxEyeH = 0;
+bool g_matchEyeResolutionToSource = false;
 
 // Head-Look camera rotation (turning head turns in-game camera)
 // Mode: 1 = Mouse deltas (1:1 smooth camera rotation), 2 = Gamepad right stick, 3 = Both, 0 = Disabled
@@ -453,6 +456,7 @@ void LoadConfig() {
         }
     }
     g_zeroCopyEnabled = GetPrivateProfileIntA("Render", "ZeroCopy", 0, chosenIni) ? 1 : 0;
+    g_matchEyeResolutionToSource = GetPrivateProfileIntA("Render", "MatchEyeResolutionToSource", 0, chosenIni) != 0;
     // Bit 1 = named VS/ScreenTextureProjection handling, bit 2 = PS reconstruction
     // compensation (InverseProjection + ViewExtents). Both are required for correct
     // deferred lighting in the two-eye render; the Diagnostics bridge can override.
@@ -2728,6 +2732,25 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
 
     UINT targetW = g_steamVrRecW ? g_steamVrRecW : (g_srcW ? g_srcW : 1920);
     UINT targetH = g_steamVrRecH ? g_steamVrRecH : (g_srcH ? g_srcH : 1080);
+    if (g_matchEyeResolutionToSource && g_stereoMode==1) {
+        // Read the current RT, not the previous frame's upload dimensions.
+        // A reset/first frame must not size the pair from stale g_srcW/H.
+        IDirect3DSurface9* source=nullptr; D3DSURFACE_DESC desc{};
+        if (SUCCEEDED(dev->GetRenderTarget(0,&source)) && source) {
+            if (SUCCEEDED(source->GetDesc(&desc))) {
+                const auto size=d2vr_stereo::SelectEyeOutputSize({targetW,targetH},
+                    {desc.Width,desc.Height},{g_xrMaxEyeW,g_xrMaxEyeH},true);
+                targetW=size.width; targetH=size.height;
+            }
+            source->Release();
+        }
+        static UINT loggedW=0,loggedH=0;
+        if (targetW!=loggedW || targetH!=loggedH) {
+            Log("[EyeResolution] matchSource=1 source=%ux%u output=%ux%u recommended=%ux%u maxBothEyes=%ux%u",
+                desc.Width,desc.Height,targetW,targetH,g_steamVrRecW,g_steamVrRecH,g_xrMaxEyeW,g_xrMaxEyeH);
+            loggedW=targetW; loggedH=targetH;
+        }
+    }
     static int s_earlyLog = 0;
     auto warnEarly = [&](const char* why) {
         if (s_earlyLog++ < 8) Log("[StereoPair] early return: %s (rec=%zu) - no eye pair, no dumps", why, recCount);
@@ -2812,6 +2835,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     else if (g_stereoDebugMode == 3 && eye1Ok && g_dev11 && g_eyeCache[0] && g_eyeCache[1])
         g_ctx11->CopyResource(g_eyeCache[0], g_eyeCache[1]);
     g_eyePairReady = eye0Ok && eye1Ok;
+    g_eyePairW=targetW; g_eyePairH=targetH;
     ++g_trueStereoFrames;
 
     if (s_logged < 10 || (g_trueStereoFrames % 600) == 0) {
@@ -3607,6 +3631,10 @@ bool InitXR() {
                 XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, viewConfigCount, &viewConfigCount, vcv.data()))) {
             g_steamVrRecW = vcv[0].recommendedImageRectWidth;
             g_steamVrRecH = vcv[0].recommendedImageRectHeight;
+            if (viewConfigCount>=2) {
+                g_xrMaxEyeW=std::min(vcv[0].maxImageRectWidth,vcv[1].maxImageRectWidth);
+                g_xrMaxEyeH=std::min(vcv[0].maxImageRectHeight,vcv[1].maxImageRectHeight);
+            }
             Log("SteamVR / OpenXR recommended view resolution: %ux%u per eye (max: %ux%u)",
                 g_steamVrRecW, g_steamVrRecH, vcv[0].maxImageRectWidth, vcv[0].maxImageRectHeight);
         }
@@ -4005,7 +4033,12 @@ void SubmitXR(IDirect3DDevice9* dev) {
         UINT targetH = g_steamVrRecH ? g_steamVrRecH : (g_srcH ? g_srcH : 1080);
         if (g_submitMode == 4) {
             // TRUE same-frame stereo: both eyes captured during Present (live pass + replay pass)
-            havePixels = g_eyePairReady && g_eyePairFrameId==g_trackedFrame.id && EnsureSwapchains(targetW, targetH);
+            // Submit exactly the allocation in which this pair was rendered.
+            // Recomputing a size from the newly updated source here could
+            // destroy the completed images on a first frame or reset.
+            havePixels = g_eyePairReady && g_eyePairFrameId==g_trackedFrame.id &&
+                g_swapchain[0] && g_swapchain[1] && g_eyeCache[0] && g_eyeCache[1] &&
+                g_eyePairW==g_scW && g_eyePairH==g_scH;
             g_eyePairReady = false;
         } else if (g_testMode > 0) {
             havePixels = FillTestPattern(targetW, targetH, g_testMode) && EnsureSwapchains(targetW, targetH);

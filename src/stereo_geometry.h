@@ -7,6 +7,22 @@
 
 namespace d2vr_stereo {
 
+struct EyeOutputSize { uint32_t width, height; };
+
+// Optional 1:1 source-to-eye transfer. Preserve the recommended size unless
+// both source dimensions improve it and BOTH XR views permit the allocation.
+// The 16M-pixel bound keeps this x86 experiment within the capture budget.
+inline EyeOutputSize SelectEyeOutputSize(EyeOutputSize recommended, EyeOutputSize source,
+                                        EyeOutputSize runtimeMax, bool enabled) {
+    if (!enabled || !source.width || !source.height ||
+        source.width<recommended.width || source.height<recommended.height ||
+        !runtimeMax.width || !runtimeMax.height ||
+        source.width>runtimeMax.width || source.height>runtimeMax.height ||
+        source.width>16384 || source.height>16384 ||
+        (uint64_t)source.width*source.height>16u*1024u*1024u) return recommended;
+    return source;
+}
+
 // Captured MotionBlur_16 VS, full-byte FNV identity and CTAB register proof.
 // current is the resolved WVP compensation base, not merely its CTAB label.
 // Unknown shaders/registers and head-history-dependent paths remain unchanged.
