@@ -1536,7 +1536,7 @@ struct MatchedSkinUploadWitness {
     void* caller=nullptr;
 };
 static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float*,UINT,UINT,void*);
-static void EndMatchedSkinUpload(const MatchedSkinUploadWitness&,HRESULT);
+static void EndMatchedSkinUpload(const MatchedSkinUploadWitness&,const float*,HRESULT);
 #endif
 HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     IDirect3DDevice9* dev,
@@ -1622,7 +1622,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     const HRESULT result=g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
 #ifdef D2VR_MATCHED_CAPTURE
     if(witness) EndCameraUploadWitness(cameraSample,result);
-    EndMatchedSkinUpload(skinUpload,result);
+    EndMatchedSkinUpload(skinUpload,pConstantData,result);
 #endif
     return result;
 }
@@ -2819,6 +2819,12 @@ static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
 static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9*,IDirect3DIndexBuffer9*,
     UINT,const D3DVIEWPORT9&,unsigned,const float*,int,unsigned);
 #include "matched_capture.inl"
+static uint64_t MatchedSkinHash(const float* data,UINT vectorCount) {
+    const auto* bytes=(const unsigned char*)data;
+    uint64_t hash=14695981039346656037ull;
+    for(size_t i=0;i<(size_t)vectorCount*16;++i) hash=(hash^bytes[i])*1099511628211ull;
+    return hash;
+}
 static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float* data,UINT start,UINT count,void* caller) {
     MatchedSkinUploadWitness w{};
     // A full upload may begin below c45. Record its intersection with the
@@ -2830,17 +2836,15 @@ static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float* data,UINT st
     ++matched_capture::skinUploadsSeen;
     if(count>256 || matched_capture::skinUploadsSeen>256) return w;
     const UINT first=std::max(start,45u),last=(UINT)std::min(end,(uint64_t)249);
-    const auto* bytes=(const unsigned char*)(data+4*(first-start));
-    uint64_t hash=14695981039346656037ull;
-    for(size_t i=0;i<(size_t)(last-first)*16;++i) hash=(hash^bytes[i])*1099511628211ull;
     w.valid=true;w.frame=matched_capture::frame;w.beforeDraw=matched_capture::draws[0];
     w.start=start;w.count=count;w.bankFirst=first;w.bankCount=last-first;
-    w.bankHash=hash;w.caller=caller;
+    w.bankHash=MatchedSkinHash(data+4*(first-start),last-first);w.caller=caller;
     w.vsHash=d2vr_replay::g_activeVs ? d2vr_replay::g_activeVs->hash:0;
     return w;
 }
-static void EndMatchedSkinUpload(const MatchedSkinUploadWitness& w,HRESULT hr) {
+static void EndMatchedSkinUpload(const MatchedSkinUploadWitness& w,const float* forwarded,HRESULT hr) {
     if(!w.valid || !matched_capture::Current() || !matched_capture::meta) return;
+    const uint64_t forwardedHash=MatchedSkinHash(forwarded+4*(w.bankFirst-w.start),w.bankCount);
     const uintptr_t base=(uintptr_t)GetModuleHandleA(nullptr),addr=(uintptr_t)w.caller;
     unsigned long rva=0;bool exeCaller=false;
     if(base) {
@@ -2855,10 +2859,11 @@ static void EndMatchedSkinUpload(const MatchedSkinUploadWitness& w,HRESULT hr) {
     fprintf(matched_capture::meta,
         "{\"kind\":\"hand_skin_upload\",\"frame\":%llu,\"eye\":0,\"before_draw\":%u,"
         "\"start\":%u,\"count\":%u,\"bank_first\":%u,\"bank_count\":%u,"
-        "\"bank_fnv64\":\"%016llx\",\"vs_hash\":%u,\"caller\":\"%p\","
+        "\"bank_fnv64\":\"%016llx\",\"forwarded_bank_fnv64\":\"%016llx\","
+        "\"vs_hash\":%u,\"caller\":\"%p\","
         "\"caller_exe_rva\":%s,\"hr\":%ld}\n",
         w.frame,w.beforeDraw,w.start,w.count,w.bankFirst,w.bankCount,
-        w.bankHash,w.vsHash,w.caller,exeCaller?std::to_string(rva).c_str():"null",hr);
+        w.bankHash,forwardedHash,w.vsHash,w.caller,exeCaller?std::to_string(rva).c_str():"null",hr);
     ++matched_capture::skinUploadsSaved;
 }
 static void NativeCameraCaptureChanged() {

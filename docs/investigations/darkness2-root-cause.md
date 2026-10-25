@@ -170,7 +170,7 @@ visible hand failure.
 **Upload-origin witness, still unrun.** The opt-in diagnostic build now records
 each live-eye `SetVertexShaderConstantF` upload intersecting c45..c248 during
 the one requested capture frame. Its bounded `hand_skin_upload` record contains
-the original data's intersecting-bank hash, register range, bound VS hash,
+both the original and D3D9-forwarded intersecting-bank hashes, register range, bound VS hash,
 upload return address and current-EXE RVA where applicable, draw count before
 the upload, and the original HRESULT. A summary reports dropped/truncated
 records. The capture validator rejects failed uploads, wrong frame/order,

@@ -84,12 +84,16 @@ class MatchedCaptureTests(unittest.TestCase):
     def test_hand_skin_upload_precedes_the_recorded_draw(self):
         upload = dict(kind="hand_skin_upload", frame=7, eye=0, before_draw=0,
                       start=40, count=10, bank_first=45, bank_count=5,
-                      bank_fnv64="1234567890abcdef", vs_hash=123, caller="0x1234",
+                      bank_fnv64="1234567890abcdef", forwarded_bank_fnv64="1234567890abcdef",
+                      vs_hash=123, caller="0x1234",
                       caller_exe_rva=1234, hr=0)
         first_draw = next(i for i, record in enumerate(self.records) if record["kind"] == "draw")
         self.records.insert(first_draw, upload)
         self.records.insert(-3, dict(kind="hand_skin_upload_summary", frame=7,
                                      seen=1, saved=1, truncated=False))
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"], 7)
+        upload["forwarded_bank_fnv64"] = "fedcba0987654321"
         self.save()
         self.assertEqual(validate(self.folder)["frame"], 7)
         upload["before_draw"] = 1
@@ -106,7 +110,8 @@ class MatchedCaptureTests(unittest.TestCase):
     def test_hand_skin_upload_incomplete_or_failed_is_rejected(self):
         upload = dict(kind="hand_skin_upload", frame=7, eye=0, before_draw=0,
                       start=45, count=3, bank_first=45, bank_count=3,
-                      bank_fnv64="1234567890abcdef", vs_hash=0, caller="0x1234",
+                      bank_fnv64="1234567890abcdef", forwarded_bank_fnv64="1234567890abcdef",
+                      vs_hash=0, caller="0x1234",
                       caller_exe_rva=None, hr=0)
         first_draw = next(i for i, record in enumerate(self.records) if record["kind"] == "draw")
         self.records.insert(first_draw, upload)

@@ -151,6 +151,8 @@ def validate(folder):
                         r.get("bank_count") != min(start + count, 249) - max(start, 45) or
                         not isinstance(r.get("bank_fnv64"), str) or
                         not re.fullmatch(r"[0-9a-f]{16}", r["bank_fnv64"]) or
+                        not isinstance(r.get("forwarded_bank_fnv64"), str) or
+                        not re.fullmatch(r"[0-9a-f]{16}", r["forwarded_bank_fnv64"]) or
                         not isinstance(r.get("vs_hash"), int) or
                         not isinstance(r.get("caller"), str) or
                         (r.get("caller_exe_rva") is not None and
