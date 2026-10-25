@@ -36,6 +36,15 @@ static long __stdcall Wrapper(unsigned a,unsigned b,unsigned c,unsigned d,unsign
     dispatch.Leave();return hr;
 }
 int main(){
+    float native[16]={.864337f,0,0,0,0,.57735f,0,0,0,0,0,-10.525f,0,0,1,10.526f};
+    float uploaded[16];memcpy(uploaded,native,sizeof(native));uploaded[0]*=2;
+    assert(d2vr_capture::ProjectionUpload(native,uploaded,8,4,8,0));
+    assert(!d2vr_capture::ProjectionUpload(native,uploaded,8,3,8,0));
+    assert(!d2vr_capture::ProjectionUpload(native,uploaded,9,4,8,0));
+    assert(!d2vr_capture::ProjectionUpload(native,uploaded,8,4,-1,0));
+    assert(!d2vr_capture::ProjectionUpload(native,uploaded,8,4,8,-1));
+    assert(!d2vr_capture::ProjectionUpload(native,uploaded,224,4,224,0));
+    uploaded[0]=NAN;assert(!d2vr_capture::ProjectionUpload(native,uploaded,8,4,8,0));
     static_assert(sizeof(void*)==4,"Real x86 stdcall test required");
     const char* sha="d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1";
     assert(Identity(sha,0x14c,0x4f68a875,0xdec000,0x400000,0x10b));

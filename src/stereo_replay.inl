@@ -52,6 +52,7 @@ struct VsInfo {
     bool namedConstants = false;
     bool reflected = false;
     int reflectedWvp = -1, reflectedStp = -1;
+    int reflectedPreviousWvp = -1;
     // Last uploaded WorldViewProjection: the ScreenTextureProjection identity check needs
     // the matching WVP even when the two matrices arrive in separate records.
     float lastWvp[16] = {};
@@ -327,9 +328,6 @@ static void ObserveInverseProjection(const float* src, UINT start, UINT count, i
     if (!d2vr_math::IsViewInverseProjection(p)) return;
     g_cameraPx = 1.f/p[0]; g_cameraPy = 1.f/p[5]; g_cameraProjectionKnown = true;
     memcpy(g_cameraInverseProjection,p,sizeof(g_cameraInverseProjection));
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedProjectionObserved();
-#endif
     g_estPx = g_cameraPx; g_estPy = g_cameraPy; InterlockedExchange(&g_estValid, 1);
 }
 
@@ -833,6 +831,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
             vi.reflected = true;
             vi.reflectedWvp = namedWvp;
             vi.reflectedStp = FindNamedMatrix(fn, n + 1, "ScreenTextureProjection", nullptr);
+            vi.reflectedPreviousWvp = FindNamedMatrix(fn, n + 1, "PrevWorldProj", nullptr);
         }
         bool isNew = false;
         {
@@ -843,7 +842,14 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         // Diagnostic: dump raw shader bytecode for offline pattern analysis
         {
             static int s_dumpedShaders = 0;
-            if (s_dumpedShaders < 8 && n > 0) {
+#ifdef D2VR_MATCHED_CAPTURE
+            static volatile LONG savedTentacleShaders=0;
+            const LONG bit=h==0x34D4EEE8u?1:h==0x1CB7CEE2u?2:h==0xE3259C61u?4:0;
+            const bool tentacleShader=bit && !(InterlockedOr(&savedTentacleShaders,bit)&bit);
+#else
+            const bool tentacleShader = false;
+#endif
+            if ((s_dumpedShaders < 8 || tentacleShader) && n > 0) {
                 char spath[MAX_PATH];
                 sprintf_s(spath, "test-output\\shaders\\vs_%04d_%08X.bin", s_dumpedShaders, h);
                 CreateDirectoryA("test-output", nullptr);
@@ -984,9 +990,16 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
         haveWvpRef = true;
     }
 
+    // Exact MotionBlur_16 VS: c0=current WVP, c4=PrevWorldProj; its output
+    // subtracts their projected NDC positions. Leaving c4 native creates motion
+    // from stereo/FOV changes alone. A shader hash AND reflected register proof
+    // limit this experiment to the captured consumer, not arbitrary c4 blocks.
+    // Geometric head tracking needs previous-frame headClip history separately.
+    const int previousBase = vi ? d2vr_stereo::PreviousProjectionBase(vi->hash,
+        vi->reflectedWvp,vi->reflectedPreviousWvp,g_fixMotionVectorProjection,sp.headGeometry) : -1;
     bool modified = false;
-    for (int k = 0; k < 2; ++k) {
-        const int b = (k == 0) ? wvpBase : ((wvpBase == stpBase) ? -1 : stpBase);
+    for (int k = 0; k < (previousBase>=0 ? 3 : 2); ++k) {
+        const int b = k==0 ? wvpBase : k==1 ? ((wvpBase==stpBase) ? -1 : stpBase) : previousBase;
         if (b < 0) continue;
         if ((int)start > b || (int)(start + count) < b + 4) continue;
         const float* orig = src + (b - (int)start) * 4;
@@ -1307,13 +1320,22 @@ static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDir
     return g_orig.SetPixelShader(dev, ps);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n) {
+#ifdef D2VR_MATCHED_CAPTURE
+    const float* native=d;
+#endif
     if (g_replayEye < 0) ObserveInverseProjection(d, s, n, g_activePsInverse);
     if (g_recActive) RecEmitData(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n);
     float adjusted[224*4];
     if (g_submitMode == 4 && g_replayEye < 0 && d &&
         CompensatePsConstants(adjusted, d, s, n, g_activePsInverse, g_activePsViewExtents,
                               MakeEyeParams(0))) d = adjusted;
+#ifdef D2VR_MATCHED_CAPTURE
+    const HRESULT result=g_orig.SetPixelShaderConstantF(dev,s,d,n);
+    MatchedProjectionObserved(native,d,s,n,g_activePsInverse,result);
+    return result;
+#else
     return g_orig.SetPixelShaderConstantF(dev, s, d, n);
+#endif
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
     if (g_recActive) RecEmitData(OP_SetPSConstI, d, sizeof(int) * 4 * n, s, n);
@@ -1629,7 +1651,12 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 }
             }
             const float* values2 = copied ? adjusted : values;
+#ifdef D2VR_MATCHED_CAPTURE
+            const HRESULT uploaded=g_orig.SetPixelShaderConstantF(dev,r.a[0],values2,r.a[1]);
+            MatchedProjectionObserved(values,values2,r.a[0],r.a[1],g_activePsInverse,uploaded);
+#else
             g_orig.SetPixelShaderConstantF(dev, r.a[0], values2, r.a[1]);
+#endif
             break;
         }
         case OP_SetPSConstI:

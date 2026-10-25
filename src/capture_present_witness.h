@@ -3,7 +3,17 @@
 // that every engine swapchain is hooked. No Windows/COM dependency for tests.
 #include <cstdint>
 #include <cstring>
+#include "stereo_math.h"
 namespace d2vr_capture {
+inline bool ProjectionUpload(const float* native,const float* uploaded,unsigned start,unsigned count,int base,int32_t hr) {
+    if(hr<0 || !native || !uploaded || base<0 || start>224 || count>224-start ||
+        start>static_cast<unsigned>(base) || static_cast<unsigned>(base)-start+4>count) return false;
+    const unsigned offset=(static_cast<unsigned>(base)-start)*4;
+    if(!d2vr_math::IsViewInverseProjection(native+offset)) return false;
+    for(unsigned i=0;i<16;++i)
+        if(!std::isfinite(native[offset+i]) || !std::isfinite(uploaded[offset+i])) return false;
+    return true;
+}
 inline bool IsPresent(const char* reason) {
     return reason && (!std::strcmp(reason,"DevicePresent") ||
         !std::strcmp(reason,"PresentEx") || !std::strcmp(reason,"SwapChainPresent"));

@@ -11,6 +11,8 @@ static LONG resetGeneration;
 static unsigned mask, draws[2], blits, inputs;
 static uintptr_t sourceIdentities[2];
 static unsigned projectionObserved;
+static std::vector<uintptr_t> geometrySaved;
+static float nativeProjection[2][16]{};
 static int lastSerial;
 static std::string configToken;
 static std::string ConfigToken() {
@@ -157,7 +159,7 @@ static void Begin() {
     if (!CreateDirectoryA(directory.c_str(),nullptr)) { Log("[MatchedCapture] directory creation rejected"); return; }
     fopen_s(&meta,(directory+"/manifest.jsonl").c_str(),"wb");
     fopen_s(&banks,(directory+"/vs-banks.bin").c_str(),"wb");
-    configToken=ConfigToken();
+    configToken=ConfigToken(); geometrySaved.clear();
     frame=g_trackedFrame.id; active=true; failed=false; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;
     presentFrame=g_capturePresent.frame+1; resetGeneration=g_captureResetGeneration;
@@ -185,7 +187,7 @@ static void Begin() {
         fprintf(meta,"%s{\"head_geometry\":%s,\"mode\":%d,\"values\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],\"head_clip\":",eye?",":"",sp.headGeometry?"true":"false",sp.mode,sp.separation,sp.convergence,sp.transX,sp.transY,sp.fovScaleX,sp.fovScaleY,(double)g_stereoPolarity);
         Floats(sp.headClip,16); fprintf(meta,",\"inverse_head_clip\":"); Floats(sp.inverseHeadClip,16); fputc('}',meta);
     }
-    fprintf(meta,"]}\n"); const bool configError=ferror(meta)!=0;
+    fprintf(meta,"],\"fix_motion_vector_projection\":%s}\n",g_fixMotionVectorProjection?"true":"false"); const bool configError=ferror(meta)!=0;
     const bool configClosed=fclose(meta)==0; meta=saved;
     if(configError || !configClosed) Reject("effective config write failed");
     const std::string ch=HashFile((directory+"/effective-config.json").c_str());
@@ -235,8 +237,8 @@ static void Source(IDirect3DDevice9* dev,int eye) {
         const auto& sp=g_frameEyeParams[eye];
         fprintf(meta,"{\"kind\":\"source\",\"frame\":%llu,\"eye\":%d,\"rt\":\"%p\",\"width\":%u,\"height\":%u,\"format\":%u,\"viewport\":[%u,%u,%u,%u,%.9g,%.9g],\"native_px_py_candidate\":[%.9g,%.9g],\"scale\":[%.9g,%.9g],\"crop\":[%.9g,%.9g],\"head_clip\":",
             frame,eye,rt,d.Width,d.Height,(unsigned)d.Format,vp.X,vp.Y,vp.Width,vp.Height,vp.MinZ,vp.MaxZ,
-            d2vr_replay::g_cameraPx,d2vr_replay::g_cameraPy,sp.fovScaleX,sp.fovScaleY,g_perEyeCropX[eye],g_perEyeCropY[eye]);
-        Floats(sp.headClip,16); fprintf(meta,",\"inverse_projection_candidate\":"); Floats(d2vr_replay::g_cameraInverseProjection,16); fprintf(meta,"}\n");
+            1.f/nativeProjection[eye][0],1.f/nativeProjection[eye][5],sp.fovScaleX,sp.fovScaleY,g_perEyeCropX[eye],g_perEyeCropY[eye]);
+        Floats(sp.headClip,16); fprintf(meta,",\"inverse_projection_candidate\":"); Floats(nativeProjection[eye],16); fprintf(meta,"}\n");
     }
     if (sys) sys->Release(); if (rt) rt->Release();
     if (!ok) Reject("source RT0 readback failed or unsupported format/MSAA"); else mask|=1u<<eye;
@@ -286,6 +288,38 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye) {
     if (it!=d2vr_replay::g_vsInfo.end()) { wvp=it->second.wvpBase; stp=it->second.stpBase; hash=it->second.hash; }
     fprintf(meta,"{\"kind\":\"draw\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"rt\":\"%p\",\"vs\":\"%p\",\"shader_hash\":%u,\"wvp_register\":%d,\"stp_register\":%d,\"bank_offset\":%ld,\"viewport\":[%u,%u,%u,%u,%.9g,%.9g]}\n",
         frame,eye,draws[eye]++,rt,vs,hash,wvp,stp,offset,vp.X,vp.Y,vp.Width,vp.Height,vp.MinZ,vp.MaxZ);
+    IDirect3DVertexBuffer9* vb=nullptr;IDirect3DIndexBuffer9* ib=nullptr;IDirect3DPixelShader9* ps=nullptr;
+    IDirect3DBaseTexture9* texture=nullptr;UINT streamOffset=0,stride=0;
+    const bool geometry=SUCCEEDED(dev->GetStreamSource(0,&vb,&streamOffset,&stride)) &&
+        SUCCEEDED(dev->GetIndices(&ib)) && SUCCEEDED(dev->GetPixelShader(&ps)) && SUCCEEDED(dev->GetTexture(0,&texture));
+    DWORD cull=0,scissor=0;RECT clip{};
+    dev->GetRenderState(D3DRS_CULLMODE,&cull);dev->GetRenderState(D3DRS_SCISSORTESTENABLE,&scissor);dev->GetScissorRect(&clip);
+    fprintf(meta,"{\"kind\":\"draw_geometry\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"vb\":\"%p\",\"ib\":\"%p\",\"ps\":\"%p\",\"texture0\":\"%p\",\"stream_offset\":%u,\"stride\":%u,\"cull\":%lu,\"scissor\":%lu,\"clip\":[%ld,%ld,%ld,%ld]}\n",
+        frame,eye,draws[eye]-1,geometry?"true":"false",vb,ib,ps,texture,streamOffset,stride,cull,scissor,clip.left,clip.top,clip.right,clip.bottom);
+    // One bounded read-only snapshot of the first-person buffers. Private output,
+    // never included in a commit; no locks outside an explicit capture request.
+    if (eye==0 && vp.MaxZ<=0.05f && vb && ib && geometrySaved.size()<8 &&
+        std::find(geometrySaved.begin(),geometrySaved.end(),(uintptr_t)vb)==geometrySaved.end()) {
+        geometrySaved.push_back((uintptr_t)vb);
+        D3DVERTEXBUFFER_DESC vd{}; D3DINDEXBUFFER_DESC id{};
+        auto save=[&](const char* kind,void* identity,void* data,UINT size) {
+            char name[80];sprintf_s(name,"%s-%p.bin",kind,identity);FILE* f=nullptr;
+            if(!fopen_s(&f,(directory+"/"+name).c_str(),"wb") && f) { fwrite(data,1,size,f);fclose(f); }
+        };
+        void* data=nullptr;
+        if(SUCCEEDED(vb->GetDesc(&vd)) && vd.Size<=4*1024*1024 && SUCCEEDED(vb->Lock(0,0,&data,D3DLOCK_READONLY))) {
+            save("vb",vb,data,vd.Size);vb->Unlock();
+        }
+        if(SUCCEEDED(ib->GetDesc(&id)) && id.Size<=1024*1024 && SUCCEEDED(ib->Lock(0,0,&data,D3DLOCK_READONLY))) {
+            save("ib",ib,data,id.Size);ib->Unlock();
+        }
+        IDirect3DVertexDeclaration9* decl=nullptr;D3DVERTEXELEMENT9 elements[MAXD3DDECLLENGTH+1]{};UINT n=MAXD3DDECLLENGTH+1;
+        if(SUCCEEDED(dev->GetVertexDeclaration(&decl)) && decl) {
+            if(SUCCEEDED(decl->GetDeclaration(elements,&n))) save("decl",vb,elements,n*sizeof(elements[0]));
+            decl->Release();
+        }
+    }
+    if(vb) vb->Release();if(ib) ib->Release();if(ps) ps->Release();if(texture) texture->Release();
     D3DMATRIX transforms[3]{};
     const bool ff=SUCCEEDED(dev->GetTransform(D3DTS_WORLD,&transforms[0])) &&
         SUCCEEDED(dev->GetTransform(D3DTS_VIEW,&transforms[1])) && SUCCEEDED(dev->GetTransform(D3DTS_PROJECTION,&transforms[2]));
@@ -302,9 +336,16 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye) {
     if (rt) rt->Release(); if (vs) vs->Release(); if (!ok) Reject("draw state readback failed");
 }
 
-static void MatchedProjectionObserved() {
-    if (matched_capture::Current()) {
+static void MatchedProjectionObserved(const float* native,const float* uploaded,UINT start,UINT count,int base,HRESULT hr) {
+    if (matched_capture::Current() && d2vr_capture::ProjectionUpload(native,uploaded,start,count,base,hr)) {
         const int eye=d2vr_replay::g_replayEye<0?0:d2vr_replay::g_replayEye;
+        if(eye>1) {matched_capture::Reject("invalid projection eye");return;}
+        const unsigned offset=(base-start)*4;
+        memcpy(matched_capture::nativeProjection[eye],native+offset,16*sizeof(float));
+        fprintf(matched_capture::meta,"{\"kind\":\"projection_upload\",\"frame\":%llu,\"eye\":%d,\"register\":%d,\"provenance\":\"%s\",\"native_candidate\":",
+            matched_capture::frame,eye,base,eye==0?"live_PS_upload":"recorded_replay_PS_upload");
+        matched_capture::Floats(native+offset,16);
+        fprintf(matched_capture::meta,",\"uploaded\":");matched_capture::Floats(uploaded+offset,16);fprintf(matched_capture::meta,"}\n");
         matched_capture::projectionObserved|=1u<<eye;
     }
 }

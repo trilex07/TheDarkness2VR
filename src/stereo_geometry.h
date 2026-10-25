@@ -7,6 +7,13 @@
 
 namespace d2vr_stereo {
 
+// Captured MotionBlur_16 VS, full-byte FNV identity and CTAB register proof.
+// Unknown shaders/registers and head-history-dependent paths remain unchanged.
+inline int PreviousProjectionBase(uint32_t hash, int current, int previous,
+                                  bool enabled, bool headGeometry) {
+    return enabled && !headGeometry && hash==0x73EBA724u && current==0 && previous==4 ? 4 : -1;
+}
+
 // A centered blit samples source NDC = output NDC * crop. The submitted
 // frustum must describe those rays, not the headset's recommended frustum.
 inline bool RenderedHalfFov(float projectionScale, float matrixScale, float crop,

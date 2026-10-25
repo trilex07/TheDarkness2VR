@@ -96,3 +96,17 @@ overlay. 121 draws/eye do not identify right-tentacle geometry. No final images,
 COMPLETE or valid Luna analysis. No retry; test exited, DLL/INIs restored with
 hashes, EXE/local INI unchanged. Next fix is diagnostic witness provenance only.
 Receipt: docs/research/staged-capture-20261025.md. All three issues remain open.
+
+## MAIN 2026-10-25 - Complete capture, shared-transfer race correction
+
+Fixed successful PS-upload witness for both eyes; completed unpaused frame5408
+with user in HMD. Source RTs differ but both final eyes contain right-source pixels.
+Found internal left StretchRect entering replay before reader fence; moved record
+shutdown before internal transfers. Exact tentacle shaders/mesh slices show native
+right rest pose above/behind camera; no invented pose correction. Rejected unused
+c20 hypothesis before activation. Added separate OFF-by-default73EBA724 previous
+projection correction for proven false motion vectors. Production/diagnostic builds,
+Present witness,15 capture+7 readiness+3 transfer tests and336 math checks PASS.
+Fixed renderer not yet run: another Steam/PSVR2 game active. DLL/INIs restored with
+hash verification; no native FOV/EXE disk write, no merge. VR-001 remains OPEN.
+Receipt: docs/research/vr001-render-fixes-20261025.md.

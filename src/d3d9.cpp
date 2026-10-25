@@ -67,6 +67,7 @@ int g_submitMode = 0;
 bool g_disableDepthOfField = true;
 bool g_disableFxaa = true;
 bool g_clipScaledUi = true;
+bool g_fixMotionVectorProjection = false;
 bool g_gestureBridge = false; // diagnostic detection until native context/weapon state is verified
 bool g_tentacleBridge = false; // separate, opt-in stock-game action bridge
 bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
@@ -411,6 +412,9 @@ void LoadConfig() {
     g_clipScaledUi = GetPrivateProfileIntA("Render", "ClipScaledUI", 1, chosenIni) != 0;
     Log("[Sharpness] DisableFXAA=%d ClipScaledUI=%d", (int)g_disableFxaa, (int)g_clipScaledUi);
     g_disableDepthOfField = GetPrivateProfileIntA("Render", "DisableDepthOfField", 1, chosenIni) != 0;
+    g_fixMotionVectorProjection = GetPrivateProfileIntA("Render", "FixMotionVectorProjection", 0, chosenIni) != 0;
+    Log("[MotionVectors] FixMotionVectorProjection=%d (verified 73EBA724; head geometry excluded)",
+        (int)g_fixMotionVectorProjection);
     Log("[Sharpness] DisableDepthOfField=%d (known native-stereo composites)", (int)g_disableDepthOfField);
     g_trackingSubMode = GetPrivateProfileIntA("Render", "TrackingSubMode", 0, chosenIni);
     if (g_trackingSubMode < 0 || g_trackingSubMode > 2) g_trackingSubMode = 0;
@@ -1210,7 +1214,7 @@ static d2vr_replay::StereoParams MakeEyeParams(int eye);
 extern volatile LONG g_frameId;
 static void MatchedCaptureDraw(IDirect3DDevice9*,int);
 static void MatchedCaptureBlit(int,const StereoCBData&);
-static void MatchedProjectionObserved();
+static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT);
 static void MatchedCaptureInput(IDirect3DSurface9*,bool);
 #endif
 #include "stereo_replay.inl"
@@ -2677,6 +2681,11 @@ static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
 #include "matched_capture.inl"
 #endif
 static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
+    // Seal engine commands BEFORE our own capture/transfer calls. In particular,
+    // the left-eye StretchRect into g_sharedSurf9 must never enter the replay:
+    // replaying that copy overwrites the shared texture while D3D11 may still
+    // be reading the left eye, bypassing CaptureBackbufferToShared's reader fence.
+    d2vr_replay::g_recActive = false;
     g_pairSubmitMetaValid = false;
     if (g_haveViews) {
         g_pairSubmitHead = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
@@ -2747,7 +2756,6 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         sp1.transX = 0.0f;
         sp1.transY = 0.0f;
     }
-    d2vr_replay::g_recActive = false;
     d2vr_replay::DeviceSnapshot liveEnd;
     if (!liveEnd.Capture(dev)) {
         warnEarly("liveEnd.Capture failed");

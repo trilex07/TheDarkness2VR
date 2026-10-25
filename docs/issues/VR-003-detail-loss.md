@@ -21,3 +21,13 @@ No blur fix or sharpen/resolution change has been made.
 3076x3140 in the diagnostic variant. This is a source-resolution limitation for
 this run, not proof of all earlier headset blur. Missing final eyes and valid
 paired camera evidence block Luna comparison. See ../research/staged-capture-20261025.md.
+
+2026-10-25: complete frame5408 proves a separate false-motion-vector defect in
+exact MotionBlur_16 VS73EBA724: transformed current c0 versus native previous c4.
+Opt-in FixMotionVectorProjection corrects the previous matrix for this reflected
+shader only, excluding head geometry/history. Offline captured-matrix error drops
+below1.8e-8 for a stationary point; native motion and stereo disparity preserved.
+Not deployed/tested in PSVR2. Resolution/sharpening unchanged. Luna remains NOT
+RUN: current capture finals carry the same right-eye source (transfer defect fixed
+offline), and player-camera ownership is not established. No overall blur fix claimed.
+See ../research/vr001-render-fixes-20261025.md.
