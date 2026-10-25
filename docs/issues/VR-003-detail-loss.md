@@ -16,3 +16,8 @@ within the supported common ray domain to locate actual detail loss.
 Acceptance: measured improvement at the established loss stage without new
 geometry/lighting/stereo regressions, followed by user headset feedback.
 No blur fix or sharpen/resolution change has been made.
+
+2026-10-25 evidence: actual source RT0 is 1280x855 despite preserved INI request
+3076x3140 in the diagnostic variant. This is a source-resolution limitation for
+this run, not proof of all earlier headset blur. Missing final eyes and valid
+paired camera evidence block Luna comparison. See ../research/staged-capture-20261025.md.

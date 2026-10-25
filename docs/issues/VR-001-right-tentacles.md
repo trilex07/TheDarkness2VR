@@ -16,3 +16,8 @@ pixel visibility. Fix only the demonstrated failing stage.
 
 Acceptance: matched-frame evidence of correct geometry in both eyes, then a
 separately requested user PSVR2 check. No fix or acceptance claimed yet.
+
+2026-10-25 controlled capture: incomplete, right-eye projection witness missing;
+121 draws per eye but no proven tentacle mesh attribution. Left-eye RT0 contains
+a pause overlay, so it cannot settle right-tentacle absence. No final eye images.
+See ../research/staged-capture-20261025.md. Remains P0 OPEN; no culling diagnosis.

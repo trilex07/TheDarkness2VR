@@ -85,3 +85,14 @@ Added readiness checker with seven tests; x86 ABI/rollback and 15 capture tests
 pass. Previous sampled log correctly remains insufficient for full HR proof.
 Built isolated candidate; no deployment or new game/VR run. Concrete bounded
 test: docs/research/matched-capture-next-candidate.md. P0 remains right tentacles.
+
+## MAIN 2026-10-25 - Approved staged trial: mono PASS, capture incomplete
+
+Exact 4fcef42 mono checker PASS covers 44000 forwarded/returned/OK, zero
+status/error/recursion. One approved stereo request frame3822 failed missing
+same-eye projection witness: producer is live-only, absent in replay path.
+Partial source-eye0 is 1280x855 and already contains yellow edge; includes pause
+overlay. 121 draws/eye do not identify right-tentacle geometry. No final images,
+COMPLETE or valid Luna analysis. No retry; test exited, DLL/INIs restored with
+hashes, EXE/local INI unchanged. Next fix is diagnostic witness provenance only.
+Receipt: docs/research/staged-capture-20261025.md. All three issues remain open.
