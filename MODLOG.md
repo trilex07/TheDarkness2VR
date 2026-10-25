@@ -43,3 +43,14 @@ private real trace. Corrected L8=50/D16=80 against local SDK. Existing capture
 10/10, PE parser 6/6, Luna self-test PASS. Production src/, INI and build unchanged
 versus prior integration; original untracked MODLOG untouched. No Steam work.
 Adapter remains diagnostic evidence only; no active-player-camera proof claimed.
+
+## MAIN 2026-10-25 - Actual additional swapchain, observer rejected
+
+Proved 00964C40 CreateAdditionalSwapChain(slot13) -> QI SwapChain9Ex ->
+owner+20 -> A94055 Present; owner+1C is the base fallback. One XR-off/stereo-off
+Steam trial of a per-instance public-length shadow failed before acquisition:
+system D3D9 calls private device slot156, beyond Device9Ex's 134 SDK methods.
+Removed the unsafe runtime prototype, restored installed DLL/INIs with matching
+hashes, and stopped further live testing. Added reproducible EXE/module byte
+audit and six fail-closed regression tests. Actual Present callbacks remain zero.
+Details: docs/research/actual-swapchain-observer-20261025.md. No FOV work or merge.
