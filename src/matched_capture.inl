@@ -228,17 +228,20 @@ static bool Bmp(const char* name, UINT w, UINT h, const void* data, UINT pitch, 
     }
     const bool closed=fclose(f)==0; return ok&&closed;
 }
-static void SaveStageSurface(IDirect3DDevice9* dev,IDirect3DSurface9* target,unsigned draw,
+static const char* SaveStageSurface(IDirect3DDevice9* dev,IDirect3DSurface9* target,unsigned draw,
                              unsigned vs,unsigned ps,const char* phase,int sampler=-1) {
-    if(!passStages || !target || stagesSaved>=8) return;
+    if(!passStages || !target || stagesSaved>=8) return "unavailable_or_budget";
     D3DSURFACE_DESC d{};
-    if(FAILED(target->GetDesc(&d)) || d.Width<(UINT)std::max(512,g_renderW/2) || d.Height<(UINT)std::max(512,g_renderH/2) ||
-        (uint64_t)d.Width*d.Height>16u*1024u*1024u || d.MultiSampleType!=D3DMULTISAMPLE_NONE) return;
+    if(FAILED(target->GetDesc(&d))) return "get_desc_failed";
+    if(d.Width<(UINT)std::max(512,g_renderW/2) || d.Height<(UINT)std::max(512,g_renderH/2) ||
+        (uint64_t)d.Width*d.Height>16u*1024u*1024u) return "unsupported_dimensions";
+    if(d.MultiSampleType!=D3DMULTISAMPLE_NONE) return "multisampled";
     unsigned bytesPerPixel=0;
     if(d.Format==D3DFMT_A8R8G8B8 || d.Format==D3DFMT_X8R8G8B8 || d.Format==D3DFMT_G16R16F || d.Format==D3DFMT_R32F) bytesPerPixel=4;
     if(d.Format==D3DFMT_A16B16G16R16F) bytesPerPixel=8;
     const uint64_t size=(uint64_t)d.Width*d.Height*bytesPerPixel;
-    if(!size || size>256u*1024u*1024u-stageBytes) return;
+    if(!size) return "unsupported_format";
+    if(size>256u*1024u*1024u-stageBytes) return "byte_budget";
     ++stagesSaved; stageBytes+=size; // attempts bounded too, including failures
     IDirect3DSurface9* sys=nullptr; D3DLOCKED_RECT lock{};
     HRESULT hr=dev->CreateOffscreenPlainSurface(d.Width,d.Height,d.Format,D3DPOOL_SYSTEMMEM,&sys,nullptr);
@@ -265,6 +268,7 @@ static void SaveStageSurface(IDirect3DDevice9* dev,IDirect3DSurface9* target,uns
     fprintf(meta,"{\"kind\":\"pass_stage\",\"frame\":%llu,\"eye\":0,\"last_draw\":%u,\"rt\":\"%p\",\"width\":%u,\"height\":%u,\"format\":%u,\"vs_hash\":%u,\"ps_hash\":%u,\"phase\":\"%s\",\"sampler\":%d,\"file\":\"%s\",\"saved\":%s,\"hr\":%ld,\"sha256\":\"%s\"}\n",
         frame,draw,target,d.Width,d.Height,(unsigned)d.Format,vs,ps,phase,sampler,name,
         saved?"true":"false",hr,saved?HashFile((directory+"/"+name).c_str()).c_str():"unavailable");
+    return saved?"saved":"readback_failed";
 }
 static bool IsPostStage(unsigned ps) {
     return ps==0x33DE98C1u || ps==0x75F88E11u || ps==0x309E99B6u || ps==0x2B17CF23u ||
@@ -285,9 +289,23 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
     // before the draw; never infer them from an opaque texture pointer alone.
     for(unsigned slot:{0u,2u,3u}) {
         IDirect3DBaseTexture9* base=nullptr;IDirect3DSurface9* surface=nullptr;
-        if(SUCCEEDED(dev->GetTexture(slot,&base)) && base && base->GetType()==D3DRTYPE_TEXTURE &&
-            SUCCEEDED(static_cast<IDirect3DTexture9*>(base)->GetSurfaceLevel(0,&surface)))
-            SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
+        D3DSURFACE_DESC desc{};
+        const HRESULT textureHr=dev->GetTexture(slot,&base);
+        const unsigned type=base?(unsigned)base->GetType():0;
+        HRESULT surfaceHr=E_FAIL,descHr=E_FAIL;
+        const char* status=FAILED(textureHr)?"get_texture_failed":!base?"unbound":type!=D3DRTYPE_TEXTURE?"non_2d":"get_surface_failed";
+        if(SUCCEEDED(textureHr) && base && type==D3DRTYPE_TEXTURE) {
+            surfaceHr=static_cast<IDirect3DTexture9*>(base)->GetSurfaceLevel(0,&surface);
+            if(SUCCEEDED(surfaceHr) && surface) {
+                descHr=surface->GetDesc(&desc);
+                status=FAILED(descHr)?"get_desc_failed":SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
+            }
+        }
+        // Even unsupported depth formats must leave an identity/status record.
+        // No readback/conversion is invented when the format cannot be copied.
+        fprintf(meta,"{\"kind\":\"post_input\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"ps_hash\":%u,\"sampler\":%u,\"texture\":\"%p\",\"texture_type\":%u,\"surface\":\"%p\",\"surface_available\":%s,\"texture_hr\":%ld,\"surface_hr\":%ld,\"desc_hr\":%ld,\"width\":%u,\"height\":%u,\"format\":%u,\"usage\":%u,\"pool\":%u,\"multisample\":%u,\"readback_status\":\"%s\"}\n",
+            frame,draw,ps,slot,base,type,surface,SUCCEEDED(descHr)?"true":"false",textureHr,surfaceHr,descHr,
+            desc.Width,desc.Height,(unsigned)desc.Format,desc.Usage,(unsigned)desc.Pool,(unsigned)desc.MultiSampleType,status);
         if(surface)surface->Release();if(base)base->Release();
     }
 }

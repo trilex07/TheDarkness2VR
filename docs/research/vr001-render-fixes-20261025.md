@@ -319,3 +319,39 @@ its draw, c0..c15 PS constants, actual shader bytecode and later target output.
 R32F depth is explicit, with no format conversion or unsupported fallback.
 Input/output phase and sampler identity are distinguished and validated. Mode1
 retains general pass capture; default0 still has no GPU readbacks.
+
+## Diffuse candidate runtime result (frame28216)
+
+Candidate d19f552 diagnostic DLL SHA-256
+818E7E117E13F63DF9BE6849EE9210C38B5E246F7081CAF0A1E1131A7BC425E4
+completed one unpaused 3076x3140 capture in each eye. COMPLETE and all optional
+hashes pass; Present28217 forwarded once and returned D3D_OK. Private capture:
+`%TEMP%/Darkness2VR-matched-32704-1-28216`.
+
+Both entire final-eye RGB images again equal their corresponding RT0 exactly.
+The exact material pair has six draws per eye. Actual s0 minification is
+anisotropic16 for all six; the scope corrects only draw30, because the other
+five already use anisotropy. No universal texture/filter change occurred.
+The user's PSVR2 assessment was "maybe slightly better"; VR-003 remains open.
+
+Late-stage capture now locates the yellow doorway's appearance at final
+composite draw135: the full-resolution HDR Frame input precedes it; the bright
+yellow region is present after it. Saved actual PS A69BDC80 (declared33DE98C1)
+contains the intended mov/nop replacement of the DOF/ghost RGB blend. Therefore
+failure to activate this bypass is ruled out in this frame. Height-fog, bloom
+and grading still execute. This does not establish why underlying doorway
+geometry or depth is missing, nor prove CPU culling.
+
+Depth s2 was not saved. The previous capture silently skipped unsupported
+surfaces, so its type/readback reason is UNKNOWN. The next diagnostic reports
+all three input identities and explicit availability/readback status, including
+unsupported formats, without inventing a depth conversion. OFF-by-default
+CameraUploadWitness records at most four original world VS293F456B c0 uploads,
+their API result and OS stack addresses through the existing COM hook. It
+does not dereference candidate camera objects, alter matrices/FOV, or certify
+camera ownership; it is compiled out of the production build.
+
+Normal user exit was followed by verified DLL/game INI/diagnostic INI restoration
+to 9C96DC85 / C802439A / 586F536A respectively (full baseline hashes above).
+EXE SHA remains D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
+Private restoration receipt: `%TEMP%/d2vr-diffuse-test-20261025-130050`.

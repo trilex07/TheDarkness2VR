@@ -25,5 +25,9 @@ Complete frame38224, seven intermediate images: yellow doorway absent from HDR
 color through draw75 and half-resolution color through94, present in final
 source and eye. Its introduction is narrowed to later postprocessing, not final
 D3D11 crop. Exact late shader/input cause remains unproven; no CPU-culling claim.
-Bounded CapturePassStages=2 now targets the composite's actual Frame/Depth/DOF
-inputs and PS constants. No native FOV or speculative fog correction applied.
+Bounded CapturePassStages=2 targets the composite's actual Frame/Depth/DOF
+inputs and PS constants. Complete frame28216 localizes the bright yellow region
+to final composite draw135 (declared PS33DE98C1, actual PSA69BDC80). Its DOF RGB
+bypass is active in the actual bytecode. Depth input format/pixels remain unknown;
+unsupported input identities will now be reported explicitly. Native camera
+ownership/visibility remains unproven; no speculative fog or FOV correction.

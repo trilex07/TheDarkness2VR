@@ -38,5 +38,9 @@ perceived blur, also while stationary. Luna ray-aligned comparison has now run
 with actual world VS/WVP proof: no RT0-to-eye detail loss in the tested frame.
 Native camera object ownership is still separate and unproven. An OFF-by-default
 WorldDiffuseAnisotropy candidate corrects the observed LINEAR state on one
-bytecode-verified diffuse sampler; real D3D9 state/rollback test424 PASS, Steam
-and physical quality acceptance pending. No generic sharpening added.
+bytecode-verified diffuse sampler; real D3D9 state/rollback test424 PASS.
+Steam frame28216 confirms correction of one draw per eye; five other exact-pair
+draws already use anisotropy16. Source/final RGB remain pixel-exact3076x3140.
+User PSVR2 result: "maybe slightly better"; full clarity acceptance is pending.
+Actual final shader bytecode also proves the DOF/ghost RGB bypass is active.
+No generic sharpening added.

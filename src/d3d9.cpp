@@ -368,6 +368,7 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
 
 #ifdef D2VR_MATCHED_CAPTURE
 static std::string g_matchedIniPath;
+static volatile LONG g_cameraUploadWitnessBudget=0;
 #endif
 void LoadConfig() {
     char localIni[MAX_PATH] = ".\\Darkness2VR.ini";
@@ -491,6 +492,9 @@ void LoadConfig() {
     g_stereoIpdSource = GetPrivateProfileIntA("Render", "StereoIpdSource", 0, chosenIni) ? 1 : 0;
 #ifdef D2VR_MATCHED_CAPTURE
     g_matchedIniPath=chosenIni;
+    g_cameraUploadWitnessBudget=GetPrivateProfileIntA("Diagnostics","CameraUploadWitness",0,
+        ".\\Darkness2VR-diagnostic.ini") ? 4 : 0;
+    if(g_cameraUploadWitnessBudget) Log("[CameraUpload] enabled: four original world WVP uploads; camera ownership UNKNOWN");
 #endif
     g_stereoDebugMode = GetPrivateProfileIntA("Render", "StereoDebugMode", 0, chosenIni);
     if (g_stereoDebugMode < 0 || g_stereoDebugMode > 4) g_stereoDebugMode = 0;
@@ -1419,12 +1423,54 @@ static void LogMatrix4x4(const char* label, const float M[16]) {
     Log("    [%8.4f %8.4f %8.4f %8.4f]", M[12], M[13], M[14], M[15]);
 }
 
+#ifdef D2VR_MATCHED_CAPTURE
+// Uses the existing COM constant hook, not another executable interception.
+// Copy only the API payload; never chase its pointer as a camera/object.
+struct CameraUploadWitness {
+    void* stack[16];
+    const float* source;
+    void* caller;
+    float matrix[16];
+    USHORT depth;
+    LONG sample;
+};
+static bool BeginCameraUploadWitness(CameraUploadWitness& out,const float* data,UINT start,UINT count,void* caller) {
+    if(InterlockedCompareExchange(&g_cameraUploadWitnessBudget,0,0)<=0 || !data || start!=0 || count<4 ||
+       d2vr_replay::g_replayEye>=0 || !d2vr_replay::g_activeVs ||
+       d2vr_replay::g_activeVs->hash!=0x293F456Bu) return false;
+    if(InterlockedDecrement(&g_cameraUploadWitnessBudget)<0) return false;
+    out.source=data;out.caller=caller;
+    memcpy(out.matrix,data,sizeof(out.matrix));
+    out.depth=CaptureStackBackTrace(1,16,out.stack,nullptr);
+    static volatile LONG samples=0;
+    out.sample=InterlockedIncrement(&samples);
+    return true;
+}
+static void EndCameraUploadWitness(const CameraUploadWitness& sample,HRESULT hr) {
+    Log("[CameraUpload] sample=%ld frame=%ld thread=%lu VS=293F456B c0..3 source=%p caller=%p hr=%08lX cameraOwnership=UNKNOWN",
+        sample.sample,g_frameId,GetCurrentThreadId(),sample.source,sample.caller,hr);
+    LogMatrix4x4("original native upload",sample.matrix);
+    for(USHORT i=0;i<sample.depth;++i) {
+        HMODULE module=nullptr;char path[MAX_PATH]{};
+        if(GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(sample.stack[i]),&module)) GetModuleFileNameA(module,path,MAX_PATH);
+        Log("[CameraUpload] sample=%ld stack=%u return=%p module=%s offset=%08lX",
+            sample.sample,i,sample.stack[i],path,
+            module?(unsigned long)((uintptr_t)sample.stack[i]-(uintptr_t)module):0);
+    }
+}
+#endif
+
 HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     IDirect3DDevice9* dev,
     UINT StartRegister,
     const float* pConstantData,
     UINT Vector4fCount)
 {
+#ifdef D2VR_MATCHED_CAPTURE
+    CameraUploadWitness cameraSample;
+    const bool witness=BeginCameraUploadWitness(cameraSample,pConstantData,StartRegister,Vector4fCount,_ReturnAddress());
+#endif
     // Detect perspective WVP independently of desktop aspect ratio. The VR render
     // target is near-square; the old 1.2..2.4 gate marked real world frames as UI.
     // Only trusted main-view shader matrices count; shadow atlases do not.
@@ -1495,7 +1541,11 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
             ++g_3dCamCallsThisFrame;
         }
     }
-    return g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    const HRESULT result=g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+#ifdef D2VR_MATCHED_CAPTURE
+    if(witness) EndCameraUploadWitness(cameraSample,result);
+#endif
+    return result;
 }
 
 // ---------------------------------------------------------------- INTZ Depth Capture (D3D9 -> 480x270 -> D3D11)

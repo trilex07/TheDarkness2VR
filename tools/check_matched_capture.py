@@ -36,6 +36,24 @@ def validate(folder):
         raise ValueError("mixed frame IDs")
     if any(r["kind"] == "rejection" for r in records) or not records[-1]["complete"]:
         raise ValueError("runtime rejected capture")
+    post_inputs = [r for r in records if r["kind"] == "post_input"]
+    if post_inputs:
+        # Older receipts have no identity rows. New ones must explicitly report
+        # every requested slot, including an unsupported/missing depth image.
+        if (len(post_inputs) != 3 or {r.get("sampler") for r in post_inputs} != {0, 2, 3} or
+                len({(r.get("draw"), r.get("ps_hash")) for r in post_inputs}) != 1):
+            raise ValueError("incomplete postprocess input identities")
+        for r in post_inputs:
+            if (r.get("eye") != 0 or r.get("ps_hash") not in (0x33DE98C1, 0x75F88E11) or
+                    not r.get("readback_status")):
+                raise ValueError("invalid postprocess input identity")
+            if r.get("surface_available"):
+                if (any(r.get(k) != 0 for k in ("texture_hr", "surface_hr", "desc_hr")) or
+                        r.get("texture_type") != 3 or r.get("width", 0) <= 0 or r.get("height", 0) <= 0 or
+                        r.get("format", 0) == 0):
+                    raise ValueError("invalid postprocess surface identity")
+            elif r["readback_status"] == "saved":
+                raise ValueError("unavailable postprocess surface reported saved")
     auxiliary = [r for r in records if r["kind"] in ("pass_stage", "stage_shader")]
     if sum(r["kind"] == "pass_stage" for r in auxiliary) > 8 or sum(r["kind"] == "stage_shader" for r in auxiliary) > 32:
         raise ValueError("auxiliary capture budget exceeded")

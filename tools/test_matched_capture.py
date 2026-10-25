@@ -188,6 +188,38 @@ class MatchedCaptureTests(unittest.TestCase):
         self.save()
         self.assertEqual(validate(self.folder)["frame"],7)
 
+    def add_post_inputs(self):
+        rows = [dict(kind="post_input", frame=7, eye=0, draw=0, ps_hash=0x33DE98C1,
+                     sampler=slot, surface_available=True, texture_hr=0, surface_hr=0, desc_hr=0,
+                     texture_type=3, width=512, height=512, format=113,
+                     readback_status="unsupported_format" if slot==2 else "byte_budget") for slot in (0,2,3)]
+        self.records[3:3] = rows
+        return rows
+
+    def test_unsupported_depth_is_explicit_and_not_image_proof(self):
+        rows = self.add_post_inputs()
+        rows[1]["format"] = 0x5A544E49  # INTZ: identified, not a float/readback claim.
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"],7)
+
+    def test_incomplete_or_inconsistent_post_inputs_rejected(self):
+        rows = self.add_post_inputs()
+        self.records.remove(rows[1]); self.save()
+        with self.assertRaisesRegex(ValueError,"incomplete postprocess input"):
+            validate(self.folder)
+        self.records.insert(4,rows[1]); rows[1]["desc_hr"]=-1; self.save()
+        with self.assertRaisesRegex(ValueError,"invalid postprocess surface"):
+            validate(self.folder)
+
+    def test_missing_input_is_not_saved_image(self):
+        rows = self.add_post_inputs()
+        rows[1].update(surface_available=False, readback_status="unbound")
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"],7)
+        rows[1]["readback_status"]="saved"; self.save()
+        with self.assertRaisesRegex(ValueError,"unavailable postprocess surface"):
+            validate(self.folder)
+
     def test_luna_ray_compare(self):
         command = [sys.executable,str(Path(__file__).with_name("check_matched_capture.py")),str(self.folder),
                    "--eye","0","--source-fov-tan","-.54630249",".54630249",".54630249","-.54630249",
