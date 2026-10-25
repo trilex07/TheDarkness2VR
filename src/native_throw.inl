@@ -32,7 +32,8 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
     NativeGameplaySample sample;
     d2vr_input::Vec3 direction{};
     if(g_nativeLeftAim && g_nativeThrowInstalled && d2vr_input::ThrowDirection(velocity,aim,g_throwAimAssist,direction) &&
-       CopyNativeGameplay(sample) && sample.grabFire && sample.grabEntity) {
+       CopyNativeGameplay(sample) && !sample.alternateHeldTarget &&
+       sample.grabFire && sample.grabEntity) {
         const auto& q=g_headGeometryReference.orientation;
         const auto v=RotVec({-q.x,-q.y,-q.z,q.w},direction.x,direction.y,direction.z);
         token.direction[0]=v.x; token.direction[1]=v.y; token.direction[2]=-v.z;

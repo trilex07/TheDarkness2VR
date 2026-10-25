@@ -21,6 +21,8 @@ struct NativeGameplaySample {
     DWORD camera=0,inventory=0,entities[2]{}; // primary/right, secondary/left
     bool offHandEquipped=false;
     DWORD grabFire=0,grabEntity=0;
+    // Character/weapon holds do not use the ordinary prop throw path.
+    bool alternateHeldTarget=false;
 };
 static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
 static NativeGameplaySample g_nativeGameplay;
@@ -65,8 +67,11 @@ static void PublishNativeAim(bool context,const XINPUT_GAMEPAD& gp,
     ReleaseSRWLockShared(&g_nativeAimLock);
     const auto now=GetTickCount64();
     if(newGrab) { throwAim={}; throwUntil=0; }
+    NativeGameplaySample held;
+    const bool stockAlternateHold=CopyNativeGameplay(held) && held.alternateHeldTarget;
     if(g_nativeLeftAim && g_nativeAimHookInstalled && context && g_headGeometry &&
-       g_headGeometryReferenceValid && g_hands[0].valid && gp.bLeftTrigger<30 && gp.bRightTrigger<30) {
+       g_headGeometryReferenceValid && g_hands[0].valid && !stockAlternateHold &&
+       gp.bLeftTrigger<30 && gp.bRightTrigger<30) {
         const auto& ref=g_headGeometryReference;
         const auto& aim=g_hands[0].aim;
         const XrQuaternionf inverse={-ref.orientation.x,-ref.orientation.y,-ref.orientation.z,ref.orientation.w};
@@ -129,6 +134,11 @@ static void CaptureNativeGameplay(void* self) {
                     s.grab=busy ? d2vr_input::GrabFeedback::Busy:d2vr_input::GrabFeedback::Empty;
                     s.grabFire=(DWORD)(uintptr_t)fire;
                     s.grabEntity=**(DWORD**)(fire+0x580);
+                    const auto alternateCharacter=*(DWORD**)(fire+0x584);
+                    const auto retainedTarget=*(DWORD**)(fire+0x590);
+                    s.alternateHeldTarget=(alternateCharacter && *alternateCharacter) ||
+                        (retainedTarget && *retainedTarget) ||
+                        (s.grabEntity && *((BYTE*)s.grabEntity+0x24));
                 }
             }
         }
@@ -149,6 +159,12 @@ static void CaptureNativeGameplay(void* self) {
         last=state; Log("[NativeGrab] state=%s (558 acquisition / 580 attachment / 590 retained target)",
             state==0 ? "unknown":state==1 ? "empty":"busy");
     }
+    static bool lastAlternate=false;
+    if(s.camera && s.alternateHeldTarget!=lastAlternate) {
+        lastAlternate=s.alternateHeldTarget;
+        Log("[NativeGrab] alternate character/weapon hold=%d; native aim/velocity override suppressed",
+            (int)s.alternateHeldTarget);
+    }
     static DWORD lastEntities[2]{};
     if(s.camera && (s.entities[0]!=lastEntities[0] || s.entities[1]!=lastEntities[1])) {
         memcpy(lastEntities,s.entities,sizeof(lastEntities));
@@ -162,6 +178,11 @@ static float* NativeAimMatrixChecked(void* self,DWORD cameraVtable) {
     float* original=getter(self);
     const bool owner=NativeAimOwnerMatches(self,cameraVtable);
     if(owner) CaptureNativeGameplay(self);
+    NativeGameplaySample held;
+    // A failed or stale branch read must not apply a controller ray to an
+    // unidentified native target (notably during enemy acquisition).
+    if(owner && (!CopyNativeGameplay(held) || held.camera!=(DWORD)(uintptr_t)self ||
+                 held.alternateHeldTarget)) return original;
     NativeAimSnapshot snapshot;
     if(!original || !CopyNativeAim(snapshot) || !owner) return original;
     __declspec(align(16)) static thread_local float result[16];
