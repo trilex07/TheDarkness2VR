@@ -439,3 +439,21 @@ original upload, context copy and exception bridge, and passes the installed
 EXE. These pins authorize no new native hook/FOV patch. The mono trial stopped
 on a first-chance exception and restored the installation; see
 vr001-render-fixes-20261025.md for the NO_GO and next live blocker.
+
+
+## Controlled exception witness follow-up - 2026-10-25
+
+User-approved mono679ef63 recorded E06D7363/flags1/count3 and information
+91930520,00EEA1D7,015EEB0C. Native outer scope EEA6D0 installs EEA5F0 via
+EEA2F0, then calls EEA190 -> EEA480 -> EEA420 -> EEA5A0/RaiseException.
+EEA420 passes the saved return address and its stack destination; EEA5F0
+transfers information[1] to *information[2]. EEA1D7 is the verified return
+from EEA480, matching the observed record and template107B7A0. This identifies
+the native handoff's first-chance origin. The handler was not single-stepped.
+
+Read-only audit now verifies27 sites/24 ranges, including all six handoff
+functions. The generic readiness result remains NO_GO; no exception filter
+was relaxed. The single test stopped, and all DLL/INI bytes were restored.
+Two different-thread notifications include UIAutomationCore; their exact catch
+path is unknown. No XR/capture/PSVR2 test followed. See the dated mono receipt
+in vr001-render-fixes-20261025.md. No camera/FOV ownership gate was weakened.

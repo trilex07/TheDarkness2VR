@@ -401,3 +401,43 @@ installed EXE still hashes D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D787
 Private run, full log, checker output and restoration receipt:
 `%TEMP%/d2vr-camera-mono-20261025-132419`. Further Steam testing remains stopped
 after this NO_GO; the exception witness has been built offline, not deployed.
+
+## One approved mono test of679ef63: exception origin identified
+
+The user explicitly approved one mono/OpenXR-OFF/capture-OFF test. Fresh
+EXE SHA/PE,26 site and18 range checks passed. No other Steam game was active
+(only SteamVR/fpsVR). All three installed files were backed up and verified.
+Diagnostic DLL7C0C066765BA67E54D9E4B427A662DA07A20EECF9936E8965D857CAD9AD98A3C
+was deployed once, using the preceding mono test's unchanged INI files.
+Steam started PID7452; effective log confirmed native gameplay/FOV hooks OFF.
+Desktop observation showed loaded, unpaused barber-room gameplay; no XR ran.
+
+The render-thread record is now explicit: E06D7363, flags1, parameters3,
+nested0, information[0]=91930520, [1]=00EEA1D7, [2]=015EEB0C, thread32312.
+The full EXE template107B7A0 contains the same code/flags/count/marker.
+Native outer scope EEA6D0 installs EEA5F0 through EEA2F0 before calling
+EEA190 -> EEA480 -> EEA420 -> EEA5A0 -> imported RaiseException atEEA5E0.
+EEA420 deliberately passes the saved return address and its stack destination;
+EEA5F0 writes information[1] to *information[2]. The observed EEA1D7 is exactly
+EEA190's return from EEA480. This identifies a native exception-based return-
+address handoff, rather than a throw object guessed from EBX. No patch or
+exception suppression was applied. The precise handler instruction was not
+single-stepped, but later successful Present returns prove the process resumed.
+
+Two additional E06D7363 records are on a different thread35396, with ordinary
+19930520 markers and UIAutomationCore stack addresses. Their exact type/catch
+path is not established; they are not reclassified as harmless renderer events.
+The conservative checker remains **NO_GO**. The test stopped and was not retried.
+
+Thirty sampled result rows cover27000 entries/forwards/returns/OK, with
+recursion/status/error/fault all0. Detach presentCount27857 is not a complete
+HRESULT aggregate, so do not claim full-session return coverage. No crash was
+observed; the user closed normally. At14:17:57 Europe/Warsaw all original DLL/
+game INI/diagnostic INI hashes were restored (9C96DC85/C802439A/586F536A);
+local INI and EXE stayed byte-identical. Private evidence, final log and receipts:
+`%TEMP%/d2vr-exception-mono-20261025-141446`.
+
+Read-only audit adds the outer scope and six complete handoff ranges to make
+this provenance reproducible. It does not change the readiness classifier,
+production rendering, FOV, stereo, shaders or installed configuration. No new
+capture or PSVR2 test occurred; VR-002/VR-003 are not visually fixed by this trial.

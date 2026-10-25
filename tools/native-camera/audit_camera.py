@@ -48,11 +48,12 @@ SITES = {
     "render_context_camera_vp_source": (0x816DA1, "0f28404083c0400f2986a0020000"),
     "model_wvp_payload_copy": (0x76F9CC, "0f28070f2946100f2847100f2946200f2847200f2946300f2847300f294640"),
     "renderer_camera_bind_entry": (0xCA2150, "56578b7c240c8bf1578d4e30"),
-    # An explicit native RaiseException/SEH bridge is a candidate explanation
-    # for the first-chance notification. It does NOT waive the live NO_GO.
+    # Mono 679ef63 recorded the native bridge's exact exception parameters.
+    # This provenance does NOT waive the conservative live NO_GO.
     "native_exception_bridge_entry": (0xEEA420, "558bec6820a6ee0068f0a2ee00"),
     "native_exception_raise": (0xEEA5D3, "8d45f450ff75f0ff75e4ff75e0ff15d4b0ee00"),
     "native_exception_filter_entry": (0xEEA5F0, "558bec8b4508813863736de0750e"),
+    "native_exception_outer_scope": (0xEEA6D0, "558bec68f0a5ee0068f0a2ee00"),
 }
 
 
@@ -81,6 +82,15 @@ FUNCTION_RANGES = {
     0x93F2F0: (127, "1b56b152a586844ec68bbe6cda8b976a40ed9fd7bec9c94881ec8cee6765d80f"),
     0x48B7F0: (194, "d29f0ed33b8fe7c5bf149174e333fa9ae08a8ef642b213578c3df208ef35c98a"),
     0x8285E0: (122, "cf57d96914fc0f3defe23225f712cff3fc3a6f438f702ba8a87981f868c59ad5"),
+    # Native return-address handoff, independently tied to the live 91930520
+    # record. These hashes preserve the observed SEH chain; never patch it or
+    # use a matching C++ exception code alone as a harmless-exception filter.
+    0xEEA6D0: (48, "8da2ac93d9d00fb81f769c2b44b2d167df254f7f598a3c67bee4f9fb68093be7"),
+    0xEEA190: (169, "094313205187fa2fbe917c7943289b6114680914b6f78070db42cd591c4f8c6e"),
+    0xEEA480: (91, "ecc529b8b0ed8cff821d7556e502ec3feb20c5f3f9cb4890318cc605e9224884"),
+    0xEEA420: (96, "8b5a88c283c99d1429631c7a03b1e9d618608473fa6bb1e36d1df0d1211ce048"),
+    0xEEA5A0: (74, "5c5241a04f7cbeb07fc6f33b3eead0e0d42bb1e779c3708b1b8b9ebeadbc41d0"),
+    0xEEA5F0: (39, "2e512308db279eb316f51391a7f0e15036e7b5916d54bec8a4507d0f6795d5a5"),
 }
 
 
