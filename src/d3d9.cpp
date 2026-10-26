@@ -5134,6 +5134,7 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
+    d2vr_sampling::InvalidateSamplerCaps();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
     if(pp && pp->hDeviceWindow) g_protectedSourceSize.Window(pp->hDeviceWindow);
@@ -5187,6 +5188,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
+    d2vr_sampling::InvalidateSamplerCaps();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
     if(pp && pp->hDeviceWindow) g_protectedSourceSize.Window(pp->hDeviceWindow);
@@ -5837,6 +5839,7 @@ static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
 }
 
 void HookDevice(IDirect3DDevice9* dev) {
+    d2vr_sampling::InvalidateSamplerCaps();
     StartAsyncLogging();
     g_renderThreadId = GetCurrentThreadId();
     if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;

@@ -2,6 +2,7 @@
 #include <d3d9.h>
 #include <algorithm>
 #include <cstdint>
+#include "sampler_caps_cache.h"
 
 namespace d2vr_sampling {
 // Captured world VS position is row-vector WVP c0..c3. Exact PS bytecode
