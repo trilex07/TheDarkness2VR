@@ -5550,8 +5550,6 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
 // Called only from the first CreateDevice callback before returning the device
 // to the engine. Never install/reinstall asynchronously from EndScene/Reset.
 static void InstallDiagnosticEnginePresent() {
-    d2vr_cpu_sync::timing.Enable(GetPrivateProfileIntA("Diagnostics","CpuSyncTiming",0,
-        ".\\Darkness2VR-diagnostic.ini")!=0);
     if(!GetPrivateProfileIntA("Diagnostics","EnginePresentCallsite",0,".\\Darkness2VR-diagnostic.ini")) return;
     if (!NativeImageWriteAllowed(0xA94052,5)) return;
     auto image=reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr));
@@ -5781,6 +5779,9 @@ void HookDevice(IDirect3DDevice9* dev) {
     }
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
+    // Read once before either Present installer latches optional timing callbacks.
+    d2vr_cpu_sync::timing.Enable(GetPrivateProfileIntA("Diagnostics","CpuSyncTiming",0,
+        ".\\Darkness2VR-diagnostic.ini")!=0);
     InstallImagePresent(dev);
     InstallProtectedSourceQuality();
     InstallDiagnosticEnginePresent();

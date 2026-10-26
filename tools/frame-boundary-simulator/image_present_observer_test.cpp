@@ -14,9 +14,24 @@ static d2vr_frame::BoundaryMachine boundary;
 static d2vr_capture::PresentWitness witness;
 static unsigned rendered=0,accepted=0;static uint64_t frame=0,clockMs=1;
 static IDirect3DDevice9* borrowed=nullptr;
-static bool qualifies(d2vr_image_present::Method,uintptr_t caller){return caller!=0;}
+static const FixtureStats* stats=nullptr;
+static bool timingEnabled=true,forwardActive=false,expectedQualified=true;
+static unsigned phase=0,forwardStarts=0,forwardEnds=0,priorNative=0;
+static void forwardBegin() {
+    assert(timingEnabled && phase==1 && !forwardActive);
+    phase=2;forwardActive=true;++forwardStarts;priorNative=stats->native;
+}
+static void forwardEnd() {
+    assert(timingEnabled && phase==2 && forwardActive);
+    // The original native leaf ran once INSIDE this span. Overlay nesting must
+    // not open a second span or count callback work as native forwarding.
+    assert(stats->native==priorNative+1);
+    phase=3;forwardActive=false;++forwardEnds;
+}
+static bool qualifies(d2vr_image_present::Method method,uintptr_t caller){return caller!=0 && (method!=d2vr_image_present::Method::Present || expectedQualified);}
 static void before(IDirect3DSwapChain9* sc,uintptr_t caller,bool native,bool ready) {
-    assert(native);if(!ready) return;
+    assert(native==expectedQualified && phase==0 && !forwardActive);phase=1;
+    if(!ready) return;
     assert(observer.InPresentation() && observer.Ready());
     assert(sc->GetDevice(&borrowed)==S_OK && borrowed);
     d2vr_frame::Event event{};event.type=d2vr_frame::EventType::SwapChainPresent;
@@ -26,7 +41,8 @@ static void before(IDirect3DSwapChain9* sc,uintptr_t caller,bool native,bool rea
     ++rendered;
 }
 static void after(IDirect3DSwapChain9*,uintptr_t,bool native,bool ready,HRESULT hr) {
-    assert(native);
+    assert(native==expectedQualified && !forwardActive && phase==((timingEnabled && native)?3u:1u));
+    phase=0;
     if(ready) {
         assert(witness.active && witness.frame==frame);
         if(hr==S_OK && !observer.Failed()) ++accepted;
@@ -49,14 +65,17 @@ int main(int argc,char** argv) {
     auto deviceFn=reinterpret_cast<IDirect3DDevice9*(__cdecl*)()>(GetProcAddress(dll,"FixtureDevice"));
     auto counters=reinterpret_cast<const FixtureStats*(__cdecl*)()>(GetProcAddress(dll,"FixtureCounters"));
     auto expect=reinterpret_cast<void(__cdecl*)(const RECT*,const RECT*,HWND,const RGNDATA*,DWORD,HRESULT)>(GetProcAddress(dll,"FixtureExpect"));
-    assert(deviceFn && counters && expect);auto device=deviceFn();
+    assert(deviceFn && counters && expect);auto device=deviceFn();stats=counters();
+    timingEnabled=!(argc>2 && !std::strcmp(argv[2],"timing-disabled"));
+    d2vr_image_present::Callbacks callbacks{qualifies,before,after,nullptr};
+    if(timingEnabled) {callbacks.forwardBegin=forwardBegin;callbacks.forwardEnd=forwardEnd;}
     auto image=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     auto pe=reinterpret_cast<IMAGE_NT_HEADERS*>(image+reinterpret_cast<IMAGE_DOS_HEADER*>(image)->e_lfanew);
     d2vr_native_image::Guard guard{true,image,pe->OptionalHeader.SizeOfImage};
     if(argc>2 && !std::strcmp(argv[2],"deny")) {
         auto change=reinterpret_cast<void(__cdecl*)(void*)>(GetProcAddress(dll,"FixtureCreateTarget"));assert(change);
         change(reinterpret_cast<void*>(&ForbiddenMainCreate));
-        assert(!observer.Start(device,guard,{qualifies,before,after,nullptr}) && observer.Failed());
+        assert(!observer.Start(device,guard,callbacks) && observer.Failed());
         assert(TextSnapshot()==text);
         std::puts("PASS refuses target in main EXE before MinHook changes bytes");return 0;
     }
@@ -68,7 +87,7 @@ int main(int argc,char** argv) {
     auto originalBaseVT=*reinterpret_cast<void***>(originalBase),originalExVT=*reinterpret_cast<void***>(originalEx);
     const std::vector<void*> originalBaseTable(originalBaseVT,originalBaseVT+180),originalExTable(originalExVT,originalExVT+180);
     auto vt=*reinterpret_cast<void***>(device);std::vector<void*> deviceTable(vt,vt+180);
-    assert(observer.Start(device,guard,{qualifies,before,after,nullptr}));
+    assert(observer.Start(device,guard,callbacks));
     assert(!observer.Ready());assert(*reinterpret_cast<void***>(device)==vt);
     assert(originalEx->Release()==1 && originalBase->Release()==0);
     RECT a{1,2,31,47},b{4,5,57,63};RGNDATA dirty{};const auto window=reinterpret_cast<HWND>(0x1234);
@@ -110,8 +129,19 @@ int main(int argc,char** argv) {
     assert(!std::memcmp(vt,deviceTable.data(),180*sizeof(void*)));
     assert(TextSnapshot()==text && !observer.Failed());
     assert(rendered>0 && accepted>0 && accepted<rendered && observer.recursive==0);
+    assert(!forwardActive && phase==0 && forwardStarts==forwardEnds);
+    assert(forwardStarts==(timingEnabled?observer.nativePresents.load():0));
     // A later overlay cycle must never call a saved original repeatedly.
     IDirect3DSwapChain9* last=nullptr;assert(device->CreateAdditionalSwapChain(&pp,&last)==S_OK);
+    // A non-engine Present is forwarded but cannot emit authoritative native
+    // timing or mutate the frame boundary. The fixture still verifies all args.
+    const auto priorStarts=forwardStarts,priorFrames=rendered;
+    const auto priorQualified=observer.nativePresents.load();
+    expectedQualified=false;expect(nullptr,nullptr,nullptr,nullptr,0,S_OK);
+    assert(last->Present(nullptr,nullptr,nullptr,nullptr,0)==S_OK);
+    assert(forwardStarts==priorStarts && rendered==priorFrames);
+    assert(observer.nativePresents.load()==priorQualified);
+    expectedQualified=true;
     if(argc>2 && !std::strcmp(argv[2],"hr-error")) {
         expect(nullptr,nullptr,nullptr,nullptr,0,D3DERR_INVALIDCALL);
         assert(last->Present(nullptr,nullptr,nullptr,nullptr,0)==D3DERR_INVALIDCALL);
@@ -132,5 +162,7 @@ int main(int argc,char** argv) {
     assert(last->Present(nullptr,nullptr,nullptr,nullptr,0)==D3DERR_INVALIDCALL);
     assert(counters()->native==prior+1 && observer.recursive==1 && observer.Failed() && !observer.Ready());
     last->Release();assert(TextSnapshot()==text);
+    assert(!forwardActive && phase==0 && forwardStarts==forwardEnds);
+    assert(forwardStarts==(timingEnabled?observer.nativePresents.load():0));
     std::printf("PASS x86 native DLL entry/trampoline ABI: native=%u frames=%u accepted=%u; base/Ex/private slots, 1000 release/recreate cycles, Reset, statuses, recursive overlay rejection; EXE text unchanged\n",counters()->native,rendered,accepted);
 }

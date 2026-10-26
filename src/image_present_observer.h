@@ -20,6 +20,10 @@ struct Callbacks {
     void (*before)(IDirect3DSwapChain9*,uintptr_t,bool,bool)=nullptr;
     void (*after)(IDirect3DSwapChain9*,uintptr_t,bool,bool,HRESULT)=nullptr;
     void (*log)(const char*,...)=nullptr;
+    // Optional diagnostic timing brackets the actual outer native forwarding,
+    // after before() and before after(). Both null in the ordinary fast path.
+    void (*forwardBegin)()=nullptr;
+    void (*forwardEnd)()=nullptr;
 };
 
 class Observer {
@@ -138,7 +142,12 @@ class Observer {
         const bool ready=qualified && Ready();
         if(outer && cb_.before) cb_.before(sc,caller,qualified,ready);
         auto next=reinterpret_cast<Present>(entries_[index].next.load(std::memory_order_acquire));
-        ++forwarded;const HRESULT hr=next(sc,a,b,w,r,flags);++returned;
+        const bool measureForward=qualified && cb_.forwardBegin && cb_.forwardEnd;
+        ++forwarded;
+        if(measureForward) cb_.forwardBegin();
+        const HRESULT hr=next(sc,a,b,w,r,flags);
+        if(measureForward) cb_.forwardEnd();
+        ++returned;
         if(hr==D3D_OK) ++ok;else if(FAILED(hr)) ++errors;else ++statuses;
         if(qualified) {
             ++nativePresents;
