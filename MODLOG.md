@@ -191,3 +191,18 @@ PASS. Correction OFFLINE ONLY; old private tested package preserved unchanged.
 Both sessions restored original DLL/four INIs and EXE hashes, rollback PASS.
 No further launch, native patch, quality change or automatic merge.
 Receipt: docs/research/image-preserving-present-live-20261026.md.
+
+### 2026-10-26: corrected protected profile sends gameplay XR layers
+
+One user-authorized Steam test of d722e95 with a newly merged INI package and
+unchanged EE0F3C DLL. Both geometry flags0; image guard/external observer1.
+Real Present last sample22000 D3D_OK, recursion/errors/statuses/fault0.
+FOCUSED gameplay:25/25 sampled frames layers1; continuous sampled span50.10s;
+XR_SUCCEEDED layer cadence89.6..90.0/s (not simulation FPS), no xrEndFrame error.
+User confirmed VR image visible. Controller/head tracking remain intentionally
+OFF; low source resolution and full stereo comfort acceptance remain open.
+No CRC access-violation recurrence;3 nonfatal first-chance C++ exceptions retained
+in private evidence; normal user exit0. No broad stability claim.
+DLL/all four INIs restored, all hashes and original EXE verified. No second
+launch, renderer/DLL changes, unsafe hooks, quality changes or automatic merge.
+Receipt: docs/research/image-preserving-xr-layer-pass-20261026.md.
