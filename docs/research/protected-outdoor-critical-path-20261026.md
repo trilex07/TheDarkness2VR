@@ -189,3 +189,45 @@ NVIDIA creation waits and stability; do not infer FPS gain from worker tests.
 The retained trace has the documented event loss, so an exact lossless total
 CPU/GPU attribution remains unavailable. The outdoor 9.318 ms budget deficit
 is unresolved until actual measured improvements close it.
+
+
+### Authorized A/B attempt: stopped before performance recording
+
+User explicitly authorized two 10-second-stationary +20-second-combat starts.
+Fresh original EXE SHA/PE/site/range audit PASS. Only SteamVR and fpsVR were
+running. All five installed DLL/INI files backed up with matching SHA-256.
+Arm A used the frozen diagnostic DLL above, AsyncLog=0; ordinary worker was
+not started. The HMD user reported a flat game screen, so no WPR/PresentMon
+recording was triggered. B was NOT RUN; no automatic retry is authorized.
+
+A's log installs all three observer entries at exactly the same targets as the
+successful prior protected trace: Create6471CE30, QI6470D820, Present64683E30.
+It remains EXTERNAL_PENDING through28,200 scenes and has no qualified acquisition
+or native Present receipt, InitXR or VrFrame. QI/Present installation occurs only
+inside Observe() after typed acquisition, so this is not proof that all raw
+Create/Present thunks were absent. Current logging filters out unqualified
+Create and Present calls. Missing evidence is their actual caller/provenance
+and forwarding counts before admission. Do not claim zero raw Present calls.
+
+Observer/runtime source is byte-identical between frozen2e70cc4 and98442ef.
+AsyncLog=0 returns before pin/lock/file/thread work. The inherited disabled
+reader-fence code runs only after the XR path; it is unchanged from integration
+base010a84e and legacy-order regression PASS. Inheritance versus the older2e70
+binary is explicitly retained, not erased: the new A/B arms use the SAME DLL
+and the existing reader experiment remains OFF. A rebuild/layout/startup-timing
+interaction is still UNKNOWN; logger and fence are not proven causes.
+
+Admission guards remain unchanged. A verified native Present still requires a
+qualified typed acquisition. Existing fixture always qualifies Create, leaving
+this rejection path untested. A separate bounded observer-receipt candidate will
+cover unqualified Create followed by native Present, proving transparent
+forwarding while keeping XR closed. No alternate interception, EXE write,
+EndScene fallback, new profiler or speculative admission relaxation is allowed.
+
+The user closed A normally. Original DLL and all four INIs restored5/5;
+original EXE hash unchanged. Private runtime receipt:
+`runtime/async-log-ab-20261026T174216Z` under LocalAppData/Darkness2VR.
+The elevated helper never received a start flag and has only its bounded idle
+timeout; there was no recording session. A/B frame numbers and async-log FPS
+improvement remain NOT MEASURED. Logging candidate is OFFLINE VERIFIED only;
+VR admission is BLOCKED, not HMD accepted or FIXED.
