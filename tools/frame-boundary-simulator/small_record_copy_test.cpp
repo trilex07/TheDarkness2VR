@@ -30,6 +30,53 @@ static void Filled(const uint8_t* p, size_t n, uint8_t value) {
     for (size_t i = 0; i < n; ++i) assert(p[i] == value);
     ++cases;
 }
+// Bind the extracted production RecPush and lock to this owned record arena.
+static std::vector<uint8_t> g_recData;
+static volatile LONG g_recLock=0;
+static bool g_smallRecordCopyAdmitted=false;
+#include "actual_rec_push.inl"
+
+static void PushRecord(const void* source,size_t bytes,const std::vector<uint8_t>& expected) {
+    const auto previous=g_recData;
+    const uint32_t offset=RecPush(source,bytes);
+    assert(offset==previous.size() && g_recData.size()==previous.size()+expected.size());
+    assert(g_recLock==0); // actual RecLockGuard must release on zero/clamped copies too
+    Equal(g_recData.data(),previous.data(),previous.size());
+    if(!expected.empty()) Equal(g_recData.data()+offset,expected.data(),expected.size());
+    ++cases;
+}
+static void TestActualRecPush(uint8_t* memory,size_t page) {
+    for(bool admitted:{false,true}) {
+        g_smallRecordCopyAdmitted=admitted;
+        g_recData.assign(37,0xa5);g_recData.shrink_to_fit();
+        for(size_t bytes:{1u,16u,64u,191u,192u,193u,1088u}) {
+            std::vector<uint8_t> expected(memory+64,memory+64+bytes);
+            PushRecord(memory+64,bytes,expected);
+        }
+        // No dereference or append for empty/sanity-clamped native records.
+        PushRecord(nullptr,0,{});
+        PushRecord(reinterpret_cast<void*>(1),size_t(8)*1024*1024+1,{});
+        PushRecord(reinterpret_cast<void*>(1),SIZE_MAX,{});
+        PushRecord(nullptr,64,std::vector<uint8_t>(64,0));
+        DWORD old=0;
+        for(DWORD protection:{PAGE_NOACCESS,PAGE_READWRITE|PAGE_GUARD}) {
+            std::vector<uint8_t> prefix(memory+page-16,memory+page);
+            prefix.resize(64,0);
+            assert(VirtualProtect(memory+page,page,protection,&old));
+            PushRecord(memory+page,64,std::vector<uint8_t>(64,0));
+            assert(Protection(memory+page)==protection);
+            PushRecord(memory+page-16,64,prefix);
+            assert(Protection(memory+page)==protection);
+            PushRecord(memory+page,0,{});
+            assert(Protection(memory+page)==protection);
+            assert(VirtualProtect(memory+page,page,PAGE_READWRITE,&old));
+        }
+        // Exactly 8 MiB remains valid; only greater sizes trigger the clamp.
+        std::vector<uint8_t> maximum(size_t(8)*1024*1024,0x5e);
+        PushRecord(maximum.data(),maximum.size(),maximum);
+        g_recData.clear();g_recData.shrink_to_fit();
+    }
+}
 int main(int argc, char** argv) {
     assert(argc == 2);
     assert(GetFileAttributesA(argv[1]) != INVALID_FILE_ATTRIBUTES);
@@ -125,6 +172,7 @@ int main(int argc, char** argv) {
         Filled(arena.data(), offset, 0xa5);
         Filled(arena.data() + offset + 192, arena.size() - offset - 192, 0xa5);
     }
+    TestActualRecPush(memory,page);
     VirtualFree(memory, 0, MEM_RELEASE);
-    std::printf("PASS small-record-copy: %u byte/range checks; x86 guard admission, exact counts, legacy fallback, bounds and default OFF\n", cases);
+    std::printf("PASS small-record-copy: %u byte/range checks; x86 guard admission, exact counts, legacy fallback, actual RecPush offsets/append/bounds/sanity, and default OFF\n", cases);
 }

@@ -6,11 +6,34 @@ $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Componen
 $vcvars=Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat'
 $outDir=Join-Path $env:TEMP 'd2vr-small-record-copy-unit'
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+$renderer=Get-Content -LiteralPath (Join-Path $repo 'src\d3d9.cpp') -Raw
+if(-not $renderer.Contains('static bool g_smallRecordCopyRequested = false;') -or
+   -not $renderer.Contains('static bool g_smallRecordCopyAdmitted = false;') -or
+   -not $renderer.Contains('g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;')) {
+    throw 'SmallRecordCopy requested/effective admission must remain default OFF'
+}
+$hookDevice=[regex]::Match($renderer,'(?s)void HookDevice\(IDirect3DDevice9\* dev\) \{.*?\r?\n\}')
+$admission=$hookDevice.Value.IndexOf('g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);')
+$replayHooks=$hookDevice.Value.IndexOf('d2vr_replay::InstallReplayHooks(dev);')
+$firstDeviceHook=$hookDevice.Value.IndexOf('PatchVTable(')
+if(-not $hookDevice.Success -or $admission -lt 0 -or $replayHooks -le $admission -or $firstDeviceHook -le $admission) {
+    throw 'Guard admission must execute in HookDevice before device/replay hooks are installed'
+}
+$replay=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw
+$lock=[regex]::Match($replay,'(?s)struct RecLockGuard \{.*?\r?\n\};')
+$push=[regex]::Match($replay,'(?s)static inline uint32_t RecPush\(const void\* data, size_t bytes\) \{.*?\r?\n\}')
+if(-not $lock.Success -or -not $push.Success){throw 'Actual RecPush/RecLockGuard source boundaries missing'}
+if(-not $push.Value.Contains('d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, g_smallRecordCopyAdmitted);')) {
+    throw 'Actual RecPush must forward effective guard admission to the existing copy helper'
+}
+# Exercise production function bodies with the real helper, not a mirrored arena.
+($lock.Value + "`n" + $push.Value) | Set-Content -LiteralPath (Join-Path $outDir 'actual_rec_push.inl') -Encoding utf8
 Push-Location $outDir
 try {
     $test=Join-Path $here 'small_record_copy_test.cpp'
-    cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 `"$test`" /Fe:small-record-copy-test.exe"
+    cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 /I`"$outDir`" `"$test`" /Fe:small-record-copy-test.exe"
     if($LASTEXITCODE -ne 0){throw 'small record copy test build failed'}
     & .\small-record-copy-test.exe (Join-Path $repo 'Darkness2VR.ini')
     if($LASTEXITCODE -ne 0){throw 'small record copy tests failed'}
+    Write-Host 'PASS default-OFF requested/admitted/config and HookDevice guard probe before device/replay installation'
 } finally {Pop-Location}
