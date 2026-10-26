@@ -231,3 +231,81 @@ The elevated helper never received a start flag and has only its bounded idle
 timeout; there was no recording session. A/B frame numbers and async-log FPS
 improvement remain NOT MEASURED. Logging candidate is OFFLINE VERIFIED only;
 VR admission is BLOCKED, not HMD accepted or FIXED.
+
+## Follow-up: focus interruption and bounded recovery candidate
+
+The separately authorized 3174a2f A arm passed real additional-swapchain
+acquisition and native Present: caller00964CC1 qualified Create; caller00A94057
+qualified Present, matched entry/forward/return, HRESULT0 and recursion0. XR
+initialized. After the elevated console/UAC prompt, the user reported losing VR;
+XR changed4->3, layers became0, and Present eventually returned positive
+0x08760877 (once0x08760878). Exactly2937 D3D_OK returns were recorded before
+readiness remained closed. Those positive statuses are not successful stereo
+acceptance. The process later exited; its exit cause is UNKNOWN. Only handled
+C++ exceptions were retained, with no recorded C0000005. This is not a stability
+PASS. No collector start flag was written, no ETW/PresentMon capture started,
+and B was NOT RUN. The helper subsequently timed out normally at18:17:13Z.
+
+Original DLL and four INIs restored5/5, original EXE SHA unchanged; rechecked
+after offline builds. The last session is private under
+runtime/admission-async-ab-20261026T180552Z. Do not retry automatically.
+A future authorized collector must finish elevation BEFORE launching Steam/VR,
+then require actual visible loaded gameplay before starting the capture.
+
+Integrated existing event recovery f17726b as0e8cc13. A qualified outer native
+Present on the latched render thread can pump existing XR events while frame
+admission is closed. It does not obtain a device, replay, render or submit an XR
+frame on that closed path. A later D3D_OK still rewarms only the following frame.
+The first Present returning occluded can already have run its former ready path
+before the HRESULT is known. This correction cannot restore desktop visibility
+or run if native Present stops. Runtime recovery remains NOT VERIFIED.
+
+## Disjoint CPU budget and next bounded optimization
+
+`protected-outdoor-exclusive-cpu-20261026.csv` assigns every retained sampled PC
+to exactly one leaf category. It complements, not replaces, the precise
+scheduler timeline and the documented ETW loss/partial stacks. Estimated sampled
+running12.733ms indoor and18.084ms outdoor agrees with scheduled running12.545
+and17.925ms within0.19ms. It is not an API invocation count or a measurement of
+unprofiled execution. Native game3.873ms, query-named leaves2.437ms, unresolved
+ntdll memset2.186ms, syscall dispatch1.280ms, identified proxy C++1.231ms and
+NVIDIA render-thread leaves1.041ms are disjoint outdoor categories. Named ETW
+stack/unwind leaves themselves cost1.002ms outdoors; some measured overhead is
+profiler work. GPU Busy remains3.818ms while app intervals average20.429ms.
+
+Do not add inclusive RecPush2.486ms to WOW64/query3.251ms. Indoor full stacks
+prove949 overlapping samples: the union is2.081ms, whereas adding inclusive
+counts would give3.421ms. Outdoor exact intersection is UNKNOWN. All retained
+indoor memset samples lack recovered mod/query ancestry; attributing this work
+to vector initialization is unsupported. Direct vector resize leaves0.029ms,
+COM/reference leaves0.178ms and recorder lock leaves0.243ms are already contained
+in the categories above. They do not justify a speculative multi-ms rewrite.
+Native AC36F0/BF27A0/9F2030 groups total0.288ms; other native PCs remain unresolved.
+
+Integrate sampler-caps49cd725 asb467940, then its explicit A/B gate612bca0 as
+305b7a3. Render/SamplerCapsCache remains0 by default: the exact legacy resolver
+and current requested anisotropy/clamping remain unchanged. Opt-in caches only
+positive capabilities per thread/device generation. Entry to HookDevice, Reset
+and ResetEx invalidates even on failed reset/early return. No COM reference or
+borrowed source pointer is retained; errors and zero caps are never cached.
+The measured GetDeviceCaps subtree0.500ms is INCLUSIVE (FillInCaps0.494ms nested),
+not a promised saving. This removes a concrete repeated query, not the entire
+9.318ms outdoor frame-budget deficit. No native FOV, resolution, shader, hand,
+EXE image or resource-synchronization changes; no INI/profile enabled by default.
+
+Integrated checks: sampler3705; real HAL material/stateblock424; XR recovery117;
+all six Present observer modes incl ABI/Reset/lifetime/overlay/negative HRESULT;
+async producer/VEH370, failed activation11, real emergency failure24 and10000
+persistent records PASS. Protected image/integration Python3+6 PASS. An initial
+unittest module invocation collided with Python's stdlib test package; direct
+repository test entry points pass. Both x86 production/diagnostic builds PASS.
+
+Frozen source305b7a3: production DLL8E125A9DF9A1D0D3C0B3FB0C84247884D76D8E74A4A4303C8A04C247C936EB8E;
+diagnostic9FCC1D2A53910521CD755B4750BF9E85F0BCB368FDB421737885C59911F76F96.
+Both PDB identities match RSDS, GUID26b151b8-b2a9-4a6f-b1fc-8cc227629edc,
+ages166/167 respectively. Binary/PDB/map packages remain private/untracked.
+AsyncLog and SamplerCapsCache remain independent OFF-default experiments; any
+later A/B changes ONE flag with a common DLL and fixed image/profile. Steam and
+HMD for these integrations: NOT RUN. No measured gameplay improvement or90Hz.
+The next justified candidate is the separately reviewed small recorder copy,
+not a native-loop rewrite: it addresses eligible fresh VirtualQuery calls only.
