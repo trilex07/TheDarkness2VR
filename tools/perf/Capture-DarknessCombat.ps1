@@ -248,10 +248,17 @@ try {
                     $manifest.errors += 'PresentMon ETW buffers were lost'
                 }
             }
-            & $presentmon --terminate_existing_session --session_name $pmSession `
-                2>&1 | Out-File (Join-Path $out 'presentmon-stop.txt')
-            $manifest.presentmonStopExitCode=$LASTEXITCODE
-            if ($LASTEXITCODE -ne 0) { $manifest.errors += 'PresentMon session stop returned nonzero' }
+            # PM2.6 emits an informational warning on stderr for this command.
+            # In Windows PowerShell5 a native stderr record under Stop throws
+            # before LASTEXITCODE is examined. Keep both streams and use the
+            # process exit code, without masking an actual stop failure.
+            $stopper=Start-Process -FilePath $presentmon -ArgumentList @(
+                '--terminate_existing_session','--session_name',$pmSession) `
+                -WindowStyle Hidden -PassThru -Wait `
+                -RedirectStandardOutput (Join-Path $out 'presentmon-stop.txt') `
+                -RedirectStandardError (Join-Path $out 'presentmon-stop.stderr.txt')
+            $manifest.presentmonStopExitCode=$stopper.ExitCode
+            if ($stopper.ExitCode -ne 0) { $manifest.errors += 'PresentMon session stop returned nonzero' }
             $null=$pm.WaitForExit(5000)
             $pm.Refresh()
             if (-not $pm.HasExited) {
@@ -308,13 +315,26 @@ try {
         }
     }
     if (Test-Path -LiteralPath $etl) {
-        & $xperf -i $etl -a tracestats -ao (Join-Path $out 'etw-stats.txt') `
-            2>&1 | Out-File (Join-Path $out 'etw-stats-command.txt')
-        if ($LASTEXITCODE -ne 0) { $manifest.errors += "ETW stats failed: $LASTEXITCODE" }
-        & $xperf -i $etl -a cswitch -process -thread -ao (Join-Path $out 'threads.txt') `
-            2>&1 | Out-File (Join-Path $out 'threads-command.txt')
-        & $xperf -i $etl -a profile -detail -ao (Join-Path $out 'cpu-samples.txt') `
-            2>&1 | Out-File (Join-Path $out 'cpu-samples-command.txt')
+        # Preserve phase/loss counters before offline xperf processing. Its stderr
+        # can contain a nonfatal lost-event warning under Windows PowerShell5.
+        $manifest.status='recorded_pending_offline_summary'
+        $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+        foreach ($analysis in @(
+            @{Name='etw-stats'; Args=@('-a','tracestats')},
+            @{Name='threads'; Args=@('-a','cswitch','-process','-thread')},
+            @{Name='cpu-samples'; Args=@('-a','profile','-detail')}
+        )) {
+            try {
+                $report=Join-Path $out ($analysis.Name+'.txt')
+                # Quote paths for Start-Process's command-line serialization.
+                $analysisArgs=@('-i',('"'+$etl+'"'))+$analysis.Args+@('-ao',('"'+$report+'"'))
+                $reader=Start-Process -FilePath $xperf -ArgumentList $analysisArgs `
+                    -WindowStyle Hidden -Wait -PassThru `
+                    -RedirectStandardOutput (Join-Path $out ($analysis.Name+'-command.txt')) `
+                    -RedirectStandardError (Join-Path $out ($analysis.Name+'-command.stderr.txt'))
+                if ($reader.ExitCode -ne 0) { $manifest.errors += "xperf $($analysis.Name) failed: $($reader.ExitCode)" }
+            } catch { $manifest.errors += "xperf $($analysis.Name): $($_.Exception.Message)" }
+        }
         $stats = Join-Path $out 'etw-stats.txt'
         if (Test-Path -LiteralPath $stats) {
             $text = Get-Content -LiteralPath $stats -Raw
