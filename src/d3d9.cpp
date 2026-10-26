@@ -55,6 +55,8 @@ static void ObserveProtectedSourceSize(unsigned w,unsigned h,unsigned format) {
 }
 static bool g_imagePreservingPresent=false;
 static bool g_imagePreservingInput=false;
+static bool g_protectedGestureActions=false;
+static d2vr_input::Tentacles g_protectedRightTentacle;
 static volatile LONG g_protectedRecenterRequested=0;
 static d2vr_protected_input::ExternalXInput g_protectedXInput;
 static d2vr_protected_input::Grips g_protectedGrips;
@@ -447,6 +449,7 @@ void LoadConfig() {
     g_imagePreservingPresent=GetPrivateProfileIntA("Diagnostics","ImagePreservingPresent",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_protectedHeadTracking=GetPrivateProfileIntA("Diagnostics","ProtectedHeadTracking",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_imagePreservingInput=GetPrivateProfileIntA("Diagnostics","ImagePreservingInput",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_protectedGestureActions=GetPrivateProfileIntA("Diagnostics","ProtectedGestureActions",0,".\\Darkness2VR-diagnostic.ini")!=0;
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
         const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
         const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
@@ -3189,6 +3192,7 @@ static d2vr_input::Tentacles g_tentacles;
 static void ResetPoseInput() {
 #ifdef D2VR_MATCHED_CAPTURE
     g_protectedGrips={};
+    g_protectedRightTentacle={};
 #endif
     g_gestures={}; g_recenterChord={}; g_tentacles={};
     g_tentacleAimVisible=false; g_aimMarkerValid[0]=g_aimMarkerValid[1]=false;
@@ -3206,6 +3210,9 @@ static void ResetPoseInput() {
 static void LocateTrackedHands();
 static WORD GestureButtons(const XINPUT_GAMEPAD&);
 static void ApplyTentacleGestures(XINPUT_GAMEPAD&);
+#ifdef D2VR_MATCHED_CAPTURE
+static void ApplyProtectedGestureActions(XINPUT_GAMEPAD&);
+#endif
 DWORD g_padPacket = 1;
 volatile LONG g_padFromXrLogged = 0;
 
@@ -3497,9 +3504,13 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     LocateTrackedHands();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze);
+    if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
 #endif
     gp.wButtons |= GestureButtons(gp);
-    ApplyTentacleGestures(gp);
+#ifdef D2VR_MATCHED_CAPTURE
+    if(!g_protectedGestureActions)
+#endif
+        ApplyTentacleGestures(gp);
 
     (void)haveL; (void)haveR; // buttons remain usable with profiles lacking sticks
 
@@ -3516,6 +3527,13 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
 }
 
 static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
+    bool gestureBridge=g_gestureBridge;
+    bool protectedActions=false,protectedPaused=false;
+#ifdef D2VR_MATCHED_CAPTURE
+    protectedActions=g_protectedGestureActions;
+    protectedPaused=protectedActions && g_protectedRightTentacle.paused;
+    gestureBridge=gestureBridge || protectedActions;
+#endif
     auto& objective=g_gestures.objective; auto& reload=g_gestures.reload;
     auto& slash=g_gestures.slash;
     auto& objectiveUntil=g_gestures.objectiveUntil;
@@ -3526,7 +3544,7 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
     const XrPosef head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
     const XrViewStateFlags trackedHead=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     const bool enabled=g_haveViews && (g_trackedFrame.flags & trackedHead)==trackedHead &&
-        g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START);
+        g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START) && !protectedPaused;
     for(int h=0;h<2;++h) {
         const auto& hand=g_hands[h];
         const auto& p=hand.grip.position;
@@ -3537,8 +3555,8 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
         if (!h) {
             const float distance=d2vr_input::Length({delta.x+.18f,delta.y+.02f,delta.z+.08f});
             if (objective.Update(safe,distance,time,.16f,.24f,.25)) {
-                Log("[Gesture] ShowObjective detected; bridge=%d",(int)g_gestureBridge);
-                if(g_gestureBridge) objectiveUntil=now+120;
+                Log("[Gesture] ShowObjective detected; bridge=%d",(int)gestureBridge);
+                if(gestureBridge) objectiveUntil=now+120;
             }
         }
         // Approximate standing hip relative to HMD; seated calibration/native reload
@@ -3548,9 +3566,19 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
             p.x-head.position.x,p.y-head.position.y,p.z-head.position.z);
         const float distance=d2vr_input::Length({hipDelta.x-(h ? .23f:-.23f),hipDelta.y+.75f,hipDelta.z});
         if(reload[h].Update(safe,distance,time,.20f,.30f,.20)) {
-            Log("[Gesture] Reload%s detected; bridge=%d (gamepad reload is shared)",h ? "Right":"Left",(int)g_gestureBridge);
-            if(g_gestureBridge) reloadUntil=now+120;
+            Log("[Gesture] Reload%s detected; bridge=%d (gamepad reload is shared)",h ? "Right":"Left",(int)gestureBridge);
+            if(gestureBridge) reloadUntil=now+120;
         }
+    }
+    if(protectedActions) {
+        // Only the stock objective/reload buttons are shared with this path.
+        // Left pickup remains the basic grip/LB action, not a native ray hook.
+        slash={}; slashUntil=0; g_gestures.grabbed=false;
+        if(!enabled || !g_hands[0].valid || !g_hands[1].valid) objectiveUntil=reloadUntil=0;
+        WORD buttons=0;
+        if(now<objectiveUntil) buttons|=XINPUT_GAMEPAD_BACK;
+        if(now<reloadUntil) buttons|=XINPUT_GAMEPAD_X;
+        return buttons;
     }
     if(slash.Update(enabled && g_hands[1].valid,g_hands[1].squeeze>.65f,
         d2vr_input::Length(g_hands[1].motion.velocity),time) && !g_tentacleBridge) {
@@ -3577,6 +3605,29 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
     }
     return buttons;
 }
+
+#ifdef D2VR_MATCHED_CAPTURE
+static void ApplyProtectedGestureActions(XINPUT_GAMEPAD& gp) {
+    if(!g_protectedGestureActions) return;
+    // Raw right squeeze must not attack before a stroke has been recognized.
+    // Left grip/LB and unrelated movement/fire/menu inputs remain unchanged.
+    gp.wButtons &= ~XINPUT_GAMEPAD_RIGHT_SHOULDER;
+    const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
+    const bool context=g_haveViews && g_in3DGameplayMode && (g_trackedFrame.flags & tracked)==tracked;
+    const auto head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
+    const float yaw=ComputeHorizontalYaw(g_headGeometryReferenceValid ? g_headGeometryReference.orientation:head.orientation);
+    const auto velocity=g_hands[1].motion.velocity;
+    const auto local=RotVec({0,-std::sin(yaw*.5f),0,std::cos(yaw*.5f)},velocity.x,velocity.y,velocity.z);
+    const auto out=g_protectedRightTentacle.Update(context,(gp.wButtons & XINPUT_GAMEPAD_START)!=0,
+        false,g_hands[1].valid,0,g_hands[1].squeeze,{},{},{local.x,local.y,local.z},
+        g_trackedFrame.state.predictedDisplayTime*1e-9);
+    if(out.rightButton) gp.wButtons |= XINPUT_GAMEPAD_RIGHT_SHOULDER;
+    if(out.ownsRightStick) {
+        gp.sThumbRX=StickShort(out.slashX); gp.sThumbRY=StickShort(out.slashY);
+    }
+    if(out.slash) Log("[ProtectedGesture] planar right stroke -> stock RB + stick; native aim/throw/pose hooks OFF");
+}
+#endif
 
 static void ApplyTentacleGestures(XINPUT_GAMEPAD& gp) {
     if(!g_tentacleBridge) { g_tentacles={}; g_tentacleAimVisible=false; ResetNativeAim(); return; }
@@ -5947,11 +5998,15 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
 #ifdef D2VR_MATCHED_CAPTURE
         const bool protectedInputAllowed=!g_imagePreservingInput ||
             d2vr_protected_input::Requested(imageProfile,g_nativeImageGuard.enabled,g_imagePreservingInput,g_enableVRGamepad);
+        const bool protectedGestureAllowed=!g_protectedGestureActions ||
+            d2vr_protected_input::Requested(imageProfile,g_nativeImageGuard.enabled,g_imagePreservingInput,g_enableVRGamepad);
+        const bool protectedGestureRequested=g_protectedGestureActions;
         const bool inputFeatureAllowed=!g_enableVRGamepad || g_imagePreservingInput;
 #else
         const bool protectedInputAllowed=true,inputFeatureAllowed=!g_enableVRGamepad;
+        const bool protectedGestureAllowed=true,protectedGestureRequested=false;
 #endif
-        const bool protectedFeatures=protectedInputAllowed && (!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
+        const bool protectedFeatures=protectedInputAllowed && protectedGestureAllowed && (!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
             !g_nativeLeftAim && !g_nativeWeaponPose && !g_nativeHandsEnabled && !g_gestureBridge && !g_tentacleBridge &&
             inputFeatureAllowed && g_headLookMode==0 &&
             (!g_protectedHeadTracking || ProtectedHeadConfigurationAllowed()) &&
@@ -5961,7 +6016,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
             !GetPrivateProfileIntA("Diagnostics","NativeHandsPackHook",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","NativeCameraCover",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","ProductionResolution",0,".\\Darkness2VR-diagnostic.ini")));
-        if (g_nativeImageGuard.enabled && (!protectedConfig || !protectedFeatures)) {
+        if ((g_nativeImageGuard.enabled || protectedGestureRequested) && (!protectedConfig || !protectedFeatures)) {
             Log("[NativeImageGuard] REFUSED configuration: mono isolation OR protected SubmitMode4/Stereo1/PresentPrimary; input requires ImagePreservingInput; native hands/aim/FOV/EXE Present/sizing must stay disabled");
             if (g_vehHandle) {RemoveVectoredExceptionHandler(g_vehHandle);g_vehHandle=nullptr;}
             EnterCriticalSection(&g_logLock);
