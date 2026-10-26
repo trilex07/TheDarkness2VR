@@ -92,7 +92,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Baseline ETW mark failed.' }
     $manifest.baselineQpc = [System.Diagnostics.Stopwatch]::GetTimestamp()
     Write-Host "Capturing $BaselineSec seconds of stationary gameplay. Combat begins after the baseline marker."
-    Start-Sleep -Seconds ($BaselineSec-2)
+    # PresentMon warm-up precedes baselineQpc; retain the full marked baseline.
+    Start-Sleep -Seconds $BaselineSec
     & $wpr -marker 'D2VR combat start' -instancename $instance | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Combat ETW mark failed.' }
     $manifest.combatQpc = [System.Diagnostics.Stopwatch]::GetTimestamp()

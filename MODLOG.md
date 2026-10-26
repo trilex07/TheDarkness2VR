@@ -118,3 +118,17 @@ Added explicit OFF-by-default diagnostic ProductionResolution to exercise the ex
 ### 2026-10-25: bounded yellow-pass localization prepared
 
 Existing matched capture gains opt-in CapturePassStages=1: left-eye RT0 snapshots only at target transitions, at most 8 attempts/256 MiB, plus 32 bounded shader bytecodes, all tied to frame/draw/RT/hash metadata. Uses readbacks only; no draw/culling/FOV changes. Auxiliary files are private and SHA-256 verified by the capture checker; failed optional images are explicitly marked and cannot serve as image evidence. Ordinary production and capture-OFF paths do no additional GPU work. Both builds pass; matched-capture regression suite 20 tests passes. Candidate saved privately, not deployed into the running high-resolution test.
+
+
+### 2026-10-26: persistent-log A/B, runtime wait removal and crash blocker
+
+Actual Steam attempts A4665f73/B7eb665a used unchanged 2048x2091 stereo INIs.
+Both exited after C0000005 at 00E129EA; separate approval obtained for B after A.
+No third launch. Common 8s stationary prefix: 80 Log/CloseHandle/filter waits
+(168.229ms) -> zero; p95 16.407 -> 13.737ms, worst 72.738 -> 130.105ms.
+B has no combat rows, different shader warmness/runtime period: not a sustained
+combat or 90FPS acceptance. Worst B frame spends 97.865ms in shader creation.
+Ghidra confirms native lazy per-variant caches at owner+0x60 PS / +0x50 VS; no
+unsafe hash-only shader reuse added. Retain 7eb665a; fix collector full baseline
+duration; final DLL/INI/local INI/EXE rollback hashes verified.
+Receipt: docs/research/perf-persistent-log-ab-20261026.md and aggregate JSON.

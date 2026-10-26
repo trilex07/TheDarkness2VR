@@ -1,0 +1,513 @@
+{
+  "status": "PARTIAL_LOG_WAIT_ELIMINATION_VERIFIED; COMBAT_AB_AND_STABILITY_FAILED",
+  "comparison": "4665f73 vs 7eb665a",
+  "window": "First 8 seconds after each stationary baseline marker; complete contained PresentMon frames only",
+  "limitations": [
+    "Both processes exited with C0000005 at 00E129EA before the capture completed",
+    "B has zero combat PresentMon rows",
+    "Not a complete combat A/B or physical HMD acceptance",
+    "XR predicted display period differs: A 22.222ms, B 11.111ms",
+    "Different shader warmness/workload: matched windows have 8 vs 56 shader-creation blocked segments",
+    "No claim that the entire frame-time difference is caused by logging"
+  ],
+  "config": {
+    "source_rt": "2048x2091",
+    "SubmitMode": 4,
+    "StereoMode": 1,
+    "ini_sha256": "9405BBAA0C6F3BFB12621CE5FC1B56C00518264191BA3BA2BDBA54497058C613",
+    "diagnostic_ini_sha256": "9DD7FC7B61BC8C8877F8AA9B0FC0F6FE81322EAB481075864E21D0EBD544C7BC"
+  },
+  "runs": {
+    "A": {
+      "pid": 35392,
+      "tid": 30920,
+      "qpc_origin": 82142546911,
+      "lo_us": 2819811.9,
+      "hi_us": 10819811.9,
+      "fixed_window_seconds": 8,
+      "frames": {
+        "rows": 567,
+        "metrics_ms": {
+          "FrameTime": {
+            "n": 567,
+            "mean": 14.081562257495591,
+            "p50": 13.662,
+            "p95": 16.407339999999998,
+            "p99": 25.279136000000076,
+            "worst": 72.7381
+          },
+          "CPUBusy": {
+            "n": 567,
+            "mean": 13.504647619047619,
+            "p50": 13.0616,
+            "p95": 15.753090000000002,
+            "p99": 24.746498000000077,
+            "worst": 72.2527
+          },
+          "CPUWait": {
+            "n": 567,
+            "mean": 0.5769146384479718,
+            "p50": 0.5264,
+            "p95": 0.8536800000000001,
+            "p99": 1.1031540000000004,
+            "worst": 1.3657
+          },
+          "GPUBusy": {
+            "n": 567,
+            "mean": 3.803048500881834,
+            "p50": 3.7605,
+            "p95": 4.58281,
+            "p99": 5.099026000000001,
+            "worst": 5.7513
+          },
+          "GPUWait": {
+            "n": 567,
+            "mean": 9.971829805996473,
+            "p50": 9.6275,
+            "p95": 12.30324,
+            "p99": 22.014526000000046,
+            "worst": 68.7384
+          },
+          "GPUTime": {
+            "n": 567,
+            "mean": 13.774878306878307,
+            "p50": 13.4471,
+            "p95": 16.307930000000006,
+            "p99": 25.153928000000075,
+            "worst": 72.79
+          },
+          "GPULatency": {
+            "n": 567,
+            "mean": 0.2926213403880071,
+            "p50": 0.0,
+            "p95": 1.2643400000000018,
+            "p99": 3.9099040000000005,
+            "worst": 5.0488
+          }
+        },
+        "displayed_time_available": 567,
+        "above_ms": {
+          "11.11": 566,
+          "22.22": 9,
+          "33.33": 2
+        }
+      },
+      "render_ms": {
+        "ready": 147.231,
+        "running": 6984.529,
+        "blocked": 868.12,
+        "unknown": 0.12
+      },
+      "execution_min_ms": 6832.883,
+      "execution_max_ms": 6832.883,
+      "irq_min_ms": 151.646,
+      "irq_max_ms": 151.646,
+      "wait_paths_ms": {
+        "shared transfer/driver": 109.02600000000061,
+        "OpenXR": 136.54800000000074,
+        "NVIDIA other": 293.1359999999975,
+        "UNKNOWN": 133.6710000000009,
+        "Log": 168.22900000000004,
+        "shader creation/driver": 27.51
+      },
+      "wait_paths_count": {
+        "shared transfer/driver": 2262,
+        "OpenXR": 4064,
+        "NVIDIA other": 4697,
+        "UNKNOWN": 3621,
+        "Log": 80,
+        "shader creation/driver": 8
+      },
+      "log_subpaths_ms": {
+        "close": 168.22900000000004
+      },
+      "candidate_sha256": "05834939E6553083F4FD06F1484B7D73BB49144044958304B0FAFDC2D18BFA43",
+      "capture_ref": "log-ab-20261026/A/20261026-105211",
+      "source_manifest_valid": false,
+      "source_manifest_errors": [
+        "Game exited during capture",
+        "Installed file changed: d3d9.dll"
+      ],
+      "etw_lost_events": 0.0,
+      "presentmon_lost_events": 0,
+      "presentmon_sha256": "75166347d9dbea26c5006259a5e89748963119dfd54e766a64a9ba79f2574e26",
+      "d3d9_log_sha256": "fba22fc1ba1874b0d76ca09876bd3030c4335290c10190e4ec00f8d6bec73dce",
+      "readying_sources": {
+        "DarknessII.exe (35392)": {
+          "blocked_ms": 470.181,
+          "waits": 9800
+        },
+        "bdservicehost.exe (2568)": {
+          "blocked_ms": 168.229,
+          "waits": 80
+        },
+        "steam.exe (4828)": {
+          "blocked_ms": 116.086,
+          "waits": 2364
+        },
+        "vrcompositor.exe (30084)": {
+          "blocked_ms": 96.046,
+          "waits": 1181
+        },
+        "msedge.exe (36740)": {
+          "blocked_ms": 4.691,
+          "waits": 402
+        },
+        "vrmonitor.exe (31036)": {
+          "blocked_ms": 4.583,
+          "waits": 356
+        },
+        "dwm.exe (2288)": {
+          "blocked_ms": 3.221,
+          "waits": 204
+        },
+        "csrss.exe (1788)": {
+          "blocked_ms": 2.078,
+          "waits": 31
+        },
+        "fpsVR.exe (30712)": {
+          "blocked_ms": 0.772,
+          "waits": 68
+        },
+        "vrdashboard.exe (30880)": {
+          "blocked_ms": 0.646,
+          "waits": 21
+        },
+        "steamwebhelper.exe (2536)": {
+          "blocked_ms": 0.613,
+          "waits": 26
+        },
+        "vrserver.exe (30568)": {
+          "blocked_ms": 0.337,
+          "waits": 34
+        },
+        "ChatGPT.exe (25364)": {
+          "blocked_ms": 0.225,
+          "waits": 12
+        },
+        "MSI_TraceFPS.exe (2468)": {
+          "blocked_ms": 0.097,
+          "waits": 9
+        },
+        "ShellHost.exe (17572)": {
+          "blocked_ms": 0.097,
+          "waits": 9
+        },
+        "vctip.exe (31536)": {
+          "blocked_ms": 0.065,
+          "waits": 9
+        },
+        "Antigravity.exe (24764)": {
+          "blocked_ms": 0.055,
+          "waits": 5
+        },
+        "vrwebhelper.exe (31000)": {
+          "blocked_ms": 0.045,
+          "waits": 10
+        },
+        "NVDisplay.Container.exe (5984)": {
+          "blocked_ms": 0.017,
+          "waits": 1
+        },
+        "AMDRSServ.exe (25868)": {
+          "blocked_ms": 0.015,
+          "waits": 1
+        },
+        "opera.exe (23152)": {
+          "blocked_ms": 0.01,
+          "waits": 2
+        },
+        "chrome.exe (35412)": {
+          "blocked_ms": 0.01,
+          "waits": 2
+        },
+        "AMDRSSrcExt.exe (25916)": {
+          "blocked_ms": 0.001,
+          "waits": 1
+        }
+      },
+      "gpu_etw": {
+        "DarknessII.exe (35392)": {
+          "dma_execution_union_ms": 2593.0131,
+          "no_dma_execution_ms": 5406.986900000001,
+          "longest_gap_ms": 24.235,
+          "packets": 16082,
+          "submit_to_start_mean_ms": 0.12585038243890306,
+          "submit_to_start_max_ms": 2.642
+        },
+        "vrcompositor.exe (30084)": {
+          "dma_execution_union_ms": 400.312,
+          "no_dma_execution_ms": 7599.688,
+          "longest_gap_ms": 11.303,
+          "packets": 719,
+          "submit_to_start_mean_ms": 0.03534492350486787,
+          "submit_to_start_max_ms": 0.532
+        },
+        "dwm.exe (2288)": {
+          "dma_execution_union_ms": 764.231,
+          "no_dma_execution_ms": 7235.769,
+          "longest_gap_ms": 19.627,
+          "packets": 4317,
+          "submit_to_start_mean_ms": 0.24941255501505674,
+          "submit_to_start_max_ms": 1.602
+        }
+      },
+      "sampled_cpu": {
+        "render_samples": 6988,
+        "counts": {
+          "missing_stack": 69,
+          "Log_inclusive_samples": 17,
+          "Log_flush_or_write_samples": 7,
+          "Log_close_samples": 7,
+          "Log_other_samples": 3,
+          "shader_creation_inclusive_samples": 1
+        },
+        "not_a_precise_function_timer": true
+      },
+      "preserved_crash": {
+        "code": "C0000005",
+        "pc": "00E129EA",
+        "invalid_read": "A1561184"
+      },
+      "baseline_marker_duration_s": 10.144974
+    },
+    "B": {
+      "pid": 35388,
+      "tid": 36804,
+      "qpc_origin": 84747454385,
+      "lo_us": 2526975.4,
+      "hi_us": 10526975.4,
+      "fixed_window_seconds": 8,
+      "frames": {
+        "rows": 641,
+        "metrics_ms": {
+          "FrameTime": {
+            "n": 641,
+            "mean": 12.460859438377534,
+            "p50": 12.098,
+            "p95": 13.7367,
+            "p99": 21.46682000000004,
+            "worst": 130.1054
+          },
+          "CPUBusy": {
+            "n": 641,
+            "mean": 11.927429173166926,
+            "p50": 11.5584,
+            "p95": 13.153,
+            "p99": 20.861660000000036,
+            "worst": 129.2711
+          },
+          "CPUWait": {
+            "n": 641,
+            "mean": 0.5334302652106084,
+            "p50": 0.4901,
+            "p95": 0.7792,
+            "p99": 1.0317800000000004,
+            "worst": 1.2485
+          },
+          "GPUBusy": {
+            "n": 641,
+            "mean": 3.380157722308892,
+            "p50": 3.3509,
+            "p95": 3.939,
+            "p99": 4.365020000000001,
+            "worst": 4.765
+          },
+          "GPUWait": {
+            "n": 641,
+            "mean": 8.630422620904836,
+            "p50": 8.5099,
+            "p95": 10.0696,
+            "p99": 18.057700000000033,
+            "worst": 125.9747
+          },
+          "GPUTime": {
+            "n": 641,
+            "mean": 12.010580343213729,
+            "p50": 11.8715,
+            "p95": 13.579,
+            "p99": 21.30996000000004,
+            "worst": 129.9463
+          },
+          "GPULatency": {
+            "n": 641,
+            "mean": 0.385984399375975,
+            "p50": 0.0,
+            "p95": 3.6516,
+            "p99": 4.098900000000002,
+            "worst": 5.0474
+          }
+        },
+        "displayed_time_available": 641,
+        "above_ms": {
+          "11.11": 541,
+          "22.22": 6,
+          "33.33": 2
+        }
+      },
+      "render_ms": {
+        "blocked": 820.467,
+        "ready": 122.343,
+        "running": 7057.122,
+        "unknown": 0.068
+      },
+      "execution_min_ms": 6956.816,
+      "execution_max_ms": 6956.819,
+      "irq_min_ms": 100.303,
+      "irq_max_ms": 100.306,
+      "wait_paths_ms": {
+        "shared transfer/driver": 127.2500000000014,
+        "OpenXR": 180.8359999999981,
+        "NVIDIA other": 245.4449999999981,
+        "UNKNOWN": 125.0630000000013,
+        "shader creation/driver": 141.87300000000005
+      },
+      "wait_paths_count": {
+        "shared transfer/driver": 2559,
+        "OpenXR": 4573,
+        "NVIDIA other": 2199,
+        "UNKNOWN": 3412,
+        "shader creation/driver": 56
+      },
+      "log_subpaths_ms": {},
+      "candidate_sha256": "664E6B7591A88C377DF63F323930AA30C32351AF44C3F55BC0FA19514ABC5106",
+      "capture_ref": "log-ab-20261026/B/20261026-105632",
+      "source_manifest_valid": false,
+      "source_manifest_errors": [
+        "Game exited during capture",
+        "Baseline/combat PresentMon rows incomplete or QPC clocks do not align"
+      ],
+      "etw_lost_events": 0.0,
+      "presentmon_lost_events": 0,
+      "presentmon_sha256": "940b0ab6c2ff1dd1e49104dfe9171c30d22f6324aa31c54997ee55f0d0f94aa2",
+      "d3d9_log_sha256": "d6edcea583058bd04bb77e760b70628f0fef398ced5090a0a6a09ed51f726d2d",
+      "readying_sources": {
+        "DarknessII.exe (35388)": {
+          "blocked_ms": 553.652,
+          "waits": 8019
+        },
+        "vrcompositor.exe (30084)": {
+          "blocked_ms": 141.78,
+          "waits": 1350
+        },
+        "steam.exe (4828)": {
+          "blocked_ms": 111.372,
+          "waits": 2671
+        },
+        "vrmonitor.exe (31036)": {
+          "blocked_ms": 4.451,
+          "waits": 349
+        },
+        "csrss.exe (1788)": {
+          "blocked_ms": 2.625,
+          "waits": 32
+        },
+        "fpsVR.exe (30712)": {
+          "blocked_ms": 1.42,
+          "waits": 87
+        },
+        "Idle (   0)": {
+          "blocked_ms": 1.413,
+          "waits": 5
+        },
+        "steamwebhelper.exe (2536)": {
+          "blocked_ms": 1.203,
+          "waits": 61
+        },
+        "vrwebhelper.exe (31000)": {
+          "blocked_ms": 0.935,
+          "waits": 62
+        },
+        "vrdashboard.exe (30880)": {
+          "blocked_ms": 0.601,
+          "waits": 33
+        },
+        "vrserver.exe (30568)": {
+          "blocked_ms": 0.305,
+          "waits": 30
+        },
+        "ChatGPT.exe (25364)": {
+          "blocked_ms": 0.279,
+          "waits": 31
+        },
+        "dwm.exe (2288)": {
+          "blocked_ms": 0.154,
+          "waits": 17
+        },
+        "vctip.exe (31536)": {
+          "blocked_ms": 0.122,
+          "waits": 8
+        },
+        "chrome.exe (35412)": {
+          "blocked_ms": 0.066,
+          "waits": 9
+        },
+        "opera.exe (23152)": {
+          "blocked_ms": 0.032,
+          "waits": 5
+        },
+        "NVDisplay.Container.exe (5984)": {
+          "blocked_ms": 0.025,
+          "waits": 2
+        },
+        "MSI_TraceFPS.exe (2468)": {
+          "blocked_ms": 0.018,
+          "waits": 1
+        },
+        "msedgewebview2.exe (19944)": {
+          "blocked_ms": 0.014,
+          "waits": 3
+        }
+      },
+      "gpu_etw": {
+        "DarknessII.exe (35388)": {
+          "dma_execution_union_ms": 2456.5046,
+          "no_dma_execution_ms": 5543.495400000001,
+          "longest_gap_ms": 56.245,
+          "packets": 13488,
+          "submit_to_start_mean_ms": 0.07938429598872988,
+          "submit_to_start_max_ms": 2.589
+        },
+        "vrcompositor.exe (30084)": {
+          "dma_execution_union_ms": 334.1346000000001,
+          "no_dma_execution_ms": 7665.865400000001,
+          "longest_gap_ms": 13.174,
+          "packets": 719,
+          "submit_to_start_mean_ms": 0.03626880222841226,
+          "submit_to_start_max_ms": 0.823
+        },
+        "dwm.exe (2288)": {
+          "dma_execution_union_ms": 557.294,
+          "no_dma_execution_ms": 7442.706,
+          "longest_gap_ms": 125.327,
+          "packets": 3451,
+          "submit_to_start_mean_ms": 0.17697218197623876,
+          "submit_to_start_max_ms": 1.352
+        }
+      },
+      "sampled_cpu": {
+        "render_samples": 7011,
+        "counts": {
+          "shader_creation_inclusive_samples": 11,
+          "missing_stack": 76
+        },
+        "not_a_precise_function_timer": true
+      },
+      "preserved_crash": {
+        "code": "C0000005",
+        "pc": "00E129EA",
+        "invalid_read": "D966AF14"
+      },
+      "baseline_marker_duration_s": 10.121479
+    }
+  },
+  "retained_optimization": "Persistent log from 7eb665a; no shader/FOV/resolution/native-hook changes made in this verification",
+  "next_bottleneck": {
+    "frame_ms": 130.1054,
+    "shader_creation_blocked_ms": 97.865,
+    "shader_creation_waits": 32,
+    "native_PS": "00493180; call 00493273; owner variant cache +0x60",
+    "native_VS": "00846E70; call 00846F63; owner variant cache +0x50",
+    "next_correction_gate": "Loading-time preparation of cold required variants, once lifetime and safe loading-thread ownership are proven; no hash-only COM reuse"
+  }
+}
