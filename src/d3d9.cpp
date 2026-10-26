@@ -172,6 +172,7 @@ uint64_t g_eyePairFrameId = 0;
 uint32_t g_eyePairW = 0, g_eyePairH = 0;
 int g_dumpEyeFrames = 0;           // F12: dump N eye pairs to test-output/*.bmp for offline analysis
 int g_dumpDelay = 300;             // wait this many frames before dumping (skip black startup)
+bool g_uniqueReplayRefs = false; // opt-in per-frame COM lifetime dedup; no draw/state elision
 int g_zeroCopyEnabled = 0;         // Config: Render.ZeroCopy (0 = CPU CopyFrame, 1 = D3D9Ex shared texture)
 int g_projectionFix = 0;          // Rejected lighting/FOV experiment; opt-in diagnostics only.
 uint32_t g_diagnosticSkipVs = 0;
@@ -536,6 +537,7 @@ void LoadConfig() {
         }
     }
     g_zeroCopyEnabled = GetPrivateProfileIntA("Render", "ZeroCopy", 0, chosenIni) ? 1 : 0;
+    g_uniqueReplayRefs = GetPrivateProfileIntA("Render", "UniqueReplayResourceRefs", 0, chosenIni) != 0;
     g_matchEyeResolutionToSource = GetPrivateProfileIntA("Render", "MatchEyeResolutionToSource", 0, chosenIni) != 0;
     // Bit 1 = named VS/ScreenTextureProjection handling, bit 2 = PS reconstruction
     // compensation (InverseProjection + ViewExtents). Both are required for correct
@@ -3091,6 +3093,9 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         const uint64_t* c = d2vr_replay::g_recCounts;
         Log("[TrueStereo] ops: Begin=%llu End=%llu Clear=%llu RT=%llu DSS=%llu Draw=%llu DIP=%llu DPUP=%llu DIPUP=%llu VS=%llu VSCF=%llu Tex=%llu RS=%llu TSS=%llu Smp=%llu VP=%llu SB=%llu",
             c[3], c[4], c[5], c[1], c[2], c[13], c[14], c[15], c[16], c[19], c[20], c[9], c[8], c[10], c[11], c[7], c[36]);
+        Log("[ReplayRefs] unique=%d requested=%zu retained=%zu; frame-only COM ownership",
+            (int)d2vr_replay::g_recordRefs.unique(), d2vr_replay::g_recordRefs.requests(),
+            d2vr_replay::g_recordRefs.size());
         Log("[TrueStereo] cfg: IPD=%.3f widenX=%.2f widenY=%.2f autoFov=%d shiftMode=%d polarity=%d",
             g_stereoIPD, g_fovWidenX, g_fovWidenY, g_autoFovWiden, g_stereoShiftMode, g_stereoPolarity);
     }
