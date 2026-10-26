@@ -10,6 +10,7 @@
 #include <delayimp.h>
 #include <shlobj.h>
 #include <d3d9.h>
+#include "d3d9_backend.h"
 #include <d3d11.h>
 #include <dxgi.h>
 #include <vector>
@@ -516,6 +517,7 @@ static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
 static bool g_gpuSplitTiming = false;
+static d2vr_backend::Mode g_d3d9Backend = d2vr_backend::Mode::Native; // OFF; system driver replacement prototype
 static bool g_smallRecordCopyRequested = false; // OFF; bounded <=192-byte RPM experiment
 static bool g_smallRecordCopyAdmitted = false;
 static d2vr_record_copy::Admission g_smallRecordCopyAdmission;
@@ -601,6 +603,7 @@ void LoadConfig() {
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
     g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
+    g_d3d9Backend = static_cast<d2vr_backend::Mode>(GetPrivateProfileIntA("Render", "D3D9Backend", 0, chosenIni));
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
@@ -3166,6 +3169,13 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         return;
     }
     const bool zeroCopy = EnsureSharedCapture(dev);
+    if(g_d3d9Backend==d2vr_backend::Mode::System9On12 && !zeroCopy) {
+        static bool reported=false;
+        if(!reported) {reported=true;Log("[D3D9Backend] shared GPU interop unavailable; frame rejected, no CPU readback fallback");}
+        g_eyePairReady=false;
+        g_pairSubmitMetaValid=false;
+        return;
+    }
 
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Source(dev,0);
@@ -4454,6 +4464,7 @@ static void SampleSurfaceStats(const D3DLOCKED_RECT& lr, UINT w, UINT h,
 }
 
 bool CopyFrame(IDirect3DDevice9* dev) {
+    if(g_d3d9Backend==d2vr_backend::Mode::System9On12) return false; // no CPU bridge, including runtime mode changes
     // RenderTarget0 is the surface the frame replay re-renders per eye - it MUST be the
     // capture source (the backbuffer keeps the live-pass composite = identical eyes).
     // Its size can differ from the backbuffer (the engine picks its own G-buffer size),
@@ -6002,7 +6013,15 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT ad, D3DDEVTYP
     Log("Hook_CreateDevice adapter=%u flags=0x%lX", ad, flags);
     TweakPresentParams(pp);
     HRESULT hr = g_origCreateDevice(self, ad, type, hwnd, flags, pp, out);
-    if (SUCCEEDED(hr) && out && *out) HookDevice(*out);
+    if (SUCCEEDED(hr) && out && *out) {
+        if (!d2vr_backend::DeviceMatches(g_d3d9Backend, *out)) {
+            Log("[D3D9Backend] device rejected: requested system9on12 identity absent; no native fallback");
+            (*out)->Release();
+            *out = nullptr;
+            return D3DERR_NOTAVAILABLE;
+        }
+        HookDevice(*out);
+    }
     else Log("Hook_CreateDevice failed hr=0x%08lX", hr);
     return hr;
 }
@@ -6016,7 +6035,15 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDeviceEx(IDirect3D9Ex* self, UINT ad, D3DDE
         pp ? (int)pp->Windowed : -1, hwnd);
     TweakPresentParams(pp);
     HRESULT hr = g_origCreateDeviceEx(self, ad, type, hwnd, flags, pp, nullptr, out);
-    if (SUCCEEDED(hr) && out && *out) HookDevice(*out);
+    if (SUCCEEDED(hr) && out && *out) {
+        if (!d2vr_backend::DeviceMatches(g_d3d9Backend, *out)) {
+            Log("[D3D9Backend] device rejected: requested system9on12 identity absent; no native fallback");
+            (*out)->Release();
+            *out = nullptr;
+            return D3DERR_NOTAVAILABLE;
+        }
+        HookDevice(*out);
+    }
     else Log("Hook_CreateDeviceEx failed hr=0x%08lX", hr);
     return hr;
 }
@@ -6074,6 +6101,20 @@ bool LoadReal() {
     return p_C9 != nullptr;
 }
 
+// Admission is evaluated after the existing full config load. A requested new
+// backend cannot silently bypass the image guard or use CPU readback fallback.
+static bool BackendProfileAllowed() {
+    if(g_d3d9Backend==d2vr_backend::Mode::Native) return true;
+    bool protectedPresent=false;
+#ifdef D2VR_MATCHED_CAPTURE
+    protectedPresent=g_imagePreservingPresent;
+#endif
+    const bool allowed=d2vr_backend::ProfileAllowed(g_d3d9Backend,g_nativeImageGuard.enabled,
+        protectedPresent,g_submitMode,g_zeroCopyEnabled);
+    if(!allowed) Log("[D3D9Backend] rejected mode=%d: requires protected image-preserving Present, SubmitMode=4 and shared GPU capture",
+        static_cast<int>(g_d3d9Backend));
+    return allowed;
+}
 }  // namespace
 
 extern "C" {
@@ -6081,6 +6122,15 @@ extern "C" {
 IDirect3D9* WINAPI Direct3DCreate9(UINT sdk) {
     if (!p_C9) return nullptr;
     Log("Direct3DCreate9(sdk=%u)", sdk);
+    if(!BackendProfileAllowed()) return nullptr;
+    if(g_d3d9Backend==d2vr_backend::Mode::System9On12) {
+        IDirect3D9Ex* ex=nullptr;
+        const HRESULT hr=d2vr_backend::CreateEx(g_real,sdk,g_d3d9Backend,&ex);
+        Log("[D3D9Backend] system9on12 factory hr=%08lX; no native fallback",hr);
+        if(FAILED(hr) || !ex) return nullptr;
+        HookFactory(ex);
+        return ex;
+    }
     if (p_C9Ex) {
         IDirect3D9Ex* ex = nullptr;
         if (SUCCEEDED(p_C9Ex(sdk, &ex)) && ex) {
@@ -6099,7 +6149,11 @@ HRESULT WINAPI Direct3DCreate9Ex(UINT sdk, IDirect3D9Ex** o) {
     LogStartupStage(7, "Direct3DCreate9Ex");
     Log("Direct3DCreate9Ex(sdk=%u)", sdk);
     IDirect3D9Ex* ex = nullptr;
-    HRESULT hr = p_C9Ex(sdk, &ex);
+    if(!BackendProfileAllowed()) {*o=nullptr;return E_ACCESSDENIED;}
+    HRESULT hr = g_d3d9Backend==d2vr_backend::Mode::Native ? p_C9Ex(sdk, &ex) :
+        d2vr_backend::CreateEx(g_real,sdk,g_d3d9Backend,&ex);
+    if(g_d3d9Backend==d2vr_backend::Mode::System9On12)
+        Log("[D3D9Backend] system9on12 factory hr=%08lX; no native fallback",hr);
     if (FAILED(hr)) {
         Log("Direct3DCreate9Ex failed hr=0x%08lX", hr);
         return hr;
@@ -6164,7 +6218,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
             !GetPrivateProfileIntA("Diagnostics","NativeHandsPackHook",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","NativeCameraCover",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","ProductionResolution",0,".\\Darkness2VR-diagnostic.ini")));
-        if ((g_nativeImageGuard.enabled || protectedGestureRequested) && (!protectedConfig || !protectedFeatures)) {
+        if (!BackendProfileAllowed() || ((g_nativeImageGuard.enabled || protectedGestureRequested) && (!protectedConfig || !protectedFeatures))) {
             Log("[NativeImageGuard] REFUSED configuration: mono isolation OR protected SubmitMode4/Stereo1/PresentPrimary; input requires ImagePreservingInput; native hands/aim/FOV/EXE Present/sizing must stay disabled");
             if (g_vehHandle) {RemoveVectoredExceptionHandler(g_vehHandle);g_vehHandle=nullptr;}
             EnterCriticalSection(&g_logLock);
