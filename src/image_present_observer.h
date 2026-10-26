@@ -28,7 +28,19 @@ struct Callbacks {
 
 class Observer {
     static constexpr unsigned capacity=16;
-    struct Entry { void* target=nullptr; Method kind{}; std::atomic<void*> next{nullptr}; } entries_[capacity];
+    struct Entry {
+        void* target=nullptr; Method kind{}; std::atomic<void*> next{nullptr};
+        std::atomic<unsigned> receipts{0};
+    } entries_[capacity];
+    // Bound diagnostics per implementation and admission class. In particular,
+    // an unrelated first caller must not consume the awaiting-create receipt.
+    enum Receipt : unsigned { CreateOther=1,CreateNative=2,PresentOther=4,PresentAwaitCreate=8,PresentNative=16 };
+    bool TakeReceipt(unsigned index,Receipt receipt) {
+        if(!cb_.log) return false;
+        auto& seen=entries_[index].receipts;const unsigned bit=receipt;
+        return !(seen.load(std::memory_order_relaxed)&bit) &&
+            !(seen.fetch_or(bit,std::memory_order_relaxed)&bit);
+    }
     unsigned used_=0;
     std::recursive_mutex lock_;
     d2vr_native_image::Guard guard_;
@@ -114,11 +126,15 @@ class Observer {
         auto next=reinterpret_cast<Create>(entries_[index].next.load(std::memory_order_acquire));
         const HRESULT hr=next(dev,pp,out);
         const bool native=Qualifies(Method::Create,caller);
+        IDirect3DSwapChain9* chain=nullptr;bool observed=false;
         if(hr==D3D_OK && out && *out) {
-            const bool hooked=Observe(*out);
-            if(native) {created_=hooked;warm_=false;thread_=0;}
+            chain=*out;observed=Observe(chain);
+            if(native) {created_=observed;warm_=false;thread_=0;}
         } else if(native) {created_=false;warm_=false;}
-        if(cb_.log && native) cb_.log("[ImagePresent] additional returned hr=%08lX sc=%p caller=%p observed=%d",hr,(hr==D3D_OK && out)?*out:nullptr,reinterpret_cast<void*>(caller),int(created_.load()));
+        if(cb_.log && native) cb_.log("[ImagePresent] additional returned hr=%08lX sc=%p caller=%p observed=%d",hr,chain,reinterpret_cast<void*>(caller),int(created_.load()));
+        if(TakeReceipt(index,native?CreateNative:CreateOther))
+            cb_.log("[ImagePresent] raw-create returned entry=%u target=%p dev=%p sc=%p caller=%p callerQualifies=%d observed=%d created=%d hr=%08lX thread=%lu",
+                index,entries_[index].target,dev,chain,reinterpret_cast<void*>(caller),int(native),int(observed),int(created_.load()),hr,GetCurrentThreadId());
         return hr; // parameters/output/refcount/HRESULT belong to the native API
     }
     HRESULT OnQuery(unsigned index,IUnknown* object,REFIID id,void** out) {
@@ -133,7 +149,9 @@ class Observer {
         if(!path_.Push(index,sc)) {++recursive;Fail("recursive implementation cycle");return D3DERR_INVALIDCALL;}
         struct Leave {Path& path;~Leave(){--path.depth;}} leave{path_};
         const bool outer=path_.depth==1;
-        const bool qualified=outer && Qualifies(Method::Present,caller) && created_.load();
+        const bool callerQualified=outer && Qualifies(Method::Present,caller);
+        const bool createdAtEntry=created_.load();
+        const bool qualified=callerQualified && createdAtEntry;
         if(qualified) {
             const DWORD current=GetCurrentThreadId();DWORD expected=0;
             thread_.compare_exchange_strong(expected,current);
@@ -155,6 +173,12 @@ class Observer {
             else if(!fault_ && !resetting_) warm_=true;
             if(FAILED(hr) && hr!=D3DERR_DEVICELOST && hr!=D3DERR_DEVICENOTRESET) Fail("native Present error");
         }
+        // Receipt only AFTER the actual original return and counter update. No
+        // inner overlay call may advertise an authoritative outer boundary.
+        if(outer && TakeReceipt(index,!callerQualified?PresentOther:!createdAtEntry?PresentAwaitCreate:PresentNative))
+            cb_.log("[ImagePresent] raw-present returned entry=%u target=%p sc=%p caller=%p callerQualifies=%d created=%d qualified=%d readyBefore=%d readyAfter=%d hr=%08lX thread=%lu entries=%llu forwarded=%llu returned=%llu native=%llu recursive=%llu ok=%llu statuses=%llu errors=%llu",
+                index,entries_[index].target,sc,reinterpret_cast<void*>(caller),int(callerQualified),int(createdAtEntry),int(qualified),int(ready),int(Ready()),hr,GetCurrentThreadId(),
+                entries.load(),forwarded.load(),returned.load(),nativePresents.load(),recursive.load(),ok.load(),statuses.load(),errors.load());
         if(outer && cb_.after) cb_.after(sc,caller,qualified,ready,hr);
         return hr;
     }

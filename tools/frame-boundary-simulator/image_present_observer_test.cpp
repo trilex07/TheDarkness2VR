@@ -6,6 +6,8 @@
 #include "image_present_fixture.h"
 #include <cassert>
 #include <cstdio>
+#include <cstdarg>
+#include <string>
 #include <cstring>
 #include <vector>
 #include <thread>
@@ -16,6 +18,25 @@ static unsigned rendered=0,accepted=0;static uint64_t frame=0,clockMs=1;
 static IDirect3DDevice9* borrowed=nullptr;
 static const FixtureStats* stats=nullptr;
 static bool timingEnabled=true,forwardActive=false,expectedQualified=true;
+static bool createCallerQualified=true,presentCallerQualified=true;
+static std::vector<std::string> receipts;
+static unsigned expectedReceiptNative=0,expectedReceiptCreates=0;
+static void receiptLog(const char* format,...) {
+    char line[2048];va_list args;va_start(args,format);vsnprintf(line,sizeof(line),format,args);va_end(args);
+    if(std::strstr(line,"raw-present returned")) {
+        // Receipts cannot substitute entry for a successful original return.
+        assert(!forwardActive && stats->native==expectedReceiptNative);
+        assert(observer.forwarded.load()==observer.returned.load());
+        receipts.emplace_back(line);
+    } else if(std::strstr(line,"raw-create returned")) {
+        assert(stats->creates==expectedReceiptCreates);receipts.emplace_back(line);
+    }
+}
+static unsigned receiptCount(const char* kind,const char* fields) {
+    unsigned n=0;for(const auto& line:receipts)
+        if(line.find(kind)!=std::string::npos && line.find(fields)!=std::string::npos) ++n;
+    return n;
+}
 static unsigned phase=0,forwardStarts=0,forwardEnds=0,priorNative=0;
 static void forwardBegin() {
     assert(timingEnabled && phase==1 && !forwardActive);
@@ -28,7 +49,9 @@ static void forwardEnd() {
     assert(stats->native==priorNative+1);
     phase=3;forwardActive=false;++forwardEnds;
 }
-static bool qualifies(d2vr_image_present::Method method,uintptr_t caller){return caller!=0 && (method!=d2vr_image_present::Method::Present || expectedQualified);}
+static bool qualifies(d2vr_image_present::Method method,uintptr_t caller) {
+    return caller!=0 && (method==d2vr_image_present::Method::Create?createCallerQualified:presentCallerQualified);
+}
 static void before(IDirect3DSwapChain9* sc,uintptr_t caller,bool native,bool ready) {
     assert(native==expectedQualified && phase==0 && !forwardActive);phase=1;
     if(!ready) return;
@@ -67,7 +90,8 @@ int main(int argc,char** argv) {
     auto expect=reinterpret_cast<void(__cdecl*)(const RECT*,const RECT*,HWND,const RGNDATA*,DWORD,HRESULT)>(GetProcAddress(dll,"FixtureExpect"));
     assert(deviceFn && counters && expect);auto device=deviceFn();stats=counters();
     timingEnabled=!(argc>2 && !std::strcmp(argv[2],"timing-disabled"));
-    d2vr_image_present::Callbacks callbacks{qualifies,before,after,nullptr};
+    const bool receiptTest=argc>2 && !std::strcmp(argv[2],"unqualified-create");
+    d2vr_image_present::Callbacks callbacks{qualifies,before,after,receiptTest?receiptLog:nullptr};
     if(timingEnabled) {callbacks.forwardBegin=forwardBegin;callbacks.forwardEnd=forwardEnd;}
     auto image=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     auto pe=reinterpret_cast<IMAGE_NT_HEADERS*>(image+reinterpret_cast<IMAGE_DOS_HEADER*>(image)->e_lfanew);
@@ -91,6 +115,59 @@ int main(int argc,char** argv) {
     assert(!observer.Ready());assert(*reinterpret_cast<void***>(device)==vt);
     assert(originalEx->Release()==1 && originalBase->Release()==0);
     RECT a{1,2,31,47},b{4,5,57,63};RGNDATA dirty{};const auto window=reinterpret_cast<HWND>(0x1234);
+    if(receiptTest) {
+        // The typed API can succeed for an untrusted caller. Observation alone
+        // must not grant native-camera/XR ownership, even to a later native caller.
+        createCallerQualified=false;presentCallerQualified=false;expectedQualified=false;
+        IDirect3DSwapChain9* base=nullptr;IDirect3DSwapChain9Ex* ex=nullptr;
+        expectedReceiptCreates=stats->creates+1;
+        assert(device->CreateAdditionalSwapChain(&pp,&base)==S_OK && base);
+        assert(base->QueryInterface(__uuidof(IDirect3DSwapChain9Ex),reinterpret_cast<void**>(&ex))==S_OK && ex!=base);
+        const auto positive=static_cast<HRESULT>(0x08760878);
+        auto present=[&](HRESULT hr) {
+            expect(&a,&b,window,&dirty,0x13579,hr);
+            const auto prior=stats->native;expectedReceiptNative=prior+1;
+            assert(base->Present(&a,&b,window,&dirty,0x13579)==hr);
+            assert(stats->native==prior+1 && !observer.Failed());
+        };
+        present(positive); // first raw outer call is unrelated (e.g. an overlay)
+        assert(receiptCount("raw-present","callerQualifies=0 created=0 qualified=0")==1);
+        presentCallerQualified=true;
+        present(S_OK); // verified native caller, but no verified acquisition
+        assert(receiptCount("raw-present","callerQualifies=1 created=0 qualified=0")==1);
+        const auto receiptSize=receipts.size();
+        for(unsigned i=0;i<20;++i) present(i%2?S_OK:positive);
+        assert(receipts.size()==receiptSize && !observer.Ready());
+        assert(rendered==0 && accepted==0 && observer.nativePresents==0 && forwardStarts==0);
+        assert(ex->Release()==1 && base->Release()==0);
+        // A subsequent properly qualified acquisition recovers existing policy.
+        createCallerQualified=true;expectedQualified=true;
+        expectedReceiptCreates=stats->creates+1;
+        assert(device->CreateAdditionalSwapChain(&pp,&base)==S_OK && base && !observer.Ready());
+        assert(base->QueryInterface(__uuidof(IDirect3DSwapChain9Ex),reinterpret_cast<void**>(&ex))==S_OK);
+        present(S_OK);assert(observer.Ready() && rendered==0 && observer.nativePresents==1);
+        present(S_OK);assert(rendered==1 && accepted==1 && observer.nativePresents==2);
+        assert(receiptCount("raw-create","callerQualifies=0 observed=1 created=0")==1);
+        assert(receiptCount("raw-create","callerQualifies=1 observed=1 created=1")==1);
+        assert(receiptCount("raw-present","callerQualifies=1 created=1 qualified=1")==1);
+        assert(receipts.size()==5 && forwardStarts==2 && forwardEnds==2 && observer.recursive==0);
+        assert(*reinterpret_cast<void***>(base)==originalBaseVT && *reinterpret_cast<void***>(ex)==originalExVT);
+        assert(!std::memcmp(originalBaseVT,originalBaseTable.data(),180*sizeof(void*)));
+        assert(!std::memcmp(originalExVT,originalExTable.data(),180*sizeof(void*)));
+        assert(!std::memcmp(vt,deviceTable.data(),180*sizeof(void*)));
+        assert(ex->Release()==1 && base->Release()==0 && stats->destroyed==3);
+        // Repeated acquisitions sharing the same implementation remain bounded,
+        // including switching back to an unrelated Create caller after recovery.
+        for(bool trusted:{true,false}) {
+            createCallerQualified=trusted;
+            assert(device->CreateAdditionalSwapChain(&pp,&base)==S_OK && base);
+            present(S_OK);present(S_OK);
+            assert(receipts.size()==5 && base->Release()==0);
+        }
+        assert(TextSnapshot()==text && !forwardActive && phase==0);
+        std::puts("PASS bounded post-return receipts: unqualified Create/native Present rejected, original ABI/HRESULT/ownership retained, later qualified acquisition recovers XR admission");
+        return 0;
+    }
     void* reused=nullptr;
     for(unsigned run=0;run<1000;++run) {
         IDirect3DSwapChain9* base=nullptr;
@@ -137,11 +214,11 @@ int main(int argc,char** argv) {
     // timing or mutate the frame boundary. The fixture still verifies all args.
     const auto priorStarts=forwardStarts,priorFrames=rendered;
     const auto priorQualified=observer.nativePresents.load();
-    expectedQualified=false;expect(nullptr,nullptr,nullptr,nullptr,0,S_OK);
+    expectedQualified=false;presentCallerQualified=false;expect(nullptr,nullptr,nullptr,nullptr,0,S_OK);
     assert(last->Present(nullptr,nullptr,nullptr,nullptr,0)==S_OK);
     assert(forwardStarts==priorStarts && rendered==priorFrames);
     assert(observer.nativePresents.load()==priorQualified);
-    expectedQualified=true;
+    expectedQualified=true;presentCallerQualified=true;
     if(argc>2 && !std::strcmp(argv[2],"hr-error")) {
         expect(nullptr,nullptr,nullptr,nullptr,0,D3DERR_INVALIDCALL);
         assert(last->Present(nullptr,nullptr,nullptr,nullptr,0)==D3DERR_INVALIDCALL);
