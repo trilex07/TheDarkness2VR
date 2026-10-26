@@ -1,0 +1,2582 @@
+{
+  "decision": "ESCALATE_TO_MAIN_NO_NATIVE_PATCH",
+  "base_commit": "f292f2ef89bae4453c557ffee97b48e9f7ffd3ff",
+  "trace": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\cpu-candidate-log-ab-20261026T183121Z\\B\\20261026T184245Z-9997b65a\\combat.etl",
+  "pid": 43664,
+  "render_tid": 28400,
+  "range_us": [
+    13223748,
+    33252176
+  ],
+  "phase_present_rows": 1141,
+  "sample_weight_interpretation": "Nominal 1 ms sample weights, not API counts, latency, or guaranteed savings",
+  "command": [
+    "xperf",
+    "-i",
+    "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\cpu-candidate-log-ab-20261026T183121Z\\B\\20261026T184245Z-9997b65a\\combat.etl",
+    "-tle",
+    "-symbols",
+    "-a",
+    "dumper",
+    "-range",
+    "13223748",
+    "33252176",
+    "-stacktimeshifting",
+    "-provider",
+    "{ce1dbfb4-137e-4da6-87b0-3f59aa102cbc}"
+  ],
+  "local_symbols": "C:\\Users\\Trilex\\.codex\\worktrees\\integration-frame-capture\\Darkness2VR\\dist\\protected-outdoor-cpu-candidate-20261026T182452Z\\diagnostic",
+  "local_symcache": "C:\\SymCache",
+  "checks": {
+    "xperf_exit": 0,
+    "raw_lines": 4226935,
+    "timestamp_mismatches": 0,
+    "render_weight": 17814,
+    "native_leaf_weight": 4209,
+    "non_native_leaf_weight": 13605,
+    "retained_module_weight_equality": true,
+    "kernel_etwp_stack_weight": 1460,
+    "etw_lost_buffers": 0,
+    "etw_lost_events": 0,
+    "ghidra_export_complete": true
+  },
+  "native_ancestor_non_native_leaf_partition": [
+    {
+      "native": "UNKNOWN",
+      "total": 8143,
+      "without_kernel_etwp": 7435,
+      "with_kernel_etwp": 708,
+      "nominal_ms_per_present": 7.1367221735319895
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "total": 1724,
+      "without_kernel_etwp": 1718,
+      "with_kernel_etwp": 6,
+      "nominal_ms_per_present": 1.5109553023663453
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a41112",
+      "total": 485,
+      "without_kernel_etwp": 410,
+      "with_kernel_etwp": 75,
+      "nominal_ms_per_present": 0.42506573181419804
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005222da",
+      "total": 449,
+      "with_kernel_etwp": 313,
+      "without_kernel_etwp": 136,
+      "nominal_ms_per_present": 0.39351446099912357
+    },
+    {
+      "native": "DarknessII.exe!0x000000000071f736",
+      "total": 400,
+      "without_kernel_etwp": 400,
+      "nominal_ms_per_present": 0.35056967572305
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e665",
+      "total": 346,
+      "with_kernel_etwp": 57,
+      "without_kernel_etwp": 289,
+      "nominal_ms_per_present": 0.3032427695004382
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000992311",
+      "total": 271,
+      "without_kernel_etwp": 251,
+      "with_kernel_etwp": 20,
+      "nominal_ms_per_present": 0.23751095530236635
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e6c8",
+      "total": 196,
+      "with_kernel_etwp": 33,
+      "without_kernel_etwp": 163,
+      "nominal_ms_per_present": 0.17177914110429449
+    },
+    {
+      "native": "DarknessII.exe!0x000000000079830d",
+      "total": 186,
+      "with_kernel_etwp": 123,
+      "without_kernel_etwp": 63,
+      "nominal_ms_per_present": 0.16301489921121823
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006f03f8",
+      "total": 135,
+      "without_kernel_etwp": 134,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.11831726555652936
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf2cad",
+      "total": 113,
+      "without_kernel_etwp": 113,
+      "nominal_ms_per_present": 0.09903593339176162
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b4d7e5",
+      "total": 95,
+      "without_kernel_etwp": 95,
+      "nominal_ms_per_present": 0.08326029798422437
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c6afee",
+      "total": 93,
+      "without_kernel_etwp": 93,
+      "nominal_ms_per_present": 0.08150744960560911
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004291da",
+      "total": 72,
+      "without_kernel_etwp": 66,
+      "with_kernel_etwp": 6,
+      "nominal_ms_per_present": 0.06310254163014899
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004f1de5",
+      "total": 68,
+      "without_kernel_etwp": 54,
+      "with_kernel_etwp": 14,
+      "nominal_ms_per_present": 0.05959684487291849
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009b20e6",
+      "total": 57,
+      "with_kernel_etwp": 21,
+      "without_kernel_etwp": 36,
+      "nominal_ms_per_present": 0.04995617879053462
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009d69e1",
+      "total": 56,
+      "without_kernel_etwp": 39,
+      "with_kernel_etwp": 17,
+      "nominal_ms_per_present": 0.049079754601226995
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000946992",
+      "total": 55,
+      "without_kernel_etwp": 55,
+      "nominal_ms_per_present": 0.04820333041191937
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b46251",
+      "total": 54,
+      "without_kernel_etwp": 54,
+      "nominal_ms_per_present": 0.04732690622261174
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009a5e3c",
+      "total": 54,
+      "with_kernel_etwp": 18,
+      "without_kernel_etwp": 36,
+      "nominal_ms_per_present": 0.04732690622261174
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004d0e0d",
+      "total": 41,
+      "without_kernel_etwp": 41,
+      "nominal_ms_per_present": 0.03593339176161262
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004944b2",
+      "total": 38,
+      "without_kernel_etwp": 38,
+      "nominal_ms_per_present": 0.033304119193689745
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005af740",
+      "total": 31,
+      "without_kernel_etwp": 29,
+      "with_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.02716914986853637
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b00da8",
+      "total": 21,
+      "without_kernel_etwp": 21,
+      "nominal_ms_per_present": 0.018404907975460124
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007778dd",
+      "total": 21,
+      "without_kernel_etwp": 15,
+      "with_kernel_etwp": 6,
+      "nominal_ms_per_present": 0.018404907975460124
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a87c1c",
+      "total": 21,
+      "without_kernel_etwp": 20,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.018404907975460124
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d4605",
+      "total": 21,
+      "without_kernel_etwp": 21,
+      "nominal_ms_per_present": 0.018404907975460124
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e6b9",
+      "total": 18,
+      "with_kernel_etwp": 7,
+      "without_kernel_etwp": 11,
+      "nominal_ms_per_present": 0.015775635407537247
+    },
+    {
+      "native": "DarknessII.exe!0x000000000043b7ce",
+      "total": 16,
+      "without_kernel_etwp": 16,
+      "nominal_ms_per_present": 0.014022787028921999
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006ee803",
+      "total": 16,
+      "without_kernel_etwp": 16,
+      "nominal_ms_per_present": 0.014022787028921999
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006c74be",
+      "total": 15,
+      "without_kernel_etwp": 15,
+      "nominal_ms_per_present": 0.013146362839614373
+    },
+    {
+      "native": "DarknessII.exe!0x000000000042aeaf",
+      "total": 13,
+      "with_kernel_etwp": 6,
+      "without_kernel_etwp": 7,
+      "nominal_ms_per_present": 0.011393514460999123
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005af76f",
+      "total": 12,
+      "without_kernel_etwp": 12,
+      "nominal_ms_per_present": 0.010517090271691499
+    },
+    {
+      "native": "DarknessII.exe!0x000000000041392e",
+      "total": 11,
+      "without_kernel_etwp": 11,
+      "nominal_ms_per_present": 0.009640666082383873
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000408931",
+      "total": 10,
+      "with_kernel_etwp": 8,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004da7e2",
+      "total": 9,
+      "without_kernel_etwp": 9,
+      "nominal_ms_per_present": 0.007887817703768623
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e6ae",
+      "total": 9,
+      "with_kernel_etwp": 7,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.007887817703768623
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b00d77",
+      "total": 8,
+      "without_kernel_etwp": 8,
+      "nominal_ms_per_present": 0.007011393514460999
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d6a388",
+      "total": 7,
+      "without_kernel_etwp": 7,
+      "nominal_ms_per_present": 0.006134969325153374
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009f212d",
+      "total": 7,
+      "without_kernel_etwp": 7,
+      "nominal_ms_per_present": 0.006134969325153374
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006fac8f",
+      "total": 7,
+      "without_kernel_etwp": 7,
+      "nominal_ms_per_present": 0.006134969325153374
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009d6a5b",
+      "total": 6,
+      "without_kernel_etwp": 6,
+      "nominal_ms_per_present": 0.0052585451358457495
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a5110d",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a410fb",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2a3d5",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000860103",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004ce7ea",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x000000000073f5b7",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005de2e9",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d24b70",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009dc1ca",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c37b0b",
+      "total": 5,
+      "without_kernel_etwp": 5,
+      "nominal_ms_per_present": 0.0043821209465381246
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004c939b",
+      "total": 4,
+      "without_kernel_etwp": 4,
+      "nominal_ms_per_present": 0.0035056967572304996
+    },
+    {
+      "native": "DarknessII.exe!0x000000000042831b",
+      "total": 4,
+      "without_kernel_etwp": 4,
+      "nominal_ms_per_present": 0.0035056967572304996
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007fbe3c",
+      "total": 4,
+      "with_kernel_etwp": 4,
+      "nominal_ms_per_present": 0.0035056967572304996
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000aea461",
+      "total": 4,
+      "without_kernel_etwp": 4,
+      "nominal_ms_per_present": 0.0035056967572304996
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2a417",
+      "total": 4,
+      "without_kernel_etwp": 4,
+      "nominal_ms_per_present": 0.0035056967572304996
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c37b26",
+      "total": 4,
+      "without_kernel_etwp": 4,
+      "nominal_ms_per_present": 0.0035056967572304996
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b877cb",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d32482",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x000000000078d9ed",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d7a69",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006c76df",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009609f1",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a87bed",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000628103",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c1f19b",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2a3cd",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x000000000094e81a",
+      "total": 3,
+      "without_kernel_etwp": 3,
+      "nominal_ms_per_present": 0.0026292725679228747
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000e1efed",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x000000000088fe1b",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d4130b",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007c781c",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf6a98",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006e115e",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d994df",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004ce7c7",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006f0440",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005d5e26",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a8561e",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d2ba13",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d448a",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c37b2d",
+      "total": 2,
+      "without_kernel_etwp": 1,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004291cc",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c6f94c",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005d5ddc",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008c44af",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004f037c",
+      "total": 2,
+      "without_kernel_etwp": 2,
+      "nominal_ms_per_present": 0.0017528483786152498
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009cebe7",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c59536",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x000000000087d013",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000963945",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b7e342",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000cfcdbe",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000badf23",
+      "total": 1,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000870038",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000482baa",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b0f61c",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c595aa",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b7e4ad",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x000000000067a847",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008f9250",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b33f22",
+      "total": 1,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009567ec",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d3ff41",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005af77d",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d083e7",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007c7771",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008ed75b",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x000000000085389f",
+      "total": 1,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x000000000075ed49",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf6a6d",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000859b40",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004da1b9",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c37b19",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf6a84",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009a5e70",
+      "total": 1,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008b9173",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000ac3fcd",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007a8d5e",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004554f9",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x000000000089b83b",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005b05a9",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x000000000043b6e5",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000ac3ffa",
+      "total": 1,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d2bc2b",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d437e",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d20383",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008f922a",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009179ea",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008c45c8",
+      "total": 1,
+      "with_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d3afd3",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d41206",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x000000000042af4f",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004f0162",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006acce5",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x000000000043b7b2",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b0f651",
+      "total": 1,
+      "without_kernel_etwp": 1,
+      "nominal_ms_per_present": 0.0008764241893076249
+    }
+  ],
+  "native_proxy_partition": [
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 5901
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 1253
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::CaptureBackbufferToShared",
+      "weight": 545
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 490
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a41112",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 485
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetSamplerState",
+      "weight": 453
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005222da",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 449
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e665",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 346
+    },
+    {
+      "native": "DarknessII.exe!0x000000000071f736",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 338
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_SetVertexShaderConstantF",
+      "weight": 286
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_DrawIndexedPrimitive",
+      "weight": 221
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e6c8",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 196
+    },
+    {
+      "native": "DarknessII.exe!0x000000000079830d",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 186
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000992311",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_BeginScene",
+      "weight": 170
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006f03f8",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 135
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 121
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_XInputGetState",
+      "weight": 105
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPSConstF",
+      "weight": 87
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmitData",
+      "weight": 85
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c6afee",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 77
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004291da",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 72
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004f1de5",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 68
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 66
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b4d7e5",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetVertexShader",
+      "weight": 65
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf2cad",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_SetTexture",
+      "weight": 57
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009b20e6",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 57
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009d69e1",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 56
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf2cad",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 55
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b46251",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 54
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009a5e3c",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 54
+    },
+    {
+      "native": "DarknessII.exe!0x000000000071f736",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPSConstF",
+      "weight": 49
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000946992",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 48
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000992311",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_CreateStateBlock",
+      "weight": 48
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_CreateStateBlock",
+      "weight": 47
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000992311",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_EndScene",
+      "weight": 41
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004d0e0d",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 41
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004944b2",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 38
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 34
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005af740",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 31
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_DrawPrimitiveUP",
+      "weight": 30
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPixelShader",
+      "weight": 27
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_StretchRect",
+      "weight": 25
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_DrawPrimitive",
+      "weight": 24
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b00da8",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 21
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_Clear",
+      "weight": 19
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b4d7e5",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 18
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e6b9",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 18
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d4605",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetRenderTarget",
+      "weight": 16
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006ee803",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 16
+    },
+    {
+      "native": "DarknessII.exe!0x000000000043b7ce",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 15
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c6afee",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPSConstF",
+      "weight": 14
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006c74be",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 13
+    },
+    {
+      "native": "DarknessII.exe!0x000000000042aeaf",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 13
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b4d7e5",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 12
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005af76f",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 12
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a87c1c",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_DrawIndexedPrimitive",
+      "weight": 11
+    },
+    {
+      "native": "DarknessII.exe!0x000000000041392e",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 11
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetStreamSource",
+      "weight": 10
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000408931",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 10
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004da7e2",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 9
+    },
+    {
+      "native": "DarknessII.exe!0x000000000071f736",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 9
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e6ae",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 9
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b00d77",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 8
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetIndices",
+      "weight": 7
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d6a388",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 7
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007778dd",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 7
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009f212d",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 7
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006fac8f",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 7
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000992311",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 7
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007778dd",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_DrawPrimitive",
+      "weight": 7
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetRenderState",
+      "weight": 6
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_SetVertexShaderConstantF",
+      "weight": 6
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetVertexShader",
+      "weight": 6
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009d6a5b",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 6
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a5110d",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a87c1c",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a410fb",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000992311",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2a3d5",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004ce7ea",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x000000000073f5b7",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005de2e9",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d24b70",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c37b0b",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 5
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007778dd",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetStreamSource",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004c939b",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x000000000071f736",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x000000000042831b",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000860103",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d4605",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007fbe3c",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000946992",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetViewport",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2a417",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c37b26",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 4
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b877cb",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000946992",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d32482",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x000000000078d9ed",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000aea461",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d7a69",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006c76df",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007778dd",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009609f1",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a87bed",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000628103",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009dc1ca",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_SetDepthStencilSurface",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c1f19b",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a87c1c",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_DrawPrimitive",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x000000000094e81a",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 3
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000e1efed",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x000000000088fe1b",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d4130b",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007c781c",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf6a98",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006e115e",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d994df",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004ce7c7",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006f0440",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005d5e26",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009dc1ca",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d2ba13",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d448a",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetRenderTarget",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c37b2d",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004291cc",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetClipPlane",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2a3cd",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c6f94c",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005d5ddc",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetScissorRect",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008c44af",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004f037c",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 2
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_BeginScene",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009cebe7",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c59536",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000087d013",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d4605",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000963945",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b7e342",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000cfcdbe",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000badf23",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000870038",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000482baa",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b0f61c",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c595aa",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b7e4ad",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf2cad",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c6afee",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000067a847",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008f9250",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a8561e",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetScissorRect",
+      "weight": 1
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetViewport",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b33f22",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009567ec",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c6afee",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d3ff41",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000043b7ce",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPSConstF",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005af77d",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d083e7",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetVSConstI",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007c7771",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008ed75b",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetStreamSource",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000085389f",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000075ed49",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf6a6d",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000859b40",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004da1b9",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006c74be",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000c37b19",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000bf6a84",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000aea461",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009a5e70",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008b9173",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPSConstI",
+      "weight": 1
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetRenderTarget",
+      "weight": 1
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPSConstB",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000ac3fcd",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetVertexDeclaration",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007a8d5e",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a8561e",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000860103",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetClipPlane",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004554f9",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000089b83b",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetStreamSource",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005b05a9",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a87c1c",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetStreamSourceFreq",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000043b6e5",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a87c1c",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetVertexDeclaration",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000ac3ffa",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_CreatePixelShader",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d2bc2b",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000007d437e",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006c74be",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetViewport",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d20383",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2a3cd",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetScissorRect",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008f922a",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "UNKNOWN",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::Hook_SetTexture",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000009179ea",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000008c45c8",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d3afd3",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000d41206",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetScissorRect",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000042af4f",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000004f0162",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x00000000006acce5",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x000000000043b7b2",
+      "nearest_proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "weight": 1
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b0f651",
+      "nearest_proxy": "UNKNOWN",
+      "weight": 1
+    }
+  ],
+  "selected_chain_examples": [
+    {
+      "leaf": "ntdll.dll!__memset_spec_avx_ermsb_repmovsb",
+      "native": "UNKNOWN",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": false,
+      "weight": 1705,
+      "nominal_ms_per_present": 1.4943032427695004,
+      "time_us": 13228323,
+      "stack": [
+        "ntdll.dll!__memset_spec_avx_ermsb_repmovsb",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk"
+      ]
+    },
+    {
+      "leaf": "ntdll.dll!NtQueryVirtualMemory",
+      "native": "UNKNOWN",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": false,
+      "weight": 829,
+      "nominal_ms_per_present": 0.726555652936021,
+      "time_us": 13232589,
+      "stack": [
+        "ntdll.dll!NtQueryVirtualMemory",
+        "wow64.dll!whNtQueryVirtualMemory_SpecialQueryCase",
+        "wow64.dll!whNtQueryVirtualMemory",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk"
+      ]
+    },
+    {
+      "leaf": "wow64cpu.dll!CpupSyscallStub",
+      "native": "UNKNOWN",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": false,
+      "weight": 652,
+      "nominal_ms_per_present": 0.5714285714285714,
+      "time_us": 13258487,
+      "stack": [
+        "wow64cpu.dll!CpupSyscallStub",
+        "wow64cpu.dll!Thunk0ArgReloadState",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!KiSystemServiceUser",
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "kernel_etwp_in_stack": false,
+      "weight": 309,
+      "nominal_ms_per_present": 0.2708150744960561,
+      "time_us": 13313094,
+      "stack": [
+        "ntoskrnl.exe!KiSystemServiceUser",
+        "ntdll.dll!NtQueryVirtualMemory",
+        "wow64.dll!whNtQueryVirtualMemory_SpecialQueryCase",
+        "wow64.dll!whNtQueryVirtualMemory",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwQueryVirtualMemory",
+        "KernelBase.dll!VirtualQuery",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmitData",
+        "DarknessII.exe!0x0000000000b74740"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!MiReturnLockedVadOrNextVa",
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "kernel_etwp_in_stack": false,
+      "weight": 257,
+      "nominal_ms_per_present": 0.2252410166520596,
+      "time_us": 13249709,
+      "stack": [
+        "ntoskrnl.exe!MiReturnLockedVadOrNextVa",
+        "ntoskrnl.exe!MmQueryVirtualMemory",
+        "ntoskrnl.exe!NtQueryVirtualMemory",
+        "ntoskrnl.exe!KiSystemServiceCopyEnd",
+        "ntdll.dll!NtQueryVirtualMemory",
+        "wow64.dll!whNtQueryVirtualMemory_SpecialQueryCase",
+        "wow64.dll!whNtQueryVirtualMemory",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwQueryVirtualMemory",
+        "KernelBase.dll!VirtualQuery",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmitData",
+        "DarknessII.exe!0x0000000000b74740",
+        "DarknessII.exe!0x000000000071f71f"
+      ]
+    },
+    {
+      "leaf": "nvd3dum.dll!0x000000005c02cb8c",
+      "native": "DarknessII.exe!0x0000000000a41112",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": false,
+      "weight": 227,
+      "nominal_ms_per_present": 0.19894829097283084,
+      "time_us": 13321963,
+      "stack": [
+        "nvd3dum.dll!0x000000005c02cb8c",
+        "nvd3dum.dll!0x000000005c02d42a",
+        "nvd3dum.dll!0x000000005c0310fb",
+        "d3d9.dll!DdLockLH",
+        "d3d9.dll!CDriverVertexBuffer::Lock",
+        "DarknessII.exe!0x0000000000a41112",
+        "\"Unknown\"!0x000000001bb03510"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!KiSystemServiceUser",
+      "native": "UNKNOWN",
+      "proxy": "d3d9.dll!`anonymous namespace'::CaptureBackbufferToShared",
+      "kernel_etwp_in_stack": false,
+      "weight": 174,
+      "nominal_ms_per_present": 0.15249780893952672,
+      "time_us": 13235920,
+      "stack": [
+        "ntoskrnl.exe!KiSystemServiceUser",
+        "wow64cpu.dll!CpupSyscallStub",
+        "wow64cpu.dll!Thunk2ArgNSpNSpReloadState",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!NtDelayExecution",
+        "ntdll.dll!RtlDelayExecution",
+        "KernelBase.dll!SwitchToThread",
+        "d3d9.dll!`anonymous namespace'::CaptureBackbufferToShared",
+        "d3d9.dll!`anonymous namespace'::RenderEyePairFromReplay",
+        "d3d9.dll!`anonymous namespace'::VrFrame"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!KiSystemServiceUser",
+      "native": "UNKNOWN",
+      "proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "kernel_etwp_in_stack": false,
+      "weight": 163,
+      "nominal_ms_per_present": 0.14285714285714285,
+      "time_us": 13358822,
+      "stack": [
+        "ntoskrnl.exe!KiSystemServiceUser",
+        "ntdll.dll!NtQueryVirtualMemory",
+        "wow64.dll!whNtQueryVirtualMemory_SpecialQueryCase",
+        "wow64.dll!whNtQueryVirtualMemory",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwQueryVirtualMemory",
+        "KernelBase.dll!VirtualQuery",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPSConstF"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!MiGetPageProtection",
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "kernel_etwp_in_stack": false,
+      "weight": 156,
+      "nominal_ms_per_present": 0.13672217353198948,
+      "time_us": 13244432,
+      "stack": [
+        "ntoskrnl.exe!MiGetPageProtection",
+        "ntoskrnl.exe!MiQueryAddressState",
+        "ntoskrnl.exe!MiQueryAddressSpan",
+        "ntoskrnl.exe!MmQueryVirtualMemory",
+        "ntoskrnl.exe!NtQueryVirtualMemory",
+        "ntoskrnl.exe!KiSystemServiceCopyEnd",
+        "ntdll.dll!NtQueryVirtualMemory",
+        "wow64.dll!whNtQueryVirtualMemory_SpecialQueryCase",
+        "wow64.dll!whNtQueryVirtualMemory",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwQueryVirtualMemory",
+        "KernelBase.dll!VirtualQuery",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmitData",
+        "DarknessII.exe!0x0000000000b74740",
+        "DarknessII.exe!0x000000000071f71f"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!MiQueryAddressState",
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "kernel_etwp_in_stack": false,
+      "weight": 144,
+      "nominal_ms_per_present": 0.12620508326029797,
+      "time_us": 13436317,
+      "stack": [
+        "ntoskrnl.exe!MiQueryAddressState",
+        "ntoskrnl.exe!MiQueryAddressSpan",
+        "ntoskrnl.exe!MmQueryVirtualMemory",
+        "ntoskrnl.exe!NtQueryVirtualMemory",
+        "ntoskrnl.exe!KiSystemServiceCopyEnd",
+        "ntdll.dll!NtQueryVirtualMemory",
+        "wow64.dll!whNtQueryVirtualMemory_SpecialQueryCase",
+        "wow64.dll!whNtQueryVirtualMemory",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwQueryVirtualMemory",
+        "KernelBase.dll!VirtualQuery",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmitData",
+        "DarknessII.exe!0x0000000000b74740",
+        "DarknessII.exe!0x000000000071f71f"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!RtlpLookupFunctionEntryForStackWalks",
+      "native": "UNKNOWN",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": true,
+      "weight": 139,
+      "nominal_ms_per_present": 0.12182296231375986,
+      "time_us": 13403626,
+      "stack": [
+        "ntoskrnl.exe!RtlpLookupFunctionEntryForStackWalks",
+        "ntoskrnl.exe!RtlpWalkFrameChain",
+        "ntoskrnl.exe!RtlWalkFrameChain",
+        "ntoskrnl.exe!EtwpExpandedStackWalk",
+        "ntoskrnl.exe!KySwitchKernelStackCallout",
+        "ntoskrnl.exe!KiSwitchKernelStackContinue",
+        "ntoskrnl.exe!KiExpandKernelStackAndCalloutOnStackSegment",
+        "ntoskrnl.exe!KiExpandKernelStackAndCalloutSwitchStack",
+        "ntoskrnl.exe!KeExpandKernelStackAndCalloutInternal",
+        "ntoskrnl.exe!EtwpTraceStackWalk",
+        "ntoskrnl.exe!EtwpApcPoolThunk",
+        "ntoskrnl.exe!KiDeliverApc",
+        "ntoskrnl.exe!KiSwapThread",
+        "ntoskrnl.exe!KiCommitThreadWait",
+        "ntoskrnl.exe!KeWaitForSingleObject",
+        "ntoskrnl.exe!ObWaitForSingleObject",
+        "ntoskrnl.exe!NtWaitForSingleObject",
+        "ntoskrnl.exe!KiSystemServiceCopyEnd",
+        "wow64cpu.dll!CpupSyscallStub",
+        "wow64cpu.dll!Thunk0ArgReloadState",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!NtWaitForSingleObject",
+        "KernelBase.dll!WaitForSingleObjectEx",
+        "KernelBase.dll!WaitForSingleObject",
+        "nvwgf2um.dll!0x00000000514411da",
+        "nvwgf2um.dll!0x0000000051441362",
+        "nvwgf2um.dll!0x0000000051441c7a",
+        "nvwgf2um.dll!0x0000000051441cfa",
+        "nvwgf2um.dll!0x000000005149dfc4",
+        "d3d11.dll!NDXGI::CDevice::Flush",
+        "d3d11.dll!NDXGI::CDevice::FlushAndEnqueueSetEvent",
+        "d3d11.dll!CContext::TID3D11DeviceContext_Flush1_<9>",
+        "d3d11.dll!CContext::TID3D11DeviceContext_Flush_<10>",
+        "d3d11.dll!CContext::TID3D11DeviceContext_Flush_AppEntered",
+        "vrclient.dll!0x0000000054f9bc50",
+        "vrclient.dll!0x0000000054f937b3",
+        "vrclient.dll!0x0000000054edb408",
+        "vrclient.dll!0x0000000054edc4c8",
+        "vrclient.dll!0x0000000054f12390",
+        "vrclient.dll!0x0000000054f14f98",
+        "vrclient.dll!0x0000000054ee58d6",
+        "openxr_loader.dll!0x0000000055e2bc96",
+        "d3d9.dll!`anonymous namespace'::SubmitXR",
+        "d3d9.dll!`anonymous namespace'::VrFrame"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!KiSystemServiceUser",
+      "native": "UNKNOWN",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": false,
+      "weight": 137,
+      "nominal_ms_per_present": 0.1200701139351446,
+      "time_us": 13401336,
+      "stack": [
+        "ntoskrnl.exe!KiSystemServiceUser",
+        "wow64cpu.dll!CpupSyscallStub",
+        "wow64cpu.dll!Thunk2ArgNSpNSpReloadState",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!NtDelayExecution",
+        "ntdll.dll!RtlDelayExecution",
+        "KernelBase.dll!SwitchToThread",
+        "d3d9.dll!d2vr_shared_reader::Fence::PollIssued<`anonymous namespace'::SharedReaderFenceOps>"
+      ]
+    },
+    {
+      "leaf": "d3d9.dll!`anonymous namespace'::Hook_SetVertexShaderConstantF",
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "proxy": "d3d9.dll!`anonymous namespace'::Hook_SetVertexShaderConstantF",
+      "kernel_etwp_in_stack": false,
+      "weight": 122,
+      "nominal_ms_per_present": 0.10692375109553023,
+      "time_us": 13246737,
+      "stack": [
+        "d3d9.dll!`anonymous namespace'::Hook_SetVertexShaderConstantF",
+        "DarknessII.exe!0x0000000000b74740",
+        "DarknessII.exe!0x000000000071f71f"
+      ]
+    },
+    {
+      "leaf": "ntdll.dll!RtlQueryPerformanceCounter",
+      "native": "DarknessII.exe!0x00000000006f03f8",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": false,
+      "weight": 119,
+      "nominal_ms_per_present": 0.10429447852760736,
+      "time_us": 13284899,
+      "stack": [
+        "ntdll.dll!RtlQueryPerformanceCounter",
+        "DarknessII.exe!0x00000000006f03f8"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!MiReturnLockedVadOrNextVa",
+      "native": "UNKNOWN",
+      "proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "kernel_etwp_in_stack": false,
+      "weight": 111,
+      "nominal_ms_per_present": 0.09728308501314636,
+      "time_us": 13527226,
+      "stack": [
+        "ntoskrnl.exe!MiReturnLockedVadOrNextVa",
+        "ntoskrnl.exe!MmQueryVirtualMemory",
+        "ntoskrnl.exe!NtQueryVirtualMemory",
+        "ntoskrnl.exe!KiSystemServiceCopyEnd",
+        "ntdll.dll!NtQueryVirtualMemory",
+        "wow64.dll!whNtQueryVirtualMemory_SpecialQueryCase",
+        "wow64.dll!whNtQueryVirtualMemory",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwQueryVirtualMemory",
+        "KernelBase.dll!VirtualQuery",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetPSConstF"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!RtlpUnwindPrologue",
+      "native": "UNKNOWN",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": true,
+      "weight": 109,
+      "nominal_ms_per_present": 0.09553023663453111,
+      "time_us": 13334899,
+      "stack": [
+        "ntoskrnl.exe!RtlpUnwindPrologue",
+        "ntoskrnl.exe!RtlpxVirtualUnwind",
+        "ntoskrnl.exe!RtlpWalkFrameChain",
+        "ntoskrnl.exe!RtlWalkFrameChain",
+        "ntoskrnl.exe!EtwpExpandedStackWalk",
+        "ntoskrnl.exe!KySwitchKernelStackCallout",
+        "ntoskrnl.exe!KiSwitchKernelStackContinue",
+        "ntoskrnl.exe!KiExpandKernelStackAndCalloutOnStackSegment",
+        "ntoskrnl.exe!KiExpandKernelStackAndCalloutSwitchStack",
+        "ntoskrnl.exe!KeExpandKernelStackAndCalloutInternal",
+        "ntoskrnl.exe!EtwpTraceStackWalk",
+        "ntoskrnl.exe!EtwpLogKernelEvent",
+        "ntoskrnl.exe!EtwTraceReadyThread",
+        "ntoskrnl.exe!KiProcessThreadWaitList",
+        "ntoskrnl.exe!KiExitDispatcher",
+        "ntoskrnl.exe!KeReleaseSemaphoreEx",
+        "ntoskrnl.exe!NtReleaseSemaphore",
+        "ntoskrnl.exe!KiSystemServiceCopyEnd",
+        "wow64cpu.dll!CpupSyscallStub",
+        "wow64cpu.dll!Thunk0Arg",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwReleaseSemaphore",
+        "KernelBase.dll!ReleaseSemaphore",
+        "nvwgf2um.dll!0x0000000051441bdf",
+        "nvwgf2um.dll!0x000000005143a2ff",
+        "d3d11.dll!CContext::TID3D11DeviceContext_End_<4>",
+        "vrclient.dll!0x00000000550d80fd",
+        "vrclient.dll!0x0000000054f90fb3",
+        "vrclient.dll!0x0000000054edc4e7",
+        "vrclient.dll!0x0000000054f12390",
+        "vrclient.dll!0x0000000054f14f98",
+        "vrclient.dll!0x0000000054ee58d6",
+        "openxr_loader.dll!0x0000000055e2bc96",
+        "d3d9.dll!`anonymous namespace'::SubmitXR",
+        "d3d9.dll!`anonymous namespace'::VrFrame"
+      ]
+    },
+    {
+      "leaf": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "native": "UNKNOWN",
+      "proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+      "kernel_etwp_in_stack": false,
+      "weight": 102,
+      "nominal_ms_per_present": 0.08939526730937773,
+      "time_us": 13330477,
+      "stack": [
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmit",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::Hook_SetRenderState"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!MmQueryVirtualMemory",
+      "native": "DarknessII.exe!0x0000000000b74740",
+      "proxy": "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+      "kernel_etwp_in_stack": false,
+      "weight": 97,
+      "nominal_ms_per_present": 0.08501314636283962,
+      "time_us": 13230327,
+      "stack": [
+        "ntoskrnl.exe!MmQueryVirtualMemory",
+        "ntoskrnl.exe!NtQueryVirtualMemory",
+        "ntoskrnl.exe!KiSystemServiceCopyEnd",
+        "ntdll.dll!NtQueryVirtualMemory",
+        "wow64.dll!whNtQueryVirtualMemory_SpecialQueryCase",
+        "wow64.dll!whNtQueryVirtualMemory",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwQueryVirtualMemory",
+        "KernelBase.dll!VirtualQuery",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecPush",
+        "d3d9.dll!`anonymous namespace'::d2vr_replay::RecEmitData",
+        "DarknessII.exe!0x0000000000b74740",
+        "DarknessII.exe!0x000000000071f71f"
+      ]
+    },
+    {
+      "leaf": "ntoskrnl.exe!RtlpLookupFunctionEntryForStackWalks",
+      "native": "DarknessII.exe!0x00000000005222da",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": true,
+      "weight": 90,
+      "nominal_ms_per_present": 0.07887817703768624,
+      "time_us": 13445512,
+      "stack": [
+        "ntoskrnl.exe!RtlpLookupFunctionEntryForStackWalks",
+        "ntoskrnl.exe!RtlpWalkFrameChain",
+        "ntoskrnl.exe!RtlWalkFrameChain",
+        "ntoskrnl.exe!EtwpExpandedStackWalk",
+        "ntoskrnl.exe!KySwitchKernelStackCallout",
+        "ntoskrnl.exe!KiSwitchKernelStackContinue",
+        "ntoskrnl.exe!KiExpandKernelStackAndCalloutOnStackSegment",
+        "ntoskrnl.exe!KiExpandKernelStackAndCalloutSwitchStack",
+        "ntoskrnl.exe!KeExpandKernelStackAndCalloutInternal",
+        "ntoskrnl.exe!EtwpTraceStackWalk",
+        "ntoskrnl.exe!EtwpApcPoolThunk",
+        "ntoskrnl.exe!KiDeliverApc",
+        "ntoskrnl.exe!KiApcInterrupt",
+        "ntoskrnl.exe!KiExitDispatcher",
+        "ntoskrnl.exe!IoSetIoCompletionEx2",
+        "ntoskrnl.exe!NtSetIoCompletion",
+        "ntoskrnl.exe!KiSystemServiceCopyEnd",
+        "ntdll.dll!NtSetIoCompletion",
+        "wow64.dll!whNtSetIoCompletion",
+        "wow64.dll!Wow64SystemServiceEx",
+        "wow64cpu.dll!ServiceNoTurbo",
+        "wow64cpu.dll!BTCpuSimulate",
+        "wow64.dll!RunCpuSimulation",
+        "wow64.dll!Wow64LdrpInitialize",
+        "ntdll.dll!LdrpInitializeProcess",
+        "ntdll.dll!_LdrpInitialize",
+        "ntdll.dll!LdrpInitializeInternal",
+        "ntdll.dll!LdrInitializeThunk",
+        "ntdll.dll!ZwSetIoCompletion",
+        "KernelBase.dll!PostQueuedCompletionStatus",
+        "DarknessII.exe!0x00000000005222da"
+      ]
+    },
+    {
+      "leaf": "nvd3dum.dll!0x000000005c02cb8c",
+      "native": "UNKNOWN",
+      "proxy": "UNKNOWN",
+      "kernel_etwp_in_stack": false,
+      "weight": 87,
+      "nominal_ms_per_present": 0.07624890446976336,
+      "time_us": 13335811,
+      "stack": [
+        "nvd3dum.dll!0x000000005c02cb8c",
+        "nvd3dum.dll!0x000000005c02d42a",
+        "nvd3dum.dll!0x000000005c035823",
+        "d3d9.dll!Present",
+        "d3d9.dll!DdBltLH",
+        "d3d9.dll!CSwapChain::PresentMain",
+        "d3d9.dll!CSwapChain::Present",
+        "GameOverlayRenderer.dll!0x00000000583e9ab4",
+        "d3d9.dll!d2vr_image_present::Observer::OnPresent",
+        "d3d9.dll!d2vr_image_present::Observer::PresentThunk<2>"
+      ]
+    }
+  ],
+  "wait_partitions": [
+    {
+      "native": "DarknessII.exe!0x0000000000b2e6c8",
+      "state": "BLOCKED",
+      "duration_us": 83609,
+      "segments": 1835
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e6c8",
+      "state": "READY",
+      "duration_us": 18076,
+      "segments": 2024
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a41112",
+      "state": "BLOCKED",
+      "duration_us": 111476,
+      "segments": 4854
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000a41112",
+      "state": "READY",
+      "duration_us": 45680,
+      "segments": 5068
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e665",
+      "state": "BLOCKED",
+      "duration_us": 27088,
+      "segments": 940
+    },
+    {
+      "native": "DarknessII.exe!0x0000000000b2e665",
+      "state": "READY",
+      "duration_us": 10797,
+      "segments": 1163
+    },
+    {
+      "native": "DarknessII.exe!0x00000000005222da",
+      "state": "READY",
+      "duration_us": 752,
+      "segments": 74
+    }
+  ],
+  "provenance": [
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Temp\\d2vr-native-system-callchains\\reduce.py",
+      "sha256": "dffe144637d346014a8305251d393c78cb7f40441f0918ed504d5fc55adf0c94",
+      "bytes": 2285
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Temp\\d2vr-native-system-callchains\\chains.json",
+      "sha256": "804fb447b9af2faf0c316072850f2e5ab1287082eb89737be73010be6d9ab97b",
+      "bytes": 3601723
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Temp\\d2vr-native-system-callchains\\native-api-sites.txt",
+      "sha256": "e69f72627306777d6fb47c6dcc1d4fd3eec751d5a0dbb6beeaa7d76c6476f81e",
+      "bytes": 9076
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Temp\\d2vr-native-system-callchains\\native-api-contracts.txt",
+      "sha256": "d66195228b2cf4f0087ff44a503a1452708f1fa214c7c41a154d2cda0ca3540a",
+      "bytes": 12617
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\cpu-candidate-log-ab-20261026T183121Z\\B\\20261026T184245Z-9997b65a\\manifest.json",
+      "sha256": "26911a768f7c0176c56cace14baf6f721d89251beb6c6cc0f593e045eab072fd",
+      "bytes": 75882
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\cpu-candidate-log-ab-20261026T183121Z\\B\\20261026T184245Z-9997b65a\\etw-stats.txt",
+      "sha256": "bb4adf0d059378a08bcaf37aa779bb57169fc8cb9c0128be2161507e4f4b4811",
+      "bytes": 1007
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\cpu-candidate-log-ab-20261026T183121Z\\B\\20261026T184245Z-9997b65a\\analysis-derived\\cpu-phase-samples.json",
+      "sha256": "caaab1120f3d8f6f2fe14d31b41753a6d85d366dd4acc28cd3badfe485543fb6",
+      "bytes": 2165254
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\cpu-candidate-log-ab-20261026T183121Z\\B\\20261026T184245Z-9997b65a\\analysis-derived\\cpu-selected-segments.json",
+      "sha256": "9985f1223f9a85acf5938cc4c790a64603c3b2227ee7ea5f28c5870ec85709da",
+      "bytes": 72290665
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\cpu-candidate-log-ab-20261026T183121Z\\B\\20261026T184245Z-9997b65a\\analysis-derived\\cpu-switchin-stacks.json",
+      "sha256": "a09ba8f0ee7b8e5c54af76d99204c31e2a8fafcbe593b74fa157f68290110b64",
+      "bytes": 4653799
+    }
+  ]
+}
