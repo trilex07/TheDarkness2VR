@@ -295,3 +295,65 @@ the separate implemented/offline-verified float-window candidate stays OFF.
 A new complete comparison requires separately authorized Steam starts and a
 loss-free CPU recording; this result does not establish a performance fix.
 The current A mean is7.42872ms above the11.11111ms target under capture load.
+
+## Architectural decision after cancellation of A/B preparation
+
+BLOCKED for a justified high-impact renderer correction, NOT a game fix. The
+previous A/B gate is cancelled by the user's later instruction. No package,
+profiler, capture, Steam session or deployment. Unverified experiments stay OFF.
+
+Native scene/material traversal already runs ONCE. RenderTrueStereo records live
+eye0, invokes ReplayStream for eye1, then restores native state; replay does not
+re-enter native material/object traversal. A second traversal cannot be removed.
+The COMPLETE zero-loss outdoor B evidence (source804d0e7, PID43664/TID28400,
+cpu-candidate-log-ab-20261026T183121Z/B/20261026T184245Z-9997b65a) remains the
+source here, not the later lossy A or a new measurement of the current HEAD.
+Existing cpu-phase-samples.json: partial=false, exit=0. Over1141 combat Present
+rows, inclusive sampled weights: RecPush2273/1141=1.992112ms;
+VirtualQuery2088/1141=1.829974ms INSIDE RecPush; ReplayStream456/1141=.399649ms;
+RecEmit261/1141=.228747ms; CreateStateBlock95/1141=.083260ms;
+CaptureBackbufferToShared545/1141=.477651ms. Do not add overlapping subtrees.
+These are sampled attribution, not hard ceilings for UNKNOWN cross-architecture
+descendants. RUN15.73932ms exceeds11.11111 by4.62821ms. Removing all identified
+recorder/emit/replay exposure (~2.62ms) would still leave ~13.12ms. That does not
+prove90Hz impossible or assign all remaining system-service cost to the engine.
+
+Largest recorder shortcut considered: GetVertex/PixelShaderConstantF into owned
+storage after Set, avoiding repeated external-source validation. Rejected with
+REAL native D3D9 counterexamples, reproducible through the EXISTING harness:
+`tools/d3d9-stereo-harness/build.ps1 -ConstantOwnership`. It uses only its own
+hidden8x8 system-D3D9Ex device with observed flags0x50, no Draw/Present/Steam/XR.
+For VS and PS, another thread legally SetConstantF OR Apply(D3DSBT_ALL) between
+Set and Get: all calls return D3D_OK, Get returns the other writer, not the first
+input. All four cases PASS; immediately owned raw snapshots remain identical.
+This proves a legal race, not an observed game interleaving. RecLockGuard does
+not hold the native device across Set+Get. Protected StateBlockHook is OFF;
+unobserved native/private writes preclude exclusive state ownership. A local
+setter lock or startup equality probe cannot repair it. Modified live-eye
+constants also cannot recover original right-eye inputs from the driver cache.
+No unsafe getter-capture implementation was added to src/.
+
+Whole shadow-pass reuse is also unsupported: IsShadowAtlas is only a shape
+heuristic; final atlas contents do not preserve earlier versions consumed by
+right-eye draws. The historical run_35124 (different scene/profile, NOT outdoor
+CPU timing) contains only101/4471 float uploads in its sole matching shape run.
+No substantial measured saving or safe temporal-resource model justifies that
+change. StateBlock creation exposure ~.083ms is below the requested threshold.
+Removing MULTITHREADED conflicts with native workers; moving replay to a worker
+would still share mutable native RT/state and does not remove that work.
+
+Next architectural boundary required: owned immutable draw/material packets
+before scalar D3D9 submission, or a backend owning both eyes' commands/resources
+and versioned deferred passes. Native packet lifetime/private-call coverage is
+not established for such interception. D3D9 SM3 has no automatic dual-view RT
+routing: single-pass stereo requires shader/RT/deferred-pass translation.
+No hash-protected EXE mutation, deferred raw pointers, skipped eyes or guessed
+COM wrappers are acceptable shortcuts. Exact present blocker is the lack of an
+atomic original-input snapshot at the current public Set/Get boundary.
+
+Offline: four native D3D9 counterexamples; both x86 renderer builds; protected
+Present six modes, image guard, head117021, input20032, gestures227, actual
+recorder239 and actual PS payload576 per build mode PASS. Renderer and INI
+sources remain identical to ebecf4f. Saving NOT VERIFIED; no integrated Steam
+candidate from this decision. This is a demonstrated safety blocker, not an
+optimization or a claim that the outdoor performance issue is fixed.
