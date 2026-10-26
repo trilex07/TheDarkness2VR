@@ -174,6 +174,12 @@ public:
         return started_;
     }
     bool Ready() const {return started_ && created_ && warm_ && !fault_ && !resetting_;}
+    // Event-only recovery may run before another successful Present, but only
+    // on the verified native outer-call thread. This does NOT admit a frame.
+    bool OwnsCurrentNativePresent() const {
+        return started_ && created_ && !fault_ && !resetting_ && path_.depth==1 &&
+            thread_.load()==GetCurrentThreadId();
+    }
     bool Failed() const {return fault_;}
     bool InPresentation() const {return path_.depth!=0;}
     void Fail(const char* why) {fault_=true;warm_=false;if(cb_.log) cb_.log("[ImagePresent] FAIL %s; XR admission closed",why);}
