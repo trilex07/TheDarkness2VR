@@ -67,5 +67,52 @@ class ReaderTests(unittest.TestCase):
                 PE(blob)
 
 
+class FrameCapReaderTests(unittest.TestCase):
+    def reader(self, mode=0, limit=60.0):
+        fields = bytearray(48)
+        struct.pack_into("<I", fields, 0, mode)
+        struct.pack_into("<f", fields, 44, limit)
+        def read(va, count):
+            if va in audit_camera.FRAME_CAP_SITES:
+                return audit_camera.FRAME_CAP_SITES[va]
+            self.assertEqual((va,count),(0x010EB068,48))
+            return bytes(fields)
+        return read
+
+    def test_current_fields_are_not_a_pacing_claim(self):
+        for mode, cap in ((0,60.0),(1,90.0),(7,0.0)):
+            value=audit_camera.frame_cap_snapshot(self.reader(mode,cap))
+            self.assertEqual(value["frame_cap_mode"],mode)
+            self.assertEqual(value["max_frame_rate"],cap)
+            self.assertEqual(value["effective_pacing"],"UNKNOWN")
+
+    def test_nonfinite_value_stays_unknown_json_safe(self):
+        value=audit_camera.frame_cap_snapshot(self.reader(0,float("nan")))
+        self.assertIsNone(value["max_frame_rate"])
+
+    def test_instruction_mismatch_stops_before_field_reads(self):
+        reads=[]
+        def wrong(va,count):
+            reads.append(va)
+            return bytes(count)
+        with self.assertRaisesRegex(ValueError,"instruction mismatch"):
+            audit_camera.frame_cap_snapshot(wrong)
+        self.assertEqual(len(reads),1)
+
+    def test_changed_or_short_fields_are_rejected(self):
+        original=self.reader()
+        for short in (True,False):
+            reads=0
+            def changing(va,count):
+                nonlocal reads
+                b=original(va,count)
+                if va==0x010EB068:
+                    reads+=1
+                    if reads==2:return b[:-1] if short else bytes(48)
+                return b
+            with self.assertRaisesRegex(ValueError,"changed or read was incomplete"):
+                audit_camera.frame_cap_snapshot(changing)
+
+
 if __name__ == "__main__":
     unittest.main()

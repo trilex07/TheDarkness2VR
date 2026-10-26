@@ -82,3 +82,60 @@ unmodified PS packets unconditionally, including a missing224-vector bound.
 Frame-cap mode/current float are still runtime UNKNOWN; prepare only the
 read-only observation for a later authorized session. Do not remove SleepEx,
 edit encoded EE.cfg, or count limiter changes as removal of measured RUN.
+
+## Continued implementation: lazy PS payload
+
+After the packet implementation (0f3fe03), removed the unconditional memcpy
+from actual OP_SetPSConstF. Unchanged packets now use their owned arena pointer.
+The temporary copy is created only for the bytecode-verified C4D1FB10 light
+consumer when c0 is present, eye translation is nonzero and count is1..224.
+Existing inverse-projection/extents compensation remains per original packet.
+This also removes a concrete stack-overrun path: CompensatePsConstants rejects
+count>224, but the old fallback copied that oversized payload into adjusted[896]
+anyway. Invalid arguments now reach the original API without this extra copy;
+no unknown native instructions, shaders or exception filters are bypassed.
+This is secondary copy/bounds work, not an explanation of a6.44ms deficit.
+
+Regression extracts and compiles the ACTUAL replay PS case, not a duplicate
+algorithm: 288 cases cover original forwarding pointer, no copy for unchanged
+packets, exact compensated/light bytes, cap224/225/UINT_MAX, count0, stage start,
+source lifetime, batch OFF/ON and one API submission. Both x86 DLL builds PASS.
+Packet/head/input/gesture/Present and recorder regressions above remain PASS;
+no protected rendering/resource/synchronization code changed in this correction.
+
+## Native execution aggregate and the current safe boundary
+
+Read-only existing Ghidra function lookup covered all2,478 distinct native PCs
+in the B combat sample set (4,209 nominal1ms samples). 938 identified functions
+account for3,825 samples;384 samples lack an analysed function. No function
+entry was invented for a sample PC. Largest exclusive groups, over1,141 raw
+phase rows: AC36F0 .16564ms, C5D850 .14023, BB79A0 .11569, BF27A0 .06223,
+9F2030 .05171, 6F0190 .05083, 6C74A0 .04207. Remaining unidentified native
+execution is.33655ms. These costs are disjoint sampled leaf estimates; do not
+add their inclusive descendants or extrapolate them into exact timing.
+
+The native work is distributed; the known resource collector/LOD lists run in
+the original game submission, not once per replay eye. No safe external API
+has been established that can omit their processing while preserving native
+eligibility, dirty-material decisions, animation and resource ownership. Blind
+heap-vtable swaps, image patches or skipping draws are not justified. The
+current bounded corrections target the public D3D9 command boundary; they do
+not claim to remove all native scene traversal or all WOW64 service cost.
+Private owner lookup remains TEMP/d2vr-outdoor-native-owners/owners.csv.
+
+The existing audit_camera.py now has optional --frame-cap-pid PID. It first
+requires the existing full-file SHA/PE/instruction audit, checks the five cap
+code fingerprints on disk/in process, checks the PID image path, opens only
+QUERY_LIMITED_INFORMATION|VM_READ, and reads48 bytes twice at010EB068.
+Reports FrameCapMode and the float at010EB094; nonfinite floats remain UNKNOWN.
+Different/short reads reject the observation. It never starts a process, edits
+EE.cfg, writes image memory, or calls SleepEx. Eleven auditor/parser tests PASS;
+the real read was NOT RUN because no new game session was authorized.
+Configuration fields alone still do not prove an effective pacing branch.
+
+Next blocked gate is comparable in-game timing/driver correctness for the new
+packet path and the existing guarded-copy candidate, plus this one read-only
+cap observation. These require new Steam authorization. Defaults/rollback are
+all performance experiments0; image-preserving stereo/head/Sense/gestures remain
+in the preserved approved profile. 90Hz remains UNRESOLVED. Installed files
+were not changed during either implementation.

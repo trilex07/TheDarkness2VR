@@ -187,12 +187,93 @@ def audit(blob: bytes) -> dict:
                 native_projection_proven=False, native_cpu_frustum_proven=False)
 
 
+# Static pins on both explicitly admitted EXEs. Observation only: the cap mode
+# enum / effective deadline branch must not be inferred from the float default.
+FRAME_CAP_SITES = {
+    0x938780: bytes.fromhex("81ecb8000000a1f8870d0133c4898424"),
+    0x998130: bytes.fromhex("8b4424046a0150ff1558b3ee00c3"),
+    0xEAACA5: bytes.fromhex("c70568b00e0100000000"),
+    0xEAACD6: bytes.fromhex("f30f10053480fc00"),
+    0xEAACED: bytes.fromhex("f30f110594b00e01"),
+}
+
+
+def frame_cap_snapshot(read) -> dict:
+    for va, expected in FRAME_CAP_SITES.items():
+        if read(va, len(expected)) != expected:
+            raise ValueError(f"frame-cap runtime instruction mismatch at {va:08X}")
+    # Two identical bounded reads, not a suspended/atomic process snapshot.
+    first = read(0x010EB068, 48)
+    second = read(0x010EB068, 48)
+    if len(first) != 48 or first != second:
+        raise ValueError("frame-cap fields changed or read was incomplete")
+    mode = struct.unpack_from("<I", first)[0]
+    limit = struct.unpack_from("<f", first, 44)[0]
+    import math
+    return dict(status="READ_ONLY_OBSERVED", frame_cap_mode=mode,
+                max_frame_rate=limit if math.isfinite(limit) else None,
+                max_frame_rate_bits=first[44:].hex(),
+                two_reads_identical=True, effective_pacing="UNKNOWN",
+                note="Configuration fields do not prove the active deadline branch or unique FPS")
+
+
+def read_frame_cap_process(pid: int, exe: Path) -> dict:
+    # Invoke ONLY during a separately authorized game session; never launch one.
+    import ctypes
+    import os
+    from ctypes import wintypes
+    if os.name != "nt" or pid <= 0:
+        raise ValueError("a positive Windows process ID is required")
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel.CloseHandle.restype = wintypes.BOOL
+    kernel.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD,
+                                                wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD))
+    kernel.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel.ReadProcessMemory.argtypes = (wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
+                                        ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t))
+    kernel.ReadProcessMemory.restype = wintypes.BOOL
+    process = kernel.OpenProcess(0x1000 | 0x0010, False, pid)  # query-limited + VM_READ ONLY
+    if not process:
+        raise OSError(ctypes.get_last_error(), "OpenProcess read-only failed")
+    try:
+        path = ctypes.create_unicode_buffer(32768)
+        chars = wintypes.DWORD(len(path))
+        if not kernel.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(chars)):
+            raise OSError(ctypes.get_last_error(), "process image query failed")
+        if not exe.samefile(path.value):
+            raise ValueError("PID image does not match the audited executable path")
+        def read(va, count):
+            value = ctypes.create_string_buffer(count)
+            done = ctypes.c_size_t()
+            if (not kernel.ReadProcessMemory(process, va, value, count, ctypes.byref(done)) or
+                    done.value != count):
+                raise OSError(ctypes.get_last_error(), "short/failed read-only process read")
+            return value.raw
+        return dict(pid=pid, **frame_cap_snapshot(read))
+    finally:
+        kernel.CloseHandle(process)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("exe", type=Path)
+    parser.add_argument("--frame-cap-pid", type=int, help="read two cap fields only in an already authorized live session")
     args = parser.parse_args()
     try:
-        result = audit(args.exe.read_bytes())
+        blob = args.exe.read_bytes()
+        result = audit(blob)
+        if args.frame_cap_pid is not None:
+            if not (result["known_identity"] and result["all_sites_match"] and result["all_function_ranges_match"]):
+                raise ValueError("live read requires the existing full SHA/PE/instruction audit to PASS")
+            pe = PE(blob)
+            if any(pe.at_va(va,len(expected))!=expected for va,expected in FRAME_CAP_SITES.items()):
+                raise ValueError("frame-cap file instruction mismatch")
+            result["frame_cap_observation"] = read_frame_cap_process(args.frame_cap_pid,args.exe)
+            if hashlib.sha256(args.exe.read_bytes()).hexdigest() != result["sha256"]:
+                raise ValueError("executable identity changed during read-only observation")
     except (OSError, ValueError) as error:
         print(json.dumps({"status": "BLOCKED", "error": str(error)}))
         return 2

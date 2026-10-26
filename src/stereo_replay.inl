@@ -1743,18 +1743,20 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             float adjusted[224*4];
             bool copied = CompensatePsConstants(adjusted, values, r.a[0], r.a[1],
                                                 g_activePsInverse, g_activePsViewExtents, sp);
-            if (!copied) memcpy(adjusted, values, sizeof(float) * 4 * r.a[1]);
-            if (g_lightPosShift && sp.transX != 0.0f && r.a[0] <= 0 && r.a[0] + r.a[1] > 0) {
+            // Most packets need no PS compensation. Keep their arena pointer:
+            // materializing an unused stack copy costs bandwidth and, for an
+            // invalid >224-vector upload, used to overrun adjusted[].
+            if (g_lightPosShift && sp.transX != 0.0f && r.a[0] == 0 &&
+                r.a[1] > 0 && r.a[1] <= 224) {
                 auto psIt = g_psHashByPtr.find(g_replayPs);
                 if (psIt != g_psHashByPtr.end() && psIt->second == kShadowLightPsHash) {
                     // LightViewPosRadius (PS c0) is a position in view space and is uploaded
                     // by the engine relative to the live (left-eye) camera. The replay renders
                     // the right eye with an IPD offset, so the position must follow the
                     // geometry or the light lands elsewhere than the surface it lights.
-                    const int start = (r.a[0] < 0) ? 0 : (int)r.a[0];
-                    const int count  = (int)r.a[1] - start;
-                    adjusted[start * 4 + 0] += sp.transX;
-                    adjusted[start * 4 + 1] += sp.transY;
+                    if (!copied) memcpy(adjusted, values, sizeof(float) * 4 * r.a[1]);
+                    adjusted[0] += sp.transX;
+                    adjusted[1] += sp.transY;
                     copied = true;
                 }
             }

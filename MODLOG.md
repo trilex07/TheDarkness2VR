@@ -1,6 +1,6 @@
 # Task branch engineering log
 
-## 2026-10-24 — Offline native camera/FOV follow-up
+## 2026-10-24 â€” Offline native camera/FOV follow-up
 
 On `codex/native-camera-fov`, based on research `cb6638f`, verified different
 Lua receiver type globals for GetFOV and the base-FOV setter. Identified the
@@ -258,3 +258,13 @@ on D46B identity. Implemented adjacent same-stage float4 replay batching after
 original per-upload stereo transformation, with caps/barrier/failure/capture
 guards. No EXE writes or Steam changes. Actual game performance NOT VERIFIED.
 Evidence/tests: docs/research/outdoor-cpu-packets-20261026.md.
+
+### 2026-10-26: remove unused PS staging and bound actual light payload
+
+Continued after packet commit: unchanged replay PS uploads borrow the owned
+arena; only the verified light correction materializes a1..224-vector copy.
+Removes unused copies and the old >224-vector temporary overflow. Actual-case
+regression288 cases PASS; production/diagnostic x86 builds PASS. Added the
+requested optional read-only cap fields to existing SHA/PE auditor (not invoked
+on a process). Native938-function aggregate shows distributed work; no native
+code/heap mutation or Steam access. Performance/HMD acceptance still NOT RUN.
