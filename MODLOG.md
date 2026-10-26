@@ -175,3 +175,19 @@ match preserved rollback hashes. Persistent log fix retained, SIDE prewarm
 findings preserved separately. Concrete private DLL/merged profile prepared;
 Steam/actual overlay/PSVR2 NOT RUN. No deployment, launch or automatic merge.
 Receipt: docs/research/image-preserving-present-20261026.md.
+
+### 2026-10-26: protected Present live PASS; gameplay stereo NO-GO
+
+Exact7ed10a6 package tested twice, second launch explicitly requested by user.
+Real additional-swapchain Present forwarded/returned D3D_OK for cumulative
+44000/33000 samples, recursion/errors/statuses/fault0; startup Reset passed.
+Overlay loaded/coexisted; visible overlay UI not verified. No CRC-pointer fault
+recorded; retry was explicitly terminated after failed normal UI close.
+Both eyes generated, but focused gameplay submitted layers0; PSVR2 user saw black.
+Root cause in protected profile: inherited NativeStereoHeadGeometry1 with
+HeadGeometry0 deterministically invalidates renderTrackingValid in gameplay.
+Added only NativeStereoHeadGeometry0 to protected override,2 profile regressions
+PASS. Correction OFFLINE ONLY; old private tested package preserved unchanged.
+Both sessions restored original DLL/four INIs and EXE hashes, rollback PASS.
+No further launch, native patch, quality change or automatic merge.
+Receipt: docs/research/image-preserving-present-live-20261026.md.
