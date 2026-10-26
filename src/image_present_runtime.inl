@@ -16,7 +16,19 @@ static thread_local ImagePresentScope g_imagePresentScope;
 static void ImagePresentBefore(IDirect3DSwapChain9* sc,uintptr_t caller,bool qualified,bool ready) {
     auto& state=g_imagePresentScope;
     state={g_insidePresentation,false,nullptr};g_insidePresentation=true;
-    if(!qualified || !ready || g_captureResetting) return;
+    if(!qualified || g_captureResetting) return;
+    if(!ready) {
+        // An occluded desktop Present closes frame admission. Keep draining
+        // lifecycle/focus events so wearing the HMD can still wake the session.
+        // No device calls, replay, or XR frame APIs belong on this path. The
+        // next D3D_OK only warms the observer; its following frame uses the
+        // ordinary BeginTrackedFrame pump, with no duplicate polling here.
+        if(g_imagePreservingPresent && g_nativeImageGuard.enabled &&
+            g_imagePresent.OwnsCurrentNativePresent() && !g_disableOpenXR &&
+            g_xrReady && g_xrInstance!=XR_NULL_HANDLE && g_xrSession!=XR_NULL_HANDLE)
+            PumpXR();
+        return;
+    }
     const HRESULT hr=sc->GetDevice(&state.owner);
     if(FAILED(hr) || !state.owner) {g_imagePresent.Fail("GetDevice failed at native Present");return;}
     g_presentCaller=caller;
