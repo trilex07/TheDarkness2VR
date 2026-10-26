@@ -6,6 +6,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include "shared_reader_fence.h"
 #include <delayimp.h>
 #include <shlobj.h>
 #include <d3d9.h>
@@ -437,6 +438,7 @@ static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
 static bool g_gpuSplitTiming = false;
+static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 // A diagnostic lighting preset can invert only the deferred eye offset. A
 // tracked profile must choose the matching configured reconstruction explicitly;
 // never alter or delete the user's persisted choice to make that profile load.
@@ -510,6 +512,8 @@ void LoadConfig() {
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
     g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
+    g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
+    Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
     g_tentacleAimMarker = GetPrivateProfileIntA("Input", "TentacleAimMarker", 1, chosenIni) != 0;
@@ -2198,6 +2202,9 @@ static bool ComputeBaseAimMarker(int eye,float cropX,float cropY,float out[4]) {
     return true;
 }
 
+static bool CanReadSharedUpload(ID3D11ShaderResourceView*);
+static bool SealSharedUpload(ID3D11ShaderResourceView*);
+
 static bool RenderStereoEyeD11(
     int eyeIdx,
     const XrFovf& eyeFov,
@@ -2211,6 +2218,7 @@ static bool RenderStereoEyeD11(
     d2vr_cpu_sync::Scope cpuEye(d2vr_cpu_sync::D3D11Eye);
 #endif
     if (!EnsureD11StereoPipeline() || !g_eyeRTV[eyeIdx] || !g_uploadSRV) return false;
+    if(g_lastConsumerReaderFence && !CanReadSharedUpload(g_uploadSRV)) return false;
     EnsureDepthTexture11();
 
     D3D11_MAPPED_SUBRESOURCE ms{};
@@ -2279,7 +2287,9 @@ static bool RenderStereoEyeD11(
     g_ctx11->PSSetShaderResources(0, 2, nullSrvs);
     ID3D11RenderTargetView* nullRtv = nullptr;
     g_ctx11->OMSetRenderTargets(1, &nullRtv, nullptr);
-    return true;
+    // This Draw is the complete shared-SRV consumer. Later NIS/capture/XR copies
+    // read the eye caches, so their unrelated work need not precede this event.
+    return !g_lastConsumerReaderFence || SealSharedUpload(g_uploadSRV);
 }
 
 // ---------------------------------------------------------------- Native engine FOV override
@@ -2729,6 +2739,30 @@ UINT g_sharedW = 0, g_sharedH = 0;
 int g_zeroCopyFailures = 0;
 IDirect3DQuery9* g_sharedFence9 = nullptr;
 ID3D11Query* g_sharedFence11 = nullptr;
+static d2vr_shared_reader::Fence g_sharedReaderFence;
+struct SharedReaderFenceOps {
+    bool Valid() const {return g_ctx11 && g_sharedFence11;}
+    const void* Context() const {return g_ctx11;}
+    const void* Query() const {return g_sharedFence11;}
+    uint32_t Thread() const {return GetCurrentThreadId();}
+    void End() {g_ctx11->End(g_sharedFence11);}
+    void Flush() {g_ctx11->Flush();}
+    d2vr_shared_reader::Poll GetData() {
+        const HRESULT hr=g_ctx11->GetData(g_sharedFence11,nullptr,0,0);
+        return hr==S_OK ? d2vr_shared_reader::Poll::Ready :
+            hr==S_FALSE ? d2vr_shared_reader::Poll::Pending : d2vr_shared_reader::Poll::Failed;
+    }
+    uint64_t Now() const {return GetTickCount64();}
+    void PauseThread() {SwitchToThread();}
+};
+static bool CanReadSharedUpload(ID3D11ShaderResourceView* source) {
+    SharedReaderFenceOps ops;
+    return source!=g_sharedSRV11 || g_sharedReaderFence.CanRead(ops);
+}
+static bool SealSharedUpload(ID3D11ShaderResourceView* source) {
+    SharedReaderFenceOps ops;
+    return source!=g_sharedSRV11 || g_sharedReaderFence.SealRead(ops);
+}
 static void ReleaseSharedCapture() {
     if (g_sharedFence9) g_sharedFence9->Release();
     if (g_sharedFence11) g_sharedFence11->Release();
@@ -2740,22 +2774,15 @@ static void ReleaseSharedCapture() {
     g_sharedSRV11 = nullptr; g_sharedTex11 = nullptr;
     g_sharedSurf9 = nullptr; g_sharedTex9 = nullptr;
     g_sharedHandle = nullptr; g_sharedW = g_sharedH = 0;
+    g_sharedReaderFence.Reset();
 }
 
 static bool WaitSharedReader() {
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::Scope cpuReader(d2vr_cpu_sync::SharedReader);
 #endif
-    if (!g_sharedFence11) return false;
-    g_ctx11->End(g_sharedFence11);
-    g_ctx11->Flush();
-    const ULONGLONG start = GetTickCount64();
-    HRESULT hr;
-    while ((hr = g_ctx11->GetData(g_sharedFence11, nullptr, 0, 0)) == S_FALSE) {
-        if (GetTickCount64() - start > 2000) return false;
-        SwitchToThread();
-    }
-    return hr == S_OK;
+    SharedReaderFenceOps ops;
+    return g_sharedReaderFence.Wait(g_lastConsumerReaderFence,ops);
 }
 
 static bool EnsureSharedCapture(IDirect3DDevice9* dev) {
