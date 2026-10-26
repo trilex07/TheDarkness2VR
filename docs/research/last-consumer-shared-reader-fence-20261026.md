@@ -69,3 +69,12 @@ read once by LoadConfig at process attach, not toggled during a resource lifetim
 Rollback: leave LastConsumerReaderFence=0 (legacy) or revert this commit.
 Persistent logging, protected Present, controls, head pose, shaders, resolution,
 FOV, native hook policy and resource-ref option are unchanged.
+
+MAIN integration: `e0d9fea` on `codex/protected-vr-integration` (from SIDE
+`ad5f493`). MAIN reran the actual helper, all five transfer-order cases, all
+13 protected-profile regressions, and diagnostic/production x86 builds: PASS.
+Private diagnostic DLL SHA-256:
+`ceb1cfa504e6f54246902b128f02acad73c4e9b17357fd737a96b84870870f7f`.
+This fence candidate is NOT deployed in the resource-ref A/B, which remains
+frozen at `c86c2c8` with the legacy reader fence in both variants. Runtime and
+HMD benefit of the last-consumer candidate remain NOT RUN.
