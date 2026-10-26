@@ -439,6 +439,7 @@ static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
 static bool g_gpuSplitTiming = false;
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
+static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
 // tracked profile must choose the matching configured reconstruction explicitly;
 // never alter or delete the user's persisted choice to make that profile load.
@@ -451,6 +452,9 @@ static bool ProtectedHeadConfigurationAllowed() {
         !g_noInvProj && !g_skipLightVsShift && !g_lightPosShift && g_lightingPreset<=0;
 }
 void LoadConfig() {
+    g_livePassProbe=GetPrivateProfileIntA("Diagnostics","LivePassProbe",0,
+        ".\\Darkness2VR-diagnostic.ini")!=0;
+    Log("[LivePassProbe] enabled=%d (diagnostic per-upload RT queries)",(int)g_livePassProbe);
 #ifdef D2VR_MATCHED_CAPTURE
     // Read once, before any installer or trace worker is started. Asynchronous
     // INI edits must never toggle patch/rollback ownership.
@@ -1661,7 +1665,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     }
 
     // ---- True stereo: live pass renders eye 0 (eye 1 comes from the replay pass) ----
-    if (d2vr_replay::g_replayEye < 0 && StartRegister == 0 && Vector4fCount >= 4 && pConstantData) {
+    if (g_livePassProbe && d2vr_replay::g_replayEye < 0 && StartRegister == 0 && Vector4fCount >= 4 && pConstantData) {
         static std::vector<uint64_t> observedPasses;
         if (observedPasses.size() < 512) {
             IDirect3DSurface9* rt = nullptr;
