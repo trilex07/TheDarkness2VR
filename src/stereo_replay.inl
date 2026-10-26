@@ -466,42 +466,13 @@ static inline bool RecOnRenderThread() {
     return GetCurrentThreadId() == g_renderThreadId;
 }
 
-static size_t ClampReadableBytes(const void* p, size_t bytes) {
-    const uint8_t* b = (const uint8_t*)p;
-    size_t done = 0;
-    while (done < bytes) {
-        MEMORY_BASIC_INFORMATION mbi{};
-        if (!VirtualQuery(b + done, &mbi, sizeof(mbi))) break;
-        if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) break;
-        const uint8_t* regionEnd = (const uint8_t*)mbi.BaseAddress + mbi.RegionSize;
-        size_t chunk = (size_t)(regionEnd - (b + done));
-        if (chunk == 0) break;
-        done += chunk;
-    }
-    return done;
-}
-static void SafeMemcpy(void* dst, const void* src, size_t bytes) {
-    __try {
-        memcpy(dst, src, bytes);
-    } __except (1) {
-        memset(dst, 0, bytes);
-    }
-}
-
 static inline uint32_t RecPush(const void* data, size_t bytes) {
     RecLockGuard lock;
     if (bytes > (size_t)8 * 1024 * 1024) bytes = 0;   // sanity clamp
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
     if (bytes) {
-        const size_t readable = ClampReadableBytes(data, bytes);
-        if (readable < bytes) {
-            // game passed a smaller buffer than the draw parameters imply - copy what exists
-            memset(g_recData.data() + off, 0, bytes);
-            if (readable) SafeMemcpy(g_recData.data() + off, data, readable);
-        } else {
-            SafeMemcpy(g_recData.data() + off, data, bytes);
-        }
+        d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, g_smallRecordCopyAdmitted);
     }
     return off;
 }

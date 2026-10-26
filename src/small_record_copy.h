@@ -1,0 +1,97 @@
+#pragma once
+#include <windows.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+namespace d2vr_record_copy {
+constexpr size_t kSmallLimit = 192;
+using ReadMemory = BOOL (WINAPI*)(HANDLE, LPCVOID, LPVOID, SIZE_T, SIZE_T*);
+
+// Legacy recorder validation/copy, intentionally unchanged. Permissions are
+// queried afresh; neither this path nor the optional path caches source pages.
+inline size_t ClampReadableBytes(const void* p, size_t bytes) {
+    const uint8_t* b = (const uint8_t*)p;
+    size_t done = 0;
+    while (done < bytes) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (!VirtualQuery(b + done, &mbi, sizeof(mbi))) break;
+        if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) break;
+        const uint8_t* regionEnd = (const uint8_t*)mbi.BaseAddress + mbi.RegionSize;
+        size_t chunk = (size_t)(regionEnd - (b + done));
+        if (chunk == 0) break;
+        done += chunk;
+    }
+    return done;
+}
+inline void SafeMemcpy(void* dst, const void* src, size_t bytes) {
+    __try {
+        memcpy(dst, src, bytes);
+    } __except (1) {
+        memset(dst, 0, bytes);
+    }
+}
+inline void LegacyCopy(void* dst, const void* data, size_t bytes) {
+    const size_t readable = ClampReadableBytes(data, bytes);
+    if (readable < bytes) {
+        memset(dst, 0, bytes);
+        if (readable) SafeMemcpy(dst, data, readable);
+    } else {
+        SafeMemcpy(dst, data, bytes);
+    }
+}
+
+inline void Copy(void* dst, const void* data, size_t bytes, bool admitted,
+                 ReadMemory readMemory = &ReadProcessMemory) {
+    if (!bytes) return;
+    if (admitted && bytes <= kSmallLimit) {
+        SIZE_T copied = 0;
+        if (readMemory(GetCurrentProcess(), data, dst, bytes, &copied) && copied == bytes) return;
+        // RPM does not preserve the readable prefix on every failed/partial
+        // read. Discard any output before using the original prefix/zero policy.
+        memset(dst, 0, bytes);
+    }
+    LegacyCopy(dst, data, bytes);
+}
+
+// Probe only our allocation. A different OS policy, allocation failure or any
+// inconclusive result rejects the fast path for this process. Never in DllMain.
+inline bool GuardSemanticsSelfTest() {
+    SYSTEM_INFO info{};
+    GetSystemInfo(&info);
+    if (info.dwPageSize < 64) return false;
+    auto memory = static_cast<uint8_t*>(VirtualAlloc(nullptr, size_t(info.dwPageSize) * 2,
+        MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    if (!memory) return false;
+    auto guard = memory + info.dwPageSize;
+    bool passed = true;
+    uint8_t output[64]{};
+    for (unsigned trial = 0; trial < 2 && passed; ++trial) {
+        DWORD previous = 0;
+        MEMORY_BASIC_INFORMATION before{}, after{};
+        passed = VirtualProtect(guard, info.dwPageSize, PAGE_READWRITE | PAGE_GUARD, &previous) &&
+            VirtualQuery(guard, &before, sizeof(before)) == sizeof(before) &&
+            before.State == MEM_COMMIT && (before.Protect & PAGE_GUARD) != 0;
+        if (!passed) break;
+        SIZE_T copied = 0;
+        const bool success = ReadProcessMemory(GetCurrentProcess(),
+            trial ? guard - 16 : guard, output, sizeof(output), &copied) != FALSE;
+        passed = !success && copied == 0 &&
+            VirtualQuery(guard, &after, sizeof(after)) == sizeof(after) &&
+            after.State == MEM_COMMIT && after.Protect == before.Protect;
+    }
+    VirtualFree(memory, 0, MEM_RELEASE);
+    return passed;
+}
+
+class Admission {
+    bool tested_ = false, passed_ = false;
+public:
+    bool Admit(bool requested, bool (*probe)() = &GuardSemanticsSelfTest) {
+        if (!requested) return false; // default OFF: no RPM calls or probe allocation
+        if (!tested_) { tested_ = true; passed_ = probe(); }
+        return passed_;
+    }
+    bool Tested() const { return tested_; }
+};
+} // namespace d2vr_record_copy
