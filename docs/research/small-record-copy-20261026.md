@@ -63,3 +63,40 @@ Rollback: leave/remove `SmallRecordCopy=0` and restart, or use the saved baselin
 DLL. Any eventual authorized A/B must hold configuration and scene constant and
 measure the complete helper/FPS; this small-copy experiment does not address the
 separately measured 47.833 ms logging flush stall or shader first-use stalls.
+
+## MAIN integration receipt
+
+Original implementation d15f40e integrated as804d0e7 on
+codex/outdoor-frame-bottleneck; tests-only b35c4d6 integrated asaecf54a.
+The existing script now compiles extracted actual RecPush AND RecLockGuard.
+239 byte/range checks PASS, including all141 former helper checks plus98 real
+recorder-body checks for both flags: prior arena/append/offset/payload identity,
+1..1088-byte sizes, null source, zero, exact8MiB, >8MiB and SIZE_MAX sanity clamp,
+full/cross-page NOACCESS and guard fallback with protection retained. The source
+checks effective admission passed to Copy, requested/admitted/config defaultOFF,
+and guard-probe order before any device PatchVTable/InstallReplayHooks.
+
+Integrated production/diagnostic x86 builds PASS. Protected head117021,
+controller20032 and gesture227 checks PASS. Caps3705 checks still PASS after
+integration. Read-only independent review found no material blocker; existing
+source mutation races remain unchanged. This is OFFLINE VERIFIED, not an
+in-game or HMD-accepted performance correction.
+
+Frozen artifact source804d0e7: production DLL SHA-256
+9B37F6342E70C8199A722DD86C5AF2A2E5C74539E88FF1A99233980ED30E8BE2;
+diagnostic4F8A9A455F4413B9BB5ADEE6022D0CA89D90DB3228895D7F38D6A518A923BC2E.
+PDB matches each RSDS: GUID26b151b8-b2a9-4a6f-b1fc-8cc227629edc, ages168/169.
+Later integration changes only tests/evidence. Binary/map/PDB artifacts stay
+private. The package's FIRST proposed A/B is still AsyncLog0/1 ONLY: the same
+DLL in both arms, byte-identical prior protected INIs, SmallRecordCopy,
+SamplerCapsCache and LastConsumerReaderFence OFF. Win32 effective-INI enumeration
+confirms the sole difference is Render/AsyncLog; diagnostic INIs byte-identical.
+No deployment or Steam launch occurred. Preserve the returned Steam baseline.
+
+This targets RecPush->ClampReadableBytes->VirtualQuery, whose retained outdoor
+subtree is2.486ms INCLUSIVE. The eligible1..192-byte payload distribution and
+complete outdoor32/64-bit stack intersections are unavailable, so neither that
+number nor the microbenchmark's27% translates into a claimed FPS improvement.
+Do not add it to overlapping WOW64/query samples. The outdoor average20.429ms
+still exceeds11.11ms by9.318ms; a controlled game comparison is required before
+any measured budget reduction or FIXED/90Hz claim.
