@@ -75,3 +75,13 @@ Measure render-thread blocking, frame percentiles and stability on comparable
 unpaused gameplay before claiming improvement. Steam/PSVR2 testing is NOT RUN.
 Rollback: restore previous DLL/INI or revert this isolated commit; AsyncLog=0
 retains the synchronous path. No automatic deployment or merge was performed.
+
+
+## Completed outdoor A/B follow-up
+
+See [matched runtime decision and CPU continuation](async-log-ab-outdoor-20261026.md)
+and its derived CSVs. KEEP opt-in/defaultOFF; neither A nor B reproduced a
+blocked logger flush, so no causal FPS/stall-elimination claim. Both closed
+normally; original files restored. B42ordinarydrops/0reportedwriteerrors.
+The separate next implementation is actual guarded SmallRecordCopy, with public
+isolated A/B overlays; no further Steam launch is authorized by this receipt.
