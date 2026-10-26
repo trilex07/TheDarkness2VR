@@ -62,6 +62,21 @@ function Merge-D2vrLoss($Queried, $Reported) {
     if ($known.Count) { return ($known | Measure-Object -Maximum).Maximum }
     return $null
 }
+function Get-D2vrEtwLoss([AllowNull()][string]$Stats, [AllowNull()][string]$Warnings) {
+    # An empty failed report is UNKNOWN, never a regex exception or zero loss.
+    # Keep xperf's explicit lost-event warning even if stats could not be read.
+    $values=@()
+    foreach ($match in [regex]::Matches([string]$Stats,
+        '(?im)^\s*Total # Lost Events\s*[:=]\s*(\d+)')) {
+        $values += [long]$match.Groups[1].Value
+    }
+    foreach ($match in [regex]::Matches([string]$Warnings,
+        '(?im)^\s*([\d,]+) Events were lost in this trace\.')) {
+        $values += [long]($match.Groups[1].Value -replace ',','')
+    }
+    if ($values.Count) { return ($values | Measure-Object -Maximum).Maximum }
+    return $null
+}
 function Invoke-D2vrCue([int]$Count) {
     # Only the phase boundaries make sound, on this helper process. No focus,
     # game input, controller mapping or VR configuration is changed.
@@ -199,6 +214,9 @@ try {
     if (-not $OutdoorTransition) { $pmArgs += @('--process_id',"$($game[0].Id)") }
     $pm = Start-Process -FilePath $presentmon -ArgumentList $pmArgs -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    # Retain the owned process handle before it exits; a refreshed Process
+    # object can otherwise lose ExitCode on Windows PowerShell 5.1.
+    $null=$pm.Handle
     Start-Sleep -Seconds 2
     $pm.Refresh()
     if ($pm.HasExited) { throw "PresentMon stopped before capture: $($pm.ExitCode)" }
@@ -328,7 +346,8 @@ try {
         $manifest.status='recorded_pending_offline_summary'
         $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
         foreach ($analysis in @(
-            @{Name='etw-stats'; Args=@('-a','tracestats')},
+            # -tle is for reading loss counters, NOT admitting a lossy trace.
+            @{Name='etw-stats'; Args=@('-tle','-a','tracestats')},
             @{Name='threads'; Args=@('-a','cswitch','-process','-thread')},
             @{Name='cpu-samples'; Args=@('-a','profile','-detail')}
         )) {
@@ -344,14 +363,11 @@ try {
             } catch { $manifest.errors += "xperf $($analysis.Name): $($_.Exception.Message)" }
         }
         $stats = Join-Path $out 'etw-stats.txt'
-        if (Test-Path -LiteralPath $stats) {
-            $text = Get-Content -LiteralPath $stats -Raw
-            $loss = [regex]::Matches($text,'(?im)^\s*Total # Lost Events\s*[:=]\s*(\d+)')
-            if ($loss.Count) {
-                $manifest.etwLostEvents = @($loss | ForEach-Object { [int]$_.Groups[1].Value } |
-                    Measure-Object -Sum)[0].Sum
-            }
-        }
+        [string]$statsText=''; [string]$statsWarnings=''
+        if (Test-Path -LiteralPath $stats) { $statsText=[string](Get-Content -LiteralPath $stats -Raw) }
+        $warnings = Join-Path $out 'etw-stats-command.stderr.txt'
+        if (Test-Path -LiteralPath $warnings) { $statsWarnings=[string](Get-Content -LiteralPath $warnings -Raw) }
+        $manifest.etwLostEvents=Get-D2vrEtwLoss $statsText $statsWarnings
     }
     $pmText = ''
     foreach ($path in @($stdout,$stderr)) {

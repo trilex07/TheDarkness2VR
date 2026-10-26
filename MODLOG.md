@@ -285,3 +285,17 @@ code/heap mutation or Steam access. Performance/HMD acceptance still NOT RUN.
 - Preserved installed DLL/INIs, image guard, stereo, tracking and input; no merge.
   Next live A/B needs user authorization. Details in
   docs/research/outdoor-cpu-packets-20261026.md.
+
+### 2026-10-26 — Adjacent batching A: preserve partial evidence, stop B, rollback
+- Authorized exact f86d0dc A completed10s stationary/20s outdoor combat; user
+  saw VR and closed normally after end cues. Real Present13000 successful
+  forwards/returns, no recursion/image-write/fault receipt or native AV.
+- A combat18.53983ms mean,p9522.22909,p9924.56798; GPU Busy3.03491ms. Actual
+  recorded VS/PS setter counts equal original calls; no failed upload/exception.
+  B was NOT started: ETW lost3828807 events and collector postprocessing hit a
+  null regex input. Zero-loss PM timings survive; full CPU A/B is unavailable.
+- Existing collector fixed to retain loss/UNKNOWN and process handle;23 actual
+  helper checks,4 PM regressions,owned exit0/37 checks PASS. No renderer/DLL or
+  effective gameplay change. Batch/Window remain default OFF; no FPS saving claim.
+- All5 original DLL/INIs restored with SHA matches; EXE unchanged. Raw evidence
+  private; detailed bounded verdict in existing outdoor-cpu-packets research doc.

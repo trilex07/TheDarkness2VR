@@ -221,3 +221,77 @@ state. If ineffective, keep Batch=0; no automatic retries or promotion of the
 window variant. Native FrameCapMode/MaxFrameRate observation remains read-only.
 The window candidate remains IMPLEMENTED/OFFLINE VERIFIED, not IN-GAME VERIFIED
 or HMD ACCEPTED. No merge, deployment or automatic game launch.
+
+## Authorized adjacent A/B: A retained, B not started (2026-10-26 21:25 UTC)
+
+Exact f86d0dc diagnostic DLL E6B77B83977E8B93B4DD36177A4C1085B7CA86D2F70EBD9A93234727D98D7C6D
+was deployed after a fresh original EXE audit, backup of all five DLL/INI files,
+and UAC before Steam. All eleven frozen package hashes and effective A/B keys
+were checked. A had Batch=0, Window=0, SmallRecordCopy=0, AsyncLog=0; no other
+performance experiment was enabled. No native EXE/FOV/resolution patch was
+admitted. User confirmed visible VR outdoors and closed the game manually after
+the five end cues. Do not report that normal exit as a crash.
+
+Both scheduled phases completed. Zero-loss PresentMon retained 540 wholly
+contained stationary intervals and1080 combat intervals. Stationary mean/p50/
+p95/p99/worst were18.54664/19.04000/22.45642/23.56075/28.64580ms; combat values
+18.53983/18.71010/22.22909/24.56798/106.31170ms. Combat frames above11.11/22.22/
+33.33ms were1063/55/4. Combat GPU Busy mean was3.03491ms; Present interval rate
+53.905/s is NOT proof of unique headset display frames or90Hz. PresentMon's
+18.02817ms CPUBusy is not sampled render-thread execution or a wait-stack total.
+
+Actual original setter-entry receipts wholly inside each phase: stationary
+480 replay streams, VS1000017/PS744142 logical records and identical actual
+calls; combat960 streams, VS1961620/PS1379146 records and identical actual calls.
+All receipt HRESULT-failure/exception counters were zero. Last periodic native
+Present witness had13000 entries/forwards/returns/D3D_OK, zero recursion/errors/
+statuses/fault, and EXE_WRITES=FORBIDDEN. This is a periodic receipt, not the exact
+final Present count. No C0000005 was logged. Three first-chance C++ exceptions
+were recorded; this does not establish unhandled failure or long-term stability.
+User confirmed seeing VR; detailed stereo/lighting/controller A/B acceptance
+was not completed. Read-only native cap observation: mode0,float60, two reads
+identical. Effective cap remains UNKNOWN; runtime periods vary in existing
+receipts, so neither an active60fps cap nor forced45Hz is established.
+
+NO_GO for the requested complete CPU A/B: xperf's independent offline trace
+statistics report3828807 lost ETW events (lost buffers0). PresentMon session
+reported zero lost events and graceful session-stop exit0, but its process
+ExitCode was UNKNOWN. A collector bug then called Regex.Matches on a null empty
+xperf report, leaving the on-disk manifest pending. The raw trace/manifest have
+been preserved; the separate offline verdict records these failures rather
+than relabelling the capture valid. No B start or automatic retry occurred.
+
+Existing xperf extraction was reused with -tle and the exact age182 frozen PDB,
+local symbols only.23 raw-QPC/relative-time pairs give the same origin tick
+494473745708. Retained combat stacks again include RecPush (1905 nominal sampled
+ms) and VirtualQuery (1724), which OVERLAP. Because events are missing these are
+incomplete sampled weights, not complete exclusive time or per-frame RUN totals.
+No full RUN/BLOCKED/READY comparison, wake-chain verdict or causal batching
+saving is claimed. The already complete older outdoor ETL remains the source
+for the established1.830ms VirtualQuery /1.992ms RecPush overlapping exposure.
+The completed WOW64 producer investigation was not repeated.
+
+Useful private evidence: perf/constant-batch-ab-20261026T211559Z/A/
+20261026T211925Z-b3b028f7, analysis-derived/offline-verdict.json and exact symbol
+packet under dist/protected-constant-counts-20261026T210807Z/diagnostic.
+ETL SHA256ef54212a8864a578df1f42ec0d5f5c3cdf77255dce64dd8162772b75f61bdfaa;
+CSVf160b6b8c9bba9f3da341176ee0b960c65ce392e8338af2f5b9018c9c085e44a;
+log243cecdc621f744b8d8e788b6e30712eb9bb3ffdd75abfb2db1eae039ab3bbfd.
+Private logs, trace, game code and binaries are not committed.
+
+The existing collector now preserves null/empty stats as UNKNOWN, reads xperf
+loss counters with -tle solely for reporting (nonzero loss still rejects the
+capture), retains explicit warning loss without double-counting, and retains
+its owned PresentMon process handle before exit.23 real helper checks and four
+PresentMon analyzer tests PASS. Owned offline process checks preserved actual
+exit codes0 and37. The recorder regression has not been live-verified. Recording
+buffer/disk-loss cause remains unresolved; no blind buffer or graphics change
+was made. Renderer code/DLL stayed identical during and after A.
+
+Rollback: original three Steam DLL/INI files and two local INIs restored, all
+five SHA256 matches; original EXE SHA D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1
+unchanged. Steam was not launched again. Batch stays OFF (benefit UNKNOWN), and
+the separate implemented/offline-verified float-window candidate stays OFF.
+A new complete comparison requires separately authorized Steam starts and a
+loss-free CPU recording; this result does not establish a performance fix.
+The current A mean is7.42872ms above the11.11111ms target under capture load.

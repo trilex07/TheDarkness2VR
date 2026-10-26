@@ -27,6 +27,13 @@ Check ((Merge-D2vrLoss 7 0) -eq 7) 'stdout zero must not erase queried event los
 Check ((Merge-D2vrLoss 0 9) -eq 9) 'Reported loss retained'
 Check ((Merge-D2vrLoss $null 0) -eq 0) 'Known zero distinguished from UNKNOWN'
 Check ($null -eq (Merge-D2vrLoss $null $null)) 'Missing counters remain UNKNOWN'
+Check ($null -eq (Get-D2vrEtwLoss $null $null)) 'Missing ETW report stays UNKNOWN without throwing'
+Check ($null -eq (Get-D2vrEtwLoss '' '')) 'Empty xperf output stays UNKNOWN'
+Check ((Get-D2vrEtwLoss 'Total # Lost Events  : 0' '') -eq 0) 'Explicit loss-free ETW counter admitted'
+Check ((Get-D2vrEtwLoss '' '        3828807 Events were lost in this trace.  Data may be unreliable.') -eq 3828807) 'Real A stderr loss survives empty report'
+Check ((Get-D2vrEtwLoss 'Total # Lost Events : 0' '3,828,807 Events were lost in this trace.') -eq 3828807) 'Warning cannot be erased by zero stats'
+Check ((Get-D2vrEtwLoss 'Total # Lost Events : 9' '7 Events were lost in this trace.') -eq 9) 'Highest loss preserved without double-counting'
+Check ((Get-D2vrEtwLoss "Total # Lost Events : 8`nTotal # Lost Events : 8" '') -eq 8) 'Duplicated report counters not summed'
 $script:wprArgs=@();$script:wprCode=0
 function Mock-Wpr { $script:wprArgs=@($args); $global:LASTEXITCODE=$script:wprCode }
 $m=Write-D2vrPhaseMarker Mock-Wpr own-session 'D2VR exit building'
