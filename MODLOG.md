@@ -217,3 +217,23 @@ PASS; synthetic pairs20,480,000 ->640,000. No measured game-time claim.
 Protected profile2/2 and existing1,206-ray projection tests PASS. No Steam,
 deployment, native-image write, FOV/resolution/sync change. MAIN reviews/integrates.
 Receipt: docs/research/protected-replay-resource-refs-20261026.md.
+
+### 2026-10-26: MAIN protected VR integration continues
+
+From accepted 85eea69, integrated protected external XInput (0dafa48), bounded
+source sizing (c2e2304), frame-local reference retention (e657960), and corrected
+head/eye transform plus inverse projection (77f6d65/33eb527). f8d00ab isolates
+experiments in composed profiles. All new features remain OFF by default.
+Both DLL builds and integrated ABI/geometry/lifetime/profile checks pass offline.
+First input-only package is frozen; no Steam or installation changes.
+Full native tracking/visibility, human GPU-bone mapping, native pickup ownership
+and shader-loading lifetime retain specific blockers, not success claims.
+Receipt: docs/research/protected-vr-integration-20261026.md.
+
+Protected stock gestures integrated from SIDE 24a3482 as cca749a: objective, hip
+reload and right planar stroke; no native targeting/throw bridge. User requested
+head plus gestures with input in one candidate. Composed profile now explicitly
+owns reconstruction and bypasses reading old Shift+digit choice via new default-ON
+RestoreSavedLighting option, without changing the saved lighting file.
+Combined profile still keeps source-quality and performance experiments OFF.
+Native visibility/hand mapping blockers remain; no physical success claimed.

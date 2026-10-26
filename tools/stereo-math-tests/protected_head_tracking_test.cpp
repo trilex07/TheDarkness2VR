@@ -64,6 +64,11 @@ int main() {
     Check(!d2vr_math::RelativeTrackingView(bad,p,rq,rp,1,delta),"invalid orientation refused");
     Check(d2vr_math::RelativeTrackingView(rq,rp,rq,rp,1,delta),"recenter identity");
     Same(delta,identity,"recenter no double pose");
+    for(int stored=-1;stored<=9;++stored) {
+        Check(EffectiveSavedLightingKey(stored,true)==stored,"default preserves every stored selection");
+        Check(EffectiveSavedLightingKey(stored,false)==-1,"explicit profile uses configured reconstruction");
+    }
+    Check(EffectiveSavedLightingKey(7,false)==-1,"old reversed-eye preset cannot block explicit tracked profile");
     Check(ProtectedHeadConfigurationAllowed(),"valid protected configuration");
     for(int* setting:{&g_stereoShiftMode,&g_projectionFix,&g_stereoLayerPose,&g_headLookMode}) {
         const int before=*setting;*setting=before==0 ? 1:0;

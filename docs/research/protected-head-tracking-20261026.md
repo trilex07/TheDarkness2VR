@@ -35,3 +35,9 @@ diagnostic x86 builds PASS. Native visibility/Steam/PSVR2: NOT RUN.
 Runtime diagnostic overrides are revalidated before generating each head pose.
 Incompatible lighting/reconstruction or duplicate head-look settings close world
 layer admission instead of silently producing an inconsistent tracked image.
+
+The explicit head profile sets Render.RestoreSavedLighting=0. Default behavior
+still restores saved lighting, but an old inverse-eye experiment is incompatible
+with matching tracked reconstruction. This selects configured behavior without
+writing the preserved last-lighting.ini. The actual policy regression covers all
+saved keys and key7 specifically; per-frame admission remains strict.

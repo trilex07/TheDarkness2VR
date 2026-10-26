@@ -437,6 +437,12 @@ static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
 static bool g_gpuSplitTiming = false;
+// A diagnostic lighting preset can invert only the deferred eye offset. A
+// tracked profile must choose the matching configured reconstruction explicitly;
+// never alter or delete the user's persisted choice to make that profile load.
+static int EffectiveSavedLightingKey(int storedKey, bool restore) {
+    return restore ? storedKey : -1;
+}
 static bool ProtectedHeadConfigurationAllowed() {
     return g_headGeometry && g_nativeStereoHeadGeometry && g_stereoShiftMode==0 &&
         g_projectionFix==3 && g_stereoLayerPose==0 && g_headLookMode==0 &&
@@ -681,7 +687,11 @@ void LoadConfig() {
         if (v >= 50.0f && v <= 5000.0f) g_headLookSensitivityPitch = v;
     }
 
-    const int savedLighting = GetPrivateProfileIntA("Lighting", "LastKey", -1, g_lightingChoicePath);
+    const bool restoreSavedLighting=GetPrivateProfileIntA("Render", "RestoreSavedLighting", 1, chosenIni)!=0;
+    const int savedLighting=EffectiveSavedLightingKey(
+        GetPrivateProfileIntA("Lighting", "LastKey", -1, g_lightingChoicePath),restoreSavedLighting);
+    if(!restoreSavedLighting)
+        Log("[LightingPreset] explicit configured reconstruction; persisted lighting selection retained on disk");
     if (savedLighting >= 0 && savedLighting <= 9) {
         g_lightingPreset = savedLighting == 0 ? 9 : savedLighting - 1;
         g_projectionFix = 3;

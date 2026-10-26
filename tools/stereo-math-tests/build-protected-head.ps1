@@ -6,7 +6,7 @@ $end = $source.IndexOf('// Combined per-eye PS constant compensation:', $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'Missing actual refresh function' }
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_tracking_inverse.inl'), $source.Substring($start,$end-$start))
 $gates = Get-Content (Join-Path $here '../../src/d3d9.cpp') -Raw
-$gateStart = $gates.IndexOf('static bool ProtectedHeadConfigurationAllowed()')
+$gateStart = $gates.IndexOf('static int EffectiveSavedLightingKey(')
 $gateEnd = $gates.IndexOf('void LoadConfig()', $gateStart)
 if($gateStart -lt 0 -or $gateEnd -lt 0) { throw 'Missing protected head admission' }
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_tracking_gate.inl'),$gates.Substring($gateStart,$gateEnd-$gateStart))
