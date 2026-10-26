@@ -25,6 +25,7 @@
 #include "frame_resource_refs.h"
 #include "stereo_geometry.h"
 #include "material_sampling.h"
+#include "replay_constant_batch.h"
 
 namespace d2vr_replay {
 
@@ -409,6 +410,7 @@ struct DeviceSnapshot {
     IDirect3DSurface9* targets[4] = {};
     IDirect3DSurface9* depth = nullptr;
     DWORD targetCount = 0;
+    UINT vertexFloatLimit = 0, pixelFloatLimit = 0;
     ~DeviceSnapshot() { Release(); }
     void Release() {
         if (state) { state->Release(); state = nullptr; }
@@ -420,6 +422,8 @@ struct DeviceSnapshot {
         D3DCAPS9 caps{};
         if (FAILED(dev->GetDeviceCaps(&caps))) return false;
         targetCount = std::min<DWORD>(4, caps.NumSimultaneousRTs);
+        vertexFloatLimit = caps.MaxVertexShaderConst;
+        pixelFloatLimit = D3DSHADER_VERSION_MAJOR(caps.PixelShaderVersion)>=3 ? 224 : 32;
         if (FAILED(dev->CreateStateBlock(D3DSBT_ALL, &state))) return false;
         for (DWORD i = 0; i < targetCount; ++i) dev->GetRenderTarget(i, &targets[i]);
         dev->GetDepthStencilSurface(&depth);
@@ -1568,6 +1572,20 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         // capture does not turn magenta, the replay never reaches the captured surface.
         g_orig.Clear(dev, 0, nullptr, D3DCLEAR_TARGET, 0x00FF00FF, 1.0f, 0);
     }
+    // No driver/state reuse across frames. Capture retains exact original
+    // upload boundaries so its per-record projection witnesses stay authoritative.
+    bool batchEnabled = g_replayConstantBatch;
+#ifdef D2VR_MATCHED_CAPTURE
+    batchEnabled = batchEnabled && !MatchedCaptureRecordingActive();
+#endif
+    d2vr_replay_batch::Constants constants(batchEnabled, g_frameStart.vertexFloatLimit,
+                                           g_frameStart.pixelFloatLimit);
+    auto sendConstants = [dev](d2vr_replay_batch::Stage stage, unsigned first,
+                              const float* values, unsigned count) -> long {
+        return stage == d2vr_replay_batch::Stage::Vertex ?
+            g_orig.SetVertexShaderConstantF(dev,first,values,count) :
+            g_orig.SetPixelShaderConstantF(dev,first,values,count);
+    };
     for (size_t i = 0; i < g_rec.size(); ++i) {
         const Rec& r = g_rec[i];
         if (dump) {
@@ -1576,6 +1594,10 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         }
         HOOK_MARK(10000 + (LONG)r.op);
         __try {
+        if (batchEnabled) constants.Barrier(
+            r.op==OP_SetVSConstF ? d2vr_replay_batch::Stage::Vertex :
+            r.op==OP_SetPSConstF ? d2vr_replay_batch::Stage::Pixel :
+                                  d2vr_replay_batch::Stage::None, sendConstants);
         switch ((RecOp)r.op) {
         case OP_SetRenderTarget:
             if(r.a[0]==0) InvalidateShadowAtlasPass();
@@ -1686,7 +1708,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (eye >= 0 && r.a[1] <= 68 && !lightVs && !IsShadowAtlasPass(dev)) {
                 if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, sp)) src = tmp;
             }
-            g_orig.SetVertexShaderConstantF(dev, r.a[0], src, r.a[1]);
+            if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Vertex,
+                r.a[0],src,r.a[1],sendConstants);
+            else g_orig.SetVertexShaderConstantF(dev, r.a[0], src, r.a[1]);
             break;
         }
         case OP_SetVSConstI:
@@ -1735,12 +1759,16 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 }
             }
             const float* values2 = copied ? adjusted : values;
+            if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Pixel,
+                r.a[0],values2,r.a[1],sendConstants);
+            else {
 #ifdef D2VR_MATCHED_CAPTURE
-            const HRESULT uploaded=g_orig.SetPixelShaderConstantF(dev,r.a[0],values2,r.a[1]);
-            MatchedProjectionObserved(values,values2,r.a[0],r.a[1],g_activePsInverse,uploaded);
+                const HRESULT uploaded=g_orig.SetPixelShaderConstantF(dev,r.a[0],values2,r.a[1]);
+                MatchedProjectionObserved(values,values2,r.a[0],r.a[1],g_activePsInverse,uploaded);
 #else
-            g_orig.SetPixelShaderConstantF(dev, r.a[0], values2, r.a[1]);
+                g_orig.SetPixelShaderConstantF(dev, r.a[0], values2, r.a[1]);
 #endif
+            }
             break;
         }
         case OP_SetPSConstI:
@@ -1781,7 +1809,19 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         default:
             break;
         }
+        // Finish the packet at its LAST original constant command, within the
+        // existing exception boundary. Never defer a driver fault onto the next
+        // draw/state command or flush outside the protected replay loop.
+        if (batchEnabled) {
+            const Rec* next = i+1<g_rec.size() ? &g_rec[i+1] : nullptr;
+            const auto stage = next && next->op==OP_SetVSConstF ? d2vr_replay_batch::Stage::Vertex :
+                next && next->op==OP_SetPSConstF ? d2vr_replay_batch::Stage::Pixel :
+                                                d2vr_replay_batch::Stage::None;
+            if (!next || !constants.CanAppend(stage,next->a[0],next->a[1]))
+                constants.Flush(sendConstants);
+        }
         } __except (1) {
+            constants.Abort(); batchEnabled=false;
             // The NVIDIA/D3D9 runtime can raise on stale resource pointers recorded
             // earlier in the frame (temp textures). Skip the call - never kill the game.
             static int s_replayErrs = 0;

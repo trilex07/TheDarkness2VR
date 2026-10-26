@@ -133,6 +133,7 @@ bool g_lastWorldHeadContextValid = false;
 bool g_recenterHeadLock = false;
 int g_textureAnisotropy = 16;
 bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B, default legacy query path
+static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 
 // True stereo (SubmitMode 4): frame-record/replay dual-eye rendering
 // StereoMode: 0 = off (mono live pass), 1 = dual-eye (live = eye0 + replay = eye1),
@@ -600,6 +601,8 @@ void LoadConfig() {
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
     g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
+    g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
+    if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
@@ -1444,6 +1447,7 @@ extern volatile LONG g_frameId;
 static void MatchedCaptureDraw(IDirect3DDevice9*,int,bool);
 static void MatchedCaptureBlit(int,const StereoCBData&);
 static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT);
+static bool MatchedCaptureRecordingActive();
 static void MatchedCaptureInput(IDirect3DSurface9*,bool);
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
@@ -3023,6 +3027,7 @@ static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
 static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9*,IDirect3DIndexBuffer9*,
     UINT,const D3DVIEWPORT9&,unsigned,const float*,int,unsigned);
 #include "matched_capture.inl"
+static bool MatchedCaptureRecordingActive() { return matched_capture::active; }
 static uint64_t MatchedSkinHash(const float* data,UINT vectorCount) {
     const auto* bytes=(const unsigned char*)data;
     uint64_t hash=14695981039346656037ull;

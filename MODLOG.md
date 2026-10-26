@@ -249,3 +249,12 @@ EXE unchanged. Actual source1920x1071;90FPS and clarity NOT MET.
 Next work is narrow COM-retention A/B with missing protected CPU-stage reporting
 corrected, not another general profiler. Receipt:
 docs/research/protected-vr-combined-runtime-20261026.md.
+
+### 2026-10-26: replay-local constant packets (offline, default OFF)
+
+Resolved 1722/1732 B-combat ntdll memset direct callers to WOW64 service
+marshalling; six UNKNOWN, four WOW64 callbacks. Native hot PCs mapped read-only
+on D46B identity. Implemented adjacent same-stage float4 replay batching after
+original per-upload stereo transformation, with caps/barrier/failure/capture
+guards. No EXE writes or Steam changes. Actual game performance NOT VERIFIED.
+Evidence/tests: docs/research/outdoor-cpu-packets-20261026.md.

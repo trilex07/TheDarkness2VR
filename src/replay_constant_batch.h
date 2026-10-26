@@ -1,0 +1,53 @@
+#pragma once
+#include <cstdint>
+#include <cstring>
+
+namespace d2vr_replay_batch {
+enum class Stage : uint8_t { None, Vertex, Pixel };
+
+// Replay-local packet assembly, NOT a persistent device-state cache. Only
+// ascending, exactly adjacent float4 ranges of the SAME stage can share a call.
+// Every other command is a barrier, including queries/state-block restores.
+// Transform each original upload BEFORE appending: widening a packet before
+// ApplyShiftToUpload would change partial-matrix and upload-count semantics.
+class Constants {
+    float values_[256 * 4]; // deliberately uninitialized; only written spans submit
+    Stage stage_ = Stage::None;
+    unsigned first_ = 0, end_ = 0, vsLimit_ = 0, psLimit_ = 0;
+    bool enabled_ = false;
+public:
+    Constants(bool enabled, unsigned vsLimit, unsigned psLimit)
+        : vsLimit_(vsLimit > 256 ? 256 : vsLimit),
+          psLimit_(psLimit > 224 ? 224 : psLimit), enabled_(enabled) {}
+    bool CanAppend(Stage stage, unsigned first, unsigned count) const {
+        const unsigned limit = stage == Stage::Vertex ? vsLimit_ : psLimit_;
+        return enabled_ && stage_ != Stage::None && stage == stage_ &&
+               first == end_ && count && first < limit && count <= limit - first;
+    }
+    void Abort() { stage_ = Stage::None; enabled_ = false; }
+    template<class Send> void Flush(Send send) {
+        if (stage_ == Stage::None) return;
+        const auto stage = stage_; const auto first = first_, count = end_ - first_;
+        stage_ = Stage::None; // consume BEFORE entering the driver; never retry a call
+        if (send(stage, first, values_ + first * 4, count) < 0) enabled_ = false;
+    }
+    template<class Send> void Barrier(Stage next, Send send) {
+        if (next == Stage::None || next != stage_) Flush(send);
+    }
+    template<class Send> void Upload(Stage stage, unsigned first, const float* src,
+                                     unsigned count, Send send) {
+        const unsigned limit = stage == Stage::Vertex ? vsLimit_ : psLimit_;
+        if (!enabled_ || stage == Stage::None || !src || !count ||
+            first >= limit || count > limit - first) {
+            Flush(send);
+            send(stage, first, src, count); // invalid/unknown calls preserve original args
+            return;
+        }
+        if (stage != stage_ || first != end_) Flush(send);
+        if (!enabled_) { send(stage, first, src, count); return; }
+        if (stage_ == Stage::None) { stage_ = stage; first_ = end_ = first; }
+        memcpy(values_ + first * 4, src, size_t(count) * 4 * sizeof(float));
+        end_ += count;
+    }
+};
+} // namespace d2vr_replay_batch
