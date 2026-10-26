@@ -1,0 +1,350 @@
+{
+  "image": {
+    "sha256": "d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1",
+    "call_edges": [
+      {
+        "site": "0x6f02c3",
+        "target": "0xac36f0"
+      },
+      {
+        "site": "0x6f0388",
+        "target": "0xbb79a0"
+      },
+      {
+        "site": "0xbb7ba7",
+        "target": "0xc5d850"
+      },
+      {
+        "site": "0x6f04b0",
+        "target": "0x750cf0"
+      },
+      {
+        "site": "0x6f04d0",
+        "target": "0x714b50"
+      },
+      {
+        "site": "0x6f04e3",
+        "target": "0x609030"
+      }
+    ],
+    "scheduler_vtable": "0x00ff8ce0",
+    "scheduler_slot_bytes": "0x68",
+    "controls": [
+      {
+        "name": "SpeculativeTextureStreaming",
+        "storage": "0x110e2b4",
+        "static_default": 1,
+        "effective_runtime_value": "UNKNOWN"
+      },
+      {
+        "name": "LimitTextureStreaming",
+        "storage": "0x110e2e0",
+        "static_default": 0,
+        "effective_runtime_value": "UNKNOWN"
+      },
+      {
+        "name": "EnableTextureStreaming",
+        "storage": "0x110e3f0",
+        "static_default": 1,
+        "effective_runtime_value": "UNKNOWN"
+      }
+    ],
+    "verified_demand_cycle_sites": [
+      "0xbb7ae5",
+      "0xc5da96",
+      "0x60905f",
+      "0x609062",
+      "0x609065",
+      "0x609096",
+      "0x6090a2"
+    ]
+  },
+  "export_sha256": {
+    "entry-contracts.txt": "417d737b374096ea28f3f71088581879a6856877074485d7da3de1ab1291d231",
+    "parent-contracts.txt": "77b4cb5df69daa14ca067dc42e17f6288db731ff7d23ba43e78f014cc716007c",
+    "scheduler-config.txt": "0f702893c9eaf3d29ad773f41036cdb0f969ef4af685d67498c73cbbfd92a8b2"
+  },
+  "status": "STATIC_EVIDENCE_ONLY_NO_RUNTIME_OPTIMIZATION",
+  "provenance": {
+    "indoor_outdoor": "protected-outdoor-retry-20261026T162352Z/20261026T162734Z-f0a7a06e; PID42740 render42504; source2e70cc4; ETL lost1026324 events overall; known loss outside indoor/outdoor is not losslessness proof",
+    "combat": "cpu-candidate-log-ab-20261026T183121Z/B/20261026T184245Z-9997b65a; PID43664 render28400; source804d0e7; reported zero ETW loss; raw manifest PM process exit UNKNOWN"
+  },
+  "phases": {
+    "indoor": {
+      "source_sha256": "095b45e3802646fb01f7f549339a46959e2ab643c8980da4160dc93caedda581",
+      "thread": 42504,
+      "phase": "indoor",
+      "raw_phase_present_denominator": 708,
+      "native_leaf_samples": 1999,
+      "native_leaf_estimated_ms_per_present": 2.823446327683616,
+      "cycle_leaf_samples": 294,
+      "cycle_leaf_estimated_ms_per_present": 0.4152542372881356,
+      "unclassified_native_leaf_samples": 1633,
+      "functions": [
+        {
+          "entry": "00681e60",
+          "role_inferred_from_dataflow": "cycle source enumeration",
+          "samples": 0,
+          "estimated_ms_per_present": 0.0
+        },
+        {
+          "entry": "006f0190",
+          "role_inferred_from_dataflow": "deadline-driven cycle state machine",
+          "samples": 20,
+          "estimated_ms_per_present": 0.02824858757062147
+        },
+        {
+          "entry": "00ac36f0",
+          "role_inferred_from_dataflow": "dependency reference collection",
+          "samples": 93,
+          "estimated_ms_per_present": 0.13135593220338984
+        },
+        {
+          "entry": "00bb79a0",
+          "role_inferred_from_dataflow": "resource demand accumulation",
+          "samples": 58,
+          "estimated_ms_per_present": 0.08192090395480225
+        },
+        {
+          "entry": "00c5d850",
+          "role_inferred_from_dataflow": "bounds-dependent demand accumulation",
+          "samples": 108,
+          "estimated_ms_per_present": 0.15254237288135594
+        },
+        {
+          "entry": "00750cf0",
+          "role_inferred_from_dataflow": "demand-list sort",
+          "samples": 0,
+          "estimated_ms_per_present": 0.0
+        },
+        {
+          "entry": "00714b50",
+          "role_inferred_from_dataflow": "level selection and budget enforcement",
+          "samples": 15,
+          "estimated_ms_per_present": 0.0211864406779661
+        },
+        {
+          "entry": "00609030",
+          "role_inferred_from_dataflow": "demand reset and change queue",
+          "samples": 0,
+          "estimated_ms_per_present": 0.0
+        },
+        {
+          "entry": "00bf27a0",
+          "role_inferred_from_dataflow": "texture and sampler preparation",
+          "samples": 29,
+          "estimated_ms_per_present": 0.04096045197740113
+        },
+        {
+          "entry": "009f2030",
+          "role_inferred_from_dataflow": "intrusive child dispatch",
+          "samples": 38,
+          "estimated_ms_per_present": 0.05367231638418079
+        },
+        {
+          "entry": "006ee720",
+          "role_inferred_from_dataflow": "dynamic buffer lock",
+          "samples": 1,
+          "estimated_ms_per_present": 0.0014124293785310734
+        },
+        {
+          "entry": "0071f690",
+          "role_inferred_from_dataflow": "dirty semantic dispatch",
+          "samples": 4,
+          "estimated_ms_per_present": 0.005649717514124294
+        }
+      ],
+      "limits": [
+        "Nominal 1 ms sampled weights, not call counts or precise CPU durations",
+        "Leaf-only selected bodies; indirect descendants are not attributed",
+        "Input extraction completion does not establish loss-free ETW",
+        "Denominator supplied from the source phase receipt, not inferred",
+        "No runtime object identity, mutation epochs or safe replacement proven"
+      ]
+    },
+    "outdoor": {
+      "source_sha256": "095b45e3802646fb01f7f549339a46959e2ab643c8980da4160dc93caedda581",
+      "thread": 42504,
+      "phase": "outdoor",
+      "raw_phase_present_denominator": 490,
+      "native_leaf_samples": 1898,
+      "native_leaf_estimated_ms_per_present": 3.873469387755102,
+      "cycle_leaf_samples": 230,
+      "cycle_leaf_estimated_ms_per_present": 0.46938775510204084,
+      "unclassified_native_leaf_samples": 1594,
+      "functions": [
+        {
+          "entry": "00681e60",
+          "role_inferred_from_dataflow": "cycle source enumeration",
+          "samples": 0,
+          "estimated_ms_per_present": 0.0
+        },
+        {
+          "entry": "006f0190",
+          "role_inferred_from_dataflow": "deadline-driven cycle state machine",
+          "samples": 29,
+          "estimated_ms_per_present": 0.05918367346938776
+        },
+        {
+          "entry": "00ac36f0",
+          "role_inferred_from_dataflow": "dependency reference collection",
+          "samples": 70,
+          "estimated_ms_per_present": 0.14285714285714285
+        },
+        {
+          "entry": "00bb79a0",
+          "role_inferred_from_dataflow": "resource demand accumulation",
+          "samples": 49,
+          "estimated_ms_per_present": 0.1
+        },
+        {
+          "entry": "00c5d850",
+          "role_inferred_from_dataflow": "bounds-dependent demand accumulation",
+          "samples": 71,
+          "estimated_ms_per_present": 0.14489795918367346
+        },
+        {
+          "entry": "00750cf0",
+          "role_inferred_from_dataflow": "demand-list sort",
+          "samples": 0,
+          "estimated_ms_per_present": 0.0
+        },
+        {
+          "entry": "00714b50",
+          "role_inferred_from_dataflow": "level selection and budget enforcement",
+          "samples": 9,
+          "estimated_ms_per_present": 0.018367346938775512
+        },
+        {
+          "entry": "00609030",
+          "role_inferred_from_dataflow": "demand reset and change queue",
+          "samples": 2,
+          "estimated_ms_per_present": 0.004081632653061225
+        },
+        {
+          "entry": "00bf27a0",
+          "role_inferred_from_dataflow": "texture and sampler preparation",
+          "samples": 41,
+          "estimated_ms_per_present": 0.0836734693877551
+        },
+        {
+          "entry": "009f2030",
+          "role_inferred_from_dataflow": "intrusive child dispatch",
+          "samples": 30,
+          "estimated_ms_per_present": 0.061224489795918366
+        },
+        {
+          "entry": "006ee720",
+          "role_inferred_from_dataflow": "dynamic buffer lock",
+          "samples": 1,
+          "estimated_ms_per_present": 0.0020408163265306124
+        },
+        {
+          "entry": "0071f690",
+          "role_inferred_from_dataflow": "dirty semantic dispatch",
+          "samples": 2,
+          "estimated_ms_per_present": 0.004081632653061225
+        }
+      ],
+      "limits": [
+        "Nominal 1 ms sampled weights, not call counts or precise CPU durations",
+        "Leaf-only selected bodies; indirect descendants are not attributed",
+        "Input extraction completion does not establish loss-free ETW",
+        "Denominator supplied from the source phase receipt, not inferred",
+        "No runtime object identity, mutation epochs or safe replacement proven"
+      ]
+    },
+    "combat": {
+      "source_sha256": "caaab1120f3d8f6f2fe14d31b41753a6d85d366dd4acc28cd3badfe485543fb6",
+      "thread": 28400,
+      "phase": "combat",
+      "raw_phase_present_denominator": 1141,
+      "native_leaf_samples": 4209,
+      "native_leaf_estimated_ms_per_present": 3.688869412795793,
+      "cycle_leaf_samples": 553,
+      "cycle_leaf_estimated_ms_per_present": 0.48466257668711654,
+      "unclassified_native_leaf_samples": 3517,
+      "functions": [
+        {
+          "entry": "00681e60",
+          "role_inferred_from_dataflow": "cycle source enumeration",
+          "samples": 0,
+          "estimated_ms_per_present": 0.0
+        },
+        {
+          "entry": "006f0190",
+          "role_inferred_from_dataflow": "deadline-driven cycle state machine",
+          "samples": 58,
+          "estimated_ms_per_present": 0.05083260297984225
+        },
+        {
+          "entry": "00ac36f0",
+          "role_inferred_from_dataflow": "dependency reference collection",
+          "samples": 189,
+          "estimated_ms_per_present": 0.1656441717791411
+        },
+        {
+          "entry": "00bb79a0",
+          "role_inferred_from_dataflow": "resource demand accumulation",
+          "samples": 132,
+          "estimated_ms_per_present": 0.11568799298860649
+        },
+        {
+          "entry": "00c5d850",
+          "role_inferred_from_dataflow": "bounds-dependent demand accumulation",
+          "samples": 160,
+          "estimated_ms_per_present": 0.14022787028921999
+        },
+        {
+          "entry": "00750cf0",
+          "role_inferred_from_dataflow": "demand-list sort",
+          "samples": 0,
+          "estimated_ms_per_present": 0.0
+        },
+        {
+          "entry": "00714b50",
+          "role_inferred_from_dataflow": "level selection and budget enforcement",
+          "samples": 13,
+          "estimated_ms_per_present": 0.011393514460999123
+        },
+        {
+          "entry": "00609030",
+          "role_inferred_from_dataflow": "demand reset and change queue",
+          "samples": 1,
+          "estimated_ms_per_present": 0.0008764241893076249
+        },
+        {
+          "entry": "00bf27a0",
+          "role_inferred_from_dataflow": "texture and sampler preparation",
+          "samples": 71,
+          "estimated_ms_per_present": 0.06222611744084137
+        },
+        {
+          "entry": "009f2030",
+          "role_inferred_from_dataflow": "intrusive child dispatch",
+          "samples": 59,
+          "estimated_ms_per_present": 0.051709027169149865
+        },
+        {
+          "entry": "006ee720",
+          "role_inferred_from_dataflow": "dynamic buffer lock",
+          "samples": 1,
+          "estimated_ms_per_present": 0.0008764241893076249
+        },
+        {
+          "entry": "0071f690",
+          "role_inferred_from_dataflow": "dirty semantic dispatch",
+          "samples": 8,
+          "estimated_ms_per_present": 0.007011393514460999
+        }
+      ],
+      "limits": [
+        "Nominal 1 ms sampled weights, not call counts or precise CPU durations",
+        "Leaf-only selected bodies; indirect descendants are not attributed",
+        "Input extraction completion does not establish loss-free ETW",
+        "Denominator supplied from the source phase receipt, not inferred",
+        "No runtime object identity, mutation epochs or safe replacement proven"
+      ]
+    }
+  }
+}
