@@ -38,6 +38,7 @@ if ($veh -match '\bLog\(' -or $veh -notmatch 'LogRecord\(\*ep->ExceptionRecord, 
 if ($veh -notmatch 'budget = &s_crashLogged;' -or $veh -notmatch 'if \(g_asyncLog.Started\(\) && g_emergencyLog.Ready\(\)\)') { throw 'Default combined exception budget changed' }
 $parts = @((Body $source 'void Log(const char* fmt, ...)'),
     (Body $source 'static void LogEmergency('),
+    (Body $source 'static void LogNativeAdmissionFallback('),
     (Body $source 'static bool AsyncLogSink('),
     (Body $source 'static void StartAsyncLogging()'), $veh)
 $out = Join-Path $env:TEMP 'd2vr-async-log-regression'
@@ -58,5 +59,7 @@ try {
     }
     & .\async_log_test.exe --admission-failure
     if ($LASTEXITCODE -ne 0) { throw 'actual activation failure regression failed' }
+    & .\async_log_test.exe --missing-emergency
+    if ($LASTEXITCODE -ne 0) { throw 'actual emergency CreateFile failure regression failed' }
     Write-Host 'PASS: actual producer/activation/VEH bodies; module pin, default OFF, queue lock and loader lifecycle gates'
 } finally { Pop-Location }

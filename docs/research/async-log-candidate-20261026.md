@@ -16,6 +16,10 @@ HookDevice, outside DllMain. The emergency file is opened first, code is pinned
 before worker publication, and the sync transition excludes in-flight startup
 writers. Failure records `[AsyncLog] NOT_ADMITTED` and disables ordinary logging
 instead of silently resuming render-thread I/O. Do not admit that run as a test.
+If the emergency CreateFile itself fails, only native VEH details may use the
+still-open persistent File under its old lock, guarded by failed admission,
+missing emergency and no worker. Ordinary producers and handled C++ cannot use
+that fallback. Its admission flag is atomically published to the VEH.
 
 After admission, ordinary Log formats into fixed 2,048-byte entries and uses a
 non-waiting try-lock queue (256 entries). The worker releases the queue lock
@@ -46,7 +50,11 @@ writer, but cannot guarantee disk latency if the filesystem itself is stalled.
 
 - `./tools/frame-boundary-simulator/build-async-log.ps1`: PASS, 370 actual-helper
   and extracted production Log/activation/VEH checks; 11 checks of the actual
-  failed activation in a separate process. Includes blocked writer + old global
+  failed activation in a separate process, plus 24 checks forcing a real
+  emergency CreateFile failure with a directory at its pathname. Those checks
+  prove full native register/parameter/page/stack details survive after four
+  handled C++ notifications, without re-enabling ordinary/CPP synchronous I/O.
+  Includes blocked writer + old global
   CS, 10,000 producer calls, exact bounded overflow, enqueue order, asynchronous
   drain, live loss/truncation/error reports, native emergency visibility while
   blocked, handled C++ routing, cross-thread handle publication, timeout and

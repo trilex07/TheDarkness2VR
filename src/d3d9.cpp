@@ -82,7 +82,7 @@ d2vr_log::File g_logFile;
 d2vr_log::Async g_asyncLog;
 d2vr_log::Emergency g_emergencyLog;
 bool g_asyncLogRequested = false; // opt-in, started only at HookDevice outside loader lock
-bool g_asyncLogAdmissionFailed = false;
+std::atomic<bool> g_asyncLogAdmissionFailed{false};
 char g_logPath[MAX_PATH] = {};
 char g_iniPath[MAX_PATH] = {};
 std::atomic<bool> g_logReady{false};
@@ -347,6 +347,18 @@ static void LogEmergency(const char* fmt, ...) {
     va_end(args);
 }
 
+// Native VEH only, for a NOT_ADMITTED async start with no emergency handle.
+// Ordinary Log stays disabled. No worker exists that could own this FILE.
+static void LogNativeAdmissionFallback(const char* fmt, ...) {
+    va_list args; va_start(args, fmt);
+    EnterCriticalSection(&g_logLock);
+    if (g_asyncLogAdmissionFailed.load(std::memory_order_acquire) &&
+        !g_asyncLog.Started() && !g_emergencyLog.Ready())
+        g_logFile.WriteV(fmt, args);
+    LeaveCriticalSection(&g_logLock);
+    va_end(args);
+}
+
 static bool AsyncLogSink(void* context, const char* text, size_t size) {
     return static_cast<d2vr_log::File*>(context)->WriteLine(text, size);
 }
@@ -405,14 +417,19 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
     g_emergencyLog.Record(*ep->ExceptionRecord, *ep->ContextRecord,
         g_renderThreadId, g_lastStage, g_lastHookId);
 
-    void (*write)(const char*, ...) = g_emergencyLog.Ready() && d2vr_log::EmergencyException(code)
-        ? LogEmergency : Log;
+    const bool nativeAdmissionFallback = d2vr_log::EmergencyException(code) &&
+        g_asyncLogAdmissionFailed.load(std::memory_order_acquire) &&
+        !g_asyncLog.Started() && !g_emergencyLog.Ready();
+    void (*write)(const char*, ...) = Log;
+    if (d2vr_log::EmergencyException(code) && g_emergencyLog.Ready()) write = LogEmergency;
+    else if (nativeAdmissionFallback) write = LogNativeAdmissionFallback;
 
     static volatile LONG s_crashLogged = 0, s_asyncNativeLogged = 0, s_asyncCppLogged = 0;
     volatile LONG* budget = &s_crashLogged; // preserve default shared three-record policy
     if (g_asyncLog.Started() && g_emergencyLog.Ready())
         budget = d2vr_log::EmergencyException(code) ? &s_asyncNativeLogged : &s_asyncCppLogged;
-    // In the admitted async mode only, handled C++ cannot consume native detail.
+    else if (nativeAdmissionFallback) budget = &s_asyncNativeLogged;
+    // Explicit async admission/failure cannot lose native detail to handled C++.
     if (InterlockedIncrement(budget) <= 3) {
         void* addr = ep->ExceptionRecord->ExceptionAddress;
         HMODULE mod = nullptr;

@@ -18,7 +18,7 @@ d2vr_log::Async g_asyncLog;
 d2vr_log::Emergency g_emergencyLog;
 std::atomic<bool> g_logReady{false};
 bool g_asyncLogRequested = false;
-bool g_asyncLogAdmissionFailed = false;
+std::atomic<bool> g_asyncLogAdmissionFailed{false};
 char g_logPath[MAX_PATH]{};
 volatile DWORD g_renderThreadId = 0;
 volatile LONG g_lastStage = 7, g_lastHookId = 11;
@@ -65,7 +65,7 @@ static void ResetState(SinkState& state, bool blocked) {
     ResetEvent(state.entered); ResetEvent(state.release);
     state.block = blocked; state.fail = false; state.rows.clear();
 }
-int main(int argc, char**) {
+int main(int argc, char** argv) {
     char temp[MAX_PATH], directory[MAX_PATH], emergency[MAX_PATH];
     Check(GetTempPathA(MAX_PATH, temp) != 0, "temp directory");
     Check(GetTempFileNameA(temp, "dal", 0, directory) != 0, "unique temp identity");
@@ -74,6 +74,41 @@ int main(int argc, char**) {
     sprintf_s(emergency, "%s\\d3d9-emergency.log", directory);
     InitializeCriticalSection(&g_logLock);
     Check(g_logFile.Open(g_logPath), "persistent ordinary sink");
+    if (argc > 1 && strcmp(argv[1], "--missing-emergency") == 0) {
+        // A directory at the real emergency pathname makes CreateFile fail.
+        Check(CreateDirectoryA(emergency, nullptr) != FALSE, "force real emergency CreateFile failure");
+        g_logReady = true; g_asyncLogRequested = true;
+        StartAsyncLogging();
+        Check(g_asyncLogAdmissionFailed && !g_asyncLog.Started() && !g_emergencyLog.Ready() && !g_logReady,
+              "missing emergency sink is NOT_ADMITTED, worker not started");
+        const auto receipt = Read(g_logPath);
+        Check(receipt.find("NOT_ADMITTED") != std::string::npos && receipt.find("emergencyReady=0") != std::string::npos,
+              "real emergency-open failure is explicit in ordinary receipt");
+        Log("ordinary producers cannot use native-only fallback");
+        Check(Read(g_logPath) == receipt, "ordinary producers remain disabled without emergency sink");
+        uintptr_t stack[32]{}; stack[0] = reinterpret_cast<uintptr_t>(&Log);
+        CONTEXT context{}; context.Esp = reinterpret_cast<DWORD>(stack);
+        context.Eip = reinterpret_cast<DWORD>(&Log); context.Eax = 0x12345678;
+        EXCEPTION_RECORD record{}; record.ExceptionAddress = reinterpret_cast<void*>(&Log);
+        record.NumberParameters = 2; record.ExceptionInformation[1] = 0x471AA1A2;
+        EXCEPTION_POINTERS pointers{&record, &context};
+        record.ExceptionCode = 0xE06D7363u;
+        for (unsigned i = 0; i < 4; ++i)
+            Check(CrashVehHandler(&pointers) == EXCEPTION_CONTINUE_SEARCH, "failed-admission C++ disposition unchanged");
+        Check(Read(g_logPath) == receipt, "C++ cannot use native-only fallback");
+        record.ExceptionCode = EXCEPTION_ACCESS_VIOLATION;
+        Check(CrashVehHandler(&pointers) == EXCEPTION_CONTINUE_SEARCH, "missing-sink native VEH disposition unchanged");
+        const auto fault = Read(g_logPath);
+        for (const char* text : {"C0000005", "471AA1A2", "EAX=12345678", "Call Stack", "information[1]", "targetPage", "[00]"})
+            Check(fault.find(text) != std::string::npos, "full native fault survives actual missing emergency sink");
+        Check(fault.find("E06D7363") == std::string::npos, "handled C++ remains excluded from synchronous fallback");
+        Log("still cannot use fallback after native VEH");
+        Check(Read(g_logPath) == fault, "native fallback never re-enables ordinary I/O");
+        g_logFile.Close(); DeleteCriticalSection(&g_logLock);
+        Check(DeleteFileA(g_logPath) && RemoveDirectoryA(emergency) && RemoveDirectoryA(directory), "missing-sink test cleanup");
+        std::printf("PASS: %u checks; real emergency CreateFile failure, native-only full VEH fallback, no ordinary/CPP I/O\n", checks);
+        return 0;
+    }
     std::atomic<bool> publishedWrite{false};
     std::thread emergencyObserver([&] {
         const auto until = GetTickCount64() + 3000;
