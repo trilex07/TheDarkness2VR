@@ -44,15 +44,21 @@ struct Dispatch {
     bool active=false, fault=false;
     uint64_t entries=0, forwarded=0, returned=0, recursive=0;
     uint64_t ok=0, statuses=0, errors=0;
+    int32_t lastHr=0;
+    bool haveReturn=false;
     bool Enter() {++entries;if(active){++recursive;fault=true;return false;}active=true;return true;}
     bool Returned(int32_t hr) {
+        const bool changed=!haveReturn || hr!=lastHr;
+        lastHr=hr;haveReturn=true;
         ++returned;
         if(hr==0) ++ok;
         else if(hr<0) {++errors;fault=true;}
         else ++statuses;
-        // Every non-OK return is emitted immediately, including between samples.
-        // A failed HRESULT permanently disarms this thread's capture witness.
-        return hr!=0 || entries<=3 || entries%1000==0 || fault;
+        // Count every return, but avoid synchronous log-file open/flush/close
+        // on every repeated success status (e.g. S_PRESENT_OCCLUDED).
+        // Transitions and failures remain immediate; periodic totals retain
+        // evidence of non-OK returns even after the status returns to D3D_OK.
+        return changed || hr<0 || entries<=3 || entries%1000==0 || fault;
     }
     void Leave() {active=false;}
 };

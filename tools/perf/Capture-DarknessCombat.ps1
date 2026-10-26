@@ -103,6 +103,9 @@ try {
 } finally {
     $manifest.endQpc = [System.Diagnostics.Stopwatch]::GetTimestamp()
     $manifest.endUtc = [DateTime]::UtcNow.ToString('o')
+    $stillGame = @(Get-Process DarknessII -ErrorAction SilentlyContinue)
+    $manifest.gameAliveAtCaptureEnd = $stillGame.Count -eq 1 -and $stillGame[0].Id -eq $game[0].Id
+    if (-not $manifest.gameAliveAtCaptureEnd) { $manifest.errors += 'Game exited during capture' }
     if ($pm) {
         $pm.Refresh()
         if (-not $pm.HasExited) {
@@ -143,10 +146,6 @@ try {
         if (-not $manifest.hashesAfter) { $manifest.hashesAfter = [ordered]@{} }
         $manifest.hashesAfter[$name] = $hash
     }
-    $stillGame = @(Get-Process DarknessII -ErrorAction SilentlyContinue)
-    if ($stillGame.Count -ne 1 -or $stillGame[0].Id -ne $game[0].Id) {
-        $manifest.errors += 'Game exited or PID changed during capture'
-    }
     $gameLog = Join-Path $env:LOCALAPPDATA 'Darkness2VR\d3d9.log'
     if (Test-Path -LiteralPath $gameLog) {
         try { Copy-Item -LiteralPath $gameLog -Destination (Join-Path $out 'd3d9.log') }
@@ -170,7 +169,7 @@ try {
         $stats = Join-Path $out 'etw-stats.txt'
         if (Test-Path -LiteralPath $stats) {
             $text = Get-Content -LiteralPath $stats -Raw
-            $loss = [regex]::Matches($text,'(?im)^\s*(?:Events Lost|Lost Events|EventsLost)\s*[:=]\s*(\d+)')
+            $loss = [regex]::Matches($text,'(?im)^\s*Total # Lost Events\s*[:=]\s*(\d+)')
             if ($loss.Count) {
                 $manifest.etwLostEvents = @($loss | ForEach-Object { [int]$_.Groups[1].Value } |
                     Measure-Object -Sum)[0].Sum
@@ -196,9 +195,9 @@ try {
         $combatMs = $manifest.combatQpc*1000/$manifest.qpcFrequency
         $endMs = $manifest.endQpc*1000/$manifest.qpcFrequency
         $manifest.baselineRows = @($gameRows | Where-Object {
-            [double]$_.CPUStartTime -ge $baselineMs -and [double]$_.CPUStartTime -lt $combatMs }).Count
+            [double]$_.CPUStartQPCTime -ge $baselineMs -and [double]$_.CPUStartQPCTime -lt $combatMs }).Count
         $manifest.combatRows = @($gameRows | Where-Object {
-            [double]$_.CPUStartTime -ge $combatMs -and [double]$_.CPUStartTime -le $endMs }).Count
+            [double]$_.CPUStartQPCTime -ge $combatMs -and [double]$_.CPUStartQPCTime -le $endMs }).Count
         if ($manifest.baselineRows -lt 10 -or $manifest.combatRows -lt 10) {
             $manifest.errors += 'Baseline/combat PresentMon rows incomplete or QPC clocks do not align'
         }

@@ -62,7 +62,7 @@ def analyze(directory: Path) -> dict:
     end = manifest["endQpc"] * 1000 / frequency
     def stamp(row: dict[str, str]) -> float:
         try:
-            return float(row["CPUStartTime"])
+            return float(row["CPUStartQPCTime"])
         except (KeyError, ValueError):
             return math.nan
     baseline = [row for row in rows if base_start <= stamp(row) < combat_start]

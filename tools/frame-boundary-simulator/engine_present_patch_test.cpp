@@ -86,11 +86,27 @@ int main(){
     assert(dispatch.ok==1 && dispatch.statuses==1 && dispatch.errors==1 && dispatch.fault);
     // An isolated error at entry 17 must not disappear between 1000-call logs.
     Dispatch status;status.entries=17;
-    assert(!status.Returned(0));
+    assert(status.Returned(0)); // first observed return is always visible
     assert(status.Returned(0x08760878) && !status.fault);
     assert(status.Returned(static_cast<int32_t>(0x88760868)) && status.fault);
     assert(status.Returned(0) && status.fault); // Successful retry cannot rearm capture.
     assert(status.returned==4 && status.ok==2 && status.statuses==1 && status.errors==1);
+    Dispatch repeated;
+    unsigned emitted=0;
+    for(unsigned i=1;i<=7000;++i) {
+        assert(repeated.Enter());++repeated.forwarded;
+        emitted+=repeated.Returned(0x08760877);repeated.Leave();
+    }
+    assert(emitted==10 && repeated.statuses==7000 && repeated.returned==7000);
+    assert(repeated.Enter());++repeated.forwarded;
+    assert(repeated.Returned(0));repeated.Leave(); // recovery is immediate
+    assert(repeated.Enter());++repeated.forwarded;
+    assert(!repeated.Returned(0));repeated.Leave();
+    assert(repeated.Enter());++repeated.forwarded;
+    assert(repeated.Returned(0x08760878));repeated.Leave(); // different success status
+    assert(repeated.Enter());++repeated.forwarded;
+    assert(repeated.Returned(static_cast<int32_t>(0x88760868)) && repeated.fault);
+    repeated.Leave();
     recurse=true;int prior=calls;assert(run()==static_cast<long>(0x8876086c) && calls==prior+1);
     assert(dispatch.recursive==1 && dispatch.fault && !dispatch.active);
     recurse=false;assert(patch.Remove(memory));assert(!memcmp(memory.bytes(),original,5));

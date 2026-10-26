@@ -23,13 +23,13 @@ class PresentMonAnalysisTest(unittest.TestCase):
             (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             with (root / "presentmon.csv").open("w", newline="", encoding="utf-8") as file:
                 writer = csv.DictWriter(file, fieldnames=(
-                    "ProcessID", "CPUStartTime", "FrameTime", "CPUBusy", "CPUWait",
+                    "ProcessID", "CPUStartQPCTime", "FrameTime", "CPUBusy", "CPUWait",
                     "GPUBusy", "GPUWait", "GPUTime", "GPULatency", "DisplayedTime"))
                 writer.writeheader()
                 for pid, time, frame in ((42, 1100, 10), (42, 1900, 20),
                                          (42, 2100, 30), (42, 2900, 40),
                                          (99, 2200, 999)):
-                    writer.writerow(dict(ProcessID=pid, CPUStartTime=time, FrameTime=frame,
+                    writer.writerow(dict(ProcessID=pid, CPUStartQPCTime=time, FrameTime=frame,
                                          CPUBusy=1, CPUWait=2, GPUBusy=3, GPUWait=4,
                                          GPUTime=5, GPULatency=6, DisplayedTime="NA"))
             output = analyze(root)
