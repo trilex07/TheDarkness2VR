@@ -206,3 +206,14 @@ in private evidence; normal user exit0. No broad stability claim.
 DLL/all four INIs restored, all hashes and original EXE verified. No second
 launch, renderer/DLL changes, unsafe hooks, quality changes or automatic merge.
 Receipt: docs/research/image-preserving-xr-layer-pass-20261026.md.
+
+### 2026-10-26: protected replay resource retention candidate (SIDE)
+
+Implemented default-OFF UniqueReplayResourceRefs: one owned COM reference per
+exact interface pointer per frame, no draw/state elision or cross-frame cache.
+Native shader prewarm remains blocked; no guessed native owner access added.
+x86 production/diagnostic builds and 10,000-frame-per-mode ownership regression
+PASS; synthetic pairs20,480,000 ->640,000. No measured game-time claim.
+Protected profile2/2 and existing1,206-ray projection tests PASS. No Steam,
+deployment, native-image write, FOV/resolution/sync change. MAIN reviews/integrates.
+Receipt: docs/research/protected-replay-resource-refs-20261026.md.

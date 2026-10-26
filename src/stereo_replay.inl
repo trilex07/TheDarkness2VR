@@ -22,6 +22,7 @@
 #pragma once
 
 #include "stereo_math.h"
+#include "frame_resource_refs.h"
 #include "stereo_geometry.h"
 #include "material_sampling.h"
 
@@ -434,19 +435,19 @@ struct DeviceSnapshot {
     }
 };
 static DeviceSnapshot g_frameStart;
-static std::vector<IUnknown*> g_recordRefs;
+static FrameResourceRefs<IUnknown> g_recordRefs;
 static void ReleaseRecording() {
     g_recActive = false;
     g_rec.clear();
     g_recData.clear();
-    for (auto* ref : g_recordRefs) ref->Release();
-    g_recordRefs.clear();
+    g_recordRefs.Clear();
     g_frameStart.Release();
 }
 
 static void RecBeginFrame(IDirect3DDevice9* dev) {
     RecLockGuard lock;
     ReleaseRecording();
+    g_recordRefs.Begin(g_uniqueReplayRefs);
     if (!g_frameStart.Capture(dev)) {
         static int s_captureFails = 0;
         if (s_captureFails++ < 8) Log("[Record] frame-start capture failed - recording stays off");
@@ -537,12 +538,12 @@ static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 
     }
     if (pointerArg >= 0 && r.a[pointerArg]) {
         auto* ref = reinterpret_cast<IUnknown*>((uintptr_t)r.a[pointerArg]);
-        ref->AddRef(); g_recordRefs.push_back(ref);
+        g_recordRefs.Retain(ref);
     }
     if (op == OP_StretchRect) {
         for (int i = 0; i < 2; ++i) if (r.a[i]) {
             auto* ref = reinterpret_cast<IUnknown*>((uintptr_t)r.a[i]);
-            ref->AddRef(); g_recordRefs.push_back(ref);
+            g_recordRefs.Retain(ref);
         }
     }
     g_rec.push_back(r);
