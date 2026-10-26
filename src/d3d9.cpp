@@ -126,6 +126,7 @@ bool g_headGeometryReferenceValid = false;
 bool g_lastWorldHeadContextValid = false;
 bool g_recenterHeadLock = false;
 int g_textureAnisotropy = 16;
+bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B, default legacy query path
 
 // True stereo (SubmitMode 4): frame-record/replay dual-eye rendering
 // StereoMode: 0 = off (mono live pass), 1 = dual-eye (live = eye0 + replay = eye1),
@@ -504,6 +505,8 @@ void LoadConfig() {
     g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
     if (g_submitMode < 0 || g_submitMode > 4) g_submitMode = 0;
     g_textureAnisotropy = std::clamp((int)GetPrivateProfileIntA("Render", "TextureAnisotropy", 16, chosenIni), 1, 16);
+    g_samplerCapsCacheEnabled = GetPrivateProfileIntA("Render", "SamplerCapsCache", 0, chosenIni) != 0;
+    Log("[SamplerCaps] cache=%d (OFF retains per-call GetDeviceCaps)", (int)g_samplerCapsCacheEnabled);
     g_worldDiffuseAnisotropy = GetPrivateProfileIntA("Render", "WorldDiffuseAnisotropy", 0, chosenIni) != 0;
     Log("[WorldDiffuse] scoped anisotropy=%d (exact VS293F456B/PSCA08BDC4, s0 only)", (int)g_worldDiffuseAnisotropy);
     Log("[Sharpness] texture anisotropy target=%d", g_textureAnisotropy);
