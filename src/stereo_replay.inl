@@ -1161,7 +1161,12 @@ static HRESULT STDMETHODCALLTYPE Hook_SetTextureStageState(IDirect3DDevice9* dev
 // point/linear filtering, mip selection or postprocessing texture coordinates.
 static DWORD ResolveSamplerValue(IDirect3DDevice9* dev, D3DSAMPLERSTATETYPE t, DWORD v) {
     if (g_submitMode != 4 || t != D3DSAMP_MAXANISOTROPY) return v;
-    return d2vr_sampling::g_samplerCapsCache.Resolve(dev, v, (DWORD)g_textureAnisotropy);
+    if (g_samplerCapsCacheEnabled)
+        return d2vr_sampling::g_samplerCapsCache.Resolve(dev, v, (DWORD)g_textureAnisotropy);
+    // Exact legacy resolver when the isolated cache experiment is OFF.
+    D3DCAPS9 caps{};
+    if (FAILED(dev->GetDeviceCaps(&caps)) || caps.MaxAnisotropy < 1) return v;
+    return std::min(caps.MaxAnisotropy, std::max(v, (DWORD)g_textureAnisotropy));
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWORD smp, D3DSAMPLERSTATETYPE t, DWORD v) {
