@@ -22,6 +22,15 @@ struct Timing {
         windowStart=GetTickCount64();
         if(enabled) Log("[CPUSync] enabled=1; wall time includes driver/runtime blocking, not CPU busy time");
     }
+    void MarkFrame(unsigned long long frame) {
+        // QPC is the ETW/PresentMon clock on Windows. A sparse marker connects
+        // the game's XR frame ID to their timelines without per-frame file I/O.
+        if(!enabled || frame%120) return;
+        LARGE_INTEGER qpc{};
+        if(QueryPerformanceCounter(&qpc))
+            Log("[PerfClock] frame=%llu qpc=%lld frequency=%lld pid=%lu tid=%lu",
+                frame,qpc.QuadPart,frequency.QuadPart,GetCurrentProcessId(),GetCurrentThreadId());
+    }
     void Add(Stage stage,const LARGE_INTEGER& start) {
         LARGE_INTEGER end{};
         if(!QueryPerformanceCounter(&end) || end.QuadPart<start.QuadPart) return;

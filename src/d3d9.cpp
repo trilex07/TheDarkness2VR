@@ -4686,6 +4686,9 @@ static void BeginTrackedFrame() {
     g_trackedFrame.state = fs;
     g_trackedFrame.open = true;
     ++g_trackedFrame.id;
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::timing.MarkFrame(g_trackedFrame.id);
+#endif
     g_trackedFrame.startedMs = GetTickCount64();
     if(g_recenterHeadLock) { g_lockedHeadValid=false; g_recenterHeadLock=false; }
     XrView views[2] = {{ XR_TYPE_VIEW }, { XR_TYPE_VIEW }};
