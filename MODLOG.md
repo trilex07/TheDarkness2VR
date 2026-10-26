@@ -237,3 +237,15 @@ owns reconstruction and bypasses reading old Shift+digit choice via new default-
 RestoreSavedLighting option, without changing the saved lighting file.
 Combined profile still keeps source-quality and performance experiments OFF.
 Native visibility/hand mapping blockers remain; no physical success claimed.
+
+### 2026-10-26: combined protected controls/head/gestures live checkpoint
+
+4281f29 ran once with user authorization. HMD feedback: movement/gestures work,
+head/stereo question answered okay apart from blur; outdoors20-30msCPU persists.
+Present sampled37000 successful forwards/returns, no recursion/errors;25 sampled
+layers1 contexts share eye/frameIDs;7 right strokes/2 reloads. Exit0, no recorded
+CRC AV;3 first-chance C++ events. All5 DLL/INI backups restored/hash-verified,
+EXE unchanged. Actual source1920x1071;90FPS and clarity NOT MET.
+Next work is narrow COM-retention A/B with missing protected CPU-stage reporting
+corrected, not another general profiler. Receipt:
+docs/research/protected-vr-combined-runtime-20261026.md.
