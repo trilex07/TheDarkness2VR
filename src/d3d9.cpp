@@ -29,6 +29,8 @@
 #include <cmath>
 #include <intrin.h>
 #include <unordered_set>
+#include <atomic>
+#include "persistent_log.h"
 #include "vr_input.h"
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
@@ -56,9 +58,10 @@ static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
 namespace {
 
 CRITICAL_SECTION g_logLock;
+d2vr_log::File g_logFile;
 char g_logPath[MAX_PATH] = {};
 char g_iniPath[MAX_PATH] = {};
-bool g_logReady = false;
+std::atomic<bool> g_logReady{false};
 
 // Config / Modes
 // TestMode: 0 = Normal Game Capture, 1 = Solid Bright Green, 2 = Checkerboard
@@ -287,27 +290,21 @@ void LogInit() {
         sprintf_s(g_iniPath, "%s\\Darkness2VR.ini", base);
         sprintf_s(g_lightingChoicePath, "%s\\last-lighting.ini", base);
 
-        FILE* f = nullptr;
-        if (fopen_s(&f, g_logPath, "w") == 0 && f) {
-            fprintf(f, "=== Darkness2VR v0.4.0 (Method 2 Same-Frame Stereo Shift) d3d9.log ===\n");
-            fclose(f);
+        if (g_logFile.Open(g_logPath)) {
+            g_logFile.Write("=== Darkness2VR v0.4.0 (Method 2 Same-Frame Stereo Shift) d3d9.log ===");
+            g_logReady = true;
         }
-        g_logReady = true;
     }
 }
 
 void Log(const char* fmt, ...) {
     if (!g_logReady) return;
     EnterCriticalSection(&g_logLock);
-    FILE* f = nullptr;
-    if (fopen_s(&f, g_logPath, "a") == 0 && f) {
+    if (g_logReady) {
         va_list ap;
         va_start(ap, fmt);
-        vfprintf(f, fmt, ap);
+        g_logFile.WriteV(fmt, ap);
         va_end(ap);
-        fputc('\n', f);
-        fflush(f);
-        fclose(f);
     }
     LeaveCriticalSection(&g_logLock);
 }
@@ -5832,6 +5829,10 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
             RemoveVectoredExceptionHandler(g_vehHandle);
             g_vehHandle = nullptr;
         }
+        EnterCriticalSection(&g_logLock);
+        g_logReady = false;
+        g_logFile.Close();
+        LeaveCriticalSection(&g_logLock);
     }
     return TRUE;
 }
