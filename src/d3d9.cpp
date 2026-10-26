@@ -46,7 +46,12 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_camera_cover.h"
 #include "exception_record_witness.h"
 #include "image_present_observer.h"
+#include "protected_xinput.h"
 static bool g_imagePreservingPresent=false;
+static bool g_imagePreservingInput=false;
+static volatile LONG g_protectedRecenterRequested=0;
+static d2vr_protected_input::ExternalXInput g_protectedXInput;
+static d2vr_protected_input::Grips g_protectedGrips;
 static d2vr_image_present::Observer g_imagePresent;
 static bool g_restoredTrackedGameplay = false;
 static thread_local d2vr_capture::PresentWitness g_capturePresent;
@@ -435,6 +440,7 @@ void LoadConfig() {
     // INI edits must never toggle patch/rollback ownership.
     g_imagePreservingPresent=GetPrivateProfileIntA("Diagnostics","ImagePreservingPresent",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_protectedHeadTracking=GetPrivateProfileIntA("Diagnostics","ProtectedHeadTracking",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_imagePreservingInput=GetPrivateProfileIntA("Diagnostics","ImagePreservingInput",0,".\\Darkness2VR-diagnostic.ini")!=0;
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
         const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
         const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
@@ -3116,6 +3122,20 @@ HWND g_gameHwnd = nullptr;
 XINPUT_STATE g_cachedXrPad{};
 XINPUT_GAMEPAD g_lastGamepadState{};
 volatile LONG g_cachedXrPadValid = 0;
+static SRWLOCK g_cachedXrPadLock=SRWLOCK_INIT;
+static void PublishXrPad(const XINPUT_STATE* value) {
+    AcquireSRWLockExclusive(&g_cachedXrPadLock);
+    g_cachedXrPad=value ? *value:XINPUT_STATE{};
+    InterlockedExchange(&g_cachedXrPadValid,value ? 1:0);
+    ReleaseSRWLockExclusive(&g_cachedXrPadLock);
+}
+static bool CopyXrPad(XINPUT_STATE& value) {
+    AcquireSRWLockShared(&g_cachedXrPadLock);
+    const bool valid=g_cachedXrPadValid!=0;
+    if(valid) value=g_cachedXrPad;
+    ReleaseSRWLockShared(&g_cachedXrPadLock);
+    return valid;
+}
 
 XrActionSet g_padActionSet = XR_NULL_HANDLE;
 XrAction g_actLeftStick = XR_NULL_HANDLE;
@@ -3153,6 +3173,9 @@ struct GestureState {
 static GestureState g_gestures;
 static d2vr_input::Tentacles g_tentacles;
 static void ResetPoseInput() {
+#ifdef D2VR_MATCHED_CAPTURE
+    g_protectedGrips={};
+#endif
     g_gestures={}; g_recenterChord={}; g_tentacles={};
     g_tentacleAimVisible=false; g_aimMarkerValid[0]=g_aimMarkerValid[1]=false;
     ResetNativeAim();
@@ -3458,6 +3481,9 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         (gp.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)!=0,GetTickCount64()*.001)) RequestRecenter("VR PAD L3+R3 click");
     if (g_recenterChord.suppress) gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
     LocateTrackedHands();
+#ifdef D2VR_MATCHED_CAPTURE
+    if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze);
+#endif
     gp.wButtons |= GestureButtons(gp);
     ApplyTentacleGestures(gp);
 
@@ -3588,6 +3614,9 @@ static bool PadHasInput(const XINPUT_GAMEPAD& g) {
 }
 
 void UpdateCachedXrPad() {
+#ifdef D2VR_MATCHED_CAPTURE
+    if(InterlockedExchange(&g_protectedRecenterRequested,0)) RequestRecenter("PHYSICAL PAD L3+R3 click (render thread)");
+#endif
     if (!g_padActionsReady || !g_xrRunning) return;
     XINPUT_STATE s{};
     if (SyncOpenXRGamepad(&s)) {
@@ -3596,11 +3625,9 @@ void UpdateCachedXrPad() {
             ++g_padPacket;
         }
         s.dwPacketNumber = g_padPacket;
-        g_cachedXrPad = s;
-        InterlockedExchange(&g_cachedXrPadValid, 1);
+        PublishXrPad(&s);
     } else {
-        g_lastGamepadState={}; g_cachedXrPad={};
-        InterlockedExchange(&g_cachedXrPadValid,0);
+        g_lastGamepadState={}; PublishXrPad(nullptr);
         ResetPoseInput();
     }
 }
@@ -3622,11 +3649,15 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
 
     XINPUT_STATE real{};
     DWORD r = ERROR_DEVICE_NOT_CONNECTED;
-    if (g_origXInputGetState) {
-        r = g_origXInputGetState(userIndex, &real);
+    auto native=g_origXInputGetState;
+#ifdef D2VR_MATCHED_CAPTURE
+    if(g_imagePreservingInput) native=g_protectedXInput.Native();
+#endif
+    if (native) {
+        r = native(userIndex, &real);
         if (g_remapPhysical && userIndex == 0 && r != ERROR_SUCCESS) {
             for (DWORD i = 1; i < 4; ++i) {
-                if (g_origXInputGetState(i, &real) == ERROR_SUCCESS) {
+                if (native(i, &real) == ERROR_SUCCESS) {
                     r = ERROR_SUCCESS;
                     if (InterlockedCompareExchange(&g_xinputRemapLogged, 1, 0) == 0)
                         Log("XInput: remapping physical gamepad from port %lu -> port 0", i);
@@ -3638,23 +3669,35 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
 
     static d2vr_input::RecenterChord physicalChord;
     if(userIndex==0) {
+        // The external export can also be polled by Steam Input/overlay threads.
+        static SRWLOCK physicalChordLock=SRWLOCK_INIT;
+        bool recenter=false;
+        AcquireSRWLockExclusive(&physicalChordLock);
         if(r!=ERROR_SUCCESS) physicalChord={};
         else {
-            if(physicalChord.Update((real.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_THUMB)!=0,
-                (real.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)!=0,GetTickCount64()*.001))
-                RequestRecenter("PHYSICAL PAD L3+R3 click");
+            recenter=physicalChord.Update((real.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_THUMB)!=0,
+                (real.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)!=0,GetTickCount64()*.001);
             if(physicalChord.suppress) real.Gamepad.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
+        }
+        ReleaseSRWLockExclusive(&physicalChordLock);
+        if(recenter) {
+#ifdef D2VR_MATCHED_CAPTURE
+            if(g_imagePreservingInput) InterlockedExchange(&g_protectedRecenterRequested,1);
+            else
+#endif
+                RequestRecenter("PHYSICAL PAD L3+R3 click");
         }
     }
 
     DWORD res = ERROR_DEVICE_NOT_CONNECTED;
-    if (g_enableVRGamepad && userIndex == 0 && InterlockedCompareExchange(&g_cachedXrPadValid, 0, 0)) {
+    XINPUT_STATE xrPad{};
+    if (g_enableVRGamepad && userIndex == 0 && CopyXrPad(xrPad)) {
         if (r == ERROR_SUCCESS && PadHasInput(real.Gamepad)) {
             ResetNativeAim();
             *state = real;
             res = ERROR_SUCCESS;
         } else {
-            *state = g_cachedXrPad;
+            *state = xrPad;
             res = ERROR_SUCCESS;
 #ifdef D2VR_MATCHED_CAPTURE
             static LONG firstActivePacket = 0;
@@ -3791,6 +3834,20 @@ static bool HookStandardIATOrdinal(HMODULE module, const char* dllName, WORD ord
 }
 
 void TryInstallXInputHook() {
+#ifdef D2VR_MATCHED_CAPTURE
+    if(g_nativeImageGuard.enabled) {
+        // Ready requires a real native Present, so installation cannot happen
+        // under DllMain or before graphics admission. No native bundle needed.
+        if(!d2vr_protected_input::Requested(g_imagePreservingPresent,true,g_imagePreservingInput,g_enableVRGamepad) ||
+            !g_imagePresent.Ready()) return;
+        if(InterlockedCompareExchange(&g_xinputAttempted,1,0)!=0) return;
+        const bool installed=g_protectedXInput.Start(&Hook_XInputGetState,g_nativeImageGuard);
+        InterlockedExchange(&g_xinputHooked,installed ? 1:0);
+        Log("[ProtectedInput] external XInputGetState installed=%d; EXE/IAT writes forbidden; native=%p",
+            installed,reinterpret_cast<void*>(g_protectedXInput.Native()));
+        return; // never fall back to imports, including on refusal
+    }
+#endif
 #ifdef D2VR_MATCHED_CAPTURE
     // The default capture build stays isolated. The playable opt-in has already
     // passed SHA/PE/site checks at CreateDevice before opening this gate. Do not
@@ -3932,7 +3989,7 @@ void PumpXR() {
             g_xrSessionState=s->state;
             Log("[XRSession] state=%d",(int)s->state);
             if(s->state!=XR_SESSION_STATE_FOCUSED) {
-                ResetPoseInput(); g_cachedXrPad={}; InterlockedExchange(&g_cachedXrPadValid,0);
+                ResetPoseInput(); PublishXrPad(nullptr);
             }
             if (s->state == XR_SESSION_STATE_READY) {
                 XrSessionBeginInfo bi{ XR_TYPE_SESSION_BEGIN_INFO };
@@ -3953,7 +4010,7 @@ void PumpXR() {
                 xrEndSession(g_xrSession);
                 g_xrRunning = false;
                 g_trackedFrame.open=false;
-                g_cachedXrPad={}; InterlockedExchange(&g_cachedXrPadValid,0);
+                PublishXrPad(nullptr);
                 for(auto& hand:g_hands) { hand.valid=false; hand.motion.valid=false; }
             }
         } else if(ev.type==XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
@@ -5866,18 +5923,25 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
 #endif
         const bool protectedConfig=g_nativeImageGuard.ConfigAllowed(g_disableOpenXR!=0,g_stereoMode,
             GetPrivateProfileIntA("Diagnostics","MatchedFrameCapture",0,".\\Darkness2VR-diagnostic.ini")!=0,imageProfile);
-        const bool protectedFeatures=!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
+#ifdef D2VR_MATCHED_CAPTURE
+        const bool protectedInputAllowed=!g_imagePreservingInput ||
+            d2vr_protected_input::Requested(imageProfile,g_nativeImageGuard.enabled,g_imagePreservingInput,g_enableVRGamepad);
+        const bool inputFeatureAllowed=!g_enableVRGamepad || g_imagePreservingInput;
+#else
+        const bool protectedInputAllowed=true,inputFeatureAllowed=!g_enableVRGamepad;
+#endif
+        const bool protectedFeatures=protectedInputAllowed && (!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
             !g_nativeLeftAim && !g_nativeWeaponPose && !g_nativeHandsEnabled && !g_gestureBridge && !g_tentacleBridge &&
-            !g_enableVRGamepad && g_headLookMode==0 &&
+            inputFeatureAllowed && g_headLookMode==0 &&
             (!g_protectedHeadTracking || ProtectedHeadConfigurationAllowed()) &&
             (!(g_headGeometry || g_nativeStereoHeadGeometry) || g_protectedHeadTracking) &&
             !GetPrivateProfileIntA("Diagnostics","EnginePresentCallsite",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","RestoreTrackedGameplay",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","NativeHandsPackHook",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","NativeCameraCover",0,".\\Darkness2VR-diagnostic.ini") &&
-            !GetPrivateProfileIntA("Diagnostics","ProductionResolution",0,".\\Darkness2VR-diagnostic.ini"));
+            !GetPrivateProfileIntA("Diagnostics","ProductionResolution",0,".\\Darkness2VR-diagnostic.ini")));
         if (g_nativeImageGuard.enabled && (!protectedConfig || !protectedFeatures)) {
-            Log("[NativeImageGuard] REFUSED configuration: mono isolation OR protected SubmitMode4/Stereo1/PresentPrimary; native input/hands/aim/FOV/EXE Present/sizing must stay disabled");
+            Log("[NativeImageGuard] REFUSED configuration: mono isolation OR protected SubmitMode4/Stereo1/PresentPrimary; input requires ImagePreservingInput; native hands/aim/FOV/EXE Present/sizing must stay disabled");
             if (g_vehHandle) {RemoveVectoredExceptionHandler(g_vehHandle);g_vehHandle=nullptr;}
             EnterCriticalSection(&g_logLock);
             g_logReady=false;g_logFile.Close();
