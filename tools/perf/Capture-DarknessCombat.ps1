@@ -1,6 +1,7 @@
 param(
     [ValidateRange(30,60)][int]$DurationSec = 45,
     [ValidateRange(5,20)][int]$BaselineSec = 10,
+    [ValidateRange(0,60)][int]$ArmDelaySec = 15,
     [string]$GameDir = 'C:\Program Files (x86)\Steam\steamapps\common\Darkness II',
     [string]$OutputRoot = (Join-Path $env:LOCALAPPDATA 'Darkness2VR\perf'),
     [switch]$Preflight
@@ -27,6 +28,7 @@ if ($Preflight) {
     Write-Host "PASS: EXE SHA=$actualExeHash; WPR=$wpr; PresentMon=$presentmon; xperf=$xperf; no recorder active."
     return
 }
+if ($ArmDelaySec) { Start-Sleep -Seconds $ArmDelaySec }
 $game = @(Get-Process DarknessII -ErrorAction SilentlyContinue)
 if ($game.Count -ne 1 -or $game[0].Path -ne $exe) {
     throw 'Start the audited DarknessII.exe through Steam and load gameplay before capture; no game was launched or changed.'
