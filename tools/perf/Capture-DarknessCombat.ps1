@@ -302,10 +302,18 @@ try {
         $manifest.localIniHashesAfter[$path]=$sha
         if ($sha -ne $localHashes[$path]) { $manifest.errors += "Local INI changed: $path" }
     }
-    $gameLog = Join-Path $LocalVrDir 'd3d9.log'
-    if (Test-Path -LiteralPath $gameLog) {
-        try { Copy-Item -LiteralPath $gameLog -Destination (Join-Path $out 'd3d9.log') }
-        catch { $manifest.errors += "Game log copy: $($_.Exception.Message)" }
+    # Async normal output and fatal output are independent; preserve both.
+    # These are post-capture snapshots, not atomic frame/camera witnesses.
+    $manifest.logSnapshotHashes = @{}
+    foreach ($logName in @('d3d9.log', 'd3d9-emergency.log')) {
+        $gameLog = Join-Path $LocalVrDir $logName
+        if (Test-Path -LiteralPath $gameLog) {
+            try {
+                $snapshot = Join-Path $out $logName
+                Copy-Item -LiteralPath $gameLog -Destination $snapshot
+                $manifest.logSnapshotHashes[$logName] = (Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash
+            } catch { $manifest.errors += "Game log copy ($logName): $($_.Exception.Message)" }
+        }
     }
     $steamRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $GameDir))
     foreach($name in @('vrcompositor.txt','vrserver.txt')) {

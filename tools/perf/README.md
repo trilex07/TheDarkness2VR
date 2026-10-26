@@ -68,3 +68,10 @@ Offline checks (no capture, no Steam):
 pwsh -File tools/perf/test_capture_outdoor.ps1
 python -m unittest discover -s tools/perf -p test_analyze_presentmon.py
 ```
+
+For the isolated `AsyncLog` A/B, preserve both `d3d9.log` and
+`d3d9-emergency.log`. The collector records SHA-256 of each copied log
+snapshot. Fatal first-chance records use the emergency sink; ordinary queued
+lines can be lost at process exit. `[AsyncLog] NOT_ADMITTED`, missing active
+receipt, queue losses or writer errors invalidate a clean performance claim.
+Enable the option in the effective base `[Render]` INI, not only an override.

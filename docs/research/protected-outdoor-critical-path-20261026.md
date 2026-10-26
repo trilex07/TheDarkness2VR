@@ -130,3 +130,62 @@ matching hashes; EXE unchanged. No further Steam launch is authorized. A new A/B
 requires user authorization after the concrete correction passes offline tests.
 The postprocessing stderr fix preserves the phase/PM counters before xperf and
 uses native exit codes; it cannot retroactively repair the old raw manifest.
+
+
+## Concrete logging candidate (isolated from other optimizations)
+
+MAIN integrates the bounded-worker correction from `codex/async-log` on
+`codex/outdoor-frame-bottleneck`. Ordinary producers format/enqueue with a
+nonwaiting try-lock; the writer releases the queue lock before file I/O.
+`Render/AsyncLog=0` remains the default and is the same-DLL A arm; `=1` is B.
+Both keep the frozen protected stereo/head/input/gesture profile and identical
+resolution. No caps cache, small-copy experiment, native hook or XR recovery
+change is included. The full native exception witness has independent emergency
+output. Admission failure is not an accepted performance run.
+
+Status: IMPLEMENTED and OFFLINE VERIFIED on MAIN integration branch.
+IN-GAME VERIFIED: NOT RUN. HMD ACCEPTED: NOT RUN. No FPS gain or 90 Hz claim.
+The existing collector now preserves both normal and emergency logs with
+SHA-256 snapshot receipts. These snapshots are not atomic frame witnesses.
+
+This targets the observed 47.833 ms flush stall, not all sustained CPU work.
+The next largest spike path remains native/driver CreatePixelShader and
+CreateVertexShader. Existing shader loading-phase ownership/lifetime findings
+still block a safe runtime prewarm; no asynchronous D3D calls, hash-only reuse
+or skipped synchronization are admitted. Separate caps and small-record-copy
+candidates remain on their own branches and are not mixed into this A/B.
+
+
+### Final integrated offline acceptance
+
+Integrated `dfa7c54` -> `2726bb5` and `ad68a6d` -> `cf86694`; no other SIDE
+optimization was cherry-picked. Final actual-source regression: 370 queue/
+producer/VEH checks, 11 failed-activation checks, 24 real emergency-CreateFile
+failure checks and unchanged 10,000-record persistent logger regression PASS.
+The unavailable emergency-sink failure preserves full native fault records via
+an exclusive native-VEH-only fallback; ordinary producers never use that path.
+Protected image guard PASS; head 117,021, XInput 20,032 and gesture 227 checks
+PASS. Existing collector helper 16 and PresentMon analyzer 4 tests PASS.
+Production and diagnostic builds PASS. These are offline results only.
+
+Frozen package (private/untracked):
+`dist/protected-outdoor-async-log-20261026T173448Z`.
+Artifact source `cf86694`; diagnostic DLL SHA-256:
+`717d5ab98bf9c710f72aba326583a8fd8b8da17f13411028098838fc0335358b`.
+Diagnostic RSDS matches the frozen PDB: GUID
+`26b151b8-b2a9-4a6f-b1fc-8cc227629edc`, age 163. Production pair age 162
+also matches. Windows GetPrivateProfileSection/IntA verified A/B base INIs
+against the frozen baseline: only Render/AsyncLog differs, diagnostic INI is
+byte-identical. No UTF-8 BOM is introduced into the packaged ASCII INIs.
+Both arms use the same diagnostic DLL; all other keys remain unchanged.
+
+Current Steam installation was rechecked after offline work: original DLL plus
+four INIs match all five rollback hashes; original EXE SHA-256 still matches.
+No game process was running at that check. No deployment or new launch occurred.
+Fresh user authorization and free-session check are required for a comparable
+same-scene A/B. Measure unique game-frame percentiles, render running/blocked/
+ready spans, disappearance of the ordinary flush wait, queue losses/errors,
+NVIDIA creation waits and stability; do not infer FPS gain from worker tests.
+The retained trace has the documented event loss, so an exact lossless total
+CPU/GPU attribution remains unavailable. The outdoor 9.318 ms budget deficit
+is unresolved until actual measured improvements close it.
