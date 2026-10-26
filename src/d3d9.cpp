@@ -134,6 +134,7 @@ bool g_recenterHeadLock = false;
 int g_textureAnisotropy = 16;
 bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B, default legacy query path
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
+static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
 
 // True stereo (SubmitMode 4): frame-record/replay dual-eye rendering
 // StereoMode: 0 = off (mono live pass), 1 = dual-eye (live = eye0 + replay = eye1),
@@ -602,6 +603,8 @@ void LoadConfig() {
     g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
+    g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
+    if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
@@ -3225,11 +3228,18 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     // CPU wall times include driver waits; these are not GPU timestamp queries.
     static double phaseMs[4]{};
     static unsigned perfSamples = 0;
+#ifdef D2VR_MATCHED_CAPTURE
+    static long long uploadWindowQpc = 0;
+    if (!perfSamples) uploadWindowQpc = perf[0].QuadPart;
+#endif
     for (int i = 0; i < 4; ++i)
         phaseMs[i] += (perf[i+1].QuadPart - perf[i].QuadPart) * 1000.0 / frequency.QuadPart;
     if (++perfSamples == 120) {
         Log("[StereoPerf] mean CPU wall ms/segment: left=%.2f replay+history=%.2f right+restore=%.2f dump=%.2f source=%ux%u",
             phaseMs[0]/120, phaseMs[1]/120, phaseMs[2]/120, phaseMs[3]/120, g_srcW, g_srcH);
+#ifdef D2VR_MATCHED_CAPTURE
+        d2vr_replay::g_constantUploadWindow.Report(g_trueStereoFrames+1,uploadWindowQpc,perf[4].QuadPart,frequency.QuadPart);
+#endif
         for (double& ms : phaseMs) ms = 0;
         perfSamples = 0;
     }

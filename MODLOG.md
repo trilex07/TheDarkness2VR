@@ -268,3 +268,20 @@ regression288 cases PASS; production/diagnostic x86 builds PASS. Added the
 requested optional read-only cap fields to existing SHA/PE auditor (not invoked
 on a process). Native938-function aggregate shows distributed work; no native
 code/heap mutation or Steam access. Performance/HMD acceptance still NOT RUN.
+
+### 2026-10-26 — Continue outdoor CPU: actual upload receipts + isolated float-only window
+
+- Count original replay VS/PS float API entries separately from logical records,
+  failures/vectors/exceptions, with existing StereoPerf/QPC windows; production
+  omits diagnostics. No new profiler/per-frame log or Steam run.
+- Implement ReplayConstantWindow=0: independent VS/PS dirty runs within float-only
+  sequences, flush on EVERY other command, transform first, no state reuse across
+  barriers, no invented gap values, invalid-call fallback and exact-once failure.
+  Adjacent A/B remains ONLY ReplayConstantBatch0/1; window/copy/async remain0.
+- Actual-source x86 regression432072 records/62893 snapshots per build; prior
+  protected Present/head/input/gesture/lighting/recorder tests PASS. Both DLL
+  configurations built/frozen. Old trace counts4471->3362 adjacent,2523 window;
+  no current-outdoor CPU/FPS saving measured. 6.44ms wall deficit unresolved.
+- Preserved installed DLL/INIs, image guard, stereo, tracking and input; no merge.
+  Next live A/B needs user authorization. Details in
+  docs/research/outdoor-cpu-packets-20261026.md.

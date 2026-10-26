@@ -5,6 +5,30 @@
 namespace d2vr_replay_batch {
 enum class Stage : uint8_t { None, Vertex, Pixel };
 
+// Render-thread local receipt at the actual driver forwarding boundary. Never
+// substitutes record counts for API calls; ordinary production omits the audit.
+struct UploadCounts {
+    uint64_t records[2]{}, calls[2]{}, vectors[2]{}, failures[2]{};
+    uint64_t exceptions = 0;
+    void Record(Stage stage) { ++records[stage == Stage::Vertex ? 0 : 1]; }
+    template<class Send> long Forward(Stage stage, unsigned first, const float* data,
+                                     unsigned count, Send send) {
+        const unsigned index = stage == Stage::Vertex ? 0 : 1;
+        ++calls[index]; // count entry, even if the driver throws or returns failure
+        vectors[index] += count;
+        const long result = send(stage, first, data, count);
+        failures[index] += result < 0;
+        return result;
+    }
+    void Add(const UploadCounts& other) {
+        for (unsigned i = 0; i < 2; ++i) {
+            records[i] += other.records[i]; calls[i] += other.calls[i];
+            vectors[i] += other.vectors[i]; failures[i] += other.failures[i];
+        }
+        exceptions += other.exceptions;
+    }
+};
+
 // Replay-local packet assembly, NOT a persistent device-state cache. Only
 // ascending, exactly adjacent float4 ranges of the SAME stage can share a call.
 // Every other command is a barrier, including queries/state-block restores.

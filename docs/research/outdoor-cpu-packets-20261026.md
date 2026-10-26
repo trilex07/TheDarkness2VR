@@ -139,3 +139,85 @@ cap observation. These require new Steam authorization. Defaults/rollback are
 all performance experiments0; image-preserving stereo/head/Sense/gestures remain
 in the preserved approved profile. 90Hz remains UNRESOLVED. Installed files
 were not changed during either implementation.
+
+## Continued implementation: measured forwarding receipt and float-only windows
+
+The 22cc2d0 adjacent-packet candidate lacked actual forwarded-call counts. The
+new diagnostic path counts entry into the original D3D9 VS/PS float setters,
+returned failures, submitted float4 vectors and replay exceptions. Logical
+records are counted separately. Counters are local/in-memory and emitted with
+the existing 120-pair StereoPerf report, using its existing first/last QPCs and
+frequency. No new per-frame file I/O, timer, tracing provider or profiler was
+added. Production compiles the receipt out. Counts explicitly exclude draw-scope
+setters (tentacle save/restore); those calls are unchanged in both arms. A
+counter-window crossing a phase boundary is excluded from phase comparisons.
+Any failed call/exception is a correctness failure, not an upload reduction.
+
+The requested adjacent A/B still changes ONLY ReplayConstantBatch=0/1, uses one
+new diagnostic DLL and preserves the 22cc2d0 lazy PS bounds/copy correction in
+both arms. AsyncLog, SmallRecordCopy, SamplerCapsCache, LastConsumerReaderFence
+and the separate new ReplayConstantWindow are OFF in both. Protected Present,
+head/input/gestures, resolution, stereo and lighting settings are inherited
+unchanged from the frozen previous A profile. Win32 GetPrivateProfileIntW and
+full effective-key comparison validate the two prepared profiles. Nothing was
+deployed. Existing Capture-DarknessCombat.ps1 remains the only collector: UAC
+before Steam, one initial visible-VR readiness check per launch, then audio-only
+10s stationary/20s combat phases with no feedback questions during capture.
+Include the already implemented read-only frame-cap audit during an authorized
+run. No native limit, encoded config or image byte is modified.
+
+Next isolated implementation: Render.ReplayConstantWindow=0 by default, also
+requires ReplayConstantBatch=1 and is forced OFF for matched capture. It retains
+final transformed values for each independent VS/PS register bank ONLY within
+an uninterrupted sequence of float-constant commands. Every other command,
+including draws, shader/state/resource changes, integer/bool constants, RT/VP,
+state-block application and unknown operations, flushes both banks. Dirty runs
+submit only registers actually written; unknown holes are never synthesized.
+Overwritten values can be combined, because no observer or draw occurs between
+them. Each original upload is transformed before storage, so partial matrices,
+projection metadata and shader-dependent processing keep original semantics.
+This is not a persistent device-state cache and does not skip any draw. Owned
+storage is reset per replay; empty flushes are O(1), nonempty scans are bounded
+to written spans. Invalid/null/unknown-cap calls flush then retain original API
+arguments. A failure consumes each pending run once and disables subsequent
+deferral; the existing replay exception handler aborts pending state without a
+retry. No new exception suppression was introduced. Rollback is Window=0.
+
+On the SAME older run_35124 trace's command ranges (not the current outdoor
+scene), original4471 VS/PS calls become3362 with adjacent batching and2523 with
+the float-only window, reductions24.80% and43.57%. The window's2523 is obtained
+WITHOUT crossing any state setter. This demonstrates extra call opportunity,
+not a measured CPU saving or rendered-image proof: this private trace lacks
+constant payloads. Current outdoor D3D9/NVIDIA whole-module exclusive estimates
+(.940/.845ms) include other APIs and are NOT eliminable constant-only costs.
+Native resource/LOD work remains distributed among938 functions, largest
+identified exclusive .166ms. No safe external interception is established for
+omitting their traversal. Source-page permission caching remains rejected:
+1.830ms VirtualQuery exposure overlaps the1.992ms RecPush subtree; it cannot be
+added to it, and external buffers have no proven stable lifetime/protection.
+The completed WOW64 memset-producer analysis was not repeated.
+
+Offline regressions compile actual ReplayStream admission, driver lambda, VS/PS
+cases, lookahead, SEH and receipt aggregation; only non-float bodies become
+bank observers, while stereo helper inputs are controlled test stubs. Both x86
+build modes pass72 streams/432072 records/62893 snapshots each, including actual
+4->2 driver entries for interleaved VS/PS, all-register bit identity (NaN/raw
+bits), caps0/32/96/224/256, overlapping/descending ranges, stage interleaving,
+unknown barriers, input ownership, default OFF, capture bypass, HRESULT failure
+and one-entry SEH/no retry. The existing real stereo-math tests separately
+exercise the unmodified transform helpers. Actual PS case576 checks per build
+and existing adjacent regression80190 checks/360000 inputs pass. Protected
+Present ABI/private methods/refcount/Reset/overlay modes, image guard, head117021,
+input20032, gestures227, source-copy239, FOV1206, composite171 and material424
+regressions PASS; auditor11, integration profiles7+3 and PM analyzer4 PASS.
+Production and diagnostic x86 builds PASS; frozen separately with matching
+PDB/MAP. No new Steam/HMD result exists. Runtime saving is UNKNOWN, and the
+previous outdoor17.55055ms mean/15.73932ms RUN leaves6.43944ms wall/4.62821ms
+RUN above11.11111ms. Neither offline call counts nor XR layers/s establish90Hz.
+
+Gate: authorize two controlled Steam launches for the adjacent A/B only after
+checking no other game is active, fresh EXE SHA/PE/bytes, backup all DLL/INI
+state. If ineffective, keep Batch=0; no automatic retries or promotion of the
+window variant. Native FrameCapMode/MaxFrameRate observation remains read-only.
+The window candidate remains IMPLEMENTED/OFFLINE VERIFIED, not IN-GAME VERIFIED
+or HMD ACCEPTED. No merge, deployment or automatic game launch.

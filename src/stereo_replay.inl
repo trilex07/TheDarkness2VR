@@ -26,6 +26,7 @@
 #include "stereo_geometry.h"
 #include "material_sampling.h"
 #include "replay_constant_batch.h"
+#include "replay_constant_window.h"
 
 namespace d2vr_replay {
 
@@ -392,6 +393,22 @@ static bool g_recActive = false;
 static bool g_recOverflow = false;
 static uint64_t g_recCounts[40] = { 0 };
 static uint64_t g_unhookedStateBlock = 0;
+#ifdef D2VR_MATCHED_CAPTURE
+struct ConstantUploadWindow {
+    d2vr_replay_batch::UploadCounts counts;
+    uint64_t streams = 0, batched = 0, windowed = 0, captureBypass = 0, otherEyes = 0;
+    void Report(uint64_t frame, long long beginQpc, long long endQpc, long long frequency) {
+        if (!streams) return;
+        Log("[ReplayUploads] endPair=%llu beginQpc=%lld endQpc=%lld frequency=%lld streams=%llu eye=1 otherEyes=%llu batchStreams=%llu windowStreams=%llu captureBypass=%llu VSrecords=%llu VScalls=%llu VSvectors=%llu VSfailed=%llu PSrecords=%llu PScalls=%llu PSvectors=%llu PSfailed=%llu exceptions=%llu; recorded float setters only (scope setters excluded)",
+            frame,beginQpc,endQpc,frequency,streams,otherEyes,batched,windowed,captureBypass,
+            counts.records[0],counts.calls[0],counts.vectors[0],counts.failures[0],
+            counts.records[1],counts.calls[1],counts.vectors[1],counts.failures[1],counts.exceptions);
+        *this = {};
+    }
+};
+static ConstantUploadWindow g_constantUploadWindow;
+#endif
+
 #define HOOK_MARK(n) (g_lastHookId = (n))
 
 // The engine can issue device calls from more than one thread - guard the record stream.
@@ -1580,12 +1597,28 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 #endif
     d2vr_replay_batch::Constants constants(batchEnabled, g_frameStart.vertexFloatLimit,
                                            g_frameStart.pixelFloatLimit);
-    auto sendConstants = [dev](d2vr_replay_batch::Stage stage, unsigned first,
-                              const float* values, unsigned count) -> long {
+    const bool windowEnabled = batchEnabled && g_replayConstantWindow;
+    // The existing recording lock serializes replay. Retain storage, not state,
+    // to avoid adding 8KB of stack probes on every OFF/adjacent replay.
+    static d2vr_replay_batch::ConstantWindow constantWindow;
+    if (windowEnabled) constantWindow.Reset(g_frameStart.vertexFloatLimit,g_frameStart.pixelFloatLimit);
+    auto forwardConstants = [dev](d2vr_replay_batch::Stage stage, unsigned first,
+                                 const float* values, unsigned count) -> long {
         return stage == d2vr_replay_batch::Stage::Vertex ?
             g_orig.SetVertexShaderConstantF(dev,first,values,count) :
             g_orig.SetPixelShaderConstantF(dev,first,values,count);
     };
+#ifdef D2VR_MATCHED_CAPTURE
+    const bool auditUploads = d2vr_cpu_sync::timing.enabled;
+    d2vr_replay_batch::UploadCounts uploadCounts;
+    auto sendConstants = [&](d2vr_replay_batch::Stage stage, unsigned first,
+                             const float* values, unsigned count) -> long {
+        return auditUploads ? uploadCounts.Forward(stage,first,values,count,forwardConstants) :
+                              forwardConstants(stage,first,values,count);
+    };
+#else
+    const auto sendConstants = forwardConstants;
+#endif
     for (size_t i = 0; i < g_rec.size(); ++i) {
         const Rec& r = g_rec[i];
         if (dump) {
@@ -1594,7 +1627,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         }
         HOOK_MARK(10000 + (LONG)r.op);
         __try {
-        if (batchEnabled) constants.Barrier(
+        if (windowEnabled && r.op!=OP_SetVSConstF && r.op!=OP_SetPSConstF)
+            constantWindow.Flush(sendConstants);
+        if (batchEnabled && !windowEnabled) constants.Barrier(
             r.op==OP_SetVSConstF ? d2vr_replay_batch::Stage::Vertex :
             r.op==OP_SetPSConstF ? d2vr_replay_batch::Stage::Pixel :
                                   d2vr_replay_batch::Stage::None, sendConstants);
@@ -1698,6 +1733,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_SetVSConstF: {
+#ifdef D2VR_MATCHED_CAPTURE
+            if (auditUploads) uploadCounts.Record(d2vr_replay_batch::Stage::Vertex);
+#endif
             const float* src = (const float*)(dataBase + r.a[4]);
             // MUST hold Vector4fCount vectors of 4 floats each (bone palettes upload up to
             // 68 vectors = 272 floats). The old size (17*4) overflowed the stack -> fail-fast.
@@ -1708,9 +1746,11 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (eye >= 0 && r.a[1] <= 68 && !lightVs && !IsShadowAtlasPass(dev)) {
                 if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, sp)) src = tmp;
             }
-            if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Vertex,
+            if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Vertex,
                 r.a[0],src,r.a[1],sendConstants);
-            else g_orig.SetVertexShaderConstantF(dev, r.a[0], src, r.a[1]);
+            else if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Vertex,
+                r.a[0],src,r.a[1],sendConstants);
+            else sendConstants(d2vr_replay_batch::Stage::Vertex,r.a[0],src,r.a[1]);
             break;
         }
         case OP_SetVSConstI:
@@ -1739,6 +1779,9 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             g_orig.SetPixelShader(dev, (IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
             break;
         case OP_SetPSConstF: {
+#ifdef D2VR_MATCHED_CAPTURE
+            if (auditUploads) uploadCounts.Record(d2vr_replay_batch::Stage::Pixel);
+#endif
             const float* values = (const float*)(dataBase + r.a[4]);
             float adjusted[224*4];
             bool copied = CompensatePsConstants(adjusted, values, r.a[0], r.a[1],
@@ -1761,14 +1804,16 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 }
             }
             const float* values2 = copied ? adjusted : values;
-            if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Pixel,
+            if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Pixel,
+                r.a[0],values2,r.a[1],sendConstants);
+            else if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Pixel,
                 r.a[0],values2,r.a[1],sendConstants);
             else {
 #ifdef D2VR_MATCHED_CAPTURE
-                const HRESULT uploaded=g_orig.SetPixelShaderConstantF(dev,r.a[0],values2,r.a[1]);
+                const HRESULT uploaded=sendConstants(d2vr_replay_batch::Stage::Pixel,r.a[0],values2,r.a[1]);
                 MatchedProjectionObserved(values,values2,r.a[0],r.a[1],g_activePsInverse,uploaded);
 #else
-                g_orig.SetPixelShaderConstantF(dev, r.a[0], values2, r.a[1]);
+                sendConstants(d2vr_replay_batch::Stage::Pixel,r.a[0],values2,r.a[1]);
 #endif
             }
             break;
@@ -1819,11 +1864,16 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const auto stage = next && next->op==OP_SetVSConstF ? d2vr_replay_batch::Stage::Vertex :
                 next && next->op==OP_SetPSConstF ? d2vr_replay_batch::Stage::Pixel :
                                                 d2vr_replay_batch::Stage::None;
-            if (!next || !constants.CanAppend(stage,next->a[0],next->a[1]))
+            if (windowEnabled) {
+                if (!next || stage==d2vr_replay_batch::Stage::None) constantWindow.Flush(sendConstants);
+            } else if (!next || !constants.CanAppend(stage,next->a[0],next->a[1]))
                 constants.Flush(sendConstants);
         }
         } __except (1) {
-            constants.Abort(); batchEnabled=false;
+            constants.Abort(); constantWindow.Abort(); batchEnabled=false;
+#ifdef D2VR_MATCHED_CAPTURE
+            if (auditUploads) ++uploadCounts.exceptions;
+#endif
             // The NVIDIA/D3D9 runtime can raise on stale resource pointers recorded
             // earlier in the frame (temp textures). Skip the call - never kill the game.
             static int s_replayErrs = 0;
@@ -1833,6 +1883,16 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             }
         }
     }
+#ifdef D2VR_MATCHED_CAPTURE
+    if (auditUploads) {
+        g_constantUploadWindow.counts.Add(uploadCounts);
+        ++g_constantUploadWindow.streams;
+        g_constantUploadWindow.otherEyes += eye != 1;
+        g_constantUploadWindow.batched += g_replayConstantBatch && !MatchedCaptureRecordingActive();
+        g_constantUploadWindow.windowed += windowEnabled;
+        g_constantUploadWindow.captureBypass += g_replayConstantBatch && MatchedCaptureRecordingActive();
+    }
+#endif
     InterlockedExchange(&g_recLock, 0);
     g_replayEye = -1;
 }

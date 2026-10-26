@@ -13,8 +13,11 @@ $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Componen
 $vcvars=Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat'
 Push-Location $out
 try {
-    cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 /I`"$out`" `"$here\replay_ps_payload_test.cpp`" /Fe:replay-ps-payload-test.exe"
-    if($LASTEXITCODE -ne 0){throw 'build failed'}
-    & .\replay-ps-payload-test.exe
-    if($LASTEXITCODE -ne 0){throw 'actual PS packet regression failed'}
+    foreach($flavor in @('production','diagnostic')) {
+        $define=if($flavor -eq 'diagnostic'){'/DD2VR_MATCHED_CAPTURE=1'}else{''}
+        cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 $define /I`"$out`" `"$here\replay_ps_payload_test.cpp`" /Fe:replay-ps-payload-test.exe"
+        if($LASTEXITCODE -ne 0){throw "$flavor build failed"}
+        & .\replay-ps-payload-test.exe
+        if($LASTEXITCODE -ne 0){throw "$flavor actual PS packet regression failed"}
+    }
 } finally {Pop-Location}

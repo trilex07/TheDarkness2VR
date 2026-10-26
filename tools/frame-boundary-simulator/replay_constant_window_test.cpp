@@ -1,0 +1,179 @@
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <d3d9.h>
+#include <array>
+#include <vector>
+#include <unordered_map>
+#include <type_traits>
+#include <cstdio>
+#include <cassert>
+#include "../../src/replay_constant_window.h"
+using namespace d2vr_replay_batch;
+static_assert(sizeof(void*)==4,"production ABI");
+static_assert(std::is_trivially_destructible<ConstantWindow>::value,"SEH caller");
+enum RecOp {OP_SetVSConstF=20,OP_SetPSConstF=27};
+struct Rec {unsigned op=0,n=0,a[6]{};};
+struct Params {float transX=0,transY=0;};
+struct Banks {std::array<uint32_t,256*4> vs{},ps{};};
+static Banks driver;
+static std::vector<Banks> expected;
+static std::vector<Rec> g_rec;
+static std::vector<uint8_t> arena;
+static unsigned checkAt=0,checks=0,apiCalls=0,apiFail=0,throwAt=0;
+static bool g_replayConstantBatch=false,g_replayConstantWindow=false,capture=false,compensate=false;
+static struct {unsigned vertexFloatLimit=256,pixelFloatLimit=224;} g_frameStart;
+[[maybe_unused]] static bool MatchedCaptureRecordingActive(){return capture;}
+namespace d2vr_cpu_sync {static struct {bool enabled=true;} timing;}
+static struct {
+    UploadCounts counts;unsigned streams=0,otherEyes=0,batched=0,windowed=0,captureBypass=0;
+} g_constantUploadWindow;
+static bool g_skipLightVsShift=false;
+static struct Vs {uint32_t hash=0;} shader;
+static Vs* g_activeVs=&shader;
+static bool IsShadowAtlasPass(void*){return false;}
+static bool ApplyShiftToUpload(float* dst,const float* src,UINT,UINT n,Vs*,const Params&){
+    if(!n || n>68)return false;
+    memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);bits^=0x10000;memcpy(dst,&bits,4);return true;
+}
+static int g_activePsInverse=-1,g_activePsViewExtents=-1;
+static bool g_lightPosShift=false;
+static const void* g_replayPs=nullptr;
+static const uint32_t kShadowLightPsHash=0xC4D1FB10u;
+static std::unordered_map<const void*,uint32_t> g_psHashByPtr;
+static bool CompensatePsConstants(float* dst,const float* src,UINT,UINT n,int,int,const Params&){
+    if(!compensate || !n || n>224)return false;
+    memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);bits^=0x20000;memcpy(dst,&bits,4);return true;
+}
+[[maybe_unused]] static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT){}
+static void Log(const char*,...){}
+#define HOOK_MARK(value) ((void)0)
+static HRESULT Submit(bool vertex,UINT first,const float* values,UINT count){
+    ++apiCalls;
+    if(throwAt && apiCalls==throwAt)RaiseException(0xe0420011,0,0,nullptr);
+    const unsigned limit=vertex?256:224;
+    if(!values || !count || first>=limit || count>limit-first){++apiFail;return D3DERR_INVALIDCALL;}
+    auto& bank=vertex?driver.vs:driver.ps;
+    memcpy(bank.data()+first*4,values,size_t(count)*16);return S_OK;
+}
+static HRESULT VS(void*,UINT first,const float* data,UINT n){return Submit(true,first,data,n);}
+static HRESULT PS(void*,UINT first,const float* data,UINT n){return Submit(false,first,data,n);}
+static struct {decltype(&VS) SetVertexShaderConstantF=VS;decltype(&PS) SetPixelShaderConstantF=PS;} g_orig;
+static void CheckBanks(){
+    assert(checkAt<expected.size());
+    assert(driver.vs==expected[checkAt].vs && driver.ps==expected[checkAt].ps);++checkAt;++checks;
+}
+static void Actual(){
+    void* dev=nullptr;const int eye=1;const bool dump=false;const Params sp;
+    const uint8_t* dataBase=arena.data();
+#include "actual_replay_float_loop.inl"
+}
+static uint32_t rng=0xa18478ed;
+static uint32_t Random(){rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;}
+static void Build(){
+    g_rec.clear();arena.clear();expected.clear();Banks ref;
+    for(unsigned i=0;i<6000;++i){
+        Rec r;
+        if(i%7==6){r.op=1+Random()%18;if(r.op==OP_SetVSConstF || r.op==OP_SetPSConstF)r.op=36;
+            expected.push_back(ref);g_rec.push_back(r);continue;}
+        r.op=(Random()%3)?OP_SetVSConstF:OP_SetPSConstF;
+        r.a[0]=Random()%256;r.a[1]=Random()%69;
+        if(i%19==0)r.a[0]=0; // projection/partial ranges and duplicated overlaps
+        const unsigned bytes=r.a[1]*16;r.a[4]=unsigned(arena.size());arena.resize(arena.size()+bytes);
+        for(unsigned b=0;b<bytes;b+=4){const auto bits=Random();memcpy(arena.data()+r.a[4]+b,&bits,4);}
+        const unsigned limit=r.op==OP_SetVSConstF?256:224;
+        if(r.a[1] && r.a[0]<limit && r.a[1]<=limit-r.a[0]){
+            float tmp[68*4];const float* data=reinterpret_cast<const float*>(arena.data()+r.a[4]);
+            if(r.op==OP_SetVSConstF){if(ApplyShiftToUpload(tmp,data,r.a[0],r.a[1],g_activeVs,Params{}))data=tmp;}
+            else if(CompensatePsConstants(tmp,data,r.a[0],r.a[1],-1,-1,Params{}))data=tmp;
+            auto& bank=r.op==OP_SetVSConstF?ref.vs:ref.ps;
+            memcpy(bank.data()+r.a[0]*4,data,bytes);
+        }
+        g_rec.push_back(r);
+    }
+    Rec end;end.op=36;g_rec.push_back(end);expected.push_back(ref);
+}
+static void HeaderCases(){
+    ConstantWindow window;window.Reset(256,224);Banks wanted;
+    auto send=[](Stage stage,unsigned first,const float* data,unsigned count){return Submit(stage==Stage::Vertex,first,data,count);};
+    driver={};apiCalls=apiFail=0;
+    for(unsigned i=0;i<10000;++i){
+        if(i%9==8){window.Flush(send);assert(driver.vs==wanted.vs && driver.ps==wanted.ps);++checks;continue;}
+        const Stage stage=(i%2)?Stage::Pixel:Stage::Vertex;
+        const unsigned limit=stage==Stage::Vertex?256:224;
+        const unsigned first=Random()%limit,n=1+Random()%(limit-first);
+        std::array<uint32_t,256*4> bits;for(auto& b:bits)b=Random();
+        auto& bank=stage==Stage::Vertex?wanted.vs:wanted.ps;
+        memcpy(bank.data()+first*4,bits.data(),size_t(n)*16);
+        window.Upload(stage,first,reinterpret_cast<float*>(bits.data()),n,send);
+        bits.fill(0xdeadbeef); // no source-pointer retention
+    }
+    window.Flush(send);assert(driver.vs==wanted.vs && driver.ps==wanted.ps);++checks;
+    window.Reset(256,224);driver={};apiCalls=0;float data[16]{};
+    UploadCounts receipt;auto counted=[&](Stage stage,unsigned first,const float* p,unsigned n){return receipt.Forward(stage,first,p,n,send);};
+    window.Upload(Stage::Vertex,0,data,4,counted);window.Upload(Stage::Pixel,0,data,4,counted);
+    assert(apiCalls==0);window.Flush(counted);window.Flush(counted);assert(apiCalls==2);
+    assert(receipt.calls[0]==1 && receipt.calls[1]==1 && receipt.vectors[0]==4);
+    window.Reset(256,224);window.Upload(Stage::Vertex,0,data,4,counted);window.Abort();window.Flush(counted);assert(apiCalls==2);
+    // Real driver failure consumes the dirty range once, drains other stage,
+    // disables future deferred writes. Input arguments of a later invalid call remain intact.
+    window.Reset(256,224);unsigned sent=0;auto fail=[&](Stage,unsigned,const float*,unsigned){++sent;return long(D3DERR_DEVICELOST);};
+    window.Upload(Stage::Vertex,0,data,4,fail);window.Upload(Stage::Pixel,0,data,4,fail);
+    window.Flush(fail);window.Flush(fail);assert(sent==2);
+    window.Upload(Stage::Vertex,4,data,4,fail);assert(sent==3);++checks;
+}
+static void ActualReduction(){
+    capture=false;compensate=false;
+    g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
+    unsigned counts[3]{};
+    for(unsigned mode=0;mode<3;++mode){
+        g_rec.clear();arena.assign(4*64,0);expected.clear();
+        Banks final;
+        for(unsigned i=0;i<4;++i){
+            Rec r;r.op=i%2?OP_SetPSConstF:OP_SetVSConstF;
+            r.a[0]=i<2?0:4;r.a[1]=4;r.a[4]=i*64;
+            float tmp[16]{};ApplyShiftToUpload(tmp,reinterpret_cast<const float*>(arena.data()+r.a[4]),r.a[0],4,g_activeVs,Params{});
+            auto& bank=i%2?final.ps:final.vs;
+            memcpy(bank.data()+r.a[0]*4,i%2?arena.data()+r.a[4]:reinterpret_cast<const uint8_t*>(tmp),64);
+            g_rec.push_back(r);
+        }
+        Rec barrier;barrier.op=36;g_rec.push_back(barrier);expected.push_back(final);
+        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};
+        g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode==2;Actual();
+        counts[mode]=apiCalls;assert(checkAt==1 && !apiFail);
+    }
+    assert(counts[0]==4 && counts[1]==4 && counts[2]==2);++checks;
+}
+int main(){
+    HeaderCases();ActualReduction();unsigned streams=0,records=0;
+    for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
+    for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u}){
+        d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
+        g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode==2;
+        g_frameStart.vertexFloatLimit=caps;g_frameStart.pixelFloatLimit=caps==96?32:224;
+        Build();const auto dataBefore=arena;
+        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};Actual();
+        assert(checkAt==expected.size() && arena==dataBefore);
+#ifdef D2VR_MATCHED_CAPTURE
+        if(diagnostics){
+            const auto& c=g_constantUploadWindow.counts;
+            assert(c.calls[0]+c.calls[1]==apiCalls && c.failures[0]+c.failures[1]==apiFail);
+            const auto inputs=c.records[0]+c.records[1];
+            unsigned wanted=0;for(const auto& r:g_rec)wanted+=r.op==OP_SetVSConstF || r.op==OP_SetPSConstF;
+            assert(inputs==wanted && c.exceptions==0 && g_constantUploadWindow.streams==1);
+            if(mode==0 || captured)assert(apiCalls==inputs);
+        } else assert(g_constantUploadWindow.streams==0);
+#endif
+        ++streams;records+=unsigned(g_rec.size());
+    }
+    // Diagnostic forwarding records entry before an SEH fault and never retries it.
+    g_rec.clear();arena.assign(16*4,0);Rec one;one.op=OP_SetVSConstF;one.a[1]=4;g_rec.push_back(one);
+    capture=false;g_replayConstantBatch=true;g_replayConstantWindow=true;
+    g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
+    d2vr_cpu_sync::timing.enabled=true;g_constantUploadWindow={};apiCalls=0;throwAt=1;Actual();throwAt=0;
+    assert(apiCalls==1);
+#ifdef D2VR_MATCHED_CAPTURE
+    assert(g_constantUploadWindow.counts.exceptions==1 && g_constantUploadWindow.counts.calls[0]==1);
+#endif
+    printf("PASS actual replay float loop: %u streams / %u records / %u barrier snapshots; OFF/adjacent/window/capture, transformed bits, caps, failures, forwarding receipts, SEH no retry\n",streams,records,checks);
+}
