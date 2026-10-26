@@ -2,6 +2,22 @@
 #include "stereo_math.h"
 #include <algorithm>
 namespace d2vr_hands {
+constexpr size_t HumanArmFloats=22*16;
+// Only undo a pose while the selected palette still contains our exact edit.
+// A native animation that has touched the arm owns it and must be left alone.
+inline bool RestoreOwnedArm(float* palette,const float* applied,const float* original) {
+    if(std::memcmp(palette,applied,HumanArmFloats*sizeof(float))!=0) return false;
+    std::memcpy(palette,original,HumanArmFloats*sizeof(float));
+    return true;
+}
+inline bool RebaseArm(float* bones,const float* palette,const float* applied,float* original) {
+    if(std::memcmp(palette,applied,HumanArmFloats*sizeof(float))==0) {
+        std::memcpy(bones,original,HumanArmFloats*sizeof(float));
+        return true;
+    }
+    std::memcpy(original,bones,HumanArmFloats*sizeof(float));
+    return false;
+}
 struct V {
     float x,y,z;
     V operator+(V b) const { return {x+b.x,y+b.y,z+b.z}; }

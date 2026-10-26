@@ -28,23 +28,31 @@ static NativeHandCalibration g_nativeHandCalibration;
 struct NativeHandsPaletteCache {
     void* renderer=nullptr; void* skeleton=nullptr; void* palette=nullptr;
     float original[44][16]{},applied[44][16]{};
+    bool leftSupportApplied=false;
 };
 static NativeHandsPaletteCache g_nativeHandsCache[3];
 static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expectedResource=nullptr) {
     if(!g_nativeHandsEnabled || !g_nativeHandsInstalled) return false;
     NativeGameplaySample sample;
     if(!CopyNativeGameplay(sample) || (!expectedResource && !sample.entities[0])) return false;
-    // Grab/attach animations rewrite the same palette; defer human IK until empty.
-    if(sample.grab==d2vr_input::GrabFeedback::Busy || sample.alternateHeldTarget ||
-       (expectedResource && sample.grab!=d2vr_input::GrabFeedback::Empty)) return false;
+    // Native grab owns the animation. The packer may only undo an unchanged
+    // support pose on an ordinary prop; it must never run IK during Busy.
+    const bool nativeOwnsGrab=sample.grab==d2vr_input::GrabFeedback::Busy ||
+        sample.alternateHeldTarget ||
+        (expectedResource && sample.grab!=d2vr_input::GrabFeedback::Empty);
+    const bool releaseSupportOnly=expectedResource &&
+        d2vr_input::CanRestoreSupportDuringGrab(sample.grab,sample.grabEntity,
+                                                 sample.alternateHeldTarget);
+    if(nativeOwnsGrab && !releaseSupportOnly) return false;
     float gunWorld[16]{};
-    if(!expectedResource &&
+    if(!nativeOwnsGrab && !expectedResource &&
        !TryNativeWeaponMatrix((void*)sample.entities[0],gunWorld,cameraVtable)) return false;
     NativeWeaponPose left,right; bool support;
     if(!TryAcquireSRWLockShared(&g_nativeWeaponLock)) return false;
     left=g_nativeWeaponPoses[0]; right=g_nativeWeaponPoses[1]; support=g_nativeSupport;
     ReleaseSRWLockShared(&g_nativeWeaponLock);
-    if(expectedResource && (!right.valid || GetTickCount64()-right.time>=100)) return false;
+    if(expectedResource && !nativeOwnsGrab &&
+       (!right.valid || GetTickCount64()-right.time>=100)) return false;
     bool locked=false;
     __try {
         // The pistol model's +3C4 parent is not proof of ownership of the
@@ -69,7 +77,8 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         auto resource=**(BYTE***)(renderer+0x5BC);
         if(!resource || (expectedResource && resource!=expectedResource) ||
            *(DWORD*)resource!=0xFC2578) return false;
-        if(expectedResource && !d2vr_aim::BuildWeaponMatrix((float*)(camera+0x80),right.local,gunWorld))
+        if(expectedResource && !nativeOwnsGrab &&
+           !d2vr_aim::BuildWeaponMatrix((float*)(camera+0x80),right.local,gunWorld))
             return false;
         auto skeleton=**(BYTE***)(resource+0x5E0);
         if(!skeleton || *(DWORD*)skeleton!=0xFC2338) return false;
@@ -81,6 +90,29 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
            strcmp(*(char**)(records+12*43),"GAME_R1_WEAPON1")) return false;
         auto palette=*(float**)outputVector;
         if(*(float**)((BYTE*)outputVector+4)-palette!=130*16) return false;
+        if(releaseSupportOnly) {
+            if(!TryAcquireSRWLockExclusive(&g_nativeHandsLock)) return false;
+            locked=true;
+            auto& cache=g_nativeHandsCache[index];
+            const bool same=cache.renderer==renderer && cache.skeleton==skeleton &&
+                cache.palette==palette;
+            const bool restored=same && cache.leftSupportApplied &&
+                d2vr_hands::RestoreOwnedArm(palette+2*16,cache.applied[0],cache.original[0]);
+            if(restored) {
+                cache.leftSupportApplied=false;
+                memcpy(cache.applied[0],palette+2*16,d2vr_hands::HumanArmFloats*sizeof(float));
+                renderer[0x580+skinIndex]=1;
+                renderer[0x580+(1-skinIndex)]=1;
+                Log("[HandSupport] restored owned left pose before native prop grab; skin slot=%lu pose slot=%lu",skinIndex,index);
+            } else if(same && cache.leftSupportApplied &&
+                      memcmp(palette+2*16,cache.applied[0],
+                             d2vr_hands::HumanArmFloats*sizeof(float))!=0) {
+                cache.leftSupportApplied=false; // native animation already replaced our pose
+            }
+            ReleaseSRWLockExclusive(&g_nativeHandsLock);
+            locked=false;
+            return restored;
+        }
         alignas(16) float bones[130][16]; memcpy(bones,palette,sizeof(bones));
         for(int i:{5,21,27,43}) if(!d2vr_hands::Valid(bones[i])) return false;
         float inverseParent[16],rightTarget[16],leftTarget[16];
@@ -98,11 +130,17 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         const bool same=cache.renderer==renderer && cache.skeleton==skeleton && cache.palette==palette;
         // Cached native poses can be queried more than once before animation
         // runs again. Solve from their pristine human bones, never our last IK.
-        if(same && memcmp(palette+2*16,cache.applied,sizeof(cache.applied))==0)
-            memcpy(bones+2,cache.original,sizeof(cache.original));
-        else {
+        if(same) {
+            for(int arm=0;arm<2;++arm) {
+                const int offset=arm*22;
+                const bool owned=d2vr_hands::RebaseArm(bones[2+offset],
+                    palette+(2+offset)*16,cache.applied[offset],cache.original[offset]);
+                if(!owned && arm==0) cache.leftSupportApplied=false;
+            }
+        } else {
             cache.renderer=renderer; cache.skeleton=skeleton; cache.palette=palette;
             memcpy(cache.original,bones+2,sizeof(cache.original));
+            cache.leftSupportApplied=false;
         }
         NativeHandCalibration cal=g_nativeHandCalibration;
         if(cal.parent!=parent || cal.skeleton!=skeleton) {
@@ -125,6 +163,7 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         const bool rightChanged=memcmp(bones+24,palette+24*16,22*64)!=0;
         const bool leftChanged=leftValid && memcmp(bones+2,palette+2*16,22*64)!=0;
         if(!rightChanged && !leftChanged) {
+            if(leftValid && !support) cache.leftSupportApplied=false;
             ReleaseSRWLockExclusive(&g_nativeHandsLock);
             locked=false;
             return true;
@@ -132,6 +171,7 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         // Keep the camera root and demon tentacles unchanged.
         memcpy(palette+24*16,bones[24],22*64);
         if(leftValid) memcpy(palette+2*16,bones[2],22*64);
+        if(leftValid) cache.leftSupportApplied=support && leftChanged;
         // Native pose setter 79927D marks this packed-skin buffer dirty after
         // editing model-space bones. 6C3C71 otherwise skips rebuilding the
         // 48-byte GPU matrices in renderer+428, leaving the visible arms stale.

@@ -100,6 +100,10 @@ struct Slash {
 };
 
 enum class GrabFeedback { Unknown, Empty, Busy };
+inline bool CanRestoreSupportDuringGrab(GrabFeedback feedback,uintptr_t attachedEntity,
+                                        bool alternateHeldTarget) {
+    return feedback==GrabFeedback::Busy && attachedEntity!=0 && !alternateHeldTarget;
+}
 // Keep the powered part of a stroke, rather than the braking/rebound sample
 // present when squeeze finally crosses its release threshold. Fixed storage;
 // time weighting makes selection independent of XR refresh rate.

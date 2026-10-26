@@ -1,5 +1,6 @@
 #include "../../src/native_aim_math.h"
 #include "../../src/native_hands_math.h"
+#include "../../src/vr_input.h"
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -42,6 +43,55 @@ int main(int argc,char** argv) {
     // branch counts.
     const uint32_t seed=argc>1 ? (uint32_t)std::strtoul(argv[1],nullptr,0):0xD2A11725u;
     std::mt19937 rng(seed);
+    // Free -> pistol support -> left grip -> ordinary-prop grab -> release.
+    // The native grab must receive a pristine left arm, and a changed native
+    // pose must never be overwritten by the cache cleanup.
+    {
+        float pristine[130][16];for(auto& bone:pristine) Matrix(bone,{0,0,0});
+        Matrix(pristine[3],{0,0,0});Matrix(pristine[4],{.3f,0,0});
+        Matrix(pristine[5],{.6f,0,0});Matrix(pristine[6],{.64f,0,0});
+        Matrix(pristine[22],{.3f,0,0});Matrix(pristine[23],{0,0,0});
+        float palette[130][16];std::memcpy(palette,pristine,sizeof(palette));
+        d2vr_input::HandSupport support;
+        Check(!support.Update(0,true,false,.1f),"support dwell",0);
+        Check(support.Update(.13,true,false,.1f),"support engaged",0);
+        float supportTarget[16];Matrix(supportTarget,{.35f,.25f,0});
+        Check(d2vr_hands::PoseArm(palette,3,4,5,22,23,supportTarget),"support wrist pose",0);
+        float applied[22][16],original[22][16];
+        std::memcpy(applied,palette+2,sizeof(applied));
+        std::memcpy(original,pristine+2,sizeof(original));
+        float mixed[130][16];std::memcpy(mixed,palette,sizeof(mixed));
+        Matrix(mixed[27],{.1f,.4f,0}); // native changed only the other arm
+        Check(d2vr_hands::RebaseArm(mixed[2],palette[2],applied[0],original[0]),
+              "left support rebases independently of right arm",0);
+        Check(std::memcmp(mixed+2,pristine+2,sizeof(original))==0,
+              "left source remains native after right arm update",0);
+        Check(Near(d2vr_hands::Position(mixed[27]),{.1f,.4f,0}),
+              "right native edit remains untouched",0);
+        Check(!support.Update(.14,false,false,.1f),"left grip releases support",0);
+        Check(!d2vr_input::CanRestoreSupportDuringGrab(d2vr_input::GrabFeedback::Busy,0,false),
+              "acquisition without attached prop cannot edit palette",0);
+        Check(!d2vr_input::CanRestoreSupportDuringGrab(d2vr_input::GrabFeedback::Busy,1,true),
+              "enemy grab cannot edit palette",0);
+        Check(d2vr_input::CanRestoreSupportDuringGrab(d2vr_input::GrabFeedback::Busy,1,false),
+              "ordinary attached prop may release owned support",0);
+        Check(d2vr_hands::RestoreOwnedArm(palette[2],applied[0],original[0]),
+              "busy prop restores owned support pose",0);
+        Check(std::memcmp(palette,pristine,sizeof(palette))==0,
+              "native grab receives original palette",0);
+        Matrix(palette[5],{.46f,.1f,0}); // native grab animation owns this wrist
+        float nativeEdited[130][16];std::memcpy(nativeEdited,palette,sizeof(palette));
+        Check(!d2vr_hands::RestoreOwnedArm(palette[2],applied[0],original[0]),
+              "changed native grab palette rejected",0);
+        Check(std::memcmp(palette,nativeEdited,sizeof(palette))==0,
+              "busy native animation untouched",0);
+        std::memcpy(palette,pristine,sizeof(palette));
+        float freeTarget[16];Matrix(freeTarget,{.37f,-.20f,0});
+        Check(d2vr_hands::PoseArm(palette,3,4,5,22,23,freeTarget),
+              "controller pose resumes after grab",0);
+        Check(Near(d2vr_hands::Position(palette[5]),d2vr_hands::Position(freeTarget)),
+              "released left wrist follows controller",0);
+    }
     constexpr unsigned reachableCases=20000;
     for(unsigned k=0;k<reachableCases;++k) {
         float bones[130][16];
