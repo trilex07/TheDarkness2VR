@@ -1852,6 +1852,7 @@ static void PatchStateBlock(IDirect3DStateBlock9* sb) {
         g_sbHooked = -1;   // do not retry
         return;
     }
+    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(&vt[5]),sizeof(void*))) return;
     DWORD old = 0;
     if (VirtualProtect(&vt[5], sizeof(void*), PAGE_READWRITE, &old)) {
         g_origSBApply = reinterpret_cast<PFN_SBApply>(vt[5]);

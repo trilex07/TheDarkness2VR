@@ -132,3 +132,26 @@ Ghidra confirms native lazy per-variant caches at owner+0x60 PS / +0x50 VS; no
 unsafe hash-only shader reuse added. Retain 7eb665a; fix collector full baseline
 duration; final DLL/INI/local INI/EXE rollback hashes verified.
 Receipt: docs/research/perf-persistent-log-ab-20261026.md and aggregate JSON.
+
+### 2026-10-26: exact native-crash reproduction and image-write isolation
+
+Read-only pinned-EXE regression reproduces BOTH recorded E129EA source pointers.
+A's FC2664 class-vtable replacement alone yields A1561184; B's C63009 aim patch
+alone yields D966AF14. Native code hashes image regions and uses the transformed
+hash to decode source addresses. Original inputs produce valid F36A00/755C00.
+This establishes a mod hook-installation regression for those faults, rather
+than an unexplained native object-lifetime failure. No native validator bypass.
+
+Implemented OFF-by-default diagnostic BlockNativeImagePatches write admission,
+including the two proven sites and other image writers. It refuses VR/capture:
+only mono isolation is currently supported because verified Present still needs
+an EXE write. It is NOT a full-VR crash fix or HMD acceptance. Image-preserving
+interception/ownership remains the exact blocker; moving detours is not proven
+safe. Tests: 7 exact-pointer/model regressions; x86 image-guard/Present rollback;
+existing Present ABI,1329 tracked-gate checks,2327551 boundary assertions;
+capture31/readiness8/audit7; both DLL builds PASS. Steam/INI/EXE baseline hashes
+unchanged. No launch, deploy, merge or parameter changes.
+Receipt: docs/research/crash-relative-pointer-20261026.md.
+SIDE shader branch0f9c5f5 separately demonstrates a loading-prewarm safety
+blocker: failed native shader creation can erase the bytecode slot. No unsafe
+prewarm implementation or claimed gameplay improvement.

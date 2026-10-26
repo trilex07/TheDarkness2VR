@@ -31,6 +31,7 @@
 #include <unordered_set>
 #include <atomic>
 #include "persistent_log.h"
+#include "native_image_guard.h"
 #include "vr_input.h"
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
@@ -62,6 +63,7 @@ d2vr_log::File g_logFile;
 char g_logPath[MAX_PATH] = {};
 char g_iniPath[MAX_PATH] = {};
 std::atomic<bool> g_logReady{false};
+d2vr_native_image::Guard g_nativeImageGuard; // startup-latched; diagnostic OFF by default
 
 // Config / Modes
 // TestMode: 0 = Normal Game Capture, 1 = Solid Bright Green, 2 = Checkerboard
@@ -309,6 +311,13 @@ void Log(const char* fmt, ...) {
     LeaveCriticalSection(&g_logLock);
 }
 
+static bool NativeImageWriteAllowed(uintptr_t target, size_t length) {
+    if (g_nativeImageGuard.Allows(target,length)) return true;
+    Log("[NativeImageGuard] REFUSED image write target=%p bytes=%zu; native hash inputs must remain original",
+        reinterpret_cast<void*>(target),length);
+    return false;
+}
+
 static void LogStartupStage(int stage, const char* name) {
     InterlockedExchange(&g_lastStage, stage);
     Log("[Startup] stage=%d %s", stage, name);
@@ -411,6 +420,17 @@ static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
 static bool g_gpuSplitTiming = false;
 void LoadConfig() {
+#ifdef D2VR_MATCHED_CAPTURE
+    // Read once, before any installer or trace worker is started. Asynchronous
+    // INI edits must never toggle patch/rollback ownership.
+    if (GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
+        const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
+        const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+        const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(image+dos->e_lfanew);
+        g_nativeImageGuard={true,reinterpret_cast<uintptr_t>(image),pe->OptionalHeader.SizeOfImage};
+        Log("[NativeImageGuard] enabled: mono isolation only; no native hooks, IAT sizing/input, EXE Present or matched capture; renderer parameters unchanged");
+    }
+#endif
     char localIni[MAX_PATH] = ".\\Darkness2VR.ini";
     const char* chosenIni = g_iniPath;
     if (GetFileAttributesA(localIni) != INVALID_FILE_ATTRIBUTES) {
@@ -658,6 +678,10 @@ void LoadConfig() {
     d2vr_trace::g_maxEvents = GetPrivateProfileIntA("Render", "RenderPipelineTraceMax", 200000, chosenIni);
     d2vr_trace::g_traceScenes = GetPrivateProfileIntA("Render", "RenderPipelineTraceScenes", 0, chosenIni) ? 1 : 0;
     d2vr_trace::g_traceAllScenes = GetPrivateProfileIntA("Render", "RenderPipelineTraceAllScenes", 0, chosenIni) ? 1 : 0;
+    if (g_nativeImageGuard.enabled && g_renderPipelineTrace) {
+        Log("[NativeImageGuard] pipeline trace writer disabled for isolated admission");
+        g_renderPipelineTrace=0;
+    }
     if (g_renderPipelineTrace) {
         // Trace capture: enable swapchain present hook unless HookMask explicitly zero.
         if (g_hookMask != 0) g_hookMask |= 2;
@@ -2405,6 +2429,7 @@ static float __fastcall Probe_GetFov_Cull(void* self) {
 }
 
 static bool PatchExeCallSite(uint32_t va, void* hook, uint8_t* saved, size_t savedLen) {
+    if (!NativeImageWriteAllowed(va,6)) return false;
     uint8_t* p = (uint8_t*)va;
     uint8_t cur[6];
     __try { memcpy(cur, p, 6); } __except (1) { return false; }
@@ -2423,6 +2448,7 @@ static bool PatchExeCallSite(uint32_t va, void* hook, uint8_t* saved, size_t sav
 }
 
 static bool InstallFrustumGetFovHook() {
+    if (!NativeImageWriteAllowed(kFrustumGetFovSite,10)) return false;
     constexpr uint8_t kExpect[10] = { 0x8B, 0x90, 0x70, 0x02, 0x00, 0x00, 0x8B, 0xCE, 0xFF, 0xD2 };
     uint8_t* p = (uint8_t*)kFrustumGetFovSite;
     uint8_t cur[10];
@@ -2464,6 +2490,7 @@ static bool InstallGetFovProbe() {
     const uintptr_t frustumPage = kFrustumGetFovSite & ~(pageSize - 1);
     if (frustumPage < minPage) minPage = frustumPage;
     if (frustumPage > maxPage) maxPage = frustumPage;
+    if (!NativeImageWriteAllowed(minPage,maxPage-minPage+pageSize)) return false;
     DWORD oldProtect = 0;
     if (!VirtualProtect((void*)minPage, (SIZE_T)(maxPage - minPage + pageSize),
                         PAGE_EXECUTE_READWRITE, &oldProtect)) {
@@ -3686,6 +3713,7 @@ static bool HookDelayIATOrdinal(HMODULE module, const char* dllName, WORD ordina
                 }
             }
 
+            if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(&iat->u1.Function),sizeof(iat->u1.Function))) return false;
             DWORD oldProt = 0;
             if (!VirtualProtect(&iat->u1.Function, sizeof(iat->u1.Function), PAGE_READWRITE, &oldProt))
                 return false;
@@ -3734,6 +3762,7 @@ static bool HookStandardIATOrdinal(HMODULE module, const char* dllName, WORD ord
                 }
             }
 
+            if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(&iat->u1.Function),sizeof(iat->u1.Function))) return false;
             DWORD oldProt = 0;
             if (!VirtualProtect(&iat->u1.Function, sizeof(iat->u1.Function), PAGE_READWRITE, &oldProt))
                 return false;
@@ -4784,6 +4813,7 @@ static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp);
 
 void* PatchVTable(void* obj, int index, void* repl) {
     void** vt = *reinterpret_cast<void***>(obj);
+    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(&vt[index]),sizeof(void*))) return nullptr;
     DWORD old = 0;
     if (!VirtualProtect(&vt[index], sizeof(void*), PAGE_READWRITE, &old)) return nullptr;
     void* orig = vt[index];
@@ -5345,6 +5375,7 @@ static void InstallDiagnosticEnginePresent() {
     d2vr_cpu_sync::timing.Enable(GetPrivateProfileIntA("Diagnostics","CpuSyncTiming",0,
         ".\\Darkness2VR-diagnostic.ini")!=0);
     if(!GetPrivateProfileIntA("Diagnostics","EnginePresentCallsite",0,".\\Darkness2VR-diagnostic.ini")) return;
+    if (!NativeImageWriteAllowed(0xA94052,5)) return;
     auto image=reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr));
     char path[MAX_PATH]={};if(!GetModuleFileNameA(nullptr,path,MAX_PATH)) return;
     HANDLE locked=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
@@ -5387,6 +5418,7 @@ static void InstallDiagnosticTrackedGameplay() {
     const bool requested=GetPrivateProfileIntA("Diagnostics","RestoreTrackedGameplay",0,
         ".\\Darkness2VR-diagnostic.ini")!=0;
     if(!requested) return;
+    if (!NativeImageWriteAllowed(0xC63009,6)) return; // refuse the bundle before its first write
     char path[MAX_PATH]{};
     if(!GetModuleFileNameA(nullptr,path,MAX_PATH)) return;
     HANDLE locked=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
@@ -5443,6 +5475,7 @@ static void InstallDiagnosticTrackedGameplay() {
 
 static void InstallDiagnosticCameraCover() {
     if(!GetPrivateProfileIntA("Diagnostics","NativeCameraCover",0,".\\Darkness2VR-diagnostic.ini")) return;
+    if (!NativeImageWriteAllowed(d2vr_camera_cover::site,5)) return;
     if(!g_enginePresentInstalled || g_disableOpenXR || g_submitMode!=4 || g_stereoMode!=1 ||
        !g_autoFovWiden || g_engineFovFactor>1 || g_diagnosticFovWiden!=0) {
         Log("[NativeCameraCover] REFUSED incompatible config/Present");return;
@@ -5500,6 +5533,7 @@ static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
         return;
     }
     auto site = image + 0x694052;
+    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(site),5)) return;
     const unsigned char expected[] = {0x8B,0x41,0x0C,0xFF,0xD0};
     if (memcmp(site, expected, sizeof(expected)) != 0) {
         Log("[EnginePresent] REFUSED: call-site bytes differ");
@@ -5612,7 +5646,8 @@ void HookDevice(IDirect3DDevice9* dev) {
             if (cur && cur == expected && !memcmp(reinterpret_cast<void*>(0x00C9646E), call, sizeof(call))) {
                 g_origGetClientRect = reinterpret_cast<PFN_GetClientRect>(cur);
                 DWORD old = 0;
-                if (VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) {
+                if (NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(slot),sizeof(void*)) &&
+                    VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) {
                     *slot = reinterpret_cast<void*>(&Hook_GetClientRect);
                     VirtualProtect(slot, sizeof(void*), old, &old);
                     g_getClientRectHooked = true;
@@ -5782,6 +5817,15 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         LogStartupStage(2, "VEH crash handler installed");
         LoadConfig();
         LogStartupStage(3, "LoadConfig");
+        if (g_nativeImageGuard.enabled && !g_nativeImageGuard.ConfigAllowed(g_disableOpenXR!=0,g_stereoMode,
+            GetPrivateProfileIntA("Diagnostics","MatchedFrameCapture",0,".\\Darkness2VR-diagnostic.ini")!=0)) {
+            Log("[NativeImageGuard] REFUSED configuration: requires DisableOpenXR=1, StereoMode=0 and MatchedFrameCapture=0; verified VR needs an image-preserving Present observer");
+            if (g_vehHandle) {RemoveVectoredExceptionHandler(g_vehHandle);g_vehHandle=nullptr;}
+            EnterCriticalSection(&g_logLock);
+            g_logReady=false;g_logFile.Close();
+            LeaveCriticalSection(&g_logLock);
+            return FALSE;
+        }
 #ifdef D2VR_MATCHED_CAPTURE
         Log("[MatchedCapture] diagnostic build: legacy FOV probes suppressed; RestoreTrackedGameplay and NativeCameraCover OFF unless explicitly opted in and verified at CreateDevice");
         if (false) {

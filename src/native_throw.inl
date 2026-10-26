@@ -124,6 +124,7 @@ static bool InstallNativeThrowHook() {
             Log("[NativeThrow] unsupported throw velocity site; disabled"); return false;
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(site),5)) return false;
     DWORD old;
     if(!VirtualProtect(site,5,PAGE_EXECUTE_READWRITE,&old)) return false;
     g_nativeThrowPatch[0]=0xE8;

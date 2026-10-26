@@ -228,6 +228,7 @@ static bool InstallNativeHandsPackHook() {
             Log("[NativeHandsPack] REFUSED resource vtable or packer bytes mismatch"); return false;
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(slot),sizeof(void*))) return false;
     DWORD old=0;
     if(!VirtualProtect((void*)slot,sizeof(void*),PAGE_READWRITE,&old)) return false;
     void* prior=InterlockedCompareExchangePointer(slot,(void*)&NativeHandsPackHook,(void*)expected);

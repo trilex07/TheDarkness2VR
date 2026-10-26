@@ -231,6 +231,7 @@ static bool InstallNativeAimHook() {
             Log("[NativeAim] unsupported image/call site; disabled"); return false;
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(site),6)) return false;
     DWORD old=0;
     if(!VirtualProtect(site,6,PAGE_EXECUTE_READWRITE,&old)) return false;
     g_nativeAimPatch[0]=0xB8; g_nativeAimPatch[5]=0x90;

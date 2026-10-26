@@ -121,6 +121,7 @@ static bool InstallNativeWeaponHook() {
             Log("[NativeWeapon] unsupported world-transform call site; disabled"); return false;
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(site),5)) return false;
     DWORD old;
     if(!VirtualProtect(site,5,PAGE_EXECUTE_READWRITE,&old)) return false;
     g_nativeWeaponPatch[0]=0xE8;
@@ -189,6 +190,7 @@ static bool InstallNativePistolHook() {
             Log("[NativeWeapon] unsupported pistol fire call site; shot override disabled"); return false;
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(site),5)) return false;
     DWORD old;
     if(!VirtualProtect(site,5,PAGE_EXECUTE_READWRITE,&old)) return false;
     g_nativePistolPatch[0]=0xE8;
