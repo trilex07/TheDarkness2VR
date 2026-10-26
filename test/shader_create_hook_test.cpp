@@ -64,9 +64,23 @@ static std::vector<std::vector<DWORD>> forwarded;
 static unsigned createCalls = 0;
 static bool failNext = false;
 static HRESULT createResult = S_OK;
-static HRESULT STDMETHODCALLTYPE FakeCreate(IDirect3DDevice9*, const DWORD* code,
+static const DWORD* rejectedInput = nullptr;
+static IDirect3DDevice9* lastDevice = nullptr;
+static const DWORD* lastInput = nullptr;
+static IDirect3DPixelShader9** lastOutput = nullptr;
+static HRESULT STDMETHODCALLTYPE FakeCreate(IDirect3DDevice9* device, const DWORD* code,
                                              IDirect3DPixelShader9** out) {
     ++createCalls;
+    lastDevice = device; lastInput = code; lastOutput = out;
+    // A rejecting native API need not dereference malformed input. The hook
+    // must still forward its exact arguments/HRESULT without touching the gap.
+    if (code == rejectedInput) {
+        if (SUCCEEDED(createResult) && out) {
+            *out = new FakeShader({0xffff0300u, 0x0000ffffu});
+            g_psHashByPtr[*out] = 0xdecafbadu; // simulate an old identity at a recycled native pointer
+        }
+        return createResult;
+    }
     const size_t n = SafeShaderTokenCount(code);
     CHECK(n > 0);
     forwarded.emplace_back(code, code + n + 1);
@@ -96,6 +110,8 @@ static void ResetFixture() {
     profileValue = 0;
     failNext = false;
     createResult = S_OK;
+    rejectedInput = lastInput = nullptr;
+    lastDevice = nullptr; lastOutput = nullptr;
     forwarded.clear();
     g_psHashByPtr.clear();
     g_psInverse.clear();
@@ -175,6 +191,74 @@ static void DeviceRecreationAndEyes() {
     CheckShader(first, ordinary, 4);
     CheckShader(second, ordinary, 4);
 }
+static void MalformedCommentGap() {
+    SYSTEM_INFO system{}; GetSystemInfo(&system);
+    const size_t page = system.dwPageSize, pageWords = page / sizeof(DWORD);
+    CHECK(pageWords >= 4 && 2 * pageWords + 1 < 8192);
+    auto* memory = static_cast<DWORD*>(VirtualAlloc(nullptr, 3 * page,
+        MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    CHECK(memory != nullptr);
+    memory[0] = 0xffff0300u;
+    memory[1] = static_cast<DWORD>((2 * pageWords - 2) << 16) | SI_COMMENT;
+    memory[2 * pageWords] = SI_END;
+#ifndef D2VR_BASELINE
+    CHECK(ValidatedPixelShaderTokenCount(memory) == 2 * pageWords);
+#endif
+    auto* device = reinterpret_cast<IDirect3DDevice9*>(uintptr_t(0x5555));
+    for (DWORD protection : {PAGE_NOACCESS, PAGE_READWRITE | PAGE_GUARD}) {
+        DWORD old = 0;
+        CHECK(VirtualProtect(memory + pageWords, page, protection, &old));
+        // The old boundary-only walker accepts this readable END while skipping
+        // the inaccessible comment payload. No test read touches that payload.
+        CHECK(SafeShaderTokenCount(memory) == 2 * pageWords);
+#ifndef D2VR_BASELINE
+        CHECK(ValidatedPixelShaderTokenCount(memory) == 0);
+#endif
+        ResetFixture();
+        rejectedInput = memory; createResult = D3DERR_INVALIDCALL;
+        auto* sentinel = reinterpret_cast<IDirect3DPixelShader9*>(uintptr_t(0x7777));
+        IDirect3DPixelShader9* out = sentinel;
+        CHECK(Hook_CreatePixelShader(device, memory, &out) == D3DERR_INVALIDCALL);
+        CHECK(createCalls == 1 && lastDevice == device && lastInput == memory && lastOutput == &out);
+        CHECK(out == sentinel && profileReads == kOrdinaryProfileReads && forwarded.empty());
+        CHECK(g_psHashByPtr.empty() && g_psInverse.empty() && g_psViewExtents.empty());
+        MEMORY_BASIC_INFORMATION region{};
+        CHECK(VirtualQuery(memory + pageWords, &region, sizeof(region)) == sizeof(region));
+        CHECK(region.Protect == protection); // especially PAGE_GUARD must remain set
+#ifndef D2VR_BASELINE
+        // Native validation owns its result, even if our source identity is
+        // unknown. Metadata may inspect only its validated GetFunction output.
+        ResetFixture(); rejectedInput = memory; createResult = S_FALSE;
+        out = nullptr;
+        CHECK(Hook_CreatePixelShader(device, memory, &out) == S_FALSE);
+        CHECK(createCalls == 1 && lastInput == memory && profileReads == 0 && forwarded.empty());
+        CHECK(out && !g_psHashByPtr.count(out));
+        auto* native = static_cast<FakeShader*>(out);
+        CHECK(native->refs == 1 && native->getFunctionCalls == 2);
+        CHECK(out->Release() == 0);
+        CHECK(VirtualQuery(memory + pageWords, &region, sizeof(region)) == sizeof(region));
+        CHECK(region.Protect == protection);
+#endif
+        CHECK(VirtualProtect(memory + pageWords, page, PAGE_READWRITE, &old));
+    }
+#ifndef D2VR_BASELINE
+    // Also reject an unreadable initial token and END without consuming guard.
+    for (size_t blockedPage : {size_t(0), size_t(2)}) {
+        DWORD old = 0;
+        CHECK(VirtualProtect(memory + blockedPage * pageWords, page, PAGE_READWRITE | PAGE_GUARD, &old));
+        ResetFixture(); rejectedInput = memory; createResult = D3DERR_DEVICELOST;
+        IDirect3DPixelShader9* out = nullptr;
+        CHECK(Hook_CreatePixelShader(device, memory, &out) == D3DERR_DEVICELOST);
+        CHECK(createCalls == 1 && lastInput == memory && out == nullptr && profileReads == 0);
+        MEMORY_BASIC_INFORMATION region{};
+        CHECK(VirtualQuery(memory + blockedPage * pageWords, &region, sizeof(region)) == sizeof(region));
+        CHECK(region.Protect == (PAGE_READWRITE | PAGE_GUARD));
+        CHECK(VirtualProtect(memory + blockedPage * pageWords, page, PAGE_READWRITE, &old));
+    }
+#endif
+    CHECK(VirtualFree(memory, 0, MEM_RELEASE));
+    std::puts("PASS malformed comment gaps: original forwarding/HRESULT and unchanged NOACCESS/GUARD");
+}
 static void PrivateShader(const char* path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     CHECK(bool(file));
@@ -205,10 +289,12 @@ static void PrivateShader(const char* path) {
 } // namespace d2vr_replay
 
 int main(int argc, char** argv) {
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     using namespace d2vr_replay;
     OrdinaryAndFailure();
     TargetOverrideAndFallback();
     DeviceRecreationAndEyes();
+    MalformedCommentGap();
     for (int i = 1; i < argc; ++i) PrivateShader(argv[i]);
     std::puts("PASS actual PS Create hook: bytecode, HRESULT, fallback, COM refs, device recreation, eyes");
 }

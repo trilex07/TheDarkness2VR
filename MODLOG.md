@@ -249,3 +249,15 @@ EXE unchanged. Actual source1920x1071;90FPS and clarity NOT MET.
 Next work is narrow COM-retention A/B with missing protected CPU-stage reporting
 corrected, not another general profiler. Receipt:
 docs/research/protected-vr-combined-runtime-20261026.md.
+
+### 2026-10-26: pixel shader prehash guard-gap correction (SIDE, offline)
+
+Isolated child of 8359d01: its eager full-byte hash could cross a NOACCESS/GUARD
+comment payload skipped by the token-boundary walker. Exact old-hook private
+control reproduces C0000005. A bounded PS-only token/range walk now validates
+every skipped region afresh before hashing/patching; unknown input forwards the
+original native arguments/HRESULT and cannot keep a recycled pointer's old hash.
+Actual-source candidate/baseline regressions cover protected gaps, initial/END
+guards, failure/opaque success ownership, target override and live INI behavior.
+No Steam/MAIN edits or HMD/FPS claims. See
+docs/research/shader-prehash-range-20261026.md.

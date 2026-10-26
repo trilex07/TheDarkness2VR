@@ -274,6 +274,51 @@ static size_t SafeShaderTokenCount(const DWORD* fn) {
     return 0;
 }
 
+// One fresh walk per PS creation, not a permission cache. Comment/instruction
+// payloads can skip pages that SafeShaderTokenCount never dereferences. Validate
+// the complete skipped range before reading the next token or hashing/patching.
+static bool ExtendReadableShaderRange(uintptr_t& through, uintptr_t wanted) {
+    constexpr DWORD readable = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
+        PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+    while (through < wanted) {
+        MEMORY_BASIC_INFORMATION region{};
+        if (VirtualQuery(reinterpret_cast<const void*>(through), &region, sizeof(region)) != sizeof(region) ||
+            region.State != MEM_COMMIT || (region.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
+            !(region.Protect & readable)) return false;
+        const uintptr_t base = reinterpret_cast<uintptr_t>(region.BaseAddress);
+        if (base > through || region.RegionSize > static_cast<uintptr_t>(-1) - base) return false;
+        const uintptr_t end = base + region.RegionSize;
+        if (end <= through) return false;
+        through = end;
+    }
+    return true;
+}
+
+static size_t ValidatedPixelShaderTokenCount(const DWORD* fn) {
+    if (!fn) return 0;
+    const uintptr_t base = reinterpret_cast<uintptr_t>(fn);
+    uintptr_t through = base;
+    const uintptr_t availableWords = (static_cast<uintptr_t>(-1) - base) / sizeof(DWORD);
+    if (!availableWords || !ExtendReadableShaderRange(through, base + sizeof(DWORD))) return 0;
+    __try {
+        if (((fn[0] >> 16) != 0xFFFE && (fn[0] >> 16) != 0xFFFF) ||
+            ((fn[0] >> 8) & 0xFF) < 2) return 0;
+        for (size_t n = 1; n < 8192;) {
+            if (n + 1 > availableWords ||
+                !ExtendReadableShaderRange(through, base + (n + 1) * sizeof(DWORD))) return 0;
+            const DWORD token = fn[n];
+            if ((token & 0xFFFF) == SI_END) return n;
+            const size_t length = (token & 0xFFFF) == SI_COMMENT
+                ? ((token >> 16) & 0x7FFF) : ((token >> 24) & 0xF);
+            if (length >= 8192 - n) return 0;
+            n += 1 + length;
+        }
+    } __except (1) {
+        return 0; // unexpected source changes: never admit an uncertain identity
+    }
+    return 0;
+}
+
 // ------------------------------------------------------------- stereo constant injection
 struct StereoParams {
     float separation = 0.0f;   // shear coefficient (screen-space, per eye sign applied)
@@ -648,7 +693,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                                                         IDirect3DPixelShader9** out) {
     bool screenDepthOverride = false;
     std::vector<DWORD> replacement;
-    const size_t originalWords = fn ? SafeShaderTokenCount(fn) : 0;
+    const size_t originalWords = ValidatedPixelShaderTokenCount(fn);
     const uint32_t originalHash = originalWords ? HashBytes(fn, (originalWords + 1) * 4) : 0;
     // This original shader reconstructs lighting from depth. Its interpolated
     // light-volume UV can diverge from the actual depth pixel after an eye shift.
@@ -703,7 +748,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         if (originalWords) {
             g_psHashByPtr[*out] = originalHash;
             Log("[PSPtr] %p hash=%08X", (void*)*out, originalHash);
-        }
+        } else g_psHashByPtr.erase(*out); // UNKNOWN must not retain a recycled pointer's old identity
         // GetFunction provides the driver's validated bytecode length for PS.
         UINT bytes = 0;
         if (SUCCEEDED((*out)->GetFunction(nullptr, &bytes)) && bytes <= 32768) {
