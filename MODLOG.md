@@ -155,3 +155,23 @@ Receipt: docs/research/crash-relative-pointer-20261026.md.
 SIDE shader branch0f9c5f5 separately demonstrates a loading-prewarm safety
 blocker: failed native shader creation can erase the bytecode slot. No unsafe
 prewarm implementation or claimed gameplay improvement.
+
+### 2026-10-26: image-preserving Present and protected stereo candidate
+
+Implemented opt-in external implementation-entry trampolines for verified
+CreateAdditionalSwapChain -> QI9Ex -> Present. Real COM objects/private tables,
+arguments, refs and HRESULTs stay native; no swapchain table copy or EXE write.
+Per-entry immutable originals prevent the previous saved-original overlay cycle.
+Reset/fault/thread changes close runtime XR admission. Protected SubmitMode4
+opens only inside the native presentation path after a successful warm-up;
+EndScene is never a substitute. Image-write guard remains latched, including
+IAT/data/vtables; initial native gameplay/input/FOV/sizing hooks remain disabled.
+
+Both x86 builds PASS. Actual native fixture/trampoline tests PASS for base/Ex,
+private methods, existing overlay JMP chain, 1000 release/recreation cycles,
+Reset/statuses, recursion/error/thread rejection and EXE text preservation.
+Guard/Present ABI/frame-boundary/capture regressions PASS. Installed EXE/DLL/INIs
+match preserved rollback hashes. Persistent log fix retained, SIDE prewarm
+findings preserved separately. Concrete private DLL/merged profile prepared;
+Steam/actual overlay/PSVR2 NOT RUN. No deployment, launch or automatic merge.
+Receipt: docs/research/image-preserving-present-20261026.md.

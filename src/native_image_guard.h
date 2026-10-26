@@ -17,9 +17,12 @@ struct Guard {
             return false; // unknown/overflowing intervals are not permission
         return target+length <= base || target >= base+bytes;
     }
-    bool ConfigAllowed(bool xrDisabled, int stereoMode, bool captureRequested) const {
-        // Verified stereo currently REQUIRES an image-writing Present observer.
-        // Do not silently substitute EndScene or claim an accepted VR fix.
+    bool ConfigAllowed(bool xrDisabled, int stereoMode, bool captureRequested,
+                       bool imageObserverRequested=false) const {
+        // Configuration admission is PENDING until the external implementation
+        // observer has actually acquired the native swapchain and forwarded a
+        // real successful Present. The caller enforces that second runtime gate.
+        if(imageObserverRequested) return enabled && !xrDisabled && stereoMode==1;
         return !enabled || (xrDisabled && stereoMode == 0 && !captureRequested);
     }
 };

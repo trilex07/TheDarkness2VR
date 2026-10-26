@@ -47,6 +47,10 @@ int main() {
     for(bool xrDisabled:{false,true}) for(int stereo:{0,1,2}) for(bool capture:{false,true}) {
         assert(guarded.ConfigAllowed(xrDisabled,stereo,capture)==(xrDisabled && stereo==0 && !capture));
         assert(legacy.ConfigAllowed(xrDisabled,stereo,capture));
+        // Requesting the external observer opens only a pending stereo config,
+        // never an EXE-write permission or a bypass when the guard is disabled.
+        assert(guarded.ConfigAllowed(xrDisabled,stereo,capture,true)==(!xrDisabled && stereo==1));
+        assert(!legacy.ConfigAllowed(xrDisabled,stereo,capture,true));
     }
     // Use the existing real Present transaction, not a second patch model.
     Memory m;d2vr_present_patch::Patch patch;
@@ -58,5 +62,5 @@ int main() {
     assert(patch.Remove(m));
     assert(m.writes==2 && m.flushes==2 && m.restores==2);
     assert(!std::memcmp(m.bytes(),d2vr_present_patch::original,5));
-    std::puts("PASS native image guard: crash inputs, boundaries, mono admission, Present refusal/rollback");
+    std::puts("PASS native image guard: crash inputs, boundaries, mono/pending stereo admission, Present refusal/rollback");
 }

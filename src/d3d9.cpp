@@ -44,6 +44,9 @@
 #include "tracked_gameplay_gate.h"
 #include "native_camera_cover.h"
 #include "exception_record_witness.h"
+#include "image_present_observer.h"
+static bool g_imagePreservingPresent=false;
+static d2vr_image_present::Observer g_imagePresent;
 static bool g_restoredTrackedGameplay = false;
 static thread_local d2vr_capture::PresentWitness g_capturePresent;
 static bool g_presentReadiness = false;
@@ -423,12 +426,13 @@ void LoadConfig() {
 #ifdef D2VR_MATCHED_CAPTURE
     // Read once, before any installer or trace worker is started. Asynchronous
     // INI edits must never toggle patch/rollback ownership.
-    if (GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
+    g_imagePreservingPresent=GetPrivateProfileIntA("Diagnostics","ImagePreservingPresent",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
         const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
         const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
         const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(image+dos->e_lfanew);
         g_nativeImageGuard={true,reinterpret_cast<uintptr_t>(image),pe->OptionalHeader.SizeOfImage};
-        Log("[NativeImageGuard] enabled: mono isolation only; no native hooks, IAT sizing/input, EXE Present or matched capture; renderer parameters unchanged");
+        Log("[NativeImageGuard] enabled: externalObserverRequested=%d; native EXE/IAT/vtable writes forbidden; renderer parameters unchanged",g_imagePreservingPresent);
     }
 #endif
     char localIni[MAX_PATH] = ".\\Darkness2VR.ini";
@@ -3803,6 +3807,9 @@ void TryInstallXInputHook() {
 
 // ---------------------------------------------------------------- OpenXR Setup
 bool InitXR() {
+#ifdef D2VR_MATCHED_CAPTURE
+    if(g_imagePreservingPresent && (!g_nativeImageGuard.enabled || !g_imagePresent.Ready() || !g_imagePresent.InPresentation())) return false;
+#endif
     const char* exts[] = { XR_KHR_D3D11_ENABLE_EXTENSION_NAME };
     XrVersion vers[] = { XR_MAKE_VERSION(1, 0, 34), XR_CURRENT_API_VERSION };
     XrResult r = XR_ERROR_RUNTIME_FAILURE;
@@ -4813,12 +4820,20 @@ static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp);
 
 void* PatchVTable(void* obj, int index, void* repl) {
     void** vt = *reinterpret_cast<void***>(obj);
-    if (!NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(&vt[index]),sizeof(void*))) return nullptr;
+    const bool allowed=NativeImageWriteAllowed(reinterpret_cast<uintptr_t>(&vt[index]),sizeof(void*));
     DWORD old = 0;
-    if (!VirtualProtect(&vt[index], sizeof(void*), PAGE_READWRITE, &old)) return nullptr;
+    if (!allowed || !VirtualProtect(&vt[index], sizeof(void*), PAGE_READWRITE, &old)) {
+#ifdef D2VR_MATCHED_CAPTURE
+        if(g_imagePreservingPresent) g_imagePresent.Fail("required graphics interface hook refused");
+#endif
+        return nullptr;
+    }
     void* orig = vt[index];
     vt[index] = repl;
-    VirtualProtect(&vt[index], sizeof(void*), old, &old);
+    const bool restored=VirtualProtect(&vt[index], sizeof(void*), old, &old)!=FALSE;
+#ifdef D2VR_MATCHED_CAPTURE
+    if(!restored && g_imagePreservingPresent) g_imagePresent.Fail("graphics interface protection restore failed");
+#endif
     return orig;
 }
 
@@ -4866,6 +4881,7 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
 #ifdef D2VR_MATCHED_CAPTURE
+    if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
     g_capturePresent.Reset();
     InterlockedIncrement(&g_captureResetGeneration); InterlockedExchange(&g_captureResetting,1);
 #endif
@@ -4901,6 +4917,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_vrRefValid = false;
     HRESULT hr = g_origReset(dev, pp);
 #ifdef D2VR_MATCHED_CAPTURE
+    if(g_imagePreservingPresent) g_imagePresent.ResetEnd(SUCCEEDED(hr));
     g_capturePresent.ResetResult(SUCCEEDED(hr));
     InterlockedExchange(&g_captureResetting,FAILED(hr));
 #endif
@@ -4916,6 +4933,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
 #ifdef D2VR_MATCHED_CAPTURE
+    if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
     g_capturePresent.Reset();
     InterlockedIncrement(&g_captureResetGeneration); InterlockedExchange(&g_captureResetting,1);
 #endif
@@ -4949,6 +4967,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
 #ifdef D2VR_MATCHED_CAPTURE
     g_capturePresent.ResetResult(g_origResetEx && SUCCEEDED(hr));
+    if(g_imagePreservingPresent) g_imagePresent.ResetEnd(g_origResetEx && SUCCEEDED(hr));
     InterlockedExchange(&g_captureResetting,!g_origResetEx || FAILED(hr));
 #endif
     if (SUCCEEDED(hr)) g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetSucceeded));
@@ -5061,6 +5080,12 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
 }
 
 static void ApplyBoundaryDecision(IDirect3DDevice9* dev, const d2vr_frame::Decision& d) {
+#ifdef D2VR_MATCHED_CAPTURE
+    // The protected candidate has NO EndScene or implicit-device fallback.
+    // Only a witnessed native additional-swapchain implementation call opens XR.
+    if(g_imagePreservingPresent && (!g_nativeImageGuard.enabled || !g_imagePresent.Ready() ||
+        !g_imagePresent.InPresentation() || g_submitMode!=4 || g_stereoMode!=1 || g_disableOpenXR)) return;
+#endif
     if (!d.requestVrFrame || !d.reason) return;
     if (d.incrementGameFrameId && g_submitMode == 4) InterlockedIncrement(&g_frameId);
     if (strstr(d.reason, "Present") || strstr(d.reason, "SwapChain"))
@@ -5130,7 +5155,9 @@ HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
             Log("[PresentReadiness] scenes=%u device=%llu ex=%llu swapchain=%llu resetGeneration=%ld slot17=%p slot121=%p observer=%s",
                 scenes,stats.devicePresent,stats.presentEx,stats.swapChainPresent,g_captureResetGeneration,
                 (*reinterpret_cast<void***>(dev))[17],(*reinterpret_cast<void***>(dev))[121],
-                g_enginePresentInstalled ? "EXPLICIT_ENGINE_CALLSITE" : "ABSENT");
+                g_imagePreservingPresent ? (g_imagePresent.Failed()?"EXTERNAL_FAULT":
+                    g_imagePresent.Ready()?"EXTERNAL_NATIVE_PRESENT_READY":"EXTERNAL_PENDING") :
+                    g_enginePresentInstalled ? "EXPLICIT_ENGINE_CALLSITE" : "ABSENT");
         }
     }
 #endif
@@ -5368,6 +5395,7 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
 }
 
 #ifdef D2VR_MATCHED_CAPTURE
+#include "image_present_runtime.inl"
 // Explicit exception: changes five bytes in the LOADED EXE, never its file.
 // Called only from the first CreateDevice callback before returning the device
 // to the engine. Never install/reinstall asynchronously from EndScene/Reset.
@@ -5595,20 +5623,23 @@ void HookDevice(IDirect3DDevice9* dev) {
         IDirect3DSwapChain9* implicit=nullptr;
         const HRESULT obtained=dev->GetSwapChain(0,&implicit);
         void* slot=implicit ? (*reinterpret_cast<void***>(implicit))[3] : nullptr;
-        Log("[PresentReadiness] coverage device=%p vt=%p slot17=%p slot121=%p implicit=%p slot3=%p getHr=0x%08lX swapchainObserver=ABSENT engineDispatchPatch=DISABLED",
-            dev,devVt,devVt[17],devVt[121],implicit,slot,obtained);
+        Log("[PresentReadiness] coverage device=%p vt=%p slot17=%p slot121=%p implicit=%p slot3=%p getHr=0x%08lX swapchainObserver=%s engineDispatchPatch=DISABLED",
+            dev,devVt,devVt[17],devVt[121],implicit,slot,obtained,
+            g_imagePreservingPresent?"EXTERNAL_PENDING":"ABSENT");
         Log("[PresentReadiness] implicit identity does not establish actual engine swapchain coverage; EndScene cannot certify capture");
         if (implicit) implicit->Release();
     }
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
+    InstallImagePresent(dev);
     InstallDiagnosticEnginePresent();
     InstallDiagnosticTrackedGameplay();
     InstallDiagnosticCameraCover();
 #endif
     Log("[EffectiveConfig] SwapChainPresentHook=%s OpenXR=%s TraceCSV=%s",
 #ifdef D2VR_MATCHED_CAPTURE
-        g_enginePresentInstalled ? "diagnostic-explicit-engine-callsite" : "disabled-native-patch-no-swapchain-observer",
+        g_imagePreservingPresent ? (g_imagePresent.Failed()?"external-fault-XR-blocked":"external-pending-native-Present") :
+            g_enginePresentInstalled ? "diagnostic-explicit-engine-callsite" : "disabled-native-patch-no-swapchain-observer",
 #else
         g_enginePresentInstalled ? "engine-callsite" : "pending-first-EndScene",
 #endif
@@ -5817,9 +5848,22 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         LogStartupStage(2, "VEH crash handler installed");
         LoadConfig();
         LogStartupStage(3, "LoadConfig");
-        if (g_nativeImageGuard.enabled && !g_nativeImageGuard.ConfigAllowed(g_disableOpenXR!=0,g_stereoMode,
-            GetPrivateProfileIntA("Diagnostics","MatchedFrameCapture",0,".\\Darkness2VR-diagnostic.ini")!=0)) {
-            Log("[NativeImageGuard] REFUSED configuration: requires DisableOpenXR=1, StereoMode=0 and MatchedFrameCapture=0; verified VR needs an image-preserving Present observer");
+        bool imageProfile=false;
+#ifdef D2VR_MATCHED_CAPTURE
+        imageProfile=g_imagePreservingPresent;
+#endif
+        const bool protectedConfig=g_nativeImageGuard.ConfigAllowed(g_disableOpenXR!=0,g_stereoMode,
+            GetPrivateProfileIntA("Diagnostics","MatchedFrameCapture",0,".\\Darkness2VR-diagnostic.ini")!=0,imageProfile);
+        const bool protectedFeatures=!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
+            !g_nativeLeftAim && !g_nativeWeaponPose && !g_nativeHandsEnabled && !g_gestureBridge && !g_tentacleBridge &&
+            !g_enableVRGamepad && g_headLookMode==0 &&
+            !GetPrivateProfileIntA("Diagnostics","EnginePresentCallsite",0,".\\Darkness2VR-diagnostic.ini") &&
+            !GetPrivateProfileIntA("Diagnostics","RestoreTrackedGameplay",0,".\\Darkness2VR-diagnostic.ini") &&
+            !GetPrivateProfileIntA("Diagnostics","NativeHandsPackHook",0,".\\Darkness2VR-diagnostic.ini") &&
+            !GetPrivateProfileIntA("Diagnostics","NativeCameraCover",0,".\\Darkness2VR-diagnostic.ini") &&
+            !GetPrivateProfileIntA("Diagnostics","ProductionResolution",0,".\\Darkness2VR-diagnostic.ini"));
+        if (g_nativeImageGuard.enabled && (!protectedConfig || !protectedFeatures)) {
+            Log("[NativeImageGuard] REFUSED configuration: mono isolation OR protected SubmitMode4/Stereo1/PresentPrimary; native input/hands/aim/FOV/EXE Present/sizing must stay disabled");
             if (g_vehHandle) {RemoveVectoredExceptionHandler(g_vehHandle);g_vehHandle=nullptr;}
             EnterCriticalSection(&g_logLock);
             g_logReady=false;g_logFile.Close();
