@@ -1,0 +1,130 @@
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include "../../src/small_record_copy.h"
+#include <cassert>
+#include <cstdio>
+#include <vector>
+#include <initializer_list>
+using namespace d2vr_record_copy;
+static_assert(sizeof(void*) == 4, "Exercise the production x86 ABI");
+static unsigned readCalls = 0, probeCalls = 0, cases = 0;
+static BOOL WINAPI CountRead(HANDLE p, LPCVOID src, LPVOID dst, SIZE_T n, SIZE_T* read) {
+    ++readCalls;
+    return ReadProcessMemory(p, src, dst, n, read);
+}
+static BOOL WINAPI WrongCount(HANDLE, LPCVOID, LPVOID dst, SIZE_T n, SIZE_T* read) {
+    ++readCalls; memset(dst, 0xee, n); *read = n - 1; return TRUE;
+}
+static BOOL WINAPI FailedOutput(HANDLE, LPCVOID, LPVOID dst, SIZE_T n, SIZE_T* read) {
+    ++readCalls; memset(dst, 0xee, n); *read = 1; return FALSE;
+}
+static bool PassProbe() { ++probeCalls; return true; }
+static bool FailProbe() { ++probeCalls; return false; }
+static DWORD Protection(const void* p) {
+    MEMORY_BASIC_INFORMATION m{};
+    assert(VirtualQuery(p, &m, sizeof(m)) == sizeof(m));
+    return m.Protect;
+}
+static void Equal(const void* a, const void* b, size_t n) { assert(!memcmp(a, b, n)); ++cases; }
+static void Filled(const uint8_t* p, size_t n, uint8_t value) {
+    for (size_t i = 0; i < n; ++i) assert(p[i] == value);
+    ++cases;
+}
+int main(int argc, char** argv) {
+    assert(argc == 2);
+    assert(GetFileAttributesA(argv[1]) != INVALID_FILE_ATTRIBUTES);
+    // Use the production default, including an INI whose encoding is not recognized.
+    assert(GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, argv[1]) == 0);
+    Admission off;
+    assert(!off.Admit(false, PassProbe) && !off.Tested() && probeCalls == 0);
+    Admission admitted;
+    assert(admitted.Admit(true, PassProbe) && admitted.Tested() && probeCalls == 1);
+    assert(admitted.Admit(true, FailProbe) && probeCalls == 1);
+    assert(!admitted.Admit(false, FailProbe) && probeCalls == 1);
+    Admission rejected;
+    assert(!rejected.Admit(true, FailProbe) && probeCalls == 2);
+    assert(!rejected.Admit(true, PassProbe) && probeCalls == 2); // failed probe stays rejected
+    Admission native;
+    assert(native.Admit(true)); // real own-page direct + cross-page guard probe on this test host
+
+    SYSTEM_INFO info{}; GetSystemInfo(&info);
+    const size_t page = info.dwPageSize;
+    auto memory = static_cast<uint8_t*>(VirtualAlloc(nullptr, page * 3,
+        MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    assert(memory && page > 1088);
+    for (size_t i = 0; i < page * 3; ++i) memory[i] = uint8_t(i * 37 + 13);
+    uint8_t output[1088]{}, expected[1088]{};
+    Copy(nullptr, nullptr, 0, true, CountRead);
+    Copy(output, nullptr, 0, false, CountRead);
+    assert(readCalls == 0);
+
+    for (bool enabled : {false, true}) for (size_t bytes : {1u, 16u, 64u, 191u, 192u, 193u, 1088u}) {
+        memset(output, 0xcc, sizeof(output));
+        const unsigned before = readCalls;
+        Copy(output, memory + 64, bytes, enabled, CountRead);
+        Equal(output, memory + 64, bytes);
+        Filled(output + bytes, sizeof(output) - bytes, 0xcc);
+        assert(readCalls == before + unsigned(enabled && bytes <= kSmallLimit));
+    }
+    const auto beforeNull = readCalls;
+    memset(output, 0xcc, 64);
+    Copy(output, nullptr, 64, true, CountRead);
+    Filled(output, 64, 0);
+    assert(readCalls == beforeNull + 1);
+
+    // A success BOOL with a short count must never admit corrupted output.
+    Copy(output, memory, 64, true, WrongCount);
+    Equal(output, memory, 64);
+    Copy(output, memory, 64, true, FailedOutput);
+    Equal(output, memory, 64);
+    auto rejectedCalls = readCalls;
+    Copy(output, memory, 64, rejected.Admit(true, PassProbe), CountRead);
+    Equal(output, memory, 64);
+    assert(readCalls == rejectedCalls);
+
+    DWORD old = 0;
+    for (DWORD mode : {PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_READ}) {
+        memcpy(expected, memory, 64);
+        assert(VirtualProtect(memory, page, mode, &old));
+        Copy(output, memory, 64, true, CountRead);
+        Equal(output, expected, 64);
+        assert(Protection(memory) == mode);
+        assert(VirtualProtect(memory, page, PAGE_READWRITE, &old));
+    }
+    for (DWORD mode : {PAGE_NOACCESS, PAGE_READWRITE | PAGE_GUARD}) {
+        memcpy(expected, memory + page - 16, 16);
+        memset(expected + 16, 0, 48);
+        assert(VirtualProtect(memory + page, page, mode, &old));
+        for (bool enabled : {false, true}) {
+            memset(output, 0xcc, 64);
+            auto before = readCalls;
+            Copy(output, memory + page, 64, enabled, CountRead);
+            Filled(output, 64, 0);
+            assert(readCalls == before + unsigned(enabled));
+            assert(Protection(memory + page) == mode);
+            Copy(output, memory + page - 16, 64, enabled, CountRead);
+            Equal(output, expected, 64);
+            assert(Protection(memory + page) == mode);
+        }
+        // Failed RPM may have modified output: original readable-prefix policy still wins.
+        Copy(output, memory + page - 16, 64, true, FailedOutput);
+        Equal(output, expected, 64);
+        assert(Protection(memory + page) == mode);
+        assert(VirtualProtect(memory + page, page, PAGE_READWRITE, &old));
+    }
+
+    // Copy only the requested arena slice; never change previous records or neighboring bytes.
+    std::vector<uint8_t> arena(4096, 0xa5);
+    const auto arenaSize = arena.size();
+    const size_t offset = 2048;
+    for (unsigned iteration = 0; iteration < 32; ++iteration) {
+        for (size_t i = 0; i < 192; ++i) memory[i] = uint8_t(i * 17 + iteration);
+        Copy(arena.data() + offset, memory, 192, true, CountRead);
+        Equal(arena.data() + offset, memory, 192);
+        assert(arena.size() == arenaSize);
+        Filled(arena.data(), offset, 0xa5);
+        Filled(arena.data() + offset + 192, arena.size() - offset - 192, 0xa5);
+    }
+    VirtualFree(memory, 0, MEM_RELEASE);
+    std::printf("PASS small-record-copy: %u byte/range checks; x86 guard admission, exact counts, legacy fallback, bounds and default OFF\n", cases);
+}

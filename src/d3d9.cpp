@@ -32,6 +32,7 @@
 #include <unordered_set>
 #include <atomic>
 #include "persistent_log.h"
+#include "small_record_copy.h"
 #include "native_image_guard.h"
 #include "vr_input.h"
 #include "native_aim_math.h"
@@ -438,6 +439,9 @@ static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
 static bool g_gpuSplitTiming = false;
+static bool g_smallRecordCopyRequested = false; // OFF; bounded <=192-byte RPM experiment
+static bool g_smallRecordCopyAdmitted = false;
+static d2vr_record_copy::Admission g_smallRecordCopyAdmission;
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
@@ -516,6 +520,7 @@ void LoadConfig() {
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
     g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
+    g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
@@ -5764,6 +5769,9 @@ void HookDevice(IDirect3DDevice9* dev) {
     g_renderThreadId = GetCurrentThreadId();
     if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;
     LogStartupStage(11, "HookDevice (D3D9 vtable + replay hooks)");
+    g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);
+    if (g_smallRecordCopyRequested) Log("[SmallRecordCopy] requested=1 admitted=%d guardProbe=%d limit=%zu (failed reads retain legacy copy)",
+        int(g_smallRecordCopyAdmitted), int(g_smallRecordCopyAdmission.Tested()), d2vr_record_copy::kSmallLimit);
     MaybeInstallFovProbeAfterDevice();
     g_origPresent = reinterpret_cast<PFN_Present>(PatchVTable(dev, 17, reinterpret_cast<void*>(&Hook_Present)));
     g_origReset = reinterpret_cast<PFN_Reset>(PatchVTable(dev, 16, reinterpret_cast<void*>(&Hook_Reset)));
