@@ -9,6 +9,8 @@ static bool ImagePresentCaller(d2vr_image_present::Method method,uintptr_t calle
 struct ImagePresentScope {
     bool previousInside=false,opened=false;
     IDirect3DDevice9* owner=nullptr;
+    LARGE_INTEGER forwardStart{};
+    bool forwardActive=false;
 };
 static thread_local ImagePresentScope g_imagePresentScope;
 static void ImagePresentBefore(IDirect3DSwapChain9* sc,uintptr_t caller,bool qualified,bool ready) {
@@ -19,8 +21,20 @@ static void ImagePresentBefore(IDirect3DSwapChain9* sc,uintptr_t caller,bool qua
     if(FAILED(hr) || !state.owner) {g_imagePresent.Fail("GetDevice failed at native Present");return;}
     g_presentCaller=caller;
     const auto decision=g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent));
-    ApplyBoundaryDecision(state.owner,decision);
+    {
+        d2vr_cpu_sync::Scope cpuBoundary(d2vr_cpu_sync::BoundaryWork);
+        ApplyBoundaryDecision(state.owner,decision);
+    }
     state.opened=true;
+}
+static void ImagePresentForwardBegin() {
+    auto& state=g_imagePresentScope;
+    state.forwardActive=QueryPerformanceCounter(&state.forwardStart)!=FALSE;
+}
+static void ImagePresentForwardEnd() {
+    auto& state=g_imagePresentScope;
+    if(state.forwardActive) d2vr_cpu_sync::timing.Add(d2vr_cpu_sync::PresentForward,state.forwardStart);
+    state.forwardActive=false;
 }
 static void ImagePresentAfter(IDirect3DSwapChain9* sc,uintptr_t caller,bool qualified,bool ready,HRESULT hr) {
     auto& state=g_imagePresentScope;
@@ -31,6 +45,10 @@ static void ImagePresentAfter(IDirect3DSwapChain9* sc,uintptr_t caller,bool qual
     }
     if(state.owner) state.owner->Release();
     if(qualified) {
+        // The protected observer bypasses EngineSwapChainPresent, so it must
+        // publish the existing stage accumulator itself. Scopes overlap: these
+        // are wall-time API spans, never CPU busy time or additive frame cost.
+        d2vr_cpu_sync::timing.Report(g_srcW,g_srcH,g_trackedFrame.id);
         InterlockedIncrement(&g_swapChainPresentCount);InterlockedExchange(&g_presentSeen,1);
         // First real successful forwarding opens admission for the NEXT game
         // frame. Never replay commands accumulated across that warm-up frame.
@@ -68,7 +86,12 @@ static void InstallImagePresent(IDirect3DDevice9* device) {
         memcmp(image+0x564cbf,acquisition,sizeof(acquisition))!=0) {
         g_imagePresent.Fail("SHA/PE/original presentation dispatch mismatch");return;
     }
-    const bool started=g_imagePresent.Start(device,g_nativeImageGuard,
-        {ImagePresentCaller,ImagePresentBefore,ImagePresentAfter,Log});
+    d2vr_image_present::Callbacks callbacks{
+        ImagePresentCaller,ImagePresentBefore,ImagePresentAfter,Log};
+    if(d2vr_cpu_sync::timing.enabled) {
+        callbacks.forwardBegin=ImagePresentForwardBegin;
+        callbacks.forwardEnd=ImagePresentForwardEnd;
+    }
+    const bool started=g_imagePresent.Start(device,g_nativeImageGuard,callbacks);
     Log("[ImagePresent] acquisitionObserver=%d sha=%s; XR pending typed swapchain/QI and successful native Present; no table clone or EXE write",started,sha.c_str());
 }

@@ -36,6 +36,19 @@ class ProtectedProfileTest(unittest.TestCase):
                     "NativeHandsPackHook", "NativeCameraCover", "ProductionResolution"):
             self.assertEqual(config.getint("Diagnostics", key), 0)
 
+    def test_cpu_timing_enabled_before_present_callbacks_are_latched(self):
+        source = (ROOT / "src" / "d3d9.cpp").read_text()
+        # HookDevice is already protected by its once-only g_devHooked gate.
+        # Leaving Enable in the later legacy installer latches null callbacks
+        # in the protected observer even when CpuSyncTiming=1.
+        self.assertEqual(source.count("d2vr_cpu_sync::timing.Enable("), 1)
+        hook = source[source.index("void HookDevice(IDirect3DDevice9* dev)"):]
+        enabled = hook.index("d2vr_cpu_sync::timing.Enable(")
+        self.assertLess(hook.index("InterlockedCompareExchange(&g_devHooked"), enabled)
+        self.assertLess(enabled, hook.index("InstallImagePresent(dev)"))
+        self.assertLess(enabled, hook.index("InstallDiagnosticEnginePresent()"))
+        self.assertIn('"CpuSyncTiming",0,', hook[:hook.index("InstallImagePresent(dev)")])
+
 
 if __name__ == "__main__":
     unittest.main()

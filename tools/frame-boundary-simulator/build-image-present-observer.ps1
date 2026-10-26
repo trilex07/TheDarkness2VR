@@ -17,6 +17,8 @@ try {
     if($LASTEXITCODE -ne 0){throw 'observer build failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll')
     if($LASTEXITCODE -ne 0){throw 'observer tests failed'}
+    & .\observer-test.exe (Join-Path $outDir 'fixture.dll') timing-disabled
+    if($LASTEXITCODE -ne 0){throw 'disabled forwarding timing failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll') deny
     if($LASTEXITCODE -ne 0){throw 'EXE write rejection failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll') hr-error
