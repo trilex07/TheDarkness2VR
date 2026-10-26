@@ -19,6 +19,8 @@ function Get-FunctionBody([string]$signature, [string]$text = $source) {
 # actual bodies, rather than a second implementation of the gate or forwarding.
 $weaponSource = Get-Content -LiteralPath (Join-Path $here '..\..\src\native_weapon.inl') -Raw
 $bodies = @(
+    (Get-FunctionBody 'static void PublishXrPad('),
+    (Get-FunctionBody 'static bool CopyXrPad('),
     (Get-FunctionBody 'static bool PadHasInput('),
     (Get-FunctionBody 'DWORD WINAPI Hook_XInputGetState('),
     (Get-FunctionBody 'void TryInstallXInputHook()'),

@@ -9,6 +9,9 @@
 #include <cstring>
 #include "../../src/vr_input.h"
 #include "../../src/native_aim_math.h"
+#ifdef D2VR_MATCHED_CAPTURE
+#include "../../src/protected_xinput.h"
+#endif
 
 using PFN_XInputGetState = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 PFN_XInputGetState g_origXInputGetState = nullptr;
@@ -18,19 +21,31 @@ bool g_restoredTrackedGameplay=false, g_remapPhysical=false, g_enableVRGamepad=t
 bool g_headGeometry=true, g_in3DGameplayMode=true;
 int g_headLookMode=0;
 XINPUT_STATE g_cachedXrPad{}, physical[4]{};
+static SRWLOCK g_cachedXrPadLock=SRWLOCK_INIT;
 bool connected[4]{}, delayResult=true, standardResult=false;
-unsigned delayCalls=0, standardCalls=0, resetAimCalls=0, checks=0;
+unsigned delayCalls=0, standardCalls=0, resetAimCalls=0, checks=0, recenterCalls=0;
 static void Check(bool value) {
     ++checks;
     if(!value) { std::fprintf(stderr,"FAIL check %u\n",checks); std::exit(1); }
 }
 static void Log(const char*, ...) {}
 static void ResetNativeAim() { ++resetAimCalls; }
-static void RequestRecenter(const char*) {}
+static void RequestRecenter(const char*) {++recenterCalls;}
 static DWORD WINAPI PhysicalState(DWORD port, XINPUT_STATE* state) {
     if(port>=4 || !connected[port]) return ERROR_DEVICE_NOT_CONNECTED;
     *state=physical[port]; return ERROR_SUCCESS;
 }
+#ifdef D2VR_MATCHED_CAPTURE
+static bool g_imagePreservingInput=false,g_imagePreservingPresent=false;
+static volatile LONG g_protectedRecenterRequested=0;
+static d2vr_native_image::Guard g_nativeImageGuard;
+struct PresentFixture {bool ready=false;bool Ready()const{return ready;}} g_imagePresent;
+struct InputFixture {
+    bool success=true;unsigned calls=0;
+    PFN_XInputGetState Native()const{return &PhysicalState;}
+    bool Start(PFN_XInputGetState,const d2vr_native_image::Guard&){++calls;return success;}
+} g_protectedXInput;
+#endif
 static bool HookDelayIATOrdinal(HMODULE module,const char* dll,WORD ordinal,void* hook,void** original) {
     ++delayCalls;
     Check(module && !_stricmp(dll,"XINPUT1_3.dll") && ordinal==2 && hook && original);
@@ -95,8 +110,30 @@ static void ResetInstall() {
     g_xinputHooked=g_xinputAttempted=g_xinputRemapLogged=0;
     g_origXInputGetState=nullptr; delayCalls=standardCalls=0;
     delayResult=true; standardResult=false; g_restoredTrackedGameplay=false;
+#ifdef D2VR_MATCHED_CAPTURE
+    g_nativeImageGuard={};g_imagePreservingInput=g_imagePreservingPresent=false;
+    g_imagePresent={};g_protectedXInput={};
+#endif
 }
 int main() {
+#ifdef D2VR_MATCHED_CAPTURE
+    // The real protected installer branch must never fall through to imports,
+    // before first Present, with input OFF, or if external detour install fails.
+    for(unsigned flags=0;flags<16;++flags) {
+        ResetInstall();g_nativeImageGuard.enabled=true;
+        g_imagePreservingPresent=(flags&1)!=0;g_imagePreservingInput=(flags&2)!=0;
+        g_enableVRGamepad=(flags&4)!=0;g_imagePresent.ready=(flags&8)!=0;
+        TryInstallXInputHook();TryInstallXInputHook();
+        const bool wanted=flags==15;
+        Check(g_protectedXInput.calls==(wanted ? 1u:0u));
+        Check(!delayCalls && !standardCalls);
+        Check(g_xinputHooked==int(wanted));
+    }
+    ResetInstall();g_nativeImageGuard.enabled=true;g_imagePreservingPresent=g_imagePreservingInput=true;
+    g_imagePresent.ready=true;g_protectedXInput.success=false;g_enableVRGamepad=true;
+    TryInstallXInputHook();TryInstallXInputHook();
+    Check(!g_xinputHooked && g_protectedXInput.calls==1 && !delayCalls && !standardCalls);
+#endif
     ResetInstall();
 #ifdef D2VR_MATCHED_CAPTURE
     // DllMain/factory calls before the SHA/site-verified playable opt-in neither
@@ -139,6 +176,22 @@ int main() {
     Check(Hook_XInputGetState(0,&actual)==ERROR_DEVICE_NOT_CONNECTED);
     g_cachedXrPadValid=1; g_enableVRGamepad=false;
     Check(Hook_XInputGetState(0,&actual)==ERROR_DEVICE_NOT_CONNECTED);
+    XINPUT_STATE packet{};packet.dwPacketNumber=987;packet.Gamepad.sThumbLY=12345;
+    PublishXrPad(&packet);XINPUT_STATE copy{};
+    Check(CopyXrPad(copy) && std::memcmp(&packet,&copy,sizeof packet)==0);
+    PublishXrPad(nullptr);Check(!CopyXrPad(copy));
+#ifdef D2VR_MATCHED_CAPTURE
+    // A system/overlay poll cannot mutate render-owned head state. The physical
+    // chord only queues one request; UpdateCachedXrPad consumes it on rendering.
+    g_imagePreservingInput=true;connected[0]=true;
+    physical[0].Gamepad.wButtons=XINPUT_GAMEPAD_LEFT_THUMB|XINPUT_GAMEPAD_RIGHT_THUMB;
+    const auto recenterBefore=recenterCalls;
+    Check(Hook_XInputGetState(0,&actual)==ERROR_SUCCESS);
+    Check(g_protectedRecenterRequested==1 && recenterCalls==recenterBefore);
+    g_protectedRecenterRequested=0;
+    Check(Hook_XInputGetState(0,&actual)==ERROR_SUCCESS);
+    Check(g_protectedRecenterRequested==0 && recenterCalls==recenterBefore);
+#endif
     TestWeaponNullModel();
     std::printf("XInput bridge and null-model regression (%s): %u checks PASS\n",
 #ifdef D2VR_MATCHED_CAPTURE
