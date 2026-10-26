@@ -41,9 +41,11 @@ Actual source remained1920x1071; larger XR eyes do not prove source detail.
 The user still sees blur and20–30ms CPU when going outside. Target90FPS is NOT MET.
 
 Existing logs contain120-sample GPU/CPU summaries, not per-frame execution and
-wait attribution. Active slow cadence near the outdoor report includes53.8
+wait attribution. A focus-active slow cadence window includes53.8
 layers/s and coarse p9532ms, adjacent D3D9 live+replay GPU means15.349/13.106/
-13.621ms. These exceed11.11ms but cannot be assigned to a named CPU wait. The
+13.621ms. These elapsed intervals exceed11.11ms but include submission gaps and interleaved
+D3D11/synchronization. They are not GPU Busy and cannot prove a GPU-bound cause.
+No scene marker identifies the outdoor interval or a named CPU wait. The
 nearby StereoPerf sums2.52/2.11/2.29ms cover only Present-side eye capture,
 history/replay and restoration: native main simulation, live recording, some
 frame pacing and original Present are outside those scopes. GPU utilisation or

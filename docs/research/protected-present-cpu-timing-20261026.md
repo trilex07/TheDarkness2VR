@@ -90,3 +90,8 @@ waits and boundary work without changing required synchronization.
 - Protected profile regression: 3/3 PASS, including startup order/default-off.
 - Integration profile regressions: 6/6 PASS.
 - Steam / HMD timing validation: NOT RUN by SIDE. No FPS improvement claimed.
+
+GPUFrame semantics: D3D9 timestamp elapsed is not GPU Busy. MarkLiveEnd is
+issued after left shared transfer/D3D11 eye work; End follows right handling.
+CPU submission gaps/cross-API ordering can stretch those spans. Existing log
+suffixes do not establish isolated D3D9 hardware execution or GPU saturation.

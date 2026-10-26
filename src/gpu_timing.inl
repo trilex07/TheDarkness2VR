@@ -1,5 +1,5 @@
-// Non-blocking D3D9 timestamp ring. Covers live rendering + replay; D3D11 transfer
-// and runtime compositor are excluded. No GetData(FLUSH), busy wait or readback.
+// Non-blocking D3D9 timestamp ring: elapsed marker span, NOT GPU Busy. Submission
+// gaps and interleaved D3D11/sync can stretch it. No GetData(FLUSH) or readback.
 struct GpuFrameTiming {
     struct Slot {
         IDirect3DQuery9 *start=nullptr,*mid=nullptr,*end=nullptr,*frequency=nullptr,*disjoint=nullptr;
