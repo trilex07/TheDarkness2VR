@@ -38,6 +38,7 @@
 #include "composite_shader_patch.h"
 #include "nis_upscale.h"
 #include "frame_boundary.h"
+static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibility separate
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
 #include "diagnostic_present_patch.h"
@@ -427,6 +428,7 @@ void LoadConfig() {
     // Read once, before any installer or trace worker is started. Asynchronous
     // INI edits must never toggle patch/rollback ownership.
     g_imagePreservingPresent=GetPrivateProfileIntA("Diagnostics","ImagePreservingPresent",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_protectedHeadTracking=GetPrivateProfileIntA("Diagnostics","ProtectedHeadTracking",0,".\\Darkness2VR-diagnostic.ini")!=0;
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
         const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
         const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
@@ -1322,6 +1324,9 @@ static void NativeCameraUiScale(float& x,float& y);
 
 static void UpdateHeadGeometry(const XrPosef& head) {
     g_headDeltaValid=false;
+#ifdef D2VR_MATCHED_CAPTURE
+    if(g_imagePreservingPresent && !g_protectedHeadTracking) return;
+#endif
     const XrViewStateFlags required=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     if(!g_headGeometry || !g_haveViews || !g_in3DGameplayMode ||
         (g_trackedFrame.flags & required)!=required || g_stereoMode!=1 || g_stereoShiftMode!=0 ||
@@ -1337,21 +1342,18 @@ static void UpdateHeadGeometry(const XrPosef& head) {
             g_eyePose[0].orientation.y*g_eyePose[1].orientation.y+
             g_eyePose[0].orientation.z*g_eyePose[1].orientation.z+
             g_eyePose[0].orientation.w*g_eyePose[1].orientation.w);
-        Log("[HeadGeometry] LEVEL yaw-only reference captured frame=%llu xrTime=%lld midpoint=(%.3f,%.3f,%.3f) yaw=%.2fdeg eyeRotationDifference=%.2fdeg ViewOffsetX=%.4f; provisional 1 unit/metre, native culling/collision absent",
+        Log("[HeadGeometry] LEVEL yaw-only reference captured frame=%llu xrTime=%lld midpoint=(%.3f,%.3f,%.3f) yaw=%.2fdeg eyeRotationDifference=%.2fdeg ViewOffsetX=%.4f; units/metre=%.4f, native culling/collision absent",
             (unsigned long long)g_trackedFrame.id,(long long)g_trackedFrame.state.predictedDisplayTime,
             head.position.x,head.position.y,head.position.z,ComputeHorizontalYaw(head.orientation)*57.29578f,
-            2.f*std::acos(std::min(1.f,eyeDot))*57.29578f,g_viewOffsetX);
+            2.f*std::acos(std::min(1.f,eyeDot))*57.29578f,g_viewOffsetX,g_gameUnitsPerMeter);
     }
     const auto& ref=g_headGeometryReference;
     const float q[4]={head.orientation.x,head.orientation.y,head.orientation.z,head.orientation.w};
     const float p[3]={head.position.x,head.position.y,head.position.z};
     const float rq[4]={ref.orientation.x,ref.orientation.y,ref.orientation.z,ref.orientation.w};
     const float rp[3]={ref.position.x,ref.position.y,ref.position.z};
-    float current[16],reference[16],inverseCurrent[16];
-    if(!d2vr_math::TrackingPose(q,p,current) || !d2vr_math::TrackingPose(rq,rp,reference) ||
-        !d2vr_math::Invert(current,inverseCurrent)) return;
-    // Base-camera coordinates -> tracking origin -> current head coordinates.
-    d2vr_math::Multiply(reference,inverseCurrent,g_headDeltaView);
+    // Base-camera coordinates -> current head. Same metre scale as XR IPD.
+    if(!d2vr_math::RelativeTrackingView(q,p,rq,rp,g_gameUnitsPerMeter,g_headDeltaView)) return;
     g_headDeltaValid=true;
 }
 
@@ -5857,6 +5859,10 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         const bool protectedFeatures=!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
             !g_nativeLeftAim && !g_nativeWeaponPose && !g_nativeHandsEnabled && !g_gestureBridge && !g_tentacleBridge &&
             !g_enableVRGamepad && g_headLookMode==0 &&
+            (!g_protectedHeadTracking || (g_headGeometry && g_nativeStereoHeadGeometry &&
+                g_stereoShiftMode==0 && g_projectionFix==3 && g_stereoLayerPose==0 &&
+                !g_noInvProj && g_lightingPreset<=0)) &&
+            (!(g_headGeometry || g_nativeStereoHeadGeometry) || g_protectedHeadTracking) &&
             !GetPrivateProfileIntA("Diagnostics","EnginePresentCallsite",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","RestoreTrackedGameplay",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","NativeHandsPackHook",0,".\\Darkness2VR-diagnostic.ini") &&

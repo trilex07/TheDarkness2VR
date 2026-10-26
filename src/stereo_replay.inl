@@ -768,13 +768,15 @@ static bool ApplyInverseProjection(float* dst, const float* src, UINT start, UIN
         m[c] /= sp.fovScaleX;
         m[4+c] /= sp.fovScaleY;
     }
+    // First reconstruct the tracked view's basis, then derive the eye offset
+    // in that basis. This is inverse to head-then-eye in the VS.
+    if(sp.headGeometry) d2vr_math::Multiply(sp.inverseHeadClip,m,m);
     if (g_lightingPreset != 4) {
         float t[3];
         if (!d2vr_math::InverseMatrixTranslation(m, sp.transX, sp.transY, t)) return false;
         if (g_lightingPreset == 6) for (float& component : t) component = -component;
         d2vr_math::SubtractOutputTranslation(m, t);
     }
-    if(sp.headGeometry) d2vr_math::Multiply(sp.inverseHeadClip,m,m);
     return true;
 }
 

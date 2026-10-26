@@ -66,6 +66,24 @@ inline bool TrackingPose(const float q[4], const float p[3], float out[16]) {
     return true;
 }
 
+// Both tracking translation and stereo baseline must use the same world units.
+// Subtract the origin before scaling to avoid cancellation at large XR origins.
+inline bool RelativeTrackingView(const float q[4], const float p[3],
+                                 const float rq[4], const float rp[3],
+                                 float unitsPerMeter, float out[16]) {
+    if(!std::isfinite(unitsPerMeter) || unitsPerMeter<=0) return false;
+    float relative[3],zero[3]{},current[16],reference[16],inverseCurrent[16];
+    for(int i=0;i<3;++i) {
+        if(!std::isfinite(p[i]) || !std::isfinite(rp[i])) return false;
+        relative[i]=(p[i]-rp[i])*unitsPerMeter;
+        if(!std::isfinite(relative[i])) return false;
+    }
+    if(!TrackingPose(q,relative,current) || !TrackingPose(rq,zero,reference) ||
+       !Invert(current,inverseCurrent)) return false;
+    Multiply(reference,inverseCurrent,out);
+    return true;
+}
+
 // A real view transform conjugated into clip space, not a UV displacement.
 // P^-1 * deltaView * P changes perspective/depth, including roll and forward lean.
 inline bool HeadClipTransform(const float inverseProjection[16], const float deltaView[16],

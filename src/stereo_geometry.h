@@ -81,6 +81,9 @@ inline void ApplyEyeShiftToMatrix(float* p, int n, const EyeShiftParams& sp, boo
         for (int i = 0; i < 4; ++i) p[i * 4 + 1] *= sp.fovScaleY;
     }
 
+    // Eye baseline belongs to the CURRENT head axes. Rotating an already
+    // shifted eye makes roll rotate stereo disparity into the vertical axis.
+    if (sp.headGeometry && headClip) d2vr_math::Multiply(p, headClip, p);
     if (sp.mode == 0) {
         p[12] += px * sp.transX * sp.fovScaleX;
         p[13] += py * sp.transY * sp.fovScaleY;
@@ -88,7 +91,6 @@ inline void ApplyEyeShiftToMatrix(float* p, int n, const EyeShiftParams& sp, boo
         for (int i = 0; i < 4; ++i) p[i * 4 + 0] += sp.separation * p[i * 4 + 3];
         p[12] -= sp.separation * sp.convergence;
     }
-    if (sp.headGeometry && headClip) d2vr_math::Multiply(p, headClip, p);
 }
 
 inline void BuildPerEyeTranslation(int eye, int polarity, float fullIpd, float* transXOut) {
