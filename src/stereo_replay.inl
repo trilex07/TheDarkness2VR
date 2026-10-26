@@ -21,6 +21,7 @@
 //
 #pragma once
 
+#include <string_view>
 #include "stereo_math.h"
 #include "frame_resource_refs.h"
 #include "stereo_geometry.h"
@@ -646,29 +647,30 @@ static bool BuildUnfilteredFxaa(const DWORD* fn, size_t count, std::vector<DWORD
 static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, const DWORD* fn,
                                                         IDirect3DPixelShader9** out) {
     bool screenDepthOverride = false;
-    DWORD replacement[8192]{};
+    std::vector<DWORD> replacement;
+    const size_t originalWords = fn ? SafeShaderTokenCount(fn) : 0;
+    const uint32_t originalHash = originalWords ? HashBytes(fn, (originalWords + 1) * 4) : 0;
     // This original shader reconstructs lighting from depth. Its interpolated
     // light-volume UV can diverge from the actual depth pixel after an eye shift.
-    // Restrict the experiment to its exact bytecode hash and an explicit switch.
-    if (fn && GetPrivateProfileIntA("Diagnostics", "ShadowScreenDepth", 0,
+    // Only the exact shader can use the diagnostic override. Keep the INI
+    // lookup live for that shader, but avoid it and the 32 KiB scratch buffer
+    // for every other native material variant.
+    if (originalHash == 0xC4D1FB10u && GetPrivateProfileIntA("Diagnostics", "ShadowScreenDepth", 0,
             ".\\Darkness2VR-diagnostic.ini") == 1) {
-        const size_t words = SafeShaderTokenCount(fn);
-        if (words && HashBytes(fn, (words + 1) * 4) == 0xC4D1FB10u) {
-            FILE* input = nullptr;
-            if (fopen_s(&input, "test-output\\shadow_screen_depth.psh", "rb") == 0 && input) {
-                const size_t read = fread(replacement, 1, sizeof(replacement), input);
-                fclose(input);
-                if (read >= 16 && read < sizeof(replacement) && read % 4 == 0 &&
-                    replacement[0] == 0xFFFF0300u && replacement[read/4-1] == 0x0000FFFFu) {
-                    screenDepthOverride = true;
-                    Log("[Lighting] testing screen-pixel depth coordinates for shadow shader C4D1FB10");
-                }
+        replacement.resize(8192);
+        FILE* input = nullptr;
+        if (fopen_s(&input, "test-output\\shadow_screen_depth.psh", "rb") == 0 && input) {
+            const size_t read = fread(replacement.data(), 1, replacement.size() * sizeof(DWORD), input);
+            fclose(input);
+            if (read >= 16 && read < replacement.size() * sizeof(DWORD) && read % 4 == 0 &&
+                replacement[0] == 0xFFFF0300u && replacement[read/4-1] == 0x0000FFFFu) {
+                screenDepthOverride = true;
+                Log("[Lighting] testing screen-pixel depth coordinates for shadow shader C4D1FB10");
             }
         }
     }
     std::vector<DWORD> composite;
     std::vector<DWORD> sharp;
-    const size_t originalWords = fn ? SafeShaderTokenCount(fn) : 0;
     const unsigned compositePatch = !screenDepthOverride && g_submitMode == 4 && originalWords ?
         d2vr_composite::Build(fn, originalWords + 1,
             g_disableDepthOfField, g_disableCompositeHeightFog, composite) : 0;
@@ -676,15 +678,15 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         g_submitMode == 4 && originalWords && BuildUnfilteredFxaa(fn, originalWords + 1, sharp);
     HRESULT hr = g_orig.CreatePixelShader(dev,
         compositePatch ? composite.data() :
-        fxaaOverride ? sharp.data() : (screenDepthOverride ? replacement : fn), out);
+        fxaaOverride ? sharp.data() : (screenDepthOverride ? replacement.data() : fn), out);
     if (compositePatch || fxaaOverride) {
         if (fxaaOverride || (compositePatch & d2vr_composite::Dof))
             Log("[Sharpness] %s bypass hash=%08X result=%08X",
                 fxaaOverride ? "FXAA" : "DOF/ghost blend",
-                HashBytes(fn, (originalWords + 1)*4), (unsigned)hr);
+                originalHash, (unsigned)hr);
         if (compositePatch & d2vr_composite::HeightFog)
             Log("[Composite] height-fog blend bypass hash=%08X result=%08X (bloom/grade retained)",
-                HashBytes(fn, (originalWords + 1)*4), (unsigned)hr);
+                originalHash, (unsigned)hr);
         if (FAILED(hr) && (compositePatch & d2vr_composite::HeightFog) && g_disableDepthOfField &&
             d2vr_composite::Build(fn, originalWords + 1, true, false, composite)) {
             hr = g_orig.CreatePixelShader(dev, composite.data(), out);
@@ -698,18 +700,16 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         hr = g_orig.CreatePixelShader(dev, fn, out);
     }
     if (SUCCEEDED(hr) && out && *out && fn) {
-        const size_t psWords = SafeShaderTokenCount(fn);
-        if (psWords) {
-            const uint32_t psHash = HashBytes(fn, (psWords + 1) * 4);
-            g_psHashByPtr[*out] = psHash;
-            Log("[PSPtr] %p hash=%08X", (void*)*out, psHash);
+        if (originalWords) {
+            g_psHashByPtr[*out] = originalHash;
+            Log("[PSPtr] %p hash=%08X", (void*)*out, originalHash);
         }
         // GetFunction provides the driver's validated bytecode length for PS.
         UINT bytes = 0;
         if (SUCCEEDED((*out)->GetFunction(nullptr, &bytes)) && bytes <= 32768) {
             std::vector<DWORD> code((bytes + 3)/4);
             if (SUCCEEDED((*out)->GetFunction(code.data(), &bytes))) {
-                const std::string shaderBytes((const char*)code.data(), bytes);
+                const std::string_view shaderBytes(reinterpret_cast<const char*>(code.data()), bytes);
                 if (shaderBytes.find("InvRenderTargetSize") != std::string::npos &&
                     shaderBytes.find("ShadowMask") != std::string::npos) {
                     char path[MAX_PATH];
