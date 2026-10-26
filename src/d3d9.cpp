@@ -424,6 +424,11 @@ static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
 static bool g_gpuSplitTiming = false;
+static bool ProtectedHeadConfigurationAllowed() {
+    return g_headGeometry && g_nativeStereoHeadGeometry && g_stereoShiftMode==0 &&
+        g_projectionFix==3 && g_stereoLayerPose==0 && g_headLookMode==0 &&
+        !g_noInvProj && !g_skipLightVsShift && !g_lightPosShift && g_lightingPreset<=0;
+}
 void LoadConfig() {
 #ifdef D2VR_MATCHED_CAPTURE
     // Read once, before any installer or trace worker is started. Asynchronous
@@ -1327,7 +1332,7 @@ static void NativeCameraUiScale(float& x,float& y);
 static void UpdateHeadGeometry(const XrPosef& head) {
     g_headDeltaValid=false;
 #ifdef D2VR_MATCHED_CAPTURE
-    if(g_imagePreservingPresent && !g_protectedHeadTracking) return;
+    if(g_imagePreservingPresent && (!g_protectedHeadTracking || !ProtectedHeadConfigurationAllowed())) return;
 #endif
     const XrViewStateFlags required=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     if(!g_headGeometry || !g_haveViews || !g_in3DGameplayMode ||
@@ -5864,9 +5869,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         const bool protectedFeatures=!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
             !g_nativeLeftAim && !g_nativeWeaponPose && !g_nativeHandsEnabled && !g_gestureBridge && !g_tentacleBridge &&
             !g_enableVRGamepad && g_headLookMode==0 &&
-            (!g_protectedHeadTracking || (g_headGeometry && g_nativeStereoHeadGeometry &&
-                g_stereoShiftMode==0 && g_projectionFix==3 && g_stereoLayerPose==0 &&
-                !g_noInvProj && g_lightingPreset<=0)) &&
+            (!g_protectedHeadTracking || ProtectedHeadConfigurationAllowed()) &&
             (!(g_headGeometry || g_nativeStereoHeadGeometry) || g_protectedHeadTracking) &&
             !GetPrivateProfileIntA("Diagnostics","EnginePresentCallsite",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","RestoreTrackedGameplay",0,".\\Darkness2VR-diagnostic.ini") &&

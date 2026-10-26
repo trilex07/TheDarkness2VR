@@ -28,6 +28,10 @@ wide peripheral coverage. Do not enable this profile as full native tracking
 or claim the culling requirement passed. A safe pre-visibility selected-camera
 access point with verified owner lifetime is still required.
 
-Offline results: 116,988 tracking/reconstruction checks PASS; existing frame
+Offline results: 116,998 tracking/reconstruction checks PASS; existing frame
 suite 2,327,551 assertions PASS; baseline profile 2 tests PASS; production and
 diagnostic x86 builds PASS. Native visibility/Steam/PSVR2: NOT RUN.
+
+Runtime diagnostic overrides are revalidated before generating each head pose.
+Incompatible lighting/reconstruction or duplicate head-look settings close world
+layer admission instead of silently producing an inconsistent tracked image.

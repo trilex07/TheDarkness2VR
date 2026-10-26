@@ -9,7 +9,9 @@ struct StereoParams {
     int mode=0; float fovScaleX=1,fovScaleY=1,transX=0,transY=0;
     bool headGeometry=false; float inverseHeadClip[16]{};
 };
-bool g_noInvProj=false; int g_lightingPreset=0;
+bool g_noInvProj=false,g_headGeometry=true,g_skipLightVsShift=false,g_lightPosShift=false;
+int g_lightingPreset=0,g_nativeStereoHeadGeometry=1,g_stereoShiftMode=0,g_projectionFix=3,g_stereoLayerPose=0,g_headLookMode=0;
+#include "d2vr_tracking_gate.inl"
 #include "d2vr_tracking_inverse.inl"
 static unsigned checks=0;
 static void Check(bool ok,const char* why) {
@@ -62,5 +64,15 @@ int main() {
     Check(!d2vr_math::RelativeTrackingView(bad,p,rq,rp,1,delta),"invalid orientation refused");
     Check(d2vr_math::RelativeTrackingView(rq,rp,rq,rp,1,delta),"recenter identity");
     Same(delta,identity,"recenter no double pose");
+    Check(ProtectedHeadConfigurationAllowed(),"valid protected configuration");
+    for(int* setting:{&g_stereoShiftMode,&g_projectionFix,&g_stereoLayerPose,&g_headLookMode}) {
+        const int before=*setting;*setting=before==0 ? 1:0;
+        Check(!ProtectedHeadConfigurationAllowed(),"incompatible runtime setting refuses tracking");*setting=before;
+    }
+    for(bool* setting:{&g_noInvProj,&g_skipLightVsShift,&g_lightPosShift}) {
+        *setting=true;Check(!ProtectedHeadConfigurationAllowed(),"diagnostic override refuses tracking");*setting=false;
+    }
+    g_lightingPreset=-1;Check(ProtectedHeadConfigurationAllowed(),"normal configured lighting accepted");
+    g_lightingPreset=9;Check(!ProtectedHeadConfigurationAllowed(),"experimental lighting refused");
     std::printf("PASS protected head tracking %u checks; no runtime/culling claim\n",checks);
 }
