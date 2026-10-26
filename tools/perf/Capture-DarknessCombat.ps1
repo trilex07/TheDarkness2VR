@@ -41,6 +41,8 @@ if ($compositor.Count -ne 1 -or $server.Count -ne 1) {
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $instance = "D2VRPerf$stamp"
+$pmSession = "D2VRPresent$stamp"
+Add-Type -Path (Join-Path $PSScriptRoot 'TraceSessionStats.cs')
 $out = Join-Path $OutputRoot $stamp
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 $etl = Join-Path $out 'combat.etl'
@@ -58,6 +60,7 @@ foreach ($name in $paths) {
 }
 $manifest = [ordered]@{
     status = 'started'; durationSec = $DurationSec; baselineSec = $BaselineSec
+    wprInstance = $instance; presentmonSession = $pmSession
     exePath = $exe; hashesBefore = $hashes; hashesAfter = $null
     processIds = [ordered]@{ game=$game[0].Id; vrserver=$server[0].Id
         vrcompositor=$compositor[0].Id; dwm=@(Get-Process dwm -ErrorAction SilentlyContinue | ForEach-Object Id) }
@@ -68,6 +71,7 @@ $manifest = [ordered]@{
     etl = $etl; presentmonCsv = $csv; etwLostEvents = $null
     presentmonLostEvents = $null; valid = $false; errors = @()
 }
+$manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 $wprStarted = $false
 $pm = $null
 try {
@@ -77,8 +81,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "WPR start failed: $LASTEXITCODE" }
     $wprStarted = $true
     $pmArgs = @('--process_id',"$($game[0].Id)",'--output_file',('"'+$csv+'"'),
-        '--qpc_time_ms','--v2_metrics','--no_console_stats','--timed',"$($DurationSec+3)",
-        '--terminate_after_timed','--session_name',"D2VRPerf$($game[0].Id)")
+        '--qpc_time_ms','--v2_metrics','--no_console_stats','--timed',"$($DurationSec+10)",
+        '--terminate_after_timed','--session_name',$pmSession)
     $pm = Start-Process -FilePath $presentmon -ArgumentList $pmArgs -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     Start-Sleep -Seconds 2
@@ -102,9 +106,20 @@ try {
     if ($pm) {
         $pm.Refresh()
         if (-not $pm.HasExited) {
+            $pmStats=[D2vrTraceStats]::Query($pmSession)
+            $manifest.presentmonSessionStats=$pmStats
+            if($pmStats.Error -eq 0) {
+                $manifest.presentmonLostEvents=$pmStats.EventsLost
+                if($pmStats.LogBuffersLost -or $pmStats.RealTimeBuffersLost) {
+                    $manifest.errors += 'PresentMon ETW buffers were lost'
+                }
+            }
+            & $presentmon --terminate_existing_session --session_name $pmSession `
+                2>&1 | Out-File (Join-Path $out 'presentmon-stop.txt')
             Wait-Process -Id $pm.Id -Timeout 5 -ErrorAction SilentlyContinue
             $pm.Refresh()
             if (-not $pm.HasExited) {
+                $manifest.errors += 'PresentMon did not exit gracefully'
                 try { Stop-Process -Id $pm.Id -ErrorAction Stop } catch {
                     $manifest.errors += "PresentMon stop: $($_.Exception.Message)"
                 }
@@ -136,6 +151,13 @@ try {
     if (Test-Path -LiteralPath $gameLog) {
         try { Copy-Item -LiteralPath $gameLog -Destination (Join-Path $out 'd3d9.log') }
         catch { $manifest.errors += "Game log copy: $($_.Exception.Message)" }
+    }
+    $steamRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $GameDir))
+    foreach($name in @('vrcompositor.txt','vrserver.txt')) {
+        $path=Join-Path $steamRoot "logs\$name"
+        if(Test-Path -LiteralPath $path) {
+            Get-Content -LiteralPath $path -Tail 3000 | Set-Content -LiteralPath (Join-Path $out $name)
+        }
     }
     if (Test-Path -LiteralPath $etl) {
         & $xperf -i $etl -a tracestats -ao (Join-Path $out 'etw-stats.txt') `
