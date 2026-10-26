@@ -32,6 +32,7 @@
 #include <unordered_set>
 #include <atomic>
 #include "persistent_log.h"
+#include "async_log.h"
 #include "native_image_guard.h"
 #include "vr_input.h"
 #include "native_aim_math.h"
@@ -78,6 +79,10 @@ namespace {
 
 CRITICAL_SECTION g_logLock;
 d2vr_log::File g_logFile;
+d2vr_log::Async g_asyncLog;
+d2vr_log::Emergency g_emergencyLog;
+bool g_asyncLogRequested = false; // opt-in, started only at HookDevice outside loader lock
+bool g_asyncLogAdmissionFailed = false;
 char g_logPath[MAX_PATH] = {};
 char g_iniPath[MAX_PATH] = {};
 std::atomic<bool> g_logReady{false};
@@ -320,12 +325,52 @@ void LogInit() {
 
 void Log(const char* fmt, ...) {
     if (!g_logReady) return;
+    va_list ap; va_start(ap, fmt);
+    if (g_asyncLog.Started()) {
+        g_asyncLog.WriteV(fmt, ap);
+    } else {
+        // Startup/default remain synchronous. Recheck after taking the startup
+        // lock so a racing producer cannot touch FILE after worker publication.
+        EnterCriticalSection(&g_logLock);
+        if (g_logReady) {
+            if (g_asyncLog.Started()) g_asyncLog.WriteV(fmt, ap);
+            else g_logFile.WriteV(fmt, ap);
+        }
+        LeaveCriticalSection(&g_logLock);
+    }
+    va_end(ap);
+}
+
+static void LogEmergency(const char* fmt, ...) {
+    va_list args; va_start(args, fmt);
+    g_emergencyLog.WriteV(fmt, args);
+    va_end(args);
+}
+
+static bool AsyncLogSink(void* context, const char* text, size_t size) {
+    return static_cast<d2vr_log::File*>(context)->WriteLine(text, size);
+}
+static void StartAsyncLogging() {
+    static volatile LONG attempted = 0;
+    if (!g_asyncLogRequested || !g_logReady || InterlockedCompareExchange(&attempted, 1, 0)) return;
+    // HookDevice only; never DllMain. Complete existing startup writes before
+    // publishing the pinned worker, then release this lock permanently from
+    // the ordinary producer path. The worker never acquires g_logLock.
     EnterCriticalSection(&g_logLock);
-    if (g_logReady) {
-        va_list ap;
-        va_start(ap, fmt);
-        g_logFile.WriteV(fmt, ap);
-        va_end(ap);
+    char emergencyPath[MAX_PATH]; strcpy_s(emergencyPath, g_logPath);
+    char* slash = strrchr(emergencyPath, '\\');
+    if (slash) strcpy_s(slash + 1, sizeof(emergencyPath) - (slash + 1 - emergencyPath), "d3d9-emergency.log");
+    const bool emergencyReady = slash && g_emergencyLog.Open(emergencyPath);
+    if (emergencyReady && g_asyncLog.Start(AsyncLogSink, &g_logFile)) {
+        g_asyncLog.Write("[AsyncLog] active capacity=%u lineBytes=%u emergency=%s; overflow/truncation counted",
+            d2vr_log::Async::Capacity, d2vr_log::Async::LineBytes, emergencyPath);
+    } else {
+        // Failure is a startup event, before any async publication. Do not
+        // silently fall back to render-thread I/O after an explicit opt-in.
+        g_asyncLogAdmissionFailed = true;
+        g_logFile.Write("[AsyncLog] NOT_ADMITTED: start failed; ordinary logging disabled; emergencyReady=%d", emergencyReady);
+        g_emergencyLog.Write("[AsyncLog] NOT_ADMITTED: start failed; ordinary logging disabled");
+        g_logReady = false;
     }
     LeaveCriticalSection(&g_logLock);
 }
@@ -355,8 +400,20 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
 
-    static volatile LONG s_crashLogged = 0;
-    if (InterlockedIncrement(&s_crashLogged) <= 3) {
+    // Independent preopened sink before any ordinary logger/module lookup.
+    // E06D7363 is deliberately excluded: handled C++ remains ordinary queue work.
+    g_emergencyLog.Record(*ep->ExceptionRecord, *ep->ContextRecord,
+        g_renderThreadId, g_lastStage, g_lastHookId);
+
+    void (*write)(const char*, ...) = g_emergencyLog.Ready() && d2vr_log::EmergencyException(code)
+        ? LogEmergency : Log;
+
+    static volatile LONG s_crashLogged = 0, s_asyncNativeLogged = 0, s_asyncCppLogged = 0;
+    volatile LONG* budget = &s_crashLogged; // preserve default shared three-record policy
+    if (g_asyncLog.Started() && g_emergencyLog.Ready())
+        budget = d2vr_log::EmergencyException(code) ? &s_asyncNativeLogged : &s_asyncCppLogged;
+    // In the admitted async mode only, handled C++ cannot consume native detail.
+    if (InterlockedIncrement(budget) <= 3) {
         void* addr = ep->ExceptionRecord->ExceptionAddress;
         HMODULE mod = nullptr;
         char modName[MAX_PATH] = "<unknown>";
@@ -367,31 +424,31 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
             modBase = reinterpret_cast<uintptr_t>(mod);
         }
         const CONTEXT* c = ep->ContextRecord;
-        Log("!!! EXCEPTION 0x%08lX at %p (%s + 0x%lX) | tid=%lu renderTid=%lu stage=%ld lastHook=%ld !!!",
+        write("!!! EXCEPTION 0x%08lX at %p (%s + 0x%lX) | tid=%lu renderTid=%lu stage=%ld lastHook=%ld !!!",
             code, addr, modName, (unsigned long)((uintptr_t)addr - modBase),
             GetCurrentThreadId(), g_renderThreadId, g_lastStage, g_lastHookId);
-        Log("  (first-chance: may be handled by our SEH guards - game continues)");
+        write("  (first-chance: may be handled by our SEH guards - game continues)");
 #ifdef D2VR_MATCHED_CAPTURE
-        d2vr_exception_witness::LogRecord(*ep->ExceptionRecord, Log);
+        d2vr_exception_witness::LogRecord(*ep->ExceptionRecord, write);
 #endif
         if (code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2) {
-            Log("  AccessViolation type=%lu targetAddr=%p",
+            write("  AccessViolation type=%lu targetAddr=%p",
                 (unsigned long)ep->ExceptionRecord->ExceptionInformation[0],
                 reinterpret_cast<void*>(ep->ExceptionRecord->ExceptionInformation[1]));
 #ifdef D2VR_MATCHED_CAPTURE
             MEMORY_BASIC_INFORMATION region{};
             const void* target=reinterpret_cast<const void*>(ep->ExceptionRecord->ExceptionInformation[1]);
             if(VirtualQuery(target,&region,sizeof(region))==sizeof(region))
-                Log("[ExceptionWitness] targetPage base=%p allocation=%p size=%lu state=%08lX protect=%08lX type=%08lX",
+                write("[ExceptionWitness] targetPage base=%p allocation=%p size=%lu state=%08lX protect=%08lX type=%08lX",
                     region.BaseAddress,region.AllocationBase,(unsigned long)region.RegionSize,
                     region.State,region.Protect,region.Type);
 #endif
         }
-        Log("  EAX=%08lX EBX=%08lX ECX=%08lX EDX=%08lX ESI=%08lX EDI=%08lX EBP=%08lX ESP=%08lX EIP=%08lX",
+        write("  EAX=%08lX EBX=%08lX ECX=%08lX EDX=%08lX ESI=%08lX EDI=%08lX EBP=%08lX ESP=%08lX EIP=%08lX",
             c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp, c->Eip);
 
         const uintptr_t* stack = reinterpret_cast<const uintptr_t*>(c->Esp);
-        Log("  Call Stack (ESP=%p):", stack);
+        write("  Call Stack (ESP=%p):", stack);
         for (int i = 0; i < 32; ++i) {
             __try {
                 uintptr_t retVal = stack[i];
@@ -402,9 +459,9 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
                                        reinterpret_cast<LPCSTR>(retVal), &retMod) && retMod) {
                     GetModuleFileNameA(retMod, retModName, MAX_PATH);
                     retModBase = reinterpret_cast<uintptr_t>(retMod);
-                    Log("    [%02d] %08lX (%s + 0x%lX)", i, (unsigned long)retVal, retModName, (unsigned long)(retVal - retModBase));
+                    write("    [%02d] %08lX (%s + 0x%lX)", i, (unsigned long)retVal, retModName, (unsigned long)(retVal - retModBase));
                 } else if (retVal > 0x10000) {
-                    Log("    [%02d] %08lX", i, (unsigned long)retVal);
+                    write("    [%02d] %08lX", i, (unsigned long)retVal);
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 break;
@@ -419,7 +476,7 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
             __try {
                 const auto words=reinterpret_cast<const uintptr_t*>(frame);
                 const uintptr_t next=words[0],returnAddress=words[1];
-                Log("[ExceptionWitness] ebpFrame=%d ebp=%p return=%p next=%p",
+                write("[ExceptionWitness] ebpFrame=%d ebp=%p return=%p next=%p",
                     depth,(void*)frame,(void*)returnAddress,(void*)next);
                 if(next<=frame || next-frame>0x10000 || (next&3)) break;
                 frame=next;
@@ -500,6 +557,8 @@ void LoadConfig() {
         }
     }
 
+    g_asyncLogRequested = GetPrivateProfileIntA("Render", "AsyncLog", 0, chosenIni) != 0;
+    Log("[AsyncLog] requested=%d; startup synchronous, worker starts only at HookDevice", (int)g_asyncLogRequested);
     g_testMode = GetPrivateProfileIntA("Render", "TestMode", 0, chosenIni);
     g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
     if (g_submitMode < 0 || g_submitMode > 4) g_submitMode = 0;
@@ -5761,6 +5820,7 @@ static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
 }
 
 void HookDevice(IDirect3DDevice9* dev) {
+    StartAsyncLogging();
     g_renderThreadId = GetCurrentThreadId();
     if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;
     LogStartupStage(11, "HookDevice (D3D9 vtable + replay hooks)");
@@ -6113,10 +6173,18 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
             RemoveVectoredExceptionHandler(g_vehHandle);
             g_vehHandle = nullptr;
         }
-        EnterCriticalSection(&g_logLock);
-        g_logReady = false;
-        g_logFile.Close();
-        LeaveCriticalSection(&g_logLock);
+        if (g_asyncLog.Started()) {
+            // Process-lifetime pinned worker: no join, FILE close or CRT file
+            // lock under loader lock. Process exit can lose queued tail rows.
+            g_logReady = false;
+            g_asyncLog.SignalStop();
+        } else {
+            EnterCriticalSection(&g_logLock);
+            g_logReady = false;
+            g_logFile.Close();
+            // Emergency handle is process-lifetime; no handler-close race here.
+            LeaveCriticalSection(&g_logLock);
+        }
     }
     return TRUE;
 }
