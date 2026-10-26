@@ -45,6 +45,12 @@
 #include "native_camera_cover.h"
 #include "exception_record_witness.h"
 #include "image_present_observer.h"
+#include "protected_source_size.h"
+static d2vr_source_quality::Mode g_sourceQualityMode=d2vr_source_quality::Mode::Off;
+static d2vr_source_quality::ClientSize g_protectedSourceSize;
+static void ObserveProtectedSourceSize(unsigned w,unsigned h,unsigned format) {
+    if(g_sourceQualityMode!=d2vr_source_quality::Mode::Off) g_protectedSourceSize.Source(w,h,format);
+}
 static bool g_imagePreservingPresent=false;
 static d2vr_image_present::Observer g_imagePresent;
 static bool g_restoredTrackedGameplay = false;
@@ -543,6 +549,11 @@ void LoadConfig() {
     g_projectionFix = GetPrivateProfileIntA("Render", "ProjectionFix", 3, chosenIni) & 3;
     g_renderW = GetPrivateProfileIntA("Render", "RenderWidth", 2560, chosenIni);
     g_renderH = GetPrivateProfileIntA("Render", "RenderHeight", 1440, chosenIni);
+#ifdef D2VR_MATCHED_CAPTURE
+    const unsigned sourceQualityRequested=GetPrivateProfileIntA("Render","SourceQuality",0,chosenIni);
+    g_sourceQualityMode=d2vr_source_quality::Parse(sourceQualityRequested);
+    if(sourceQualityRequested>3) Log("[SourceQuality] invalid mode=%u; OFF retained",sourceQualityRequested);
+#endif
     g_stateBlockHookEnabled = GetPrivateProfileIntA("Render", "StateBlockHook", 0, chosenIni) != 0;
     if (g_renderW < 1280 || g_renderW > 7680) g_renderW = 2560;
     if (g_renderH < 720 || g_renderH > 4320) g_renderH = 1440;
@@ -2728,6 +2739,9 @@ static bool EnsureSharedCapture(IDirect3DDevice9* dev) {
     if (FAILED(dev->GetRenderTarget(0, &bb)) || !bb) return false;
     D3DSURFACE_DESC bd{};
     bb->GetDesc(&bd);
+#ifdef D2VR_MATCHED_CAPTURE
+    ObserveProtectedSourceSize(bd.Width,bd.Height,unsigned(bd.Format));
+#endif
     bb->Release();
     if (g_sharedSurf9 && g_sharedSRV11) {
         if (bd.Width != g_sharedW || bd.Height != g_sharedH) {
@@ -4190,6 +4204,9 @@ bool CopyFrame(IDirect3DDevice9* dev) {
     HRESULT hr = E_FAIL;
     if (SUCCEEDED(dev->GetRenderTarget(0, &rt0)) && rt0) {
         rt0->GetDesc(&sd);
+#ifdef D2VR_MATCHED_CAPTURE
+        ObserveProtectedSourceSize(sd.Width,sd.Height,unsigned(sd.Format));
+#endif
         if (sd.MultiSampleType != D3DMULTISAMPLE_NONE || !EnsureCopy(dev, sd.Width, sd.Height, sd.Format)) {
             rt0->Release();
             rt0 = nullptr;
@@ -4882,6 +4899,7 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
+    if(pp && pp->hDeviceWindow) g_protectedSourceSize.Window(pp->hDeviceWindow);
     g_capturePresent.Reset();
     InterlockedIncrement(&g_captureResetGeneration); InterlockedExchange(&g_captureResetting,1);
 #endif
@@ -4934,6 +4952,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
+    if(pp && pp->hDeviceWindow) g_protectedSourceSize.Window(pp->hDeviceWindow);
     g_capturePresent.Reset();
     InterlockedIncrement(&g_captureResetGeneration); InterlockedExchange(&g_captureResetting,1);
 #endif
@@ -5396,6 +5415,7 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
 
 #ifdef D2VR_MATCHED_CAPTURE
 #include "image_present_runtime.inl"
+#include "protected_source_size_runtime.inl"
 // Explicit exception: changes five bytes in the LOADED EXE, never its file.
 // Called only from the first CreateDevice callback before returning the device
 // to the engine. Never install/reinstall asynchronously from EndScene/Reset.
@@ -5632,6 +5652,7 @@ void HookDevice(IDirect3DDevice9* dev) {
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
     InstallImagePresent(dev);
+    InstallProtectedSourceQuality();
     InstallDiagnosticEnginePresent();
     InstallDiagnosticTrackedGameplay();
     InstallDiagnosticCameraCover();
