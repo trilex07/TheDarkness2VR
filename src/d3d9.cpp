@@ -140,6 +140,7 @@ static bool g_startupShaderPool = false; // OFF; startup-owned shader objects, t
 static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shadow image
 static std::atomic<bool> g_skipObjectDraws{false}; // diagnostic: omit triangle batches >2 primitives
 static bool g_objectDrawPadToggle = false; // diagnostic chord override; F8 retains recenter
+static bool g_submissionPadToggle = false; // image-preserving replay submission A/B
 static volatile LONG g_objectDrawToggleRequests = 0;
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
@@ -629,6 +630,11 @@ void LoadConfig() {
     g_skipShadowAtlasDraws = GetPrivateProfileIntA("Render", "SkipShadowAtlasDraws", 0, chosenIni)!=0;
     g_skipObjectDraws = GetPrivateProfileIntA("Render", "SkipObjectDraws", 0, chosenIni)!=0;
     g_objectDrawPadToggle = GetPrivateProfileIntA("Render", "ObjectDrawPadToggle", 0, chosenIni)!=0;
+    g_submissionPadToggle = GetPrivateProfileIntA("Render", "SubmissionPadToggle", 0, chosenIni)!=0;
+    if(g_submissionPadToggle) {
+        g_objectDrawPadToggle=false;g_skipObjectDraws=false;g_skipShadowAtlasDraws=false;
+        Log("[SubmissionAB] L3+R3 armed; geometry retained, F8 recenter; draw omission disabled");
+    }
     if(g_objectDrawPadToggle) Log("[ObjectDrawTest] L3+R3 toggle armed; replaces chord recenter, F8 still recenters; switch applies at next frame boundary");
     if(g_skipObjectDraws) Log("[ObjectDrawTest] enabled=1; omit triangle batches >2 primitives in both eyes; includes world geometry, CPU preparation retained");
     if(g_skipShadowAtlasDraws) Log("[ShadowDrawTest] enabled=1; omit RGB565 square subviewport atlas draws in both eyes; heuristic coverage, altered lighting; CPU preparation retained");
@@ -3796,7 +3802,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
 
     if (g_recenterChord.Update((gp.wButtons & XINPUT_GAMEPAD_LEFT_THUMB)!=0,
         (gp.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)!=0,GetTickCount64()*.001)) {
-        if(g_objectDrawPadToggle) InterlockedIncrement(&g_objectDrawToggleRequests);
+        if(g_objectDrawPadToggle || g_submissionPadToggle) InterlockedIncrement(&g_objectDrawToggleRequests);
         else RequestRecenter("VR PAD L3+R3 click");
     }
     if (g_recenterChord.suppress) gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
@@ -4045,7 +4051,7 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
         }
         ReleaseSRWLockExclusive(&physicalChordLock);
         if(recenter) {
-            if(g_objectDrawPadToggle) InterlockedIncrement(&g_objectDrawToggleRequests);
+            if(g_objectDrawPadToggle || g_submissionPadToggle) InterlockedIncrement(&g_objectDrawToggleRequests);
             else {
 #ifdef D2VR_MATCHED_CAPTURE
             if(g_imagePreservingInput) InterlockedExchange(&g_protectedRecenterRequested,1);
@@ -5426,11 +5432,17 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
 }
 
 static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
-    if(g_objectDrawPadToggle && (InterlockedExchange(&g_objectDrawToggleRequests,0)&1)) {
-        const bool hidden=!g_skipObjectDraws.load();
-        g_skipObjectDraws.store(hidden);
+    if((g_objectDrawPadToggle || g_submissionPadToggle) && (InterlockedExchange(&g_objectDrawToggleRequests,0)&1)) {
+        if(g_submissionPadToggle) {
+            const bool enabled=!(g_replayConstantBatch && g_replayConstantWindow);
+            g_replayConstantBatch=enabled;g_replayConstantWindow=enabled;
+            Log("[SubmissionAB] L3+R3 frame-boundary toggle: grouped=%d; all geometry retained",int(enabled));
+        } else {
+            const bool hidden=!g_skipObjectDraws.load();
+            g_skipObjectDraws.store(hidden);
+            Log("[ObjectDrawTest] L3+R3 frame-boundary toggle: geometry=%s",hidden?"HIDDEN":"VISIBLE");
+        }
         MessageBeep(MB_OK);
-        Log("[ObjectDrawTest] L3+R3 frame-boundary toggle: geometry=%s",hidden?"HIDDEN":"VISIBLE");
     }
     d2vr_shader_preload::Tick();
     g_renderThreadId = GetCurrentThreadId();

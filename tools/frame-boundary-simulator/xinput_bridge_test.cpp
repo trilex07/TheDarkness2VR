@@ -20,6 +20,7 @@ volatile LONG g_cachedXrPadValid=0, g_headStickX=0, g_headStickY=0;
 bool g_restoredTrackedGameplay=false, g_remapPhysical=false, g_enableVRGamepad=true;
 bool g_headGeometry=true, g_in3DGameplayMode=true;
 bool g_objectDrawPadToggle=false;
+bool g_submissionPadToggle=false;
 volatile LONG g_objectDrawToggleRequests=0;
 int g_headLookMode=0;
 XINPUT_STATE g_cachedXrPad{}, physical[4]{};
@@ -212,6 +213,13 @@ int main() {
     physical[0].Gamepad.wButtons=XINPUT_GAMEPAD_LEFT_THUMB|XINPUT_GAMEPAD_RIGHT_THUMB;
     Hook_XInputGetState(0,&actual);Check(g_objectDrawToggleRequests==2);
     g_objectDrawPadToggle=false;
+    physical[0].Gamepad.wButtons=0;Hook_XInputGetState(0,&actual);
+    g_submissionPadToggle=true;
+    physical[0].Gamepad.wButtons=XINPUT_GAMEPAD_LEFT_THUMB|XINPUT_GAMEPAD_RIGHT_THUMB;
+    Hook_XInputGetState(0,&actual);
+    Check(g_objectDrawToggleRequests==3 && recenterCalls==beforeToggleRecenter);
+    Hook_XInputGetState(0,&actual);Check(g_objectDrawToggleRequests==3);
+    g_submissionPadToggle=false;
     TestWeaponNullModel();
     std::printf("XInput bridge and null-model regression (%s): %u checks PASS\n",
 #ifdef D2VR_MATCHED_CAPTURE
