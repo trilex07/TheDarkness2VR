@@ -3,8 +3,26 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <atomic>
 
 namespace d2vr_record_copy {
+// Diagnostic control changes the selected copy algorithm, never admission,
+// arena ownership or payload lifetime. Configure only before device hooks.
+class RuntimeControl {
+    bool armed_ = false;
+    std::atomic<bool> enabled_{true};
+public:
+    void Configure(bool armed) { armed_ = armed; }
+    bool Armed() const { return armed_; }
+    bool Request(int value) {
+        if (!armed_ || (value != 0 && value != 1)) return false;
+        return enabled_.exchange(value != 0, std::memory_order_relaxed) != (value != 0);
+    }
+    bool Effective(bool admitted) const {
+        return admitted && (!armed_ || enabled_.load(std::memory_order_relaxed));
+    }
+};
+
 constexpr size_t kSmallLimit = 192;
 using ReadMemory = BOOL (WINAPI*)(HANDLE, LPCVOID, LPVOID, SIZE_T, SIZE_T*);
 

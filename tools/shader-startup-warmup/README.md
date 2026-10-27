@@ -55,3 +55,12 @@ Offline verification: x86 production and diagnostic DLL builds PASS;43 C++ core
 checks including the real private package with FAKE GPU ops PASS;5 pack/integration
 checks PASS; existing stereo transfer5 checks PASS. Driver probe builds x86.
 Real-driver execution and real-game performance are separate acceptance gates.
+
+Controlled copy-path comparison (diagnostic build only): startup
+`Render/SmallRecordCopy=1` must pass its guard probe. Set
+`Diagnostics/SmallRecordCopyLiveControl=1` before launch; the existing one-second
+INI poll then accepts `SmallRecordCopyRuntime=0` or `1`. A change logs its actual
+QPC application time. Exclude transition windows; keep the camera and scene
+fixed. This does not change the startup admission, records, copies, or rendering.
+Absent opt-in and production builds retain their original behavior. Invalid
+values do nothing, and runtime ON cannot bypass failed startup admission.

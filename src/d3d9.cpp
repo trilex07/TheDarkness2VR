@@ -521,6 +521,15 @@ static bool g_gpuSplitTiming = false;
 static bool g_smallRecordCopyRequested = false; // OFF; bounded <=192-byte RPM experiment
 static bool g_smallRecordCopyAdmitted = false;
 static d2vr_record_copy::Admission g_smallRecordCopyAdmission;
+static d2vr_record_copy::RuntimeControl g_smallRecordCopyControl;
+static inline bool SmallRecordCopyIsEnabled() {
+#ifdef D2VR_MATCHED_CAPTURE
+    return g_smallRecordCopyControl.Effective(g_smallRecordCopyAdmitted);
+#else
+    return g_smallRecordCopyAdmitted;
+#endif
+}
+
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
@@ -535,6 +544,10 @@ static bool ProtectedHeadConfigurationAllowed() {
         !g_noInvProj && !g_skipLightVsShift && !g_lightPosShift && g_lightingPreset<=0;
 }
 void LoadConfig() {
+#ifdef D2VR_MATCHED_CAPTURE
+    g_smallRecordCopyControl.Configure(GetPrivateProfileIntA("Diagnostics",
+        "SmallRecordCopyLiveControl",0,".\\Darkness2VR-diagnostic.ini")!=0);
+#endif
     g_livePassProbe=GetPrivateProfileIntA("Diagnostics","LivePassProbe",0,
         ".\\Darkness2VR-diagnostic.ini")!=0;
     Log("[LivePassProbe] enabled=%d (diagnostic per-upload RT queries)",(int)g_livePassProbe);
@@ -884,6 +897,20 @@ void PollHotkeys() {
     const ULONGLONG diagnosticNow = GetTickCount64();
     if (diagnosticNow - diagnosticPoll >= 1000) {
         diagnosticPoll = diagnosticNow;
+#ifdef D2VR_MATCHED_CAPTURE
+        if (g_smallRecordCopyControl.Armed()) {
+            const int request=GetPrivateProfileIntA("Diagnostics","SmallRecordCopyRuntime",1,
+                ".\\Darkness2VR-diagnostic.ini");
+            if (g_smallRecordCopyControl.Request(request)) {
+                LARGE_INTEGER qpc{},frequency{};
+                QueryPerformanceCounter(&qpc); QueryPerformanceFrequency(&frequency);
+                Log("[SmallRecordCopyControl] requested=%d admitted=%d effective=%d qpc=%lld frequency=%lld",
+                    request,int(g_smallRecordCopyAdmitted),int(SmallRecordCopyIsEnabled()),
+                    qpc.QuadPart,frequency.QuadPart);
+            }
+        }
+#endif
+
         int sameEye = GetPrivateProfileIntA("Diagnostics", "SameEye", -1, ".\\Darkness2VR-diagnostic.ini");
         if (g_lightingPreset < 0 && sameEye >= -1 && sameEye <= 1 && sameEye != g_diagnosticSameEye) {
             g_diagnosticSameEye = sameEye;

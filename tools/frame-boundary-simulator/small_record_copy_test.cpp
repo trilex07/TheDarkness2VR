@@ -34,6 +34,7 @@ static void Filled(const uint8_t* p, size_t n, uint8_t value) {
 static std::vector<uint8_t> g_recData;
 static volatile LONG g_recLock=0;
 static bool g_smallRecordCopyAdmitted=false;
+static RuntimeControl g_smallRecordCopyControl;
 #include "actual_rec_push.inl"
 
 static void PushRecord(const void* source,size_t bytes,const std::vector<uint8_t>& expected) {
@@ -172,7 +173,19 @@ int main(int argc, char** argv) {
         Filled(arena.data(), offset, 0xa5);
         Filled(arena.data() + offset + 192, arena.size() - offset - 192, 0xa5);
     }
-    TestActualRecPush(memory,page);
+    RuntimeControl control;
+    assert(!control.Armed() && control.Effective(true) && !control.Effective(false));
+    assert(!control.Request(0) && control.Effective(true));
+    control.Configure(true);
+    assert(control.Request(0) && !control.Effective(true));
+    assert(!control.Request(0) && !control.Request(-1) && !control.Request(2));
+    assert(control.Request(1) && control.Effective(true) && !control.Effective(false));
+    TestActualRecPush(memory,page); // unarmed: identical legacy integration
+    g_smallRecordCopyControl.Configure(true);
+    g_smallRecordCopyControl.Request(0);
+    TestActualRecPush(memory,page); // OFF, even when startup guard admitted ON
+    g_smallRecordCopyControl.Request(1);
+    TestActualRecPush(memory,page); // ON still cannot bypass failed admission
     VirtualFree(memory, 0, MEM_RELEASE);
     std::printf("PASS small-record-copy: %u byte/range checks; x86 guard admission, exact counts, legacy fallback, actual RecPush offsets/append/bounds/sanity, and default OFF\n", cases);
 }
