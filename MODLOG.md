@@ -299,3 +299,13 @@ code/heap mutation or Steam access. Performance/HMD acceptance still NOT RUN.
   effective gameplay change. Batch/Window remain default OFF; no FPS saving claim.
 - All5 original DLL/INIs restored with SHA matches; EXE unchanged. Raw evidence
   private; detailed bounded verdict in existing outdoor-cpu-packets research doc.
+
+## 2026-10-27 - Level preloading and residency gate
+
+Dedicated SIDE base63b04ea. Reused existing ETL; the130.105 ms shader hitch has
+97.865 ms shader/driver blocked time and no disk reads in its bounded disk report.
+Eight-second window has5 F.Texture.cache reads/320 KiB/1.107 ms disk service.
+Pinned captured x86 EXE is already LAA. Ghidra B61190 retains receiver+0x0C and
+requests via manager010A1CBC virtual+28; loading/async/owner contracts unresolved.
+No helper, residency override or shader warmup admitted. See
+`docs/research/level-preloading-residency-20261027.md` and companion evidence JSON.

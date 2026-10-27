@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-27",
+  "base": "63b04ea902f9ee9ea815289457f43f29235ace63",
+  "decision": "NO_RUNTIME_PRELOAD_ADMITTED",
+  "trace": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\log-ab-20261026\\B\\20261026-105632\\combat.etl",
+  "pid": 35388,
+  "render_tid": 36804,
+  "phase": "first eight seconds after stationary marker; not a verified location transition",
+  "window_us": [
+    2526975.4,
+    10526975.4
+  ],
+  "hitch_us": [
+    2879414.4,
+    3009519.8
+  ],
+  "hitch_ms": 130.1054,
+  "hitch_blocked_ms": {
+    "UNKNOWN": 0.28700000000000003,
+    "shader creation/driver": 97.86500000000001,
+    "shared transfer/driver": 5.539,
+    "OpenXR": 0.185,
+    "NVIDIA other": 0.553
+  },
+  "hitch_blocked_segment_counts": {
+    "UNKNOWN": 7,
+    "shader creation/driver": 32,
+    "shared transfer/driver": 4,
+    "OpenXR": 7,
+    "NVIDIA other": 3
+  },
+  "window_game_hardfaults": [
+    {
+      "count": 19,
+      "bytes": 495616,
+      "file": "\"C:\\Program Files (x86)\\Steam\\steamapps\\Common\\Darkness II\\Tools\\Physx\\x86\\PhysXCore.dll\""
+    },
+    {
+      "count": 1,
+      "bytes": 32768,
+      "file": "\"C:\\WINDOWS\\system32\\DriverStore\\FileRepository\\nv_dispi.inf_amd64_20f49c6eb5c9b39b\\nvgpucomp32.dll\""
+    }
+  ],
+  "window_texture_archive_disk_reads": {
+    "count": 5,
+    "bytes": 327680,
+    "disk_service_us": 1107,
+    "io_time_sum_us": 1535,
+    "is_render_critical_path_or_saving": false
+  },
+  "hitch_disk_events": {
+    "count": 5,
+    "kind": "ETW collector writes only",
+    "observed_reads": 0
+  },
+  "pe": {
+    "sha256": "d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1",
+    "machine": "0x14c",
+    "characteristics": "0x122",
+    "large_address_aware": true,
+    "os_trace_pointer_size": 8,
+    "user_va_architectural_ceiling_bytes": 4294967296,
+    "available_contiguous_va": "UNKNOWN",
+    "game_commit_working_set": "UNKNOWN",
+    "effective_native_texture_budget": "UNKNOWN",
+    "game_gpu_budget_usage": "UNKNOWN"
+  },
+  "native_boundary": {
+    "function": "00B61190",
+    "retained_handle_field": "receiver+0x0C",
+    "ref_increment": "handle+4",
+    "manager_global": "010A1CBC",
+    "manager_virtual_slot": "0x28",
+    "call": "00B611C3",
+    "loading_phase_or_async_contract": "UNKNOWN",
+    "ready_policy_input": "byte at [010E1B08]-1 compared to zero"
+  },
+  "checks": {
+    "wait_join": true,
+    "pe_identity_laa": true,
+    "ghidra_complete": true,
+    "disk_and_fault_totals": true
+  },
+  "sources": [
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\log-ab-20261026\\B\\20261026-105632\\classified-waits.json",
+      "bytes": 20622529,
+      "sha256": "730c1d5b447fc873af3588507a3b61afa77c73946644dbb491277321d4f57652"
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\log-ab-20261026\\B\\20261026-105632\\partial-eight-seconds.json",
+      "bytes": 3826,
+      "sha256": "beb0d399226d299a589ce62410d43f69fbf3c3f0505f82ec9c088bc0888d01ed"
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\log-ab-20261026\\B\\20261026-105632\\manifest.json",
+      "bytes": 2102,
+      "sha256": "d92a0efe9d39cd754ba3e521c2a4d96a28701191bb77cd96de3da765ae4b396c"
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\log-ab-20261026\\B\\20261026-105632\\etw-stats.txt",
+      "bytes": 975,
+      "sha256": "2661d45c713b37151fac354a4e0d8b90862c5c314f4b2ca9b6ad7c7b4084b699"
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Temp\\d2vr-level-preloading\\hardfaults.txt",
+      "bytes": 2871,
+      "sha256": "92787fbbec0d4976139b6aa4368b4b53c2984288470fc9c8429506c6107b690a"
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Temp\\d2vr-level-preloading\\disk-summary.txt",
+      "bytes": 10084,
+      "sha256": "5c0bfae856e40af7bd83addbf3776d0a21201c55b0f7ab487156b5003123a0a9"
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Temp\\d2vr-level-preloading\\hitch-disk.txt",
+      "bytes": 1795,
+      "sha256": "23cb461e5cc9ee41722744e7a2e27d3a859c935c7a163938c417c7eabc928d9d"
+    },
+    {
+      "path": "C:\\Users\\Trilex\\AppData\\Local\\Temp\\d2vr-level-preloading\\loading-boundaries.txt",
+      "bytes": 22297,
+      "sha256": "f09b9427b1a7b3cd7b68eaa40a66e5aa61d7a3fbd6968207d3c000188a081b4a"
+    },
+    {
+      "path": "C:\\Users\\Trilex\\Darkness2VR\\tools\\darkness2.bms",
+      "bytes": 2650,
+      "sha256": "488e7208490bf86d9b76e6d6c792b79d2d048de7f31ad8c98fcaf7df0ae47fcd"
+    }
+  ]
+}
