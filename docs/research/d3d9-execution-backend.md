@@ -173,3 +173,83 @@ Preserve current DLL/INI hashes before any separately authorized integration.
 A missing system export, backend identity or GPU sharing is a rejection, not an
 invitation to enable an unsafe fallback. Rollback: restart with mode0 / restore
 the preserved original DLL and INIs. This task did not touch the installation.
+
+## One authorized Steam test, 2026-10-27: REJECT performance candidate
+
+Tested exact df4e08c diagnostic DLL SHA256
+E532D4139C81FD4B6952614777A38A521DBF5C21659B8234DCB2FF300DF7ADEC.
+User explicitly authorized one start ("tak start"). No native baseline start,
+second candidate, full ETL capture or renderer change. Separate original
+protected profile from the last constant-counts A was copied into a private
+packet; ONLY Render.D3D9Backend changed to1. Existing head/input/gestures,
+resolution, protected Present and image guard retained. AsyncLog, SmallRecordCopy,
+constant batching/window, reference reduction, sampler cache, last-consumer
+experiment, LivePassProbe and unsafe native hooks remained OFF.
+
+Prelaunch: no other Steam game process/active app except permitted VR runtimes;
+original EXE full SHA/PE/site/function audit PASS. SHA256
+D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
+Backed up installed DLL, all two game INIs and both local INIs (five files);
+backup and deployed hashes matched. Runtime evidence retained privately under
+`%LOCALAPPDATA%/Darkness2VR/runtime/system9on12-20261027T073431Z`.
+No binary, raw log or private trace is committed.
+
+Runtime compatibility observed:
+
+- SYSTEM factory S_OK; device passed actual production QI9On12 identity gate
+  (otherwise HookDevice is not entered); native device flags0x50 retained.
+- Actual additional swapchain acquired/QI observed; engine caller00A94057,
+  render TID6448. Last complete sampled witness entries=forwarded=returned=10000,
+  ok10000, statuses0, errors0, recursion0, fault0. Detach presentCount10935 is
+  NOT a full last-return receipt.
+- Both eyes generated: eye0=1 eye1=1, zeroCopy1. Gameplay FrameContext layers1,
+  tracking0xF, head geometry applied1/world1/projection1; xr submit success.
+- Input focused with both controller profiles and valid tracked hands; protected
+  right stroke forwarded to stock RB+stick once. Detailed physical head/input/
+  gesture correctness was not individually accepted by the user.
+- Actual RT0/source1920x1071; eye cache and both XR swapchains2676x2728. This is
+  an actual runtime size receipt, not the requested2048x2091 engine resolution.
+- Steam Overlay compatibility, absence of lighting/geometry defects and exact
+  stereo fusion were NOT independently accepted; do not label them PASS.
+- Two first-chance E06D7363 records at KERNELBASE+16BAE4, then thousands more
+  successful rendering calls. User reports closing the game; no C0000005 record
+  and emergency log empty. These records do not establish an unhandled crash,
+  nor do they prove stability or identify a backend-specific exception source.
+
+Performance decision: REJECT D3D9On12 as the performance solution on this test
+machine. User closed the game and reported "spadki jeszcze wieksze" (worse
+frame drops) instead of answering the outdoor-ready request. No request to
+repeat, repair the benchmark, or re-run native mode was made.
+
+Existing lightweight PresentMon2.6 was started for exact PID15268, QPC-ms,
+GPU tracking retained and own session D2VR9On12Live. Session query succeeded:
+EventsLost0/LogBuffersLost0/RealTimeBuffersLost0. Nevertheless NO CSV was
+produced, including after stopping the owned session. Stdout only confirms
+"Started recording"; stderr contains the unelevated process-query warning.
+That warning alone does not prove why the rows are absent. Exact cause UNKNOWN.
+Zero lost events does not certify measurement. We incorrectly announced it as
+recording before verifying rows; no quantitative PresentMon result is accepted.
+No admin prompt, replacement collector or additional game launch followed.
+
+New outdoor mean/p50/p95/p99, unique application FPS, CPUBusy and GPUBusy are
+UNAVAILABLE. The user closed before stationary/combat phase markers. Existing
+runtime counters remain usable with narrower scope: several gameplay windows
+world-bearing=game-boundaries=layers47.6/49.4/56.0 per second, coarse boundary-p95
+32ms. PerfClock120-boundary windows include28.215ms and22.507ms/boundary, but
+scene/focus phases are unmarked. These are NOT unique simulation FPS, a full
+outdoor distribution or PresentMon GPUBusy. GPUFrame measures D3D9 live+replay
+only, and CPUSync is wall-time scopes, not CPU RUN. No fabricated CPU/GPU
+attribution or savings is inferred from these counters.
+
+Historical reference ONLY: native mean17.55ms, GPU Busy3.48ms from the retained
+older outdoor capture. Different capture overhead and uncertain exact scene/
+source-size matching preclude a controlled numeric A/B claim. The physical
+performance rejection is sufficient to stop promoting this backend; its exact
+regression magnitude and cause remain unmeasured. No90Hz claim or saving.
+
+Rollback completed after process exit: original DLL and all four INIs restored,
+five SHA256 matches. Original installed DLL SHA256
+0A32C5B18AFA00B578DC8F86D1B4A1DA164393FA7399D665E3AE740F27E13E82;
+EXE SHA unchanged. No game or owned PresentMon process remains. New backend
+stays default OFF; implementation retained for research, not promoted. The
+working installation, backups and other worktrees are preserved. No merge.
