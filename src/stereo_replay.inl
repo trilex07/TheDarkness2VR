@@ -666,9 +666,9 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
             g_disableDepthOfField, g_disableCompositeHeightFog, composite) : 0;
     const bool fxaaOverride = !screenDepthOverride && !compositePatch && g_disableFxaa &&
         g_submitMode == 4 && originalWords && BuildUnfilteredFxaa(fn, originalWords + 1, sharp);
-    HRESULT hr = g_orig.CreatePixelShader(dev,
+    HRESULT hr = d2vr_shader_preload::Create(dev,
         compositePatch ? composite.data() :
-        fxaaOverride ? sharp.data() : (screenDepthOverride ? replacement : fn), out);
+        fxaaOverride ? sharp.data() : (screenDepthOverride ? replacement : fn), out,g_orig.CreatePixelShader);
     if (compositePatch || fxaaOverride) {
         if (fxaaOverride || (compositePatch & d2vr_composite::Dof))
             Log("[Sharpness] %s bypass hash=%08X result=%08X",
@@ -679,15 +679,15 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                 HashBytes(fn, (originalWords + 1)*4), (unsigned)hr);
         if (FAILED(hr) && (compositePatch & d2vr_composite::HeightFog) && g_disableDepthOfField &&
             d2vr_composite::Build(fn, originalWords + 1, true, false, composite)) {
-            hr = g_orig.CreatePixelShader(dev, composite.data(), out);
+            hr = d2vr_shader_preload::Create(dev,composite.data(),out,g_orig.CreatePixelShader);
             Log("[Composite] fog bypass rejected; previous DOF-only shader result=%08X", (unsigned)hr);
         }
-        if (FAILED(hr)) hr = g_orig.CreatePixelShader(dev, fn, out);
+        if (FAILED(hr)) hr = d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
     }
     if (FAILED(hr) && screenDepthOverride) {
         Log("[Lighting] shadow shader override rejected (hr=%08X); using original", (unsigned)hr);
         screenDepthOverride = false;
-        hr = g_orig.CreatePixelShader(dev, fn, out);
+        hr = d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
     }
     if (SUCCEEDED(hr) && out && *out && fn) {
         const size_t psWords = SafeShaderTokenCount(fn);
@@ -802,7 +802,7 @@ static volatile LONG g_shiftCount = 0;      // diagnostics: matrix uploads shift
 // ------------------------------------------------------------- VS create/set hooks
 static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, const DWORD* fn,
                                                          IDirect3DVertexShader9** out) {
-    HRESULT hr = g_orig.CreateVertexShader(dev, fn, out);
+    HRESULT hr = d2vr_shader_preload::Create(dev,fn,out,g_orig.CreateVertexShader);
     if (SUCCEEDED(hr) && out && *out && fn) {
         size_t n = SafeShaderTokenCount(fn);
         if (n == 0) return hr;

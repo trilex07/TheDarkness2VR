@@ -136,6 +136,7 @@ bool g_recenterHeadLock = false;
 int g_textureAnisotropy = 16;
 bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B, default legacy query path
 static bool g_startupShaderWarmup = false; // OFF; valid-device startup only, no native slot writes
+static bool g_startupShaderPool = false; // OFF; startup-owned shader objects, transferred once
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
 
@@ -620,6 +621,7 @@ void LoadConfig() {
     g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
     g_startupShaderWarmup = GetPrivateProfileIntA("Render", "StartupShaderWarmup", 0, chosenIni)!=0;
+    g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
     if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
@@ -1491,6 +1493,7 @@ static void MatchedCaptureInput(IDirect3DSurface9*,bool);
 #ifdef D2VR_MATCHED_CAPTURE
 static void NativeCameraUiScale(float& x,float& y);
 #endif
+#include "shader_preload_pool.inl"
 #include "stereo_replay.inl"
 
 static void UpdateHeadGeometry(const XrPosef& head) {
@@ -5300,6 +5303,7 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
+    d2vr_shader_preload::BeginReset(dev);
     d2vr_sampling::InvalidateSamplerCaps();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
@@ -5338,6 +5342,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origReset(dev, pp);
+    d2vr_shader_preload::EndReset(dev,hr);
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetEnd(SUCCEEDED(hr));
     g_capturePresent.ResetResult(SUCCEEDED(hr));
@@ -5354,6 +5359,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
+    d2vr_shader_preload::BeginReset(dev);
     d2vr_sampling::InvalidateSamplerCaps();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
@@ -5389,6 +5395,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
+    d2vr_shader_preload::EndReset(dev,g_origResetEx?hr:E_FAIL);
 #ifdef D2VR_MATCHED_CAPTURE
     g_capturePresent.ResetResult(g_origResetEx && SUCCEEDED(hr));
     if(g_imagePreservingPresent) g_imagePresent.ResetEnd(g_origResetEx && SUCCEEDED(hr));
@@ -5403,6 +5410,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
 }
 
 static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
+    d2vr_shader_preload::Tick();
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     TryInstallXInputHook();
@@ -6012,6 +6020,7 @@ void HookDevice(IDirect3DDevice9* dev) {
     g_renderThreadId = GetCurrentThreadId();
     if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;
     StartupShaderWarmup(dev); // before our CreateShader hooks; native owner not yet supplied this device
+    d2vr_shader_preload::Initialize(dev);
     LogStartupStage(11, "HookDevice (D3D9 vtable + replay hooks)");
     g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);
     if (g_smallRecordCopyRequested) Log("[SmallRecordCopy] requested=1 admitted=%d guardProbe=%d limit=%zu (failed reads retain legacy copy)",
