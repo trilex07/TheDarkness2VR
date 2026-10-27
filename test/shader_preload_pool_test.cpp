@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <thread>
 static bool g_startupShaderPool=true;
+static unsigned g_startupShaderCopies=1;
 static void Log(const char* format,...) {va_list args;va_start(args,format);vprintf(format,args);va_end(args);puts("");}
 #include "../src/shader_preload_pool.inl"
 #define CHECK(x) do{if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);exit(1);}}while(0)
@@ -40,6 +41,19 @@ static void Core() {
         a.Release();pool.ExpireOne();CHECK(a.releases==1 && b.releases==1);
     }
     CHECK(a.releases==1 && b.releases==1 && rejected.releases==1);
+    {
+        Fake first,second,excess;
+        Pool<Fake> two(&device,2);CHECK(two.Remember(&device,code));
+        CHECK(two.Adopt(&device,code,&first,1));CHECK(two.Adopt(&device,code,&second,0));
+        CHECK(!two.Adopt(&device,code,&excess,0) && two.Pending()==2);
+        int32_t result=99;
+        CHECK(two.Take(&device,code,code[0],result)==&second && result==0);
+        CHECK(two.Take(&device,code,code[0],result)==&first && result==1);
+        CHECK(!two.Take(&device,code,code[0],result) && two.Pending()==0);
+        two.ClearObjects();CHECK(first.releases==0 && second.releases==0);
+        first.Release();second.Release();
+        CHECK(two.Adopt(&device,code,&excess,0));two.ClearObjects();CHECK(excess.releases==1);
+    }
     Pool<Fake> bounded(&device);
     for(uint32_t i=0;i<MaxShaders;++i){auto unique=code;unique[2]=i;CHECK(bounded.Remember(&device,unique));}
     auto excess=code;excess[2]=uint32_t(MaxShaders);CHECK(!bounded.Remember(&device,excess));
@@ -134,6 +148,15 @@ int main(int argc,char**) {
     BeginReset(device);HR(device->Reset(&pp));EndReset(device,D3D_OK);Same(p2,otherPs,false);
     HR(Create(device,reinterpret_cast<const DWORD*>(ps.data()),&p1,originalPS));CHECK(creates==before); // unused shaders also survive Reset
     p1->Release();p2->Release();state.store(nullptr);current.reset();
+    // Repeated exact bytecode requests consume separately created references.
+    current=PrepareState(device,cache,seed,2);state.store(current.get());
+    CHECK(current->pool.Pending()==6);
+    const unsigned repeatedBefore=creates;
+    HR(Create(device,reinterpret_cast<const DWORD*>(ps.data()),&p1,originalPS));
+    HR(Create(device,reinterpret_cast<const DWORD*>(ps.data()),&p2,originalPS));
+    CHECK(creates==repeatedBefore && current->pool.Pending()==4);
+    Same(p1,ps,false);Same(p2,ps,false);p1->Release();Same(p2,ps,false);p2->Release();
+    state.store(nullptr);current.reset();
     device->Release();api->Release();DestroyWindow(window);FreeLibrary(module);
     CHECK(DeleteFileW(cache.c_str()));CHECK(DeleteFileW(seed.c_str()));
     printf("PASS actual x86 D3D9 %s: startup objects served without creation, effective bytes, native misses/HRESULT, background persistence and second-start hit, Reset ownership, guard preservation\n",hardware?"HAL/Ex flags=0x54":"REF");

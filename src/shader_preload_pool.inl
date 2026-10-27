@@ -13,7 +13,7 @@ struct State {
     std::atomic<bool> writing{false};
     std::atomic<bool> usable{true};
     ULONGLONG nextTick=0;
-    State(IDirect3DDevice9* dev,std::wstring file):device(dev),pool(dev),path(std::move(file)) {}
+    State(IDirect3DDevice9* dev,std::wstring file,unsigned copies=1):device(dev),pool(dev,copies),path(std::move(file)) {}
 };
 static std::atomic<State*> state{nullptr}; // process lifetime; never release COM under loader lock
 struct ReleaseShader {void operator()(IUnknown* object)const {if(object)object->Release();}};
@@ -81,19 +81,23 @@ static unsigned __stdcall WriteArchive(void* value) {
     return 0;
 }
 static std::unique_ptr<State> PrepareState(IDirect3DDevice9* device,
-    const std::wstring& path,const std::wstring& seed) {
-        auto s=std::make_unique<State>(device,path);
+    const std::wstring& path,const std::wstring& seed,unsigned copies=1) {
+        copies=copies==2?2:1;
+        auto s=std::make_unique<State>(device,path,copies);
         auto archive=ReadArchive(s->path);
         const bool alreadyPersisted=!archive.empty();
         if(archive.empty()) archive=ReadArchive(seed);
         unsigned ready=0,failed=0;bool budgetStop=false;
         const auto start=GetTickCount64();
         if(!archive.empty()) {
+            // Cover every known bytecode once before spending the remaining
+            // startup budget on a spare. Slower drivers retain broad coverage.
+            for(unsigned copy=0;copy<copies;++copy) {
             size_t offset=2;
             for(uint32_t i=0;i<archive[1];++i) {
                 const uint32_t words=archive[offset++];
                 std::vector<uint32_t> code(archive.begin()+offset,archive.begin()+offset+words);offset+=words;
-                s->pool.Remember(device,code);
+                if(!copy) s->pool.Remember(device,code);
                 if(failed) continue; // no repeated driver creation after rejection/device loss
                 if(GetTickCount64()-start>=10000) {budgetStop=true;continue;}
                 IUnknown* object=nullptr;HRESULT hr;
@@ -108,6 +112,7 @@ static std::unique_ptr<State> PrepareState(IDirect3DDevice9* device,
                 if(SUCCEEDED(hr) && object && s->pool.Adopt(device,code,object,hr)) {owned.release();++ready;}
                 else ++failed;
             }
+            }
         }
         // A menu/load/readiness delay must not discard precreated shaders before
         // the level requests them. Keep the bounded one-use inventory available.
@@ -115,6 +120,7 @@ static std::unique_ptr<State> PrepareState(IDirect3DDevice9* device,
         if(alreadyPersisted) s->saved.store(s->pool.Version());
         Log("[ShaderPreload] startup ready=%u entries=%zu failed=%u budgetStop=%d elapsedMs=%llu; one-use owned objects, exact bytecode+device match",
             ready,s->pool.Size(),failed,int(budgetStop),GetTickCount64()-start);
+        Log("[ShaderPreload] copiesPerCode=%u maximumObjects=%zu; independent creation references, no live refill",copies,MaxShaders*size_t(copies));
         return s;
 }
 static void Initialize(IDirect3DDevice9* device) {
@@ -126,7 +132,7 @@ static void Initialize(IDirect3DDevice9* device) {
     if(FAILED(SHGetFolderPathW(nullptr,CSIDL_LOCAL_APPDATA,nullptr,SHGFP_TYPE_CURRENT,base))) return;
     try {
         const std::wstring directory=std::wstring(base)+L"\\Darkness2VR\\";
-        state.store(PrepareState(device,directory+L"shader-preload.bin",directory+L"startup-shaders.bin").release());
+        state.store(PrepareState(device,directory+L"shader-preload.bin",directory+L"startup-shaders.bin",g_startupShaderCopies).release());
     } catch(...) {Log("[ShaderPreload] initialization failed; native creation retained");}
 }
 

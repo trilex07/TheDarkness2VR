@@ -72,6 +72,21 @@ int main(int argc,char**) {
         CHECK(pool.Create(device,D3DQUERYTYPE_OCCLUSION,&query,1234)==E_ACCESSDENIED && !query);
         forceFail=false;
     }
+    {
+        const auto before=calls;
+        d2vr_query_preload::Pool large(device,w,1234,&Original,513);large.EndReset(device,D3D_OK);
+        CHECK(large.Pending()==512 && calls==before+512);
+        const auto readyCalls=calls;
+        for(unsigned i=0;i<512;++i) {
+            IDirect3DQuery9* q=nullptr;
+            CHECK(SUCCEEDED(large.Create(device,D3DQUERYTYPE_OCCLUSION,&q,1234)) && q && calls==readyCalls);
+            q->Release();
+            if(i==391)CHECK(large.Pending()==120); // observed game demand fits
+        }
+        IDirect3DQuery9* q=nullptr;
+        CHECK(SUCCEEDED(large.Create(device,D3DQUERYTYPE_OCCLUSION,&q,1234)) && q && calls==readyCalls+1);
+        q->Release();CHECK(large.hits==512 && large.Pending()==0);
+    }
     device->Release();api->Release();DestroyWindow(w);FreeLibrary(module);
     printf("PASS x86 D3D9 %s query inventory: query results equal, one-use, type/caller/probe bypass, exhaustion, Reset lifecycle; REF zero does not prove rasterization\n",hardware?"HAL/Ex":"REF");
 }

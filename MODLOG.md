@@ -511,3 +511,27 @@ x86 real external-trampoline tests PASS for Quality, Exact and pre-window Exact
 lifecycle, including invalid-window/wrong-caller/null rejection, BOOL/last-error,
 one original forward and unchanged test EXE text. Production and diagnostic
 builds PASS. Game sizing, upstream dependencies and FPS require runtime testing.
+
+## 2026-10-27: additional startup inventory for measured creation misses
+
+b6ef258 user-test log ends with shader requests512/hits444 and native occlusion
+query requests392/hits128/pending0. These counters prove remaining forwarded
+creation requests, not that every shader miss has the same cause or cost.
+Retained ETW separately proves critical-path shader/query driver waits.
+
+Add StartupShaderCopies=1(default)/2: create independently owned references for
+each archived exact bytecode, at most2048 objects across1024 identities. Cover
+all known identities once before preparing second copies within the unchanged
+10s soft startup budget. Each result/reference transfers once; no live refill,
+object recycling, native cache changes or asynchronous D3D9 calls. Archive format
+and legacy single-copy behavior stay unchanged. Increase optional query limit
+to512 so the observed392 requests can fit if startup/Reset creation succeeds;
+keep2s soft budget, per-call health checks, caller gate and native fallback.
+
+x86 REF and HAL/Ex tests PASS: two identical shader requests served without
+native creation, independent Release lifetime and exact bytecode; query512
+transfers, native exhaustion fallback and clamp; HAL visibility2016 pixels
+before/after Reset. Source sizing lifecycle regression and both builds PASS.
+Installed candidate also includes213bfd3 pre-window resolution correction.
+Extra inventory targets measured creation misses; sustained90FPS at native
+2676x2728/eye remains unverified and is not inferred from these offline tests.

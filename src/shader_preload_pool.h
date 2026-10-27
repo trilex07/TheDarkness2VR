@@ -7,6 +7,7 @@
 
 namespace d2vr_shader_preload {
 constexpr size_t MaxShaders=1024;
+constexpr unsigned MaxCopies=2;
 inline bool ValidateArchive(const unsigned char* data,size_t bytes) {
     using namespace d2vr_startup_shader;
     if(!data || bytes<8 || bytes>MaxBytes || Word(data)!=Magic) return false;
@@ -26,10 +27,12 @@ template<class Object> class Pool {
     struct Entry {
         std::vector<uint32_t> code;
         uint64_t hash=0;
-        Object* object=nullptr;
-        int32_t result=0;
+        std::array<Object*,MaxCopies> objects{};
+        std::array<int32_t,MaxCopies> results{};
+        unsigned count=0;
     };
     const void* device_;
+    unsigned copies_;
     mutable std::mutex mutex_;
     std::vector<Entry> entries_;
     size_t bytes_=8;
@@ -45,7 +48,7 @@ template<class Object> class Pool {
         return nullptr;
     }
 public:
-    explicit Pool(const void* device):device_(device) {entries_.reserve(MaxShaders);}
+    explicit Pool(const void* device,unsigned copies=1):device_(device),copies_(copies==2?2:1) {entries_.reserve(MaxShaders);}
     Pool(const Pool&)=delete;
     Pool& operator=(const Pool&)=delete;
     ~Pool() { ClearObjects(); }
@@ -56,29 +59,30 @@ public:
         if(Find(code)) return true;
         const size_t bytes=4+code.size()*4;
         if(entries_.size()>=MaxShaders || bytes>d2vr_startup_shader::MaxBytes-bytes_) return false;
-        entries_.push_back({code,Hash(code),nullptr,0}); bytes_+=bytes; ++version_;return true;
+        entries_.push_back({code,Hash(code)}); bytes_+=bytes; ++version_;return true;
     }
     // Ownership moves only on true. Caller releases on rejection.
     bool Adopt(const void* device,const std::vector<uint32_t>& code,Object* object,int32_t result) {
         if(device!=device_ || !object || result<0) return false;
         std::lock_guard<std::mutex> lock(mutex_);
-        auto* e=Find(code);if(!e || e->object) return false;
-        e->object=object;e->result=result;return true;
+        auto* e=Find(code);if(!e || e->count>=copies_) return false;
+        e->objects[e->count]=object;e->results[e->count++]=result;return true;
     }
     Object* Take(const void* device,const std::vector<uint32_t>& code,uint32_t version,int32_t& result) {
         if(device!=device_ || code.empty() || code[0]!=version) return nullptr;
         std::lock_guard<std::mutex> lock(mutex_);
         if(!enabled_) return nullptr;
-        auto* e=Find(code);if(!e || !e->object) return nullptr;
-        Object* object=e->object;e->object=nullptr;result=e->result;return object;
+        auto* e=Find(code);if(!e || !e->count) return nullptr;
+        const auto index=--e->count;
+        Object* object=e->objects[index];e->objects[index]=nullptr;result=e->results[index];return object;
     }
     // No driver call under the pool mutex. Consumed objects belong to the game
     // and are never released here, including Reset and expiry.
     void ClearObjects() {
-        std::array<Object*,MaxShaders> release{};size_t n=0;
+        std::array<Object*,MaxShaders*MaxCopies> release{};size_t n=0;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            for(auto& e:entries_) if(e.object) {release[n++]=e.object;e.object=nullptr;}
+            for(auto& e:entries_) while(e.count) {auto i=--e.count;release[n++]=e.objects[i];e.objects[i]=nullptr;}
         }
         for(size_t i=0;i<n;++i) release[i]->Release();
     }
@@ -86,14 +90,14 @@ public:
         Object* object=nullptr;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            for(auto& e:entries_) if(e.object) {object=e.object;e.object=nullptr;break;}
+            for(auto& e:entries_) if(e.count) {auto i=--e.count;object=e.objects[i];e.objects[i]=nullptr;break;}
         }
         if(object) object->Release();
     }
     size_t Size() const {std::lock_guard<std::mutex> lock(mutex_);return entries_.size();}
     size_t Pending() const {
         std::lock_guard<std::mutex> lock(mutex_);size_t count=0;
-        for(const auto& entry:entries_)if(entry.object)++count;
+        for(const auto& entry:entries_)count+=entry.count;
         return count;
     }
     void Enable(bool enabled) {std::lock_guard<std::mutex> lock(mutex_);enabled_=enabled;}

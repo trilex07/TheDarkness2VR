@@ -10,6 +10,7 @@
 #include <delayimp.h>
 #include <shlobj.h>
 #include <d3d9.h>
+#include "query_preload_pool.h"
 #include <d3d11.h>
 #include "stereo_transfer_worker.h"
 #include <dxgi.h>
@@ -143,6 +144,7 @@ int g_textureAnisotropy = 16;
 bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B, default legacy query path
 static bool g_startupShaderWarmup = false; // OFF; valid-device startup only, no native slot writes
 static bool g_startupShaderPool = false; // OFF; startup-owned shader objects, transferred once
+static unsigned g_startupShaderCopies=1; // independent startup creation references per exact bytecode
 static unsigned g_queryPreloadCount=0; // bounded unused occlusion queries; startup only
 static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shadow image
 static std::atomic<bool> g_skipObjectDraws{false}; // diagnostic: omit triangle batches >2 primitives
@@ -647,8 +649,9 @@ void LoadConfig() {
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
     g_startupShaderWarmup = GetPrivateProfileIntA("Render", "StartupShaderWarmup", 0, chosenIni)!=0;
     g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
+    g_startupShaderCopies=GetPrivateProfileIntA("Render","StartupShaderCopies",1,chosenIni)==2?2:1;
     g_queryPreloadCount=GetPrivateProfileIntA("Render","QueryPreloadCount",0,chosenIni);
-    if(g_queryPreloadCount>256)g_queryPreloadCount=0;
+    if(g_queryPreloadCount>d2vr_query_preload::MaxQueries)g_queryPreloadCount=0;
     g_skipShadowAtlasDraws = GetPrivateProfileIntA("Render", "SkipShadowAtlasDraws", 0, chosenIni)!=0;
     g_skipObjectDraws = GetPrivateProfileIntA("Render", "SkipObjectDraws", 0, chosenIni)!=0;
     g_objectDrawPadToggle = GetPrivateProfileIntA("Render", "ObjectDrawPadToggle", 0, chosenIni)!=0;
@@ -1549,7 +1552,6 @@ static void MatchedCaptureInput(IDirect3DSurface9*,bool);
 static void NativeCameraUiScale(float& x,float& y);
 #endif
 #include "shader_preload_pool.inl"
-#include "query_preload_pool.h"
 static std::atomic<d2vr_query_preload::Pool*> g_queryPreload{nullptr};
 static d2vr_query_preload::CreateFn g_queryCreateOriginal=nullptr;
 __declspec(noinline) static HRESULT STDMETHODCALLTYPE Hook_CreateQuery(IDirect3DDevice9* device,D3DQUERYTYPE type,IDirect3DQuery9** out) {

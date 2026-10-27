@@ -6,6 +6,7 @@
 #include <mutex>
 
 namespace d2vr_query_preload {
+constexpr unsigned MaxQueries=512;
 using CreateFn=HRESULT (STDMETHODCALLTYPE*)(IDirect3DDevice9*,D3DQUERYTYPE,IDirect3DQuery9**);
 // Only never-issued objects are owned here. A transferred object is never
 // revisited, retained, reset, recycled or supplied to another native owner.
@@ -17,8 +18,8 @@ class Pool {
     CreateFn original_;
     unsigned limit_;
     std::mutex mutex_;
-    std::array<IDirect3DQuery9*,256> objects_{};
-    std::array<HRESULT,256> results_{};
+    std::array<IDirect3DQuery9*,MaxQueries> objects_{};
+    std::array<HRESULT,MaxQueries> results_{};
     unsigned size_=0;
     bool usable_=false;
     bool Healthy() {
@@ -27,7 +28,7 @@ class Pool {
 public:
     std::atomic<uint64_t> requests{0},hits{0};
     Pool(IDirect3DDevice9* device,HWND window,uintptr_t caller,CreateFn original,unsigned limit)
-        :device_(device),window_(window),caller_(caller),original_(original),limit_(limit<=256?limit:256) {
+        :device_(device),window_(window),caller_(caller),original_(original),limit_(limit<=MaxQueries?limit:MaxQueries) {
         if(device_)device_->QueryInterface(__uuidof(IDirect3DDevice9Ex),reinterpret_cast<void**>(&ex_));
     }
     ~Pool(){BeginReset(device_);if(ex_)ex_->Release();}
@@ -36,7 +37,7 @@ public:
     unsigned Pending(){std::lock_guard<std::mutex> lock(mutex_);return size_;}
     void BeginReset(IDirect3DDevice9* device) {
         if(device!=device_)return;
-        std::array<IDirect3DQuery9*,256> release{};unsigned count;
+        std::array<IDirect3DQuery9*,MaxQueries> release{};unsigned count;
         {std::lock_guard<std::mutex> lock(mutex_);usable_=false;count=size_;size_=0;release.swap(objects_);}
         for(unsigned i=0;i<count;++i)if(release[i])release[i]->Release();
     }
