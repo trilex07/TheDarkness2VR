@@ -142,6 +142,7 @@ static std::atomic<bool> g_skipObjectDraws{false}; // diagnostic: omit triangle 
 static bool g_objectDrawPadToggle = false; // diagnostic chord override; F8 retains recenter
 static bool g_submissionPadToggle = false; // image-preserving replay submission A/B
 static bool g_submissionPackage = false; // include wide owned capture + frame refs in A/B
+static bool g_submissionStatus = false;
 static std::atomic<bool> g_wideRecordCopy{false};
 static bool g_triangleHoldRecenter = false; // short triangle tap retains menu
 static volatile LONG g_objectDrawToggleRequests = 0;
@@ -635,6 +636,7 @@ void LoadConfig() {
     g_objectDrawPadToggle = GetPrivateProfileIntA("Render", "ObjectDrawPadToggle", 0, chosenIni)!=0;
     g_submissionPadToggle = GetPrivateProfileIntA("Render", "SubmissionPadToggle", 0, chosenIni)!=0;
     g_submissionPackage = GetPrivateProfileIntA("Render", "SubmissionPackage", 0, chosenIni)!=0;
+    g_submissionStatus = GetPrivateProfileIntA("Render", "SubmissionStatus", 0, chosenIni)!=0;
     g_wideRecordCopy = GetPrivateProfileIntA("Render", "WideRecordCopy", 0, chosenIni)!=0;
     if(g_wideRecordCopy) Log("[WideRecordCopy] requested=1 limit=65536; requires SmallRecordCopy guard admission; exact-count RPM, legacy fallback; no permission cache");
     g_triangleHoldRecenter = GetPrivateProfileIntA("Render", "TriangleHoldRecenter", 0, chosenIni)!=0;
@@ -1336,6 +1338,7 @@ struct alignas(16) StereoCBData {
     float extraCfg[4];   // x=convDepth, y=kz, z=depthViz, w=posOffsetX
     float posCfg[4];     // x=posOffsetY, y=unused, z=unused, w=unused
     float aimCfg[4];     // output UV, viewport aspect, 0=off/1=axis/2=offscreen direction
+    float statusCfg[4];  // x=0 disabled, 1 selected OFF, 2 selected ON
 };
 
 XrPosef g_eyePose[2]{};
@@ -2186,6 +2189,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* dev, DWORD Stage, ID
 }
 
 // ---------------------------------------------------------------- D3D11 Method 2 Stereo Shader Pipeline
+#include "submission_status_shader.h"
 static bool EnsureD11StereoPipeline() {
     if (g_stereoPipelineReady) return true;
     if (!g_dev11) return false;
@@ -2221,12 +2225,15 @@ static bool EnsureD11StereoPipeline() {
         "    float4 extraCfg;    // x=convDepth, y=kz, z=depthViz, w=posOffsetX\n"
         "    float4 posCfg;      // x=posOffsetY, y=viewMode (0=Immersive 150, 1=Ultra-Wide 180, 2=Cinema), z=unused, w=unused\n"
         "    float4 aimCfg;\n"
+        "    float4 statusCfg;\n"
         "};\n"
         "struct PSIn {\n"
         "    float4 pos : SV_POSITION;\n"
         "    float2 uv  : TEXCOORD0;\n"
         "};\n"
+        D2VR_SUBMISSION_STATUS_HLSL
         "float4 main(PSIn i) : SV_Target {\n"
+        "    float4 status=SubmissionStatus(i.uv); if(status.a>0.5) return status;\n"
         "    if (posCfg.y > 2.5) {\n"
         "        // Match the rendered tangent span to the declared composition FOV.\n"
         "        float2 uv = 0.5 + (i.uv - 0.5) * posCfg.zw;\n"
@@ -2402,6 +2409,7 @@ static StereoCBData PrepareStereoEyeConstants(
         (g_fovWidenEyeY[eyeIdx] > 0.0f ? std::min(1.0f, g_fovCoverEyeY[eyeIdx] / g_fovWidenEyeY[eyeIdx])
                                        : (g_fovWidenY > 0.0f ? std::min(1.0f, g_fovCoverY / g_fovWidenY) : 1.0f));
     memset(cb->aimCfg,0,sizeof(cb->aimCfg));
+    cb->statusCfg[0]=g_submissionStatus ? ((g_replayConstantBatch && g_replayConstantWindow)?2.0f:1.0f):0.0f;
     if(g_blitPass && g_tentacleBridge && g_tentacleAimMarker && g_tentacleAimVisible && g_in3DGameplayMode)
         ComputeBaseAimMarker(eyeIdx,cb->posCfg[2],cb->posCfg[3],cb->aimCfg);
 #ifdef D2VR_MATCHED_CAPTURE

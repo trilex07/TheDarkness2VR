@@ -42,7 +42,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     ID3D11Texture2D* stageRaw=nullptr;HR(dev11->CreateTexture2D(&td,nullptr,&stageRaw));auto stage=Adopt(stageRaw);
     ID3D11Query* q11Raw=nullptr;D3D11_QUERY_DESC qd{D3D11_QUERY_EVENT,0};
     HR(dev11->CreateQuery(&qd,&q11Raw));auto q11=Adopt(q11Raw);
-    D3D11_BUFFER_DESC bd{};bd.ByteWidth=96;bd.Usage=D3D11_USAGE_DYNAMIC;
+    D3D11_BUFFER_DESC bd{};bd.ByteWidth=112;bd.Usage=D3D11_USAGE_DYNAMIC;
     bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;bd.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE;
     ID3D11Buffer* bufferRaw=nullptr;HR(dev11->CreateBuffer(&bd,nullptr,&bufferRaw));auto buffer=Adopt(bufferRaw);
     const auto vcode=Compile("struct O{float4 p:SV_Position;float2 uv:TEXCOORD0;};O main(uint i:SV_VertexID){O o;o.uv=float2((i<<1)&2,i&2);o.p=float4(o.uv.x*2-1,1-o.uv.y*2,0,1);return o;}","vs_4_0");
@@ -60,7 +60,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         j->producer=q9;j->reader=q11;j->context=Ref<ID3D11DeviceContext>(ctx);
         j->target=targets[eye];j->constants=buffer;j->vs=vs;j->ps=ps;
         j->sampler=sampler;j->raster=raster;j->source=srv;
-        j->size=96;j->width=j->height=64;
+        j->size=112;j->width=j->height=64;
         float tint[4]={1,1,1,1};memcpy(j->bytes.data(),tint,sizeof(tint));return j;
     };
     auto issue=[&] {

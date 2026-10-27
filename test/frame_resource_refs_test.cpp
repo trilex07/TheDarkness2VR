@@ -104,6 +104,23 @@ static void TestTenThousandFrames() {
     std::printf("PASS 10000 frames/mode: COM AddRef+Release pairs %llu -> %llu; all resources alive through replay\n",adds[0],adds[1]);
 }
 int main() {
+    {
+        // Exercise table growth/collisions, bounded saturation fallback and
+        // generation reuse without dereferencing stale previous-frame keys.
+        std::vector<Resource> objects(40000);
+        d2vr_replay::FrameResourceRefs<Resource> refs;
+        for(unsigned frame=0;frame<3;++frame) {
+            refs.Begin(true);
+            for(auto& object:objects)refs.Retain(&object);
+            CHECK(refs.size()==40000);
+            for(unsigned i=0;i<1000;++i)refs.Retain(&objects[i]);
+            CHECK(refs.size()==40000);
+            refs.Retain(&objects.back()); // outside bounded lookup admission
+            CHECK(refs.size()==40001);
+            refs.Clear();
+            for(auto& object:objects)CHECK(object.refs==1);
+        }
+    }
     TestBaseline(); TestOwnerReleaseAndBothEyes(); TestExactIdentityAndFrameBoundary();
     TestResetFailureAndModeChange(); TestTenThousandFrames();
     std::puts("PASS baseline, exact identity, owner drop, both eyes, frame reuse, reset/abort, mode change");

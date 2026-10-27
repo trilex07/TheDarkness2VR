@@ -2,6 +2,20 @@
 
 ## Combined CPU submission package
 
+Render.SubmissionStatus=1 adds a head-fixed bitmap `CPU ON` (green) or
+`CPU OFF` (orange) to both final eye blits. It reports selected grouped mode,
+not a measured performance gain. There is no extra draw/font/texture upload;
+the existing final pixel shader draws the small opaque label panel. Disabled
+mode leaves scene pixels unchanged. The worker constant-buffer snapshot grows
+from96 to112 bytes, still within its256-byte bound. Actual production PS
+compilation and offscreen WARP pixels are regression-tested for all3 modes.
+
+Frame reference lookup now uses a retained flat generation-tagged table rather
+than per-bind unordered_set nodes. It grows to65536 slots, admits at most50%
+occupancy, and retains normally (without dedup) for new keys beyond that bound.
+Saturation can add references but never shorten ownership. Tests cover40000
+distinct identities, growth, collisions, generation reuse and normal fallback.
+
 Set SubmissionPackage=1, WideRecordCopy=1, UniqueReplayResourceRefs=1 along
 with the grouped ON overlay below. L3+R3 then alternates ALL THREE additions:
 constant grouping, wide copy and unique frame references. Existing accepted
@@ -21,7 +35,7 @@ It owns one reference through replay, not one per repeated bind; interface
 aliases stay distinct. Frame Begin locks the selected ledger mode, so a toggle
 cannot mix retain/release policies inside that ledger. `[ReplayRefs]` reports
 requests versus retained references. This does not deduplicate native objects
-or cache resources across frames. Hash-set bookkeeping may offset savings.
+or cache resources across frames. Lookup bookkeeping may offset savings.
 
 Offline: actual x86 recorder and wide direct/failed/short/guard/noaccess reads,
 193..65537-byte boundary cases and arena offsets PASS (549 byte/range checks).
