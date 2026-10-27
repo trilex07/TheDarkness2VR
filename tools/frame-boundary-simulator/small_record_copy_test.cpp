@@ -34,6 +34,7 @@ static void Filled(const uint8_t* p, size_t n, uint8_t value) {
 static std::vector<uint8_t> g_recData;
 static volatile LONG g_recLock=0;
 static bool g_smallRecordCopyAdmitted=false;
+static std::atomic<bool> g_wideRecordCopy{false};
 static RuntimeControl g_smallRecordCopyControl;
 #include "actual_rec_push.inl"
 
@@ -186,6 +187,29 @@ int main(int argc, char** argv) {
     TestActualRecPush(memory,page); // OFF, even when startup guard admitted ON
     g_smallRecordCopyControl.Request(1);
     TestActualRecPush(memory,page); // ON still cannot bypass failed admission
+    g_wideRecordCopy=true;
+    TestActualRecPush(memory,page); // actual integrated wide-copy mode
+    for(size_t bytes:{193u,1088u,4096u,65535u,65536u,65537u}) {
+        std::vector<uint8_t> src(bytes),dst(bytes+16,0xa5);
+        for(size_t i=0;i<bytes;++i)src[i]=uint8_t(i*19);
+        auto before=readCalls;
+        Copy(dst.data(),src.data(),bytes,true,CountRead,kWideLimit);
+        Equal(dst.data(),src.data(),bytes);
+        Filled(dst.data()+bytes,16,0xa5);
+        assert(readCalls==before+unsigned(bytes<=kWideLimit));
+    }
+    for(DWORD mode:{PAGE_NOACCESS,PAGE_READWRITE|PAGE_GUARD}) {
+        assert(VirtualProtect(memory+page,page,mode,&old));
+        std::vector<uint8_t> dst(page*3,0xa5),prefix(memory,memory+page);
+        prefix.resize(page*3,0);
+        Copy(dst.data(),memory,dst.size(),true,CountRead,kWideLimit);
+        Equal(dst.data(),prefix.data(),prefix.size());
+        assert(Protection(memory+page)==mode);
+        Copy(dst.data(),memory,dst.size(),true,FailedOutput,kWideLimit);
+        Equal(dst.data(),prefix.data(),prefix.size());
+        assert(Protection(memory+page)==mode);
+        assert(VirtualProtect(memory+page,page,PAGE_READWRITE,&old));
+    }
     VirtualFree(memory, 0, MEM_RELEASE);
     std::printf("PASS small-record-copy: %u byte/range checks; x86 guard admission, exact counts, legacy fallback, actual RecPush offsets/append/bounds/sanity, and default OFF\n", cases);
 }

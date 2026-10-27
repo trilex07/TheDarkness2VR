@@ -24,6 +24,7 @@ public:
 };
 
 constexpr size_t kSmallLimit = 192;
+constexpr size_t kWideLimit = 64u * 1024;
 using ReadMemory = BOOL (WINAPI*)(HANDLE, LPCVOID, LPVOID, SIZE_T, SIZE_T*);
 
 // Legacy recorder validation/copy, intentionally unchanged. Permissions are
@@ -60,9 +61,9 @@ inline void LegacyCopy(void* dst, const void* data, size_t bytes) {
 }
 
 inline void Copy(void* dst, const void* data, size_t bytes, bool admitted,
-                 ReadMemory readMemory = &ReadProcessMemory) {
+                 ReadMemory readMemory = &ReadProcessMemory,size_t limit=kSmallLimit) {
     if (!bytes) return;
-    if (admitted && bytes <= kSmallLimit) {
+    if (admitted && bytes <= (limit>kWideLimit?kWideLimit:limit)) {
         SIZE_T copied = 0;
         if (readMemory(GetCurrentProcess(), data, dst, bytes, &copied) && copied == bytes) return;
         // RPM does not preserve the readable prefix on every failed/partial

@@ -493,7 +493,8 @@ static inline uint32_t RecPush(const void* data, size_t bytes) {
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
     if (bytes) {
-        d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled());
+        d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),
+            &ReadProcessMemory,g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit);
     }
     return off;
 }

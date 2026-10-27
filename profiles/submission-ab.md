@@ -1,5 +1,37 @@
 # Grouped replay submission candidate
 
+## Combined CPU submission package
+
+Set SubmissionPackage=1, WideRecordCopy=1, UniqueReplayResourceRefs=1 along
+with the grouped ON overlay below. L3+R3 then alternates ALL THREE additions:
+constant grouping, wide copy and unique frame references. Existing accepted
+SmallRecordCopy/SamplerCapsCache/AsyncLog/reader fence/transfer worker remain
+unchanged in either mode. TriangleHoldRecenter stays available.
+
+Wide copy extends admitted exact-count self-ReadProcessMemory from 192 bytes
+to at most 64 KiB, covering larger matrix/bone packets. It still needs the
+existing guard admission and uses the unchanged readable-prefix/zero fallback
+on failure/short count. There is no source-page cache, delayed native pointer
+or read beyond the requested payload. Above 64 KiB uses the existing path.
+This exchanges validation+copy for one kernel-mediated copy; runtime benefit
+depends on packet sizes and must be measured, not inferred from syscall count.
+
+Unique refs uses the existing exact-interface-pointer per-frame lifetime ledger.
+It owns one reference through replay, not one per repeated bind; interface
+aliases stay distinct. Frame Begin locks the selected ledger mode, so a toggle
+cannot mix retain/release policies inside that ledger. `[ReplayRefs]` reports
+requests versus retained references. This does not deduplicate native objects
+or cache resources across frames. Hash-set bookkeeping may offset savings.
+
+Offline: actual x86 recorder and wide direct/failed/short/guard/noaccess reads,
+193..65537-byte boundary cases and arena offsets PASS (549 byte/range checks).
+Frame resource tests PASS across 10000 frames/mode, owner drops, both eyes,
+reset/abort and mode changes. Synthetic COM pair reduction is not game FPS proof.
+This remains a CPU command-path candidate, not GPU-driven geometry rendering.
+Rollback all additions with WideRecordCopy=0, UniqueReplayResourceRefs=0,
+ReplayConstantBatch=0, ReplayConstantWindow=0, SubmissionPackage=0,
+SubmissionPadToggle=0 and restart, or restore the deployment backup.
+
 Optional Render.TriangleHoldRecenter=1: on the OpenXR left triangle/Y action,
 hold continuously for one second to recenter once. A short tap sends the
 existing START/menu action on release. Long release sends no menu action.

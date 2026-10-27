@@ -141,6 +141,8 @@ static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shad
 static std::atomic<bool> g_skipObjectDraws{false}; // diagnostic: omit triangle batches >2 primitives
 static bool g_objectDrawPadToggle = false; // diagnostic chord override; F8 retains recenter
 static bool g_submissionPadToggle = false; // image-preserving replay submission A/B
+static bool g_submissionPackage = false; // include wide owned capture + frame refs in A/B
+static std::atomic<bool> g_wideRecordCopy{false};
 static bool g_triangleHoldRecenter = false; // short triangle tap retains menu
 static volatile LONG g_objectDrawToggleRequests = 0;
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
@@ -632,6 +634,9 @@ void LoadConfig() {
     g_skipObjectDraws = GetPrivateProfileIntA("Render", "SkipObjectDraws", 0, chosenIni)!=0;
     g_objectDrawPadToggle = GetPrivateProfileIntA("Render", "ObjectDrawPadToggle", 0, chosenIni)!=0;
     g_submissionPadToggle = GetPrivateProfileIntA("Render", "SubmissionPadToggle", 0, chosenIni)!=0;
+    g_submissionPackage = GetPrivateProfileIntA("Render", "SubmissionPackage", 0, chosenIni)!=0;
+    g_wideRecordCopy = GetPrivateProfileIntA("Render", "WideRecordCopy", 0, chosenIni)!=0;
+    if(g_wideRecordCopy) Log("[WideRecordCopy] requested=1 limit=65536; requires SmallRecordCopy guard admission; exact-count RPM, legacy fallback; no permission cache");
     g_triangleHoldRecenter = GetPrivateProfileIntA("Render", "TriangleHoldRecenter", 0, chosenIni)!=0;
     if(g_triangleHoldRecenter) Log("[RecenterInput] triangle hold 1s=recenter; short release=menu");
     if(g_submissionPadToggle) {
@@ -5446,7 +5451,9 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
         if(g_submissionPadToggle) {
             const bool enabled=!(g_replayConstantBatch && g_replayConstantWindow);
             g_replayConstantBatch=enabled;g_replayConstantWindow=enabled;
+            if(g_submissionPackage) {g_wideRecordCopy=enabled;g_uniqueReplayRefs=enabled;}
             Log("[SubmissionAB] L3+R3 frame-boundary toggle: grouped=%d; all geometry retained",int(enabled));
+            if(g_submissionPackage) Log("[SubmissionPackage] enabled=%d wideCopy=%d uniqueRefs=%d (ref ledger changes next recording)",int(enabled),int(g_wideRecordCopy.load()),int(g_uniqueReplayRefs));
         } else {
             const bool hidden=!g_skipObjectDraws.load();
             g_skipObjectDraws.store(hidden);

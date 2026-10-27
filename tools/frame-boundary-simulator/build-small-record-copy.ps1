@@ -23,7 +23,8 @@ $replay=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw
 $lock=[regex]::Match($replay,'(?s)struct RecLockGuard \{.*?\r?\n\};')
 $push=[regex]::Match($replay,'(?s)static inline uint32_t RecPush\(const void\* data, size_t bytes\) \{.*?\r?\n\}')
 if(-not $lock.Success -or -not $push.Success){throw 'Actual RecPush/RecLockGuard source boundaries missing'}
-if(-not $push.Value.Contains('d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled());')) {
+if(-not $push.Value.Contains('d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),') -or
+   -not $push.Value.Contains('g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit')) {
     throw 'Actual RecPush must forward effective guard admission to the existing copy helper'
 }
 # Exercise production function bodies with the real helper, not a mirrored arena.
