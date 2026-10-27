@@ -1,5 +1,12 @@
 # Grouped replay submission candidate
 
+Optional Render.TriangleHoldRecenter=1: on the OpenXR left triangle/Y action,
+hold continuously for one second to recenter once. A short tap sends the
+existing START/menu action on release. Long release sends no menu action.
+Tracking/focus discontinuity or polling gap cancels the gesture and requires
+release before rearming. Separate menu action, F8 and submission L3+R3 remain.
+This option defaults OFF; it does not change physical-pad button mappings.
+
 Overlay Render keys: ReplayConstantBatch=1, ReplayConstantWindow=1,
 SubmissionPadToggle=1, ObjectDrawPadToggle=0, SkipObjectDraws=0,
 SkipShadowAtlasDraws=0. Preserve all other CPU/stereo/input settings.

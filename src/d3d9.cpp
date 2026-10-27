@@ -141,6 +141,7 @@ static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shad
 static std::atomic<bool> g_skipObjectDraws{false}; // diagnostic: omit triangle batches >2 primitives
 static bool g_objectDrawPadToggle = false; // diagnostic chord override; F8 retains recenter
 static bool g_submissionPadToggle = false; // image-preserving replay submission A/B
+static bool g_triangleHoldRecenter = false; // short triangle tap retains menu
 static volatile LONG g_objectDrawToggleRequests = 0;
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
@@ -631,6 +632,8 @@ void LoadConfig() {
     g_skipObjectDraws = GetPrivateProfileIntA("Render", "SkipObjectDraws", 0, chosenIni)!=0;
     g_objectDrawPadToggle = GetPrivateProfileIntA("Render", "ObjectDrawPadToggle", 0, chosenIni)!=0;
     g_submissionPadToggle = GetPrivateProfileIntA("Render", "SubmissionPadToggle", 0, chosenIni)!=0;
+    g_triangleHoldRecenter = GetPrivateProfileIntA("Render", "TriangleHoldRecenter", 0, chosenIni)!=0;
+    if(g_triangleHoldRecenter) Log("[RecenterInput] triangle hold 1s=recenter; short release=menu");
     if(g_submissionPadToggle) {
         g_objectDrawPadToggle=false;g_skipObjectDraws=false;g_skipShadowAtlasDraws=false;
         Log("[SubmissionAB] L3+R3 armed; geometry retained, F8 recenter; draw omission disabled");
@@ -3483,6 +3486,7 @@ struct TrackedHand {
 };
 TrackedHand g_hands[2];
 d2vr_input::RecenterChord g_recenterChord;
+d2vr_input::RecenterHoldTap g_triangleRecenter;
 struct GestureState {
     d2vr_input::DwellZone objective,reload[2];
     d2vr_input::Slash slash;
@@ -3496,7 +3500,7 @@ static void ResetPoseInput() {
     g_protectedGrips={};
     g_protectedRightTentacle={};
 #endif
-    g_gestures={}; g_recenterChord={}; g_tentacles={};
+    g_gestures={}; g_recenterChord={}; g_triangleRecenter={}; g_tentacles={};
     g_tentacleAimVisible=false; g_aimMarkerValid[0]=g_aimMarkerValid[1]=false;
     ResetNativeAim();
     for(auto& hand:g_hands) { hand.valid=false; hand.flags=0; hand.squeeze=0; hand.motion={}; }
@@ -3785,7 +3789,13 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if (ReadBool(g_actA, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_A;
     if (ReadBool(g_actB, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_B;
     if (ReadBool(g_actX, g_pathHandLeft))  gp.wButtons |= XINPUT_GAMEPAD_X;
-    if (ReadBool(g_actY, g_pathHandLeft))  gp.wButtons |= XINPUT_GAMEPAD_START; // Sense triangle via compatibility profile
+    bool triangleActive=false;
+    const bool triangleDown=ReadBool(g_actY,g_pathHandLeft,&triangleActive);
+    if(g_triangleHoldRecenter) {
+        const auto action=g_triangleRecenter.Update(triangleActive,triangleDown,GetTickCount64()*.001);
+        if(action.tap) gp.wButtons|=XINPUT_GAMEPAD_START;
+        if(action.recenter) RequestRecenter("VR triangle hold");
+    } else if(triangleDown) gp.wButtons |= XINPUT_GAMEPAD_START;
     if (ReadBool(g_actMenu, g_pathHandLeft)) gp.wButtons |= XINPUT_GAMEPAD_START;
     if (ReadBool(g_actView, g_pathHandLeft)) gp.wButtons |= XINPUT_GAMEPAD_BACK;
     bool leftActive=false,rightActive=false;
@@ -4390,7 +4400,7 @@ void PumpXR() {
             g_vrRefValid=false; g_anchorValid=false; g_lockedHeadValid=false;
             g_headGeometryReferenceValid=false; ResetPoseInput();
             g_lastWorldHeadContextValid=false;
-            g_recenterChord={};
+            g_recenterChord={};g_triangleRecenter={};
             for(auto& hand:g_hands) hand.motion.valid=false;
             Log("[Tracking] reference space change: reset anchors and gesture velocities");
         }

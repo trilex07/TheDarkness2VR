@@ -56,6 +56,28 @@ struct DwellZone {
         armed=false; inside=false; return true;
     }
 };
+// Defer a short menu tap until release; a continuous one-second hold recenters
+// once and consumes the menu tap. Reacquisition requires a fresh release.
+struct RecenterHoldTap {
+    struct Result {bool tap=false,recenter=false;};
+    bool armed=false,holding=false,fired=false;
+    double began=0,last=-1;
+    Result Update(bool active,bool down,double time) {
+        if(!active || !std::isfinite(time) || (last>=0 && (time<last || time-last>.25))) {
+            *this={};return {};
+        }
+        last=time;
+        if(!down) {
+            const bool tap=holding && !fired;
+            holding=fired=false;armed=true;
+            return {tap,false};
+        }
+        if(!armed) return {};
+        if(!holding) {holding=true;began=time;}
+        if(!fired && time-began>=1.0) {fired=true;return {false,true};}
+        return {};
+    }
+};
 struct RecenterChord {
     double began=0;
     bool holding=false, fired=false;

@@ -119,6 +119,27 @@ static void ResetInstall() {
 #endif
 }
 int main() {
+    {
+        d2vr_input::RecenterHoldTap hold;
+        Check(!hold.Update(true,true,0).recenter); // startup-held is not armed
+        Check(!hold.Update(true,false,.1).tap);
+        Check(!hold.Update(true,true,.2).tap);
+        Check(hold.Update(true,false,.3).tap); // short release is one menu tap
+        Check(!hold.Update(true,false,.4).tap);
+        hold.Update(true,true,.5);
+        for(int n=1;n<=5;++n) Check(!hold.Update(true,true,.5+n*.19).recenter);
+        Check(hold.Update(true,true,1.51).recenter);
+        Check(!hold.Update(true,true,1.6).recenter);
+        Check(!hold.Update(true,false,1.7).tap); // long release must not pause
+        hold.Update(true,true,1.8);hold.Update(false,true,1.9);
+        Check(!hold.Update(true,true,2).recenter);
+        Check(!hold.Update(true,false,2.1).tap);
+        hold.Update(true,true,2.2);hold.Update(true,true,3.3); // polling gap cancels
+        Check(!hold.Update(true,true,3.4).recenter);
+        Check(!hold.Update(true,false,3.5).tap);
+        hold.Update(true,true,3.6);
+        Check(!hold.Update(true,true,3.0).recenter); // reversed clock cancels
+    }
 #ifdef D2VR_MATCHED_CAPTURE
     // The real protected installer branch must never fall through to imports,
     // before first Present, with input OFF, or if external detour install fails.
