@@ -36,6 +36,7 @@
 #include "async_log.h"
 #include "small_record_copy.h"
 #include "native_constant_source.h"
+#include "native_constant_gate.h"
 #include "startup_shader_warmup.h"
 #include "native_image_guard.h"
 #include "vr_input.h"
@@ -151,6 +152,7 @@ static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 upload
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
 static bool g_replayConstantBindWindow = false; // OFF; float packets may cross inert material bindings
 static bool g_nativeOwnedConstantCopyRequested = false;
+static bool g_nativeOwnedMaterialCopyRequested = false;
 
 // True stereo (SubmitMode 4): frame-record/replay dual-eye rendering
 // StereoMode: 0 = off (mono live pass), 1 = dual-eye (live = eye0 + replay = eye1),
@@ -656,6 +658,8 @@ void LoadConfig() {
     g_replayConstantBindWindow = GetPrivateProfileIntA("Render", "ReplayConstantBindWindow", 0, chosenIni)!=0;
     g_nativeOwnedConstantCopyRequested = GetPrivateProfileIntA("Render", "NativeOwnedConstantCopy", 0, chosenIni)!=0;
     d2vr_native_constants::enabled = g_nativeOwnedConstantCopyRequested;
+    g_nativeOwnedMaterialCopyRequested = GetPrivateProfileIntA("Render", "NativeOwnedMaterialCopy", 0, chosenIni)!=0;
+    d2vr_native_constants::materialEnabled = g_nativeOwnedMaterialCopyRequested;
     if(g_replayConstantBindWindow) Log("[ReplayConstantBindWindow] requested=1; material bindings only; draw/shader/resource/stateblock barriers retained");
     if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
@@ -1781,16 +1785,16 @@ static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float*,UINT,UINT,vo
 static void EndMatchedSkinUpload(const MatchedSkinUploadWitness&,const float*,HRESULT);
 #endif
 #pragma optimize("y", off)
-__declspec(noinline) HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
+__declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderConstantF(
     IDirect3DDevice9* dev,
     UINT StartRegister,
     const float* pConstantData,
-    UINT Vector4fCount)
+    UINT Vector4fCount,const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner)
 {
 #ifdef D2VR_MATCHED_CAPTURE
     CameraUploadWitness cameraSample;
-    const bool witness=BeginCameraUploadWitness(cameraSample,pConstantData,StartRegister,Vector4fCount,_ReturnAddress());
-    const auto skinUpload=BeginMatchedSkinUpload(pConstantData,StartRegister,Vector4fCount,_ReturnAddress());
+    const bool witness=BeginCameraUploadWitness(cameraSample,pConstantData,StartRegister,Vector4fCount,reinterpret_cast<void*>(nativeSlot[0]));
+    const auto skinUpload=BeginMatchedSkinUpload(pConstantData,StartRegister,Vector4fCount,reinterpret_cast<void*>(nativeSlot[0]));
 #endif
     // Detect perspective WVP independently of desktop aspect ratio. The VR render
     // target is near-square; the old 1.2..2.4 gate marked real world frames as UI.
@@ -1824,13 +1828,9 @@ __declspec(noinline) HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
 
     // ---- True stereo: record original data for frame replay ----
     if ((g_hookMask & 8) && d2vr_replay::g_recActive && pConstantData && Vector4fCount) {
-        uintptr_t nativeFrame=0;
-        __asm { mov eax, ebp
-                mov eax, [eax]
-                mov nativeFrame, eax }
         const auto proof=d2vr_native_constants::InspectCurrent(
-            static_cast<const uintptr_t*>(_AddressOfReturnAddress()),nativeFrame,pConstantData,
-            sizeof(float)*4*Vector4fCount,d2vr_native_constants::Stage::Vertex);
+            nativeSlot,nativeFrame,pConstantData,
+            sizeof(float)*4*Vector4fCount,d2vr_native_constants::Stage::Vertex,nativeOwner);
         d2vr_replay::RecEmitData(d2vr_replay::OP_SetVSConstF, pConstantData,
                                  sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount,0,0,proof);
     }
@@ -1877,8 +1877,10 @@ __declspec(noinline) HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(
     return result;
 }
 
-// ---------------------------------------------------------------- INTZ Depth Capture (D3D9 -> 480x270 -> D3D11)
 #pragma optimize("y", on)
+D2VR_CONSTANT_GATE(Hook_SetVertexShaderConstantF,Native_SetVertexShaderConstantF)
+
+// ---------------------------------------------------------------- INTZ Depth Capture (D3D9 -> 480x270 -> D3D11)
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SetDepthStencilSurface)(IDirect3DDevice9*, IDirect3DSurface9*);
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SetTexture)(IDirect3DDevice9*, DWORD, IDirect3DBaseTexture9*);
 PFN_SetDepthStencilSurface g_origSetDepthStencilSurface = nullptr;
@@ -5478,6 +5480,7 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
             if(g_submissionPackage) {
                 g_wideRecordCopy=enabled;g_uniqueReplayRefs=enabled;g_replayConstantBindWindow=enabled;
                 d2vr_native_constants::enabled=enabled && g_nativeOwnedConstantCopyRequested;
+                d2vr_native_constants::materialEnabled=enabled && g_nativeOwnedMaterialCopyRequested;
             }
             Log("[SubmissionAB] L3+R3 frame-boundary toggle: grouped=%d; all geometry retained",int(enabled));
             if(g_submissionPackage) Log("[SubmissionPackage] enabled=%d wideCopy=%d uniqueRefs=%d (ref ledger changes next recording)",int(enabled),int(g_wideRecordCopy.load()),int(g_uniqueReplayRefs));

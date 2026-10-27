@@ -4,13 +4,17 @@
 #include <cstdlib>
 #include <initializer_list>
 #include "../src/native_constant_source.h"
+#include "../src/native_constant_gate.h"
 #include "../src/small_record_copy.h"
 using IDirect3DDevice9=void;
 using namespace d2vr_native_constants;
 static uintptr_t apiReturn,callbackReturn,parentReturn;
 static const float* overrideSource;
+static uintptr_t fixtureOwner=0;
+static bool fixtureMaterial=false;
+static unsigned fixtureField=7;
 static unsigned firstRegister=0,vectorCount=4;
-static float recorded[16],forwarded[16];
+static float recorded[80],forwarded[80];
 static bool copied=false;
 static unsigned checks=0;
 static void Check(bool condition,const char* name) {
@@ -51,15 +55,16 @@ static void ClassifierFailures() {
     Check((mbi.Protect&PAGE_GUARD)!=0,"fallback preserves foreign source guard");
     VirtualFree(guard,0,MEM_RELEASE);
 }
-static Proof InspectFixture(const uintptr_t* slot,uintptr_t frame,const void* p,size_t n,Stage stage) {
+static Proof InspectFixture(const uintptr_t* slot,uintptr_t frame,const void* p,size_t n,Stage stage,uintptr_t owner) {
     Sites sites{};
     for(unsigned b=0;b<2;++b) {
         sites.apiReturn[b]=apiReturn;sites.builderFirst[b]=callbackReturn;
         sites.builderEnd[b]=callbackReturn+1;sites.parentReturn[b][0]=parentReturn;
+        if(fixtureMaterial)sites.fieldReturn[b][fixtureField]=callbackReturn;
     }
     const auto* tib=reinterpret_cast<NT_TIB*>(NtCurrentTeb());
     return Proof::Inspect(slot,frame,p,n,stage,reinterpret_cast<uintptr_t>(tib->StackLimit),
-        reinterpret_cast<uintptr_t>(tib->StackBase),sites);
+        reinterpret_cast<uintptr_t>(tib->StackBase),sites,owner);
 }
 static bool g_recActive=true;
 static int g_replayEye=-1,g_activePsInverse=-1,g_activePsViewExtents=-1,g_submitMode=0;
@@ -73,7 +78,7 @@ static void RecEmitData(int,const void* data,size_t bytes,UINT,UINT,int,int,cons
 }
 static HRESULT STDMETHODCALLTYPE Forward(void*,UINT,const float* data,UINT count) {
     // The original API is a separate consumer, after recorder capture.
-    if(data && count==4)std::memcpy(forwarded,data,sizeof(forwarded));
+    if(data && count<=17)std::memcpy(forwarded,data,count*16);
     return S_OK;
 }
 static struct {decltype(&Forward) SetPixelShaderConstantF=Forward;} g_orig;
@@ -119,6 +124,7 @@ __declspec(naked) static void Builder() {
         je useLocal
         mov eax,overrideSource
     useLocal:
+        mov ebx,fixtureOwner
         push vectorCount
         push eax
         push firstRegister
@@ -152,6 +158,45 @@ int main() {
     }
     float heapLike[16]{};overrideSource=heapLike;Parent();
     Check(!copied,"foreign frame source rejects fast copy");overrideSource=nullptr;
+    alignas(16) unsigned char ownerObject[0x20]{},materialBlock[0x600]{};
+    for(unsigned i=0;i<sizeof(materialBlock);++i)materialBlock[i]=static_cast<unsigned char>(i*73+19);
+    *reinterpret_cast<uintptr_t*>(ownerObject+0x1c)=reinterpret_cast<uintptr_t>(materialBlock);
+    fixtureOwner=reinterpret_cast<uintptr_t>(ownerObject);
+    fixtureMaterial=true;materialEnabled=true;
+    overrideSource=reinterpret_cast<float*>(materialBlock+0x260);
+    for(unsigned i=0;i<1000;++i) {
+        copied=false;Parent();Check(copied,"actual gate preserves EBX owner and admits exact material field");
+        Check(!std::memcmp(recorded,forwarded,sizeof(recorded)),"owned field bits match forwarding");
+    }
+    for(unsigned field=0;field<9;++field) {
+        fixtureField=field;vectorCount=static_cast<unsigned>(fieldVectors[field]);
+        overrideSource=reinterpret_cast<float*>(materialBlock+fieldOffset[field]);
+        std::memset(recorded,0,sizeof(recorded));std::memset(forwarded,0,sizeof(forwarded));
+        Parent();Check(copied,"every admitted fixed-field extent works through actual gate");
+        Check(!std::memcmp(recorded,overrideSource,vectorCount*16)&&!std::memcmp(recorded,forwarded,sizeof(recorded)),"fixed-field nonzero payload bit equality");
+    }
+    fixtureField=7;vectorCount=4;overrideSource=reinterpret_cast<float*>(materialBlock+0x260);
+    LARGE_INTEGER frequency{},begin{},end{};QueryPerformanceFrequency(&frequency);
+    double elapsed[2]{};
+    constexpr unsigned benchCalls=20000;
+    for(unsigned mode=0;mode<2;++mode) {
+        materialEnabled=mode!=0;
+        for(unsigned i=0;i<200;++i)Parent();
+        QueryPerformanceCounter(&begin);
+        for(unsigned i=0;i<benchCalls;++i)Parent();
+        QueryPerformanceCounter(&end);
+        elapsed[mode]=(end.QuadPart-begin.QuadPart)*1e9/frequency.QuadPart/benchCalls;
+    }
+    std::printf("OFFLINE gate + 64B owned capture + stub forward: RPM=%.1f ns/call owner=%.1f ns/call; not game/FPS evidence\n",elapsed[0],elapsed[1]);
+    materialEnabled=false;Parent();Check(!copied,"material option off rejects field");materialEnabled=true;
+    vectorCount=1;Parent();Check(!copied,"wrong fixed-field extent rejects");vectorCount=4;
+    *reinterpret_cast<uintptr_t*>(ownerObject+0x1c)=reinterpret_cast<uintptr_t>(materialBlock)+16;
+    Parent();Check(!copied,"owner block replacement never reuses prior ownership");
+    *reinterpret_cast<uintptr_t*>(ownerObject+0x1c)=reinterpret_cast<uintptr_t>(materialBlock);
+    overrideSource+=4;Parent();Check(!copied,"interior field pointer rejects");overrideSource-=4;
+    fixtureMaterial=false;Parent();Check(!copied,"unknown field call site rejects");fixtureMaterial=true;
+    fixtureOwner=0;Parent();Check(!copied,"absent EBX owner rejects");
+    overrideSource=nullptr;fixtureMaterial=false;materialEnabled=false;
     firstRegister=223;Parent();Check(!copied,"invalid register extent rejects");firstRegister=0;
     enabled=false;Parent();Check(!copied,"disabled rejects");enabled=true;
     admitted=false;Parent();Check(!copied,"unadmitted image rejects");admitted=true;
@@ -159,5 +204,5 @@ int main() {
     Proof invalid;Check(!Copy(invalid,recorded,forwarded,sizeof(recorded)),"default proof rejects");
     ClassifierFailures();
     Check(!AdmitImage("wrong",nullptr),"wrong image SHA rejects");
-    std::printf("PASS actual x86 hook/native-shaped producer ABI: %u checks; copies=%llu injectedFaults=%llu\n",checks,counts.copies,counts.faults);
+    std::printf("PASS actual x86 gate/hook/native-shaped producer ABI: %u checks; copies=%llu materialCopies=%llu injectedFaults=%llu\n",checks,counts.copies,counts.materialCopies,counts.faults);
 }

@@ -404,9 +404,10 @@ struct ConstantUploadWindow {
             counts.records[0],counts.calls[0],counts.vectors[0],counts.failures[0],
             counts.records[1],counts.calls[1],counts.vectors[1],counts.failures[1],counts.exceptions);
         const auto& native=d2vr_native_constants::counts;
-        Log("[NativeOwnedConstantCopy] tid=%lu enabled=%d admitted=%d attempts=%llu proved=%llu copies=%llu bytes=%llu faults=%llu; cumulative on reporting thread",
+        Log("[NativeOwnedConstantCopy] tid=%lu enabled=%d admitted=%d attempts=%llu proved=%llu copies=%llu bytes=%llu faults=%llu materialEnabled=%d materialProved=%llu materialCopies=%llu; cumulative on reporting thread",
             GetCurrentThreadId(),int(d2vr_native_constants::enabled.load()),int(d2vr_native_constants::admitted.load()),
-            native.attempts,native.proved,native.copies,native.bytes,native.faults);
+            native.attempts,native.proved,native.copies,native.bytes,native.faults,
+            int(d2vr_native_constants::materialEnabled.load()),native.materialProved,native.materialCopies);
         *this = {};
     }
 };
@@ -1474,19 +1475,16 @@ static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDir
     return g_orig.SetPixelShader(dev, ps);
 }
 #pragma optimize("y", off)
-__declspec(noinline) static HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n) {
+__declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n,
+    const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner) {
 #ifdef D2VR_MATCHED_CAPTURE
     const float* native=d;
 #endif
     if (g_replayEye < 0) ObserveInverseProjection(d, s, n, g_activePsInverse);
     if (g_recActive) {
-        uintptr_t nativeFrame=0;
-        __asm { mov eax, ebp
-                mov eax, [eax]
-                mov nativeFrame, eax }
         const auto proof=d2vr_native_constants::InspectCurrent(
-            static_cast<const uintptr_t*>(_AddressOfReturnAddress()),nativeFrame,d,sizeof(float)*4*n,
-            d2vr_native_constants::Stage::Pixel);
+            nativeSlot,nativeFrame,d,sizeof(float)*4*n,
+            d2vr_native_constants::Stage::Pixel,nativeOwner);
         RecEmitData(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n,0,0,proof);
     }
     float adjusted[224*4];
@@ -1502,6 +1500,7 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3D
 #endif
 }
 #pragma optimize("y", on)
+D2VR_CONSTANT_GATE(Hook_SetPSConstF,Native_SetPSConstF)
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
     if (g_recActive) RecEmitData(OP_SetPSConstI, d, sizeof(int) * 4 * n, s, n);
     return g_orig.SetPixelShaderConstantI(dev, s, d, n);

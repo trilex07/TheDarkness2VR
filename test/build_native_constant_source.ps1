@@ -3,7 +3,7 @@ $repo=Split-Path -Parent $PSScriptRoot
 $output=Join-Path $env:TEMP ('d2vr-native-constant-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $output|Out-Null
 $replay=Get-Content (Join-Path $repo 'src/stereo_replay.inl') -Raw
-$hook=[regex]::Match($replay,'(?s)#pragma optimize\("y", off\)\r?\n__declspec\(noinline\) static HRESULT STDMETHODCALLTYPE Hook_SetPSConstF\(.*?#pragma optimize\("y", on\)')
+$hook=[regex]::Match($replay,'(?s)#pragma optimize\("y", off\)\r?\n__declspec\(noinline\) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF\(.*?D2VR_CONSTANT_GATE\(Hook_SetPSConstF,Native_SetPSConstF\)')
 if(-not $hook.Success){throw 'actual frame-preserving PS hook boundary missing'}
 $hook.Value.Replace('d2vr_native_constants::InspectCurrent(', 'InspectFixture(')|Set-Content (Join-Path $output 'actual_native_constant_hook.inl') -Encoding utf8
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"

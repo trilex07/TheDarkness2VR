@@ -318,3 +318,17 @@ references or async D3D9 calls. Full production/diagnostic x86 builds and core,
 package, stereo transfer and actual replay regressions PASS.19 available private
 shaders packaged;84 trace hashes missing. Driver/game benefit still unverified;
 see tools/shader-startup-warmup/README.md. No deployment or Steam/game launch.
+
+## 2026-10-27 - Fixed-field native material capture
+
+The a57e131 user-run log confirms image admission and 1,491,991 local-buffer
+copies / 9,277,452 inspected uploads, zero copy faults. These are cumulative
+receipts across mixed package ON/OFF gameplay, not a matched FPS comparison.
+Verified native builders 571670/AD3380 keep current owner in EBX for their whole
+body (one entry assignment, epilogue restore). Added an x86 API gate to carry
+incoming EBX/EBP/return-slot by value, and per-call recognition of nine exact
+fixed-field submission sites. No native pointer persists and no native code or
+table changes. Default-OFF NativeOwnedMaterialCopy requires the existing image
+admission; loaded full producer bodies are fingerprinted. Detailed ownership,
+regressions and runtime acceptance gate are in
+docs/research/native-owned-material-copy-20261027.md.

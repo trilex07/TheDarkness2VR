@@ -101,6 +101,9 @@ static void InstallImagePresent(IDirect3DDevice9* device) {
     const bool nativeCopy=d2vr_native_constants::AdmitImage(sha.c_str(),image);
     Log("[NativeOwnedConstantCopy] requested=%d admitted=%d sha=%s; exact native local frames only; no EXE writes",
         int(d2vr_native_constants::enabled.load()),nativeCopy,sha.c_str());
+    Log("[NativeOwnedMaterialCopy] requested=%d admitted=%d; exact EBX owner, fixed field, call site and extent required",
+        int(d2vr_native_constants::materialEnabled.load()),
+        int(nativeCopy && d2vr_native_constants::materialEnabled.load()));
     d2vr_image_present::Callbacks callbacks{
         ImagePresentCaller,ImagePresentBefore,ImagePresentAfter,Log};
     if(d2vr_cpu_sync::timing.enabled) {
