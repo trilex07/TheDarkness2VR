@@ -360,3 +360,21 @@ frame-time saving is unmeasured. The retained outdoor ntdll memset samples have
 UNKNOWN ancestry and cannot be attributed to this resize or claimed as savings.
 Installed candidate81cc723 remains frozen for its pending user test; this follow-up
 is not deployed.
+
+## 2026-10-27 - Single-lock payload and command publication (offline)
+
+RecEmitData previously entered/exited the same recorder lock for RecPush and
+again for RecEmit. Split private locked helpers from standalone locking wrappers
+and hold one lock across payload append and command publication. Standalone
+RecPush/RecEmit consumers retain locking and resource-reference bookkeeping.
+Recheck active/overflow under lock and refuse full streams before source copying.
+This reduces two lock acquisitions/releases to one per data command; it neither
+removes synchronization nor parallelizes the native device API.
+
+Production bodies are extracted into the x86 fixture, including the actual RecOp
+and Rec layouts. Four concurrent producers emit 4000 uniquely tagged 64-byte
+payloads; all command offsets/content and identities match. Inactive/full stream
+checks confirm no data append or bad-source read and released lock. Combined
+copy/guard/frame-reuse regression6087 PASS; native gate4073 PASS; frame resource
+refs10000 frames/mode PASS. Production and diagnostic builds PASS. Runtime saving
+is NOT MEASURED; installed81cc723 remains unchanged for the pending test.

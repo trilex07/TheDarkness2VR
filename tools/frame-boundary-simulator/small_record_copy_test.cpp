@@ -6,6 +6,9 @@
 #include <cstdio>
 #include <vector>
 #include <initializer_list>
+#include <thread>
+#include <unknwn.h>
+#include "../../src/frame_resource_refs.h"
 using namespace d2vr_record_copy;
 static_assert(sizeof(void*) == 4, "Exercise the production x86 ABI");
 static unsigned readCalls = 0, probeCalls = 0, cases = 0;
@@ -38,6 +41,11 @@ static volatile LONG g_recLock=0;
 static bool g_smallRecordCopyAdmitted=false;
 static std::atomic<bool> g_wideRecordCopy{false};
 static RuntimeControl g_smallRecordCopyControl;
+#include "actual_record_types.inl"
+static std::vector<Rec> g_rec;
+static bool g_recActive=true,g_recOverflow=false;
+static uint64_t g_recCounts[40]{};
+static d2vr_replay::FrameResourceRefs<IUnknown> g_recordRefs;
 #include "actual_rec_push.inl"
 
 static void PushRecord(const void* source,size_t bytes,const std::vector<uint8_t>& expected) {
@@ -89,8 +97,40 @@ static void TestActualRecPush(uint8_t* memory,size_t page) {
         g_recData.clear();g_recData.shrink_to_fit();
     }
 }
+static void TestAtomicPayloadRecords() {
+    g_rec.clear();g_recData.clear();g_recOverflow=false;g_recActive=true;
+    g_smallRecordCopyAdmitted=false;
+    std::thread writers[4];
+    for(unsigned t=0;t<4;++t) writers[t]=std::thread([t] {
+        for(unsigned i=0;i<1000;++i) {
+            const uint32_t id=t*1000+i;
+            uint32_t payload[16];
+            for(unsigned j=0;j<16;++j)payload[j]=id*31+j;
+            RecEmitData(OP_SetPSConstF,payload,sizeof(payload),id,4);
+        }
+    });
+    for(auto& writer:writers)writer.join();
+    assert(g_rec.size()==4000 && g_recData.size()==4000*64 && !g_recOverflow);
+    bool seen[4000]{};
+    for(const auto& record:g_rec) {
+        assert(record.op==OP_SetPSConstF && record.n==16 && record.a[1]==4);
+        const auto id=record.a[0];assert(id<4000 && !seen[id]);seen[id]=true;
+        assert(record.a[4]<=g_recData.size()-64);
+        uint32_t payload[16];memcpy(payload,g_recData.data()+record.a[4],64);
+        for(unsigned j=0;j<16;++j)assert(payload[j]==id*31+j);
+        ++cases;
+    }
+    const auto bytes=g_recData.size();
+    g_recActive=false;RecEmitData(OP_SetPSConstF,nullptr,64);
+    assert(g_recData.size()==bytes && g_rec.size()==4000);
+    g_recActive=true;g_rec.resize(400000);
+    RecEmitData(OP_SetPSConstF,reinterpret_cast<void*>(1),64);
+    assert(g_recOverflow && g_recData.size()==bytes && g_rec.size()==400000 && g_recLock==0);
+    g_rec.clear();g_recData.clear();g_recOverflow=false;cases+=2;
+}
 int main(int argc, char** argv) {
     assert(argc == 2);
+    TestAtomicPayloadRecords();
     assert(GetFileAttributesA(argv[1]) != INVALID_FILE_ATTRIBUTES);
     // Use the production default, including an INI whose encoding is not recognized.
     assert(GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, argv[1]) == 0);

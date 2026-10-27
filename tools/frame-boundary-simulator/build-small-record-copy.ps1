@@ -22,15 +22,21 @@ if(-not $hookDevice.Success -or $admission -lt 0 -or $replayHooks -le $admission
 $replay=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw
 $lock=[regex]::Match($replay,'(?s)struct RecLockGuard \{.*?\r?\n\};')
 $push=[regex]::Match($replay,'(?s)static inline uint32_t RecPush\(const void\* data, size_t bytes, const d2vr_native_constants::Proof& proof = \{\}\) \{.*?\r?\n\}')
-if(-not $lock.Success -or -not $push.Success){throw 'Actual RecPush/RecLockGuard source boundaries missing'}
-if(-not $push.Value.Contains('d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),') -or
-   -not $push.Value.Contains('g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit')) {
+$pushLocked=[regex]::Match($replay,'(?s)static inline uint32_t RecPushLocked\(.*?\r?\n\}')
+$emitLocked=[regex]::Match($replay,'(?s)static inline void RecEmitLocked\(.*?\r?\n\}')
+$emit=[regex]::Match($replay,'(?s)static inline void RecEmit\(.*?\r?\n\}')
+$emitData=[regex]::Match($replay,'(?s)static inline void RecEmitData\(.*?\r?\n\}')
+$types=[regex]::Match($replay,'(?s)enum RecOp : uint16_t \{.*?struct Rec \{.*?\r?\n\};')
+foreach($part in @($lock,$push,$pushLocked,$emitLocked,$emit,$emitData,$types)){if(-not $part.Success){throw 'Actual recorder source boundary missing'}}
+if(-not $pushLocked.Value.Contains('d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),') -or
+   -not $pushLocked.Value.Contains('g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit')) {
     throw 'Actual RecPush must forward effective guard admission to the existing copy helper'
 }
 # Exercise production function bodies with the real helper, not a mirrored arena.
 $enabled=[regex]::Match($renderer,'(?s)static inline bool SmallRecordCopyIsEnabled\(\) \{.*?\r?\n\}')
 if(-not $enabled.Success){throw 'Copy-control integration missing'}
-($enabled.Value + "`n" + $lock.Value + "`n" + $push.Value) | Set-Content -LiteralPath (Join-Path $outDir 'actual_rec_push.inl') -Encoding utf8
+$types.Value|Set-Content -LiteralPath (Join-Path $outDir 'actual_record_types.inl') -Encoding utf8
+($enabled.Value + "`n" + $lock.Value + "`n" + $pushLocked.Value + "`n" + $push.Value + "`n" + $emitLocked.Value + "`n" + $emit.Value + "`n" + $emitData.Value) | Set-Content -LiteralPath (Join-Path $outDir 'actual_rec_push.inl') -Encoding utf8
 Push-Location $outDir
 try {
     $test=Join-Path $here 'small_record_copy_test.cpp'

@@ -493,8 +493,8 @@ static inline bool RecOnRenderThread() {
     return GetCurrentThreadId() == g_renderThreadId;
 }
 
-static inline uint32_t RecPush(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {}) {
-    RecLockGuard lock;
+// Caller holds g_recLock until the payload and its command are both published.
+static inline uint32_t RecPushLocked(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {}) {
     if (bytes > (size_t)8 * 1024 * 1024) bytes = 0;   // sanity clamp
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
@@ -503,6 +503,10 @@ static inline uint32_t RecPush(const void* data, size_t bytes, const d2vr_native
             &ReadProcessMemory,g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit);
     }
     return off;
+}
+static inline uint32_t RecPush(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {}) {
+    RecLockGuard lock;
+    return RecPushLocked(data,bytes,proof);
 }
 
 // Light-input readback state (diagnostic only, see LightInputReadback below).
@@ -515,10 +519,10 @@ static std::unordered_map<const void*, uint32_t> g_lightEndHash;      // texture
 static int g_lightRbFrames = -1;                                      // windows left (-1 = unread)
 static int g_lightRbBudget = 0;                                       // light draws left to read back
 
-static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
+// Caller holds g_recLock, including any payload append belonging to this record.
+static inline void RecEmitLocked(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
                            uint32_t a2 = 0, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
     if (!g_recActive || g_recOverflow) return;
-    RecLockGuard lock;
     if (g_rec.size() >= 400000) { g_recOverflow = true; return; }
     Rec r;
     r.op = op; r.n = n;
@@ -548,12 +552,21 @@ static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 
     g_rec.push_back(r);
     if (op < 40) g_recCounts[op]++;
 }
+static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
+                           uint32_t a2 = 0, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
+    if (!g_recActive || g_recOverflow) return;
+    RecLockGuard lock;
+    RecEmitLocked(op,n,a0,a1,a2,a3,a4,a5);
+}
 static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
                                uint32_t a0 = 0, uint32_t a1 = 0, uint32_t a2 = 0, uint32_t a3 = 0,
                                const d2vr_native_constants::Proof& proof = {}) {
     if (!g_recActive || g_recOverflow) return;
-    uint32_t off = RecPush(data, bytes, proof);
-    RecEmit(op, (uint32_t)(bytes / 4), a0, a1, a2, a3, off);
+    RecLockGuard lock;
+    if (!g_recActive || g_recOverflow) return;
+    if (g_rec.size() >= 400000) { g_recOverflow = true; return; }
+    uint32_t off = RecPushLocked(data, bytes, proof);
+    RecEmitLocked(op, (uint32_t)(bytes / 4), a0, a1, a2, a3, off);
 }
 
 // replay context: original device functions
