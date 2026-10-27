@@ -120,7 +120,9 @@ int main() {
     D3DPRESENT_PARAMETERS pp{};pp.Windowed=TRUE;pp.SwapEffect=D3DSWAPEFFECT_DISCARD;
     pp.BackBufferWidth=pp.BackBufferHeight=64;pp.BackBufferFormat=D3DFMT_UNKNOWN;pp.hDeviceWindow=window;
     IDirect3DDevice9Ex* d9Raw=nullptr;
-    HR(api->CreateDeviceEx(0,D3DDEVTYPE_HAL,window,D3DCREATE_HARDWARE_VERTEXPROCESSING|D3DCREATE_MULTITHREADED,&pp,nullptr,&d9Raw));auto d9=Adopt(d9Raw);
+    HR(api->CreateDeviceEx(0,D3DDEVTYPE_HAL,window,D3DCREATE_HARDWARE_VERTEXPROCESSING|D3DCREATE_PUREDEVICE|D3DCREATE_MULTITHREADED,&pp,nullptr,&d9Raw));auto d9=Adopt(d9Raw);
+    D3DDEVICE_CREATION_PARAMETERS created{};HR(d9->GetCreationParameters(&created));
+    CHECK(created.BehaviorFlags==0x54); // exact game baseline 0x50 plus worker synchronization
     IDXGIFactory1* factoryRaw=nullptr;HR(CreateDXGIFactory1(__uuidof(IDXGIFactory1),reinterpret_cast<void**>(&factoryRaw)));auto factory=Adopt(factoryRaw);
     LUID luid{};HR(api->GetAdapterLUID(0,&luid));Ref<IDXGIAdapter1> adapter;
     for(UINT i=0;;++i) {
