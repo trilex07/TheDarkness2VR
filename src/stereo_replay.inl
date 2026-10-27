@@ -396,11 +396,11 @@ static uint64_t g_unhookedStateBlock = 0;
 #ifdef D2VR_MATCHED_CAPTURE
 struct ConstantUploadWindow {
     d2vr_replay_batch::UploadCounts counts;
-    uint64_t streams = 0, batched = 0, windowed = 0, captureBypass = 0, otherEyes = 0;
+    uint64_t streams = 0, batched = 0, windowed = 0, bindWindowed = 0, captureBypass = 0, otherEyes = 0;
     void Report(uint64_t frame, long long beginQpc, long long endQpc, long long frequency) {
         if (!streams) return;
-        Log("[ReplayUploads] endPair=%llu beginQpc=%lld endQpc=%lld frequency=%lld streams=%llu eye=1 otherEyes=%llu batchStreams=%llu windowStreams=%llu captureBypass=%llu VSrecords=%llu VScalls=%llu VSvectors=%llu VSfailed=%llu PSrecords=%llu PScalls=%llu PSvectors=%llu PSfailed=%llu exceptions=%llu; recorded float setters only (scope setters excluded)",
-            frame,beginQpc,endQpc,frequency,streams,otherEyes,batched,windowed,captureBypass,
+        Log("[ReplayUploads] endPair=%llu beginQpc=%lld endQpc=%lld frequency=%lld streams=%llu eye=1 otherEyes=%llu batchStreams=%llu windowStreams=%llu bindWindowStreams=%llu captureBypass=%llu VSrecords=%llu VScalls=%llu VSvectors=%llu VSfailed=%llu PSrecords=%llu PScalls=%llu PSvectors=%llu PSfailed=%llu exceptions=%llu; recorded float setters only (scope setters excluded)",
+            frame,beginQpc,endQpc,frequency,streams,otherEyes,batched,windowed,bindWindowed,captureBypass,
             counts.records[0],counts.calls[0],counts.vectors[0],counts.failures[0],
             counts.records[1],counts.calls[1],counts.vectors[1],counts.failures[1],counts.exceptions);
         *this = {};
@@ -1608,6 +1608,23 @@ static void LightEndOfWindowSnapshot(IDirect3DDevice9* dev) {
     Log("[LightRB] end-of-window snapshot: %zu render targets", seen.size());
 }
 
+// These setters neither read nor modify float registers. Keep their original
+// order and arguments; only already-transformed, owned float writes may span
+// them. No shader/RT/viewport/draw/resource/stateblock command is admitted.
+static bool IsConstantMaterialBinding(unsigned op) {
+    // SetRenderState is deliberately excluded: vendor FourCC states can trigger
+    // operations (for example depth resolves), rather than merely bind state.
+    return op==OP_SetTexture || op==OP_SetTextureStageState || op==OP_SetSamplerState;
+}
+static bool MoreFloatBeforeBarrier(size_t at) {
+    for(size_t j=at+1;j<g_rec.size();++j) {
+        const unsigned op=g_rec[j].op;
+        if(op==OP_SetVSConstF || op==OP_SetPSConstF) return true;
+        if(!IsConstantMaterialBinding(op)) return false;
+    }
+    return false;
+}
+
 static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp) {
     g_replayEye = eye;
     const void* replayTex[16] = {};
@@ -1632,6 +1649,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     d2vr_replay_batch::Constants constants(batchEnabled, g_frameStart.vertexFloatLimit,
                                            g_frameStart.pixelFloatLimit);
     const bool windowEnabled = batchEnabled && g_replayConstantWindow;
+    const bool bindWindowEnabled = windowEnabled && g_replayConstantBindWindow;
     // The existing recording lock serializes replay. Retain storage, not state,
     // to avoid adding 8KB of stack probes on every OFF/adjacent replay.
     static d2vr_replay_batch::ConstantWindow constantWindow;
@@ -1661,7 +1679,8 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         }
         HOOK_MARK(10000 + (LONG)r.op);
         __try {
-        if (windowEnabled && r.op!=OP_SetVSConstF && r.op!=OP_SetPSConstF)
+        if (windowEnabled && r.op!=OP_SetVSConstF && r.op!=OP_SetPSConstF &&
+            !(bindWindowEnabled && IsConstantMaterialBinding(r.op)))
             constantWindow.Flush(sendConstants);
         if (batchEnabled && !windowEnabled) constants.Barrier(
             r.op==OP_SetVSConstF ? d2vr_replay_batch::Stage::Vertex :
@@ -1899,7 +1918,14 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 next && next->op==OP_SetPSConstF ? d2vr_replay_batch::Stage::Pixel :
                                                 d2vr_replay_batch::Stage::None;
             if (windowEnabled) {
-                if (!next || stage==d2vr_replay_batch::Stage::None) constantWindow.Flush(sendConstants);
+                // Scan only after a float packet. Each intervening binding is
+                // visited once per stream, without a plan allocation. Flush at
+                // the final FLOAT command, so driver faults stay within its SEH.
+                if (r.op==OP_SetVSConstF || r.op==OP_SetPSConstF) {
+                    const bool more=bindWindowEnabled ? MoreFloatBeforeBarrier(i) :
+                        (next && stage!=d2vr_replay_batch::Stage::None);
+                    if(!more) constantWindow.Flush(sendConstants);
+                }
             } else if (!next || !constants.CanAppend(stage,next->a[0],next->a[1]))
                 constants.Flush(sendConstants);
         }
@@ -1924,6 +1950,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         g_constantUploadWindow.otherEyes += eye != 1;
         g_constantUploadWindow.batched += g_replayConstantBatch && !MatchedCaptureRecordingActive();
         g_constantUploadWindow.windowed += windowEnabled;
+        g_constantUploadWindow.bindWindowed += bindWindowEnabled;
         g_constantUploadWindow.captureBypass += g_replayConstantBatch && MatchedCaptureRecordingActive();
     }
 #endif

@@ -148,6 +148,7 @@ static bool g_triangleHoldRecenter = false; // short triangle tap retains menu
 static volatile LONG g_objectDrawToggleRequests = 0;
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
+static bool g_replayConstantBindWindow = false; // OFF; float packets may cross inert material bindings
 
 // True stereo (SubmitMode 4): frame-record/replay dual-eye rendering
 // StereoMode: 0 = off (mono live pass), 1 = dual-eye (live = eye0 + replay = eye1),
@@ -650,6 +651,8 @@ void LoadConfig() {
     if(g_skipShadowAtlasDraws) Log("[ShadowDrawTest] enabled=1; omit RGB565 square subviewport atlas draws in both eyes; heuristic coverage, altered lighting; CPU preparation retained");
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
+    g_replayConstantBindWindow = GetPrivateProfileIntA("Render", "ReplayConstantBindWindow", 0, chosenIni)!=0;
+    if(g_replayConstantBindWindow) Log("[ReplayConstantBindWindow] requested=1; material bindings only; draw/shader/resource/stateblock barriers retained");
     if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
@@ -5459,7 +5462,7 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
         if(g_submissionPadToggle) {
             const bool enabled=!(g_replayConstantBatch && g_replayConstantWindow);
             g_replayConstantBatch=enabled;g_replayConstantWindow=enabled;
-            if(g_submissionPackage) {g_wideRecordCopy=enabled;g_uniqueReplayRefs=enabled;}
+            if(g_submissionPackage) {g_wideRecordCopy=enabled;g_uniqueReplayRefs=enabled;g_replayConstantBindWindow=enabled;}
             Log("[SubmissionAB] L3+R3 frame-boundary toggle: grouped=%d; all geometry retained",int(enabled));
             if(g_submissionPackage) Log("[SubmissionPackage] enabled=%d wideCopy=%d uniqueRefs=%d (ref ledger changes next recording)",int(enabled),int(g_wideRecordCopy.load()),int(g_uniqueReplayRefs));
         } else {

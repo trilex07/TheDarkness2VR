@@ -12,21 +12,23 @@
 using namespace d2vr_replay_batch;
 static_assert(sizeof(void*)==4,"production ABI");
 static_assert(std::is_trivially_destructible<ConstantWindow>::value,"SEH caller");
-enum RecOp {OP_SetVSConstF=20,OP_SetPSConstF=27};
+#include "actual_record_ops.inl"
 struct Rec {unsigned op=0,n=0,a[6]{};};
 struct Params {float transX=0,transY=0;};
 struct Banks {std::array<uint32_t,256*4> vs{},ps{};};
 static Banks driver;
 static std::vector<Banks> expected;
 static std::vector<Rec> g_rec;
+#include "actual_constant_binding_helpers.inl"
 static std::vector<uint8_t> arena;
 static unsigned checkAt=0,checks=0,apiCalls=0,apiFail=0,throwAt=0;
 static bool g_replayConstantBatch=false,g_replayConstantWindow=false,capture=false,compensate=false;
+static bool g_replayConstantBindWindow=false;
 static struct {unsigned vertexFloatLimit=256,pixelFloatLimit=224;} g_frameStart;
 [[maybe_unused]] static bool MatchedCaptureRecordingActive(){return capture;}
 namespace d2vr_cpu_sync {static struct {bool enabled=true;} timing;}
 static struct {
-    UploadCounts counts;unsigned streams=0,otherEyes=0,batched=0,windowed=0,captureBypass=0;
+    UploadCounts counts;unsigned streams=0,otherEyes=0,batched=0,windowed=0,bindWindowed=0,captureBypass=0;
 } g_constantUploadWindow;
 static bool g_skipLightVsShift=false;
 static struct Vs {uint32_t hash=0;} shader;
@@ -75,7 +77,7 @@ static void Build(){
     for(unsigned i=0;i<6000;++i){
         Rec r;
         if(i%7==6){r.op=1+Random()%18;if(r.op==OP_SetVSConstF || r.op==OP_SetPSConstF)r.op=36;
-            expected.push_back(ref);g_rec.push_back(r);continue;}
+            if(!IsConstantMaterialBinding(r.op))expected.push_back(ref);g_rec.push_back(r);continue;}
         r.op=(Random()%3)?OP_SetVSConstF:OP_SetPSConstF;
         r.a[0]=Random()%256;r.a[1]=Random()%69;
         if(i%19==0)r.a[0]=0; // projection/partial ranges and duplicated overlaps
@@ -144,12 +146,36 @@ static void ActualReduction(){
     }
     assert(counts[0]==4 && counts[1]==4 && counts[2]==2);++checks;
 }
+static void BindingReduction(){
+    capture=false;compensate=false;
+    // Every opcode outside the explicit whitelist, including unknown ones,
+    // remains a barrier. Values are observed at all these boundaries.
+    for(unsigned op=0;op<80;++op) {
+        assert(IsConstantMaterialBinding(op)==(op>=9 && op<=11));++checks;
+    }
+    unsigned counts[2]{};
+    for(unsigned extended=0;extended<2;++extended) {
+        g_rec.clear();arena.assign(128,0);expected.clear();Banks final;
+        for(unsigned i=0;i<4;++i) {
+            Rec r;r.op=OP_SetVSConstF;r.a[0]=i;r.a[1]=1;r.a[4]=i*16;
+            float tmp[4];ApplyShiftToUpload(tmp,reinterpret_cast<const float*>(arena.data()+r.a[4]),i,1,g_activeVs,Params{});
+            memcpy(final.vs.data()+i*4,tmp,16);g_rec.push_back(r);
+            Rec binding;binding.op=9+i%3;g_rec.push_back(binding);
+        }
+        Rec barrier;barrier.op=36;g_rec.push_back(barrier);expected.push_back(final);
+        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};
+        g_replayConstantBatch=g_replayConstantWindow=true;g_replayConstantBindWindow=extended!=0;
+        Actual();counts[extended]=apiCalls;assert(checkAt==1 && !apiFail);
+    }
+    assert(counts[0]==4 && counts[1]==1);++checks;
+    g_replayConstantBindWindow=false;
+}
 int main(){
-    HeaderCases();ActualReduction();unsigned streams=0,records=0;
+    HeaderCases();ActualReduction();BindingReduction();unsigned streams=0,records=0;
     for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
-    for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u}){
+    for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
-        g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode==2;
+        g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
         g_frameStart.vertexFloatLimit=caps;g_frameStart.pixelFloatLimit=caps==96?32:224;
         Build();const auto dataBefore=arena;
         driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};Actual();
@@ -175,5 +201,5 @@ int main(){
 #ifdef D2VR_MATCHED_CAPTURE
     assert(g_constantUploadWindow.counts.exceptions==1 && g_constantUploadWindow.counts.calls[0]==1);
 #endif
-    printf("PASS actual replay float loop: %u streams / %u records / %u barrier snapshots; OFF/adjacent/window/capture, transformed bits, caps, failures, forwarding receipts, SEH no retry\n",streams,records,checks);
+    printf("PASS actual replay float loop: %u streams / %u records / %u barrier snapshots; OFF/adjacent/window/material-bind/capture, transformed bits, caps, failures, forwarding receipts, SEH no retry\n",streams,records,checks);
 }
