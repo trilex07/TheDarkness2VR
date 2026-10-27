@@ -106,6 +106,10 @@ int g_submitMode = 0;
 bool g_disableDepthOfField = true;
 bool g_disableCompositeHeightFog = false;
 bool g_disableFxaa = true;
+// Diagnostic shader policies are immutable after startup; creation hooks may
+// run on native worker threads and must not reopen configuration files.
+bool g_shadowScreenDepth = false;
+bool g_shaderDebugDump = false;
 bool g_clipScaledUi = true;
 bool g_fixMotionVectorProjection = false;
 bool g_worldDiffuseAnisotropy = false;
@@ -561,6 +565,12 @@ static bool ProtectedHeadConfigurationAllowed() {
         !g_noInvProj && !g_skipLightVsShift && !g_lightPosShift && g_lightingPreset<=0;
 }
 void LoadConfig() {
+    g_shadowScreenDepth=GetPrivateProfileIntA("Diagnostics","ShadowScreenDepth",0,
+        ".\\Darkness2VR-diagnostic.ini")==1;
+    g_shaderDebugDump=GetPrivateProfileIntA("Diagnostics","ShaderDebugDump",0,
+        ".\\Darkness2VR-diagnostic.ini")==1;
+    Log("[ShaderDiagnostics] ShadowScreenDepth=%d ShaderDebugDump=%d (startup only)",
+        int(g_shadowScreenDepth),int(g_shaderDebugDump));
 #ifdef D2VR_MATCHED_CAPTURE
     g_smallRecordCopyControl.Configure(GetPrivateProfileIntA("Diagnostics",
         "SmallRecordCopyLiveControl",0,".\\Darkness2VR-diagnostic.ini")!=0);

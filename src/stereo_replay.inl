@@ -659,12 +659,12 @@ static bool BuildUnfilteredFxaa(const DWORD* fn, size_t count, std::vector<DWORD
 static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, const DWORD* fn,
                                                         IDirect3DPixelShader9** out) {
     bool screenDepthOverride = false;
-    DWORD replacement[8192]{};
+    // Only bytes successfully read and validated below can be submitted.
+    DWORD replacement[8192];
     // This original shader reconstructs lighting from depth. Its interpolated
     // light-volume UV can diverge from the actual depth pixel after an eye shift.
     // Restrict the experiment to its exact bytecode hash and an explicit switch.
-    if (fn && GetPrivateProfileIntA("Diagnostics", "ShadowScreenDepth", 0,
-            ".\\Darkness2VR-diagnostic.ini") == 1) {
+    if (fn && g_shadowScreenDepth) {
         const size_t words = SafeShaderTokenCount(fn);
         if (words && HashBytes(fn, (words + 1) * 4) == 0xC4D1FB10u) {
             FILE* input = nullptr;
@@ -723,7 +723,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
             std::vector<DWORD> code((bytes + 3)/4);
             if (SUCCEEDED((*out)->GetFunction(code.data(), &bytes))) {
                 const std::string shaderBytes((const char*)code.data(), bytes);
-                if (shaderBytes.find("InvRenderTargetSize") != std::string::npos &&
+                if (g_shaderDebugDump && shaderBytes.find("InvRenderTargetSize") != std::string::npos &&
                     shaderBytes.find("ShadowMask") != std::string::npos) {
                     char path[MAX_PATH];
                     sprintf_s(path, "test-output\\ps_material_%08X.bin", HashBytes(code.data(), bytes));
@@ -735,7 +735,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                 }
                 int base = screenDepthOverride ? 27 :
                     FindNamedMatrix(code.data(), bytes/4, "InverseProjection", nullptr);
-                if (base >= 0) {
+                if (g_shaderDebugDump && base >= 0) {
                     char path[MAX_PATH];
                     sprintf_s(path, "test-output\\ps_inverse_%08X.bin", HashBytes(code.data(), bytes));
                     FILE* file = nullptr;
@@ -747,10 +747,12 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                 if (extents < 0 && shaderBytes.find("ViewExtents") != std::string::npos) {
                     Log("[Lighting] shader has ViewExtents name but no 1-register entry (matrix form: c%d)",
                         FindNamedMatrix(code.data(), bytes/4, "ViewExtents", nullptr));
-                    char path[MAX_PATH];
-                    sprintf_s(path, "test-output\\ps_viewext_%08X.bin", HashBytes(code.data(), bytes));
-                    FILE* file = nullptr;
-                    if (fopen_s(&file, path, "wb") == 0 && file) { fwrite(code.data(), 1, bytes, file); fclose(file); }
+                    if(g_shaderDebugDump) {
+                        char path[MAX_PATH];
+                        sprintf_s(path, "test-output\\ps_viewext_%08X.bin", HashBytes(code.data(), bytes));
+                        FILE* file = nullptr;
+                        if (fopen_s(&file, path, "wb") == 0 && file) { fwrite(code.data(), 1, bytes, file); fclose(file); }
+                    }
                 }
                 RecLockGuard lock;
                 g_psInverse[*out] = base;

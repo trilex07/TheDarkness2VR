@@ -378,3 +378,30 @@ checks confirm no data append or bad-source read and released lock. Combined
 copy/guard/frame-reuse regression6087 PASS; native gate4073 PASS; frame resource
 refs10000 frames/mode PASS. Production and diagnostic builds PASS. Runtime saving
 is NOT MEASURED; installed81cc723 remains unchanged for the pending test.
+
+## 2026-10-27 - Existing trace hitch analysis and shader-hook I/O removal
+
+Reused retained ad8db6a zero-loss ETL and exact symbols, without a new capture.
+Bounded timestamp-joined extraction has zero stack timestamp mismatches. The
+111.2981ms PresentMon interval at CPUStartQPCTime110257791.2832 contains native
+BC78E0 scene teardown (NxReleaseControllerManager, actor releases, scene release)
+and texture destruction. It must not establish a gameplay physics bottleneck.
+
+The completed transition's 85.4547ms interval at CPUStartQPCTime110226615.4232
+contains 28 main-thread sampled weights. Stacks prove native pixel-shader creation,
+shader validation, a NVIDIA CreatePixelShader wait, and Hook_CreatePixelShader ->
+GetPrivateProfileIntA -> INI file open. Samples do not establish exact blocked
+duration or attribute the whole interval to one cause. Private bounded outputs:
+analysis-derived/hitch-{111,85}ms-chains.json and hitch-native-contracts.txt in
+material-window-capture-20261027T140923Z/trace/20261027T141205Z-c4e8bb85.
+
+Read ShadowScreenDepth once in LoadConfig, before any device hook/thread uses it.
+Remove the unconditional 32KiB replacement-array zero fill: replacement bytes are
+used only after a complete fread extent and shader-header/end validation. Make
+automatic PS file dumps opt-in via startup Diagnostics/ShaderDebugDump=1, default
+OFF. InverseProjection/ViewExtents reflection and map updates remain unconditional.
+Explicit ShadowScreenDepth replacement-file reading remains allowed when enabled.
+These diagnostic settings now require restart. No shader-result cache or native
+owner change. Production/diagnostic x86 builds and actual D3D9 REF preload tests
+(ownership, misses/HRESULT, bytecode identity, concurrent requests, Reset) PASS.
+This removes proven hook I/O; FPS gain and remaining driver wait are unmeasured.
