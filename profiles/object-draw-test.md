@@ -1,5 +1,13 @@
 # Temporary geometry omission diagnostic
 
+For an in-place comparison, set Render.ObjectDrawPadToggle=1 and
+Render.SkipObjectDraws=0. The scene starts visible. L3+R3 queues one toggle
+at the next VR-frame entry; release BOTH sticks before clicking again. The
+chord temporarily replaces recenter on VR and physical pads; keyboard F8 still
+recenters. Input polling never changes D3D state or geometry directly. The log
+records `geometry=HIDDEN` / `VISIBLE`. Reset to ObjectDrawPadToggle=0 to restore
+the ordinary recenter chord. The visibility flag is not persisted by clicks.
+
 Render.SkipObjectDraws=1 (default 0) omits triangle-list/strip/fan batches with
 more than two primitives at all four shared live/replay draw wrappers. This is
 an intentionally destructive visual test, not an object classifier: buildings,
