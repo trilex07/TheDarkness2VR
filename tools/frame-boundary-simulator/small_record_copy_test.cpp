@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "../../src/small_record_copy.h"
+#include "../../src/native_constant_source.h"
 #include <cassert>
 #include <cstdio>
 #include <vector>

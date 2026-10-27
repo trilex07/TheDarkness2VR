@@ -98,6 +98,9 @@ static void InstallImagePresent(IDirect3DDevice9* device) {
         memcmp(image+0x564cbf,acquisition,sizeof(acquisition))!=0) {
         g_imagePresent.Fail("SHA/PE/original presentation dispatch mismatch");return;
     }
+    const bool nativeCopy=d2vr_native_constants::AdmitImage(sha.c_str(),image);
+    Log("[NativeOwnedConstantCopy] requested=%d admitted=%d sha=%s; exact native local frames only; no EXE writes",
+        int(d2vr_native_constants::enabled.load()),nativeCopy,sha.c_str());
     d2vr_image_present::Callbacks callbacks{
         ImagePresentCaller,ImagePresentBefore,ImagePresentAfter,Log};
     if(d2vr_cpu_sync::timing.enabled) {

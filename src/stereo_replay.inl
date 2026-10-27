@@ -403,6 +403,10 @@ struct ConstantUploadWindow {
             frame,beginQpc,endQpc,frequency,streams,otherEyes,batched,windowed,bindWindowed,captureBypass,
             counts.records[0],counts.calls[0],counts.vectors[0],counts.failures[0],
             counts.records[1],counts.calls[1],counts.vectors[1],counts.failures[1],counts.exceptions);
+        const auto& native=d2vr_native_constants::counts;
+        Log("[NativeOwnedConstantCopy] tid=%lu enabled=%d admitted=%d attempts=%llu proved=%llu copies=%llu bytes=%llu faults=%llu; cumulative on reporting thread",
+            GetCurrentThreadId(),int(d2vr_native_constants::enabled.load()),int(d2vr_native_constants::admitted.load()),
+            native.attempts,native.proved,native.copies,native.bytes,native.faults);
         *this = {};
     }
 };
@@ -487,12 +491,12 @@ static inline bool RecOnRenderThread() {
     return GetCurrentThreadId() == g_renderThreadId;
 }
 
-static inline uint32_t RecPush(const void* data, size_t bytes) {
+static inline uint32_t RecPush(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {}) {
     RecLockGuard lock;
     if (bytes > (size_t)8 * 1024 * 1024) bytes = 0;   // sanity clamp
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
-    if (bytes) {
+    if (bytes && !d2vr_native_constants::Copy(proof,g_recData.data()+off,data,bytes)) {
         d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),
             &ReadProcessMemory,g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit);
     }
@@ -543,9 +547,10 @@ static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 
     if (op < 40) g_recCounts[op]++;
 }
 static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
-                               uint32_t a0 = 0, uint32_t a1 = 0, uint32_t a2 = 0, uint32_t a3 = 0) {
+                               uint32_t a0 = 0, uint32_t a1 = 0, uint32_t a2 = 0, uint32_t a3 = 0,
+                               const d2vr_native_constants::Proof& proof = {}) {
     if (!g_recActive || g_recOverflow) return;
-    uint32_t off = RecPush(data, bytes);
+    uint32_t off = RecPush(data, bytes, proof);
     RecEmit(op, (uint32_t)(bytes / 4), a0, a1, a2, a3, off);
 }
 
@@ -1468,12 +1473,22 @@ static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDir
     g_activePsViewExtents = it2 == g_psViewExtents.end() ? -1 : it2->second;
     return g_orig.SetPixelShader(dev, ps);
 }
-static HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n) {
+#pragma optimize("y", off)
+__declspec(noinline) static HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n) {
 #ifdef D2VR_MATCHED_CAPTURE
     const float* native=d;
 #endif
     if (g_replayEye < 0) ObserveInverseProjection(d, s, n, g_activePsInverse);
-    if (g_recActive) RecEmitData(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n);
+    if (g_recActive) {
+        uintptr_t nativeFrame=0;
+        __asm { mov eax, ebp
+                mov eax, [eax]
+                mov nativeFrame, eax }
+        const auto proof=d2vr_native_constants::InspectCurrent(
+            static_cast<const uintptr_t*>(_AddressOfReturnAddress()),nativeFrame,d,sizeof(float)*4*n,
+            d2vr_native_constants::Stage::Pixel);
+        RecEmitData(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n,0,0,proof);
+    }
     float adjusted[224*4];
     if (g_submitMode == 4 && g_replayEye < 0 && d &&
         CompensatePsConstants(adjusted, d, s, n, g_activePsInverse, g_activePsViewExtents,
@@ -1486,6 +1501,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* dev, UINT s,
     return g_orig.SetPixelShaderConstantF(dev, s, d, n);
 #endif
 }
+#pragma optimize("y", on)
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
     if (g_recActive) RecEmitData(OP_SetPSConstI, d, sizeof(int) * 4 * n, s, n);
     return g_orig.SetPixelShaderConstantI(dev, s, d, n);
