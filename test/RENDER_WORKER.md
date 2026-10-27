@@ -1,7 +1,11 @@
 # Render worker prototype
 
-Base: e5264e0. This is an isolated implementation experiment, not an enabled
-Darkness II backend. No existing hook, profile, deployed DLL or game file changes.
+Base: e5264e0. The original generic queue remains an isolated implementation
+experiment, not a complete asynchronous Darkness II backend. A separate bounded
+integration now uses it for mod-owned stereo transfers; see
+`profiles/protected-stereo-transfer-worker/README.md` and
+`test/stereo_transfer_worker_test.cpp`. Native command deferral below remains
+incomplete and must not be inferred from that transfer integration.
 
 `src/render_command_worker.h` implements a bounded producer/consumer queue. The
 backend is constructed, called and destroyed on one worker. Producer work can

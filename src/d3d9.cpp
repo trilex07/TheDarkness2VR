@@ -11,6 +11,7 @@
 #include <shlobj.h>
 #include <d3d9.h>
 #include <d3d11.h>
+#include "stereo_transfer_worker.h"
 #include <dxgi.h>
 #include <vector>
 #include <unordered_map>
@@ -531,6 +532,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 }
 
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
+static int g_stereoTransferMode = 0; // 0 baseline, 1 worker, 2 serial control with same D3D9 MT flag
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
 // tracked profile must choose the matching configured reconstruction explicitly;
@@ -623,6 +625,9 @@ void LoadConfig() {
     if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
+    g_stereoTransferMode = GetPrivateProfileIntA("Render", "StereoTransferWorker", 0, chosenIni);
+    if(g_stereoTransferMode<0 || g_stereoTransferMode>2) g_stereoTransferMode=0;
+    Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control)",g_stereoTransferMode);
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
@@ -2330,7 +2335,7 @@ static bool ComputeBaseAimMarker(int eye,float cropX,float cropY,float out[4]) {
 static bool CanReadSharedUpload(ID3D11ShaderResourceView*);
 static bool SealSharedUpload(ID3D11ShaderResourceView*);
 
-static bool RenderStereoEyeD11(
+static StereoCBData PrepareStereoEyeConstants(
     int eyeIdx,
     const XrFovf& eyeFov,
     float invTwoHalfTanX,
@@ -2339,16 +2344,8 @@ static bool RenderStereoEyeD11(
     float posOffsetX,
     float posOffsetY)
 {
-#ifdef D2VR_MATCHED_CAPTURE
-    d2vr_cpu_sync::Scope cpuEye(d2vr_cpu_sync::D3D11Eye);
-#endif
-    if (!EnsureD11StereoPipeline() || !g_eyeRTV[eyeIdx] || !g_uploadSRV) return false;
-    if(g_lastConsumerReaderFence && !CanReadSharedUpload(g_uploadSRV)) return false;
-    EnsureDepthTexture11();
-
-    D3D11_MAPPED_SUBRESOURCE ms{};
-    if (FAILED(g_ctx11->Map(g_stereoCB11, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) return false;
-    auto* cb = static_cast<StereoCBData*>(ms.pData);
+    StereoCBData value{};
+    auto* cb=&value;
     cb->fovTan[0] = std::tan(eyeFov.angleLeft);
     cb->fovTan[1] = std::tan(eyeFov.angleRight);
     cb->fovTan[2] = std::tan(eyeFov.angleUp);
@@ -2383,6 +2380,22 @@ static bool RenderStereoEyeD11(
 #ifdef D2VR_MATCHED_CAPTURE
     if (g_blitPass) MatchedCaptureBlit(eyeIdx,*cb);
 #endif
+    return value;
+}
+
+static bool RenderStereoEyeD11(int eyeIdx,const XrFovf& eyeFov,
+    float invTwoHalfTanX,float invTwoHalfTanY,float eyeSign,float posOffsetX,float posOffsetY)
+{
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::Scope cpuEye(d2vr_cpu_sync::D3D11Eye);
+#endif
+    if (!EnsureD11StereoPipeline() || !g_eyeRTV[eyeIdx] || !g_uploadSRV) return false;
+    if(g_lastConsumerReaderFence && !CanReadSharedUpload(g_uploadSRV)) return false;
+    EnsureDepthTexture11();
+    const auto cb=PrepareStereoEyeConstants(eyeIdx,eyeFov,invTwoHalfTanX,invTwoHalfTanY,eyeSign,posOffsetX,posOffsetY);
+    D3D11_MAPPED_SUBRESOURCE ms{};
+    if (FAILED(g_ctx11->Map(g_stereoCB11,0,D3D11_MAP_WRITE_DISCARD,0,&ms))) return false;
+    memcpy(ms.pData,&cb,sizeof(cb));
     g_ctx11->Unmap(g_stereoCB11, 0);
 
     g_ctx11->OMSetRenderTargets(1, &g_eyeRTV[eyeIdx], nullptr);
@@ -2865,6 +2878,10 @@ int g_zeroCopyFailures = 0;
 IDirect3DQuery9* g_sharedFence9 = nullptr;
 ID3D11Query* g_sharedFence11 = nullptr;
 static d2vr_shared_reader::Fence g_sharedReaderFence;
+static d2vr_transfer::Queue* g_stereoTransferQueue=nullptr;
+static DWORD g_stereoTransferOwner=0;
+static IDirect3DDevice9* g_stereoTransferDevice=nullptr; // identity only; jobs retain their own COM resources
+static bool g_stereoTransferFault=false;
 struct SharedReaderFenceOps {
     bool Valid() const {return g_ctx11 && g_sharedFence11;}
     const void* Context() const {return g_ctx11;}
@@ -2889,6 +2906,8 @@ static bool SealSharedUpload(ID3D11ShaderResourceView* source) {
     return source!=g_sharedSRV11 || g_sharedReaderFence.SealRead(ops);
 }
 static void ReleaseSharedCapture() {
+    // A resource lifetime must not end underneath an outstanding interop job.
+    if(g_stereoTransferQueue) g_stereoTransferQueue->Drain();
     if (g_sharedFence9) g_sharedFence9->Release();
     if (g_sharedFence11) g_sharedFence11->Release();
     if (g_sharedSRV11) g_sharedSRV11->Release();
@@ -2900,6 +2919,7 @@ static void ReleaseSharedCapture() {
     g_sharedSurf9 = nullptr; g_sharedTex9 = nullptr;
     g_sharedHandle = nullptr; g_sharedW = g_sharedH = 0;
     g_sharedReaderFence.Reset();
+    g_stereoTransferFault=false;
 }
 
 static bool WaitSharedReader() {
@@ -2911,6 +2931,7 @@ static bool WaitSharedReader() {
 }
 
 static bool EnsureSharedCapture(IDirect3DDevice9* dev) {
+    if(g_stereoTransferFault) return false;
     if (!g_zeroCopyEnabled) return false;
     if (!dev || !g_dev11 || g_zeroCopyFailures > 2) return false;
 
@@ -2963,11 +2984,11 @@ static bool EnsureSharedCapture(IDirect3DDevice9* dev) {
     return g_sharedSurf9 && g_sharedSRV11 && g_sharedFence9 && g_sharedFence11;
 }
 
-static bool CaptureBackbufferToShared(IDirect3DDevice9* dev) {
+static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=false) {
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::Scope cpuCapture(d2vr_cpu_sync::SharedCapture);
 #endif
-    if (!g_sharedSurf9 || !g_sharedFence9 || !WaitSharedReader()) return false;
+    if (g_stereoTransferFault || !g_sharedSurf9 || !g_sharedFence9 || !WaitSharedReader()) return false;
     IDirect3DSurface9* src = nullptr;
     // Darkness II renders offscreen; check active RenderTarget0 first
     if (FAILED(dev->GetRenderTarget(0, &src)) || !src) {
@@ -2985,6 +3006,12 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev) {
     d2vr_cpu_sync::Scope cpuProducer(d2vr_cpu_sync::D3D9Fence);
 #endif
     if (FAILED(g_sharedFence9->Issue(D3DISSUE_END))) return false;
+    if(deferProducer) {
+        // Submit on the original thread; worker only polls this issued query.
+        hr=g_sharedFence9->GetData(nullptr,0,D3DGETDATA_FLUSH);
+        g_srcW=g_sharedW; g_srcH=g_sharedH;
+        return hr==S_OK || hr==S_FALSE;
+    }
     const ULONGLONG start = GetTickCount64();
     while ((hr = g_sharedFence9->GetData(nullptr, 0, D3DGETDATA_FLUSH)) == S_FALSE) {
         if (GetTickCount64() - start > 2000) return false;
@@ -2992,6 +3019,77 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev) {
     }
     g_srcW = g_sharedW; g_srcH = g_sharedH;
     return hr == S_OK;
+}
+
+static bool StereoTransferAvailable(IDirect3DDevice9* dev) {
+    if(g_stereoTransferMode!=1 || g_stereoTransferFault) return false;
+    if(g_stereoTransferQueue) return g_stereoTransferOwner==GetCurrentThreadId() && g_stereoTransferDevice==dev;
+    D3DDEVICE_CREATION_PARAMETERS parameters{};
+    if(FAILED(dev->GetCreationParameters(&parameters)) ||
+       !(parameters.BehaviorFlags&D3DCREATE_MULTITHREADED)) return false;
+    // Worker stays idle between frame-local leases. Pin code for its process
+    // lifetime; never join a C++ thread from the DLL loader-lock destructor.
+    HMODULE pinned=nullptr;
+    if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
+        reinterpret_cast<LPCWSTR>(&StereoTransferAvailable),&pinned)) return false;
+    try { g_stereoTransferQueue=new d2vr_transfer::Queue; }
+    catch(...) { return false; }
+    g_stereoTransferOwner=GetCurrentThreadId();
+    g_stereoTransferDevice=dev;
+    Log("[StereoTransferWorker] admitted ownerTid=%lu flags=0x%lX; same-frame interop only",
+        g_stereoTransferOwner,parameters.BehaviorFlags);
+    return true;
+}
+
+static bool StartStereoTransfer(IDirect3DDevice9* dev,int eye,d2vr_transfer::Pending& pending,
+    std::shared_ptr<d2vr_transfer::Job>& job) {
+    if(!EnsureD11StereoPipeline() || !g_eyeRTV[eye] || !g_sharedSRV11) return false;
+    EnsureDepthTexture11();
+    // No global scene/camera state is consulted by the worker.
+    ID3D11ShaderResourceView* saved=g_uploadSRV; g_uploadSRV=g_sharedSRV11;
+    const auto constants=PrepareStereoEyeConstants(eye,g_eyeFov[eye],1,1,1,0,0);
+    g_uploadSRV=saved;
+    try { job=std::make_shared<d2vr_transfer::Job>(); } catch(...) { return false; }
+    using namespace d2vr_transfer;
+    job->producer=Ref<IDirect3DQuery9>(g_sharedFence9);
+    job->context=Ref<ID3D11DeviceContext>(g_ctx11);
+    job->reader=Ref<ID3D11Query>(g_sharedFence11);
+    job->target=Ref<ID3D11RenderTargetView>(g_eyeRTV[eye]);
+    job->constants=Ref<ID3D11Buffer>(g_stereoCB11);
+    job->vs=Ref<ID3D11VertexShader>(g_stereoVS11);
+    job->ps=Ref<ID3D11PixelShader>(g_stereoPS11);
+    job->raster=Ref<ID3D11RasterizerState>(g_stereoRS11);
+    job->sampler=Ref<ID3D11SamplerState>(g_stereoSamp11);
+    job->source=Ref<ID3D11ShaderResourceView>(g_sharedSRV11);
+    job->depth=Ref<ID3D11ShaderResourceView>(g_depthSRV11);
+    static_assert(sizeof(constants)<=256,"worker packet constants too small");
+    memcpy(job->bytes.data(),&constants,sizeof(constants)); job->size=sizeof(constants);
+    job->width=g_eyeCacheW; job->height=g_eyeCacheH;
+    if(!CaptureBackbufferToShared(dev,true)) { job.reset(); return false; }
+    if(!pending.Start(*g_stereoTransferQueue,job,g_stereoTransferFault)) {
+        g_stereoTransferFault=true; return false;
+    }
+    return true;
+}
+
+static bool FinishStereoTransfer(d2vr_transfer::Pending& pending,
+    const std::shared_ptr<d2vr_transfer::Job>& job) {
+    if(!pending.Active()) return false;
+    const auto begin=d2vr_transfer::Job::Clock();
+    const bool ok=pending.Finish();
+    const auto end=d2vr_transfer::Job::Clock();
+    static unsigned count=0; static double joinMs=0,workerMs=0; static LARGE_INTEGER frequency{};
+    if(!frequency.QuadPart) QueryPerformanceFrequency(&frequency);
+    if(frequency.QuadPart) {
+        joinMs+=(end-begin)*1000.0/frequency.QuadPart;
+        workerMs+=(job->end-job->start)*1000.0/frequency.QuadPart;
+    }
+    if(++count==240 || !ok) {
+        Log("[StereoTransferWorker] jobs=%u workerTid=%lu mainJoinMean=%.3fms workerMean=%.3fms ok=%d hr=0x%08lX; overlapping scopes, not additive",
+            count,job->thread,joinMs/count,workerMs/count,int(ok),job->result);
+        count=0; joinMs=workerMs=0;
+    }
+    return ok;
 }
 
 // ---------------------------------------------------------------- True stereo eye pair (live pass + replay pass)
@@ -3113,6 +3211,7 @@ static void NativeCameraCaptureChanged() {
 }
 #endif
 static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
+    if(g_stereoTransferFault) { d2vr_replay::g_recActive=false; g_eyePairReady=false; return; }
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_nativeCameraCoverInstalled && g_nativeCameraCoverConfirmed && g_had3DCameraThisFrame &&
        g_nativeCoveredFrame!=g_trackedFrame.id) {
@@ -3196,13 +3295,17 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         return;
     }
     const bool zeroCopy = EnsureSharedCapture(dev);
+    const bool transferWorker=zeroCopy && StereoTransferAvailable(dev);
+    d2vr_transfer::Pending leftTransfer,rightTransfer;
+    std::shared_ptr<d2vr_transfer::Job> leftJob,rightJob;
 
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Source(dev,0);
 #endif
     g_blitPass = 1;
-    bool eye0Ok = zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev);
-    {
+    bool eye0Ok = transferWorker ? StartStereoTransfer(dev,0,leftTransfer,leftJob) :
+        (zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev));
+    if(!transferWorker) {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
         if (zeroCopy) g_uploadSRV = g_sharedSRV11;
         if (eye0Ok) eye0Ok = RenderStereoEyeD11(0, g_eyeFov[0], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
@@ -3234,12 +3337,18 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     d2vr_replay::ReplayStream(dev, 1, sp1);
     QueryPerformanceCounter(&perf[2]);
 
+    // This interval used D3D9 only. Reclaim the D3D11 immediate context and
+    // prove the left shared-texture reader finished BEFORE right overwrite.
+    if(leftTransfer.Active()) eye0Ok=FinishStereoTransfer(leftTransfer,leftJob) && eye0Ok;
+    leftJob.reset();
+
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Source(dev,1);
 #endif
     bool eye1Ok = historyOk && g_rightColorHistory.Save(dev, liveEnd.targets[0]);
-    if (eye1Ok) eye1Ok = zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev);
-    {
+    if (eye1Ok) eye1Ok = transferWorker ? StartStereoTransfer(dev,1,rightTransfer,rightJob) :
+        (zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev));
+    if(!transferWorker) {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
         if (zeroCopy) g_uploadSRV = g_sharedSRV11;
         if (eye1Ok) eye1Ok = RenderStereoEyeD11(1, g_eyeFov[1], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
@@ -3251,6 +3360,10 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     liveEnd.Apply(dev);
     d2vr_replay::InvalidateShadowAtlasPass();
     liveEnd.Release();
+    // Right interop overlaps D3D9 live-state restoration, but never XR/NIS,
+    // capture readback, the next frame, Reset or shared-resource destruction.
+    if(rightTransfer.Active()) eye1Ok=FinishStereoTransfer(rightTransfer,rightJob) && eye1Ok;
+    rightJob.reset();
     QueryPerformanceCounter(&perf[3]);
 
     DumpEyeFramesIfRequested();
@@ -6032,6 +6145,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT ad, D3DDEVTYP
                                             DWORD flags, D3DPRESENT_PARAMETERS* pp,
                                             IDirect3DDevice9** out) {
     g_renderSizeHwnd = pp && pp->hDeviceWindow ? pp->hDeviceWindow : hwnd;
+    if(g_stereoTransferMode) flags|=D3DCREATE_MULTITHREADED;
     Log("Hook_CreateDevice adapter=%u flags=0x%lX", ad, flags);
     TweakPresentParams(pp);
     HRESULT hr = g_origCreateDevice(self, ad, type, hwnd, flags, pp, out);
@@ -6045,6 +6159,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDeviceEx(IDirect3D9Ex* self, UINT ad, D3DDE
                                               D3DDISPLAYMODEEX* fullMode, IDirect3DDevice9Ex** out) {
     if (hwnd) g_gameHwnd = hwnd;
     g_renderSizeHwnd = pp && pp->hDeviceWindow ? pp->hDeviceWindow : hwnd;
+    if(g_stereoTransferMode) flags|=D3DCREATE_MULTITHREADED;
     Log("Hook_CreateDeviceEx adapter=%u flags=0x%lX windowed=%d hwnd=%p", ad, flags,
         pp ? (int)pp->Windowed : -1, hwnd);
     TweakPresentParams(pp);
