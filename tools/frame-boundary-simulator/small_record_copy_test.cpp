@@ -37,7 +37,7 @@ static void Filled(const uint8_t* p, size_t n, uint8_t value) {
 // Bind the extracted production RecPush and lock to this owned record arena.
 #include "../../src/record_payload_storage.h"
 static d2vr_record_payload::Storage g_recData;
-static volatile LONG g_recLock=0;
+static std::atomic<LONG> g_recLock{0};
 static bool g_smallRecordCopyAdmitted=false;
 static std::atomic<bool> g_wideRecordCopy{false};
 static RuntimeControl g_smallRecordCopyControl;

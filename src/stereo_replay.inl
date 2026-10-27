@@ -418,12 +418,18 @@ static ConstantUploadWindow g_constantUploadWindow;
 #define HOOK_MARK(n) (g_lastHookId = (n))
 
 // The engine can issue device calls from more than one thread - guard the record stream.
-static volatile LONG g_recLock = 0;
+static std::atomic<LONG> g_recLock{0};
+static_assert(std::atomic<LONG>::is_always_lock_free,"Recorder lock must stay native on x86");
 struct RecLockGuard {
     RecLockGuard() {
-        while (InterlockedCompareExchange(&g_recLock, 1, 0) != 0) { Sleep(0); }
+        LONG expected=0;
+        while (!g_recLock.compare_exchange_weak(expected,1,std::memory_order_acquire,std::memory_order_relaxed)) {
+            expected=0;Sleep(0);
+        }
     }
-    ~RecLockGuard() { InterlockedExchange(&g_recLock, 0); }
+    // Publish the complete payload/record with release ordering. Unlock does
+    // not need a read-modify-write or a second full x86 memory fence.
+    ~RecLockGuard() { g_recLock.store(0,std::memory_order_release); }
 };
 
 // D3D state blocks exclude render targets and depth surfaces. Keep those explicitly.
@@ -1664,7 +1670,10 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     if (dump) ++s_dumpFrames;
     // Hold the record lock for the whole replay: the engine records from a second thread
     // (texture uploads) and a concurrent push_back would invalidate g_rec references here.
-    while (InterlockedCompareExchange(&g_recLock, 1, 0) != 0) { Sleep(0); }
+    LONG expectedLock=0;
+    while (!g_recLock.compare_exchange_weak(expectedLock,1,std::memory_order_acquire,std::memory_order_relaxed)) {
+        expectedLock=0;Sleep(0);
+    }
     const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)
     if (g_replayTestClear) {
         // diagnostic: flood the current render target magenta before replaying; if the eye1
@@ -1985,7 +1994,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         g_constantUploadWindow.captureBypass += g_replayConstantBatch && MatchedCaptureRecordingActive();
     }
 #endif
-    InterlockedExchange(&g_recLock, 0);
+    g_recLock.store(0,std::memory_order_release);
     g_replayEye = -1;
 }
 

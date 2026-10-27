@@ -535,3 +535,15 @@ before/after Reset. Source sizing lifecycle regression and both builds PASS.
 Installed candidate also includes213bfd3 pre-window resolution correction.
 Extra inventory targets measured creation misses; sustained90FPS at native
 2676x2728/eye remains unverified and is not inferred from these offline tests.
+
+## 2026-10-27: recorder unlock uses release publication
+
+Retained outdoor ETW includes RecLockGuard/RecEmit execution. Replace the
+recorder's volatile/interlocked lock with lock-free atomic LONG acquire and
+release ordering, retaining Sleep(0) contention policy and the same critical
+sections. Unlock now needs a release store, rather than an x86 interlocked
+read-modify-write/full fence on every command. Manual replay acquisition and
+release use the same atomic protocol. No command elision or concurrent access
+to the protected arena is admitted. Actual-source x86 recorder regression
+6087 checks (including concurrent uniquely tagged payloads) and both builds
+PASS. No runtime millisecond or FPS saving claimed.
