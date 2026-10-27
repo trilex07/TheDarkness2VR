@@ -137,6 +137,7 @@ int g_textureAnisotropy = 16;
 bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B, default legacy query path
 static bool g_startupShaderWarmup = false; // OFF; valid-device startup only, no native slot writes
 static bool g_startupShaderPool = false; // OFF; startup-owned shader objects, transferred once
+static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shadow image
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
 
@@ -622,6 +623,8 @@ void LoadConfig() {
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
     g_startupShaderWarmup = GetPrivateProfileIntA("Render", "StartupShaderWarmup", 0, chosenIni)!=0;
     g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
+    g_skipShadowAtlasDraws = GetPrivateProfileIntA("Render", "SkipShadowAtlasDraws", 0, chosenIni)!=0;
+    if(g_skipShadowAtlasDraws) Log("[ShadowDrawTest] enabled=1; omit RGB565 square subviewport atlas draws in both eyes; heuristic coverage, altered lighting; CPU preparation retained");
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
     if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
