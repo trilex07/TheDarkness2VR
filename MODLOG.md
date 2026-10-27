@@ -342,3 +342,21 @@ observer. Actual x86 gate4073 and both external source-size fixtures PASS.
 No native code/table changes or cached matrices. Runtime FPS and actual upstream
 2676x2728 resolution remain unverified. Integration and evidence boundaries:
 docs/research/native-matrix-and-exact-source-20261027.md.
+
+## 2026-10-27 - Remove duplicate recorder payload initialization (offline)
+
+RecPush's byte-vector resize used to zero every appended byte immediately before
+Copy overwrote that complete span. Use a byte-only arena allocator that starts
+byte lifetimes without value initialization. All existing capture locks, payload
+offsets, size caps and copy error policies remain. Copy must complete before
+RecEmit publishes any corresponding record; every failure path still explicitly
+fills the readable prefix/zero tail. No permissions, source pointers or payload
+contents are cached. Audit found no other appender to g_recData.
+
+Actual RecPush x86 regression2085 PASS, including dirty capacity reused across
+frames, null/guard/noaccess/partial sources and 8MiB growth. Production and
+diagnostic builds PASS. This removes a proven duplicate write, but its game
+frame-time saving is unmeasured. The retained outdoor ntdll memset samples have
+UNKNOWN ancestry and cannot be attributed to this resize or claimed as savings.
+Installed candidate81cc723 remains frozen for its pending user test; this follow-up
+is not deployed.

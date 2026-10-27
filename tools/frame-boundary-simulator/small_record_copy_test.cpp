@@ -32,7 +32,8 @@ static void Filled(const uint8_t* p, size_t n, uint8_t value) {
     ++cases;
 }
 // Bind the extracted production RecPush and lock to this owned record arena.
-static std::vector<uint8_t> g_recData;
+#include "../../src/record_payload_storage.h"
+static d2vr_record_payload::Storage g_recData;
 static volatile LONG g_recLock=0;
 static bool g_smallRecordCopyAdmitted=false;
 static std::atomic<bool> g_wideRecordCopy{false};
@@ -77,6 +78,14 @@ static void TestActualRecPush(uint8_t* memory,size_t page) {
         // Exactly 8 MiB remains valid; only greater sizes trigger the clamp.
         std::vector<uint8_t> maximum(size_t(8)*1024*1024,0x5e);
         PushRecord(maximum.data(),maximum.size(),maximum);
+        // Reuse dirty capacity across frames: a failed source must never expose
+        // the preceding frame's bytes when resize no longer pre-clears them.
+        for(unsigned frame=0;frame<32;++frame) {
+            g_recData.clear();
+            PushRecord(memory+64,1088,std::vector<uint8_t>(memory+64,memory+64+1088));
+            g_recData.clear();
+            PushRecord(nullptr,1088,std::vector<uint8_t>(1088,0));
+        }
         g_recData.clear();g_recData.shrink_to_fit();
     }
 }

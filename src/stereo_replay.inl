@@ -27,6 +27,7 @@
 #include "material_sampling.h"
 #include "replay_constant_batch.h"
 #include "replay_constant_window.h"
+#include "record_payload_storage.h"
 
 namespace d2vr_replay {
 
@@ -388,7 +389,7 @@ static PFN_SBCapture g_origSBCapture = nullptr;
 static int g_sbHooked = 0;
 
 static std::vector<Rec> g_rec;
-static std::vector<uint8_t> g_recData;
+static d2vr_record_payload::Storage g_recData;
 static bool g_recActive = false;
 static bool g_recOverflow = false;
 static uint64_t g_recCounts[40] = { 0 };
