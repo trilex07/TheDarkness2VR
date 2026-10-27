@@ -34,6 +34,7 @@
 #include "persistent_log.h"
 #include "async_log.h"
 #include "small_record_copy.h"
+#include "startup_shader_warmup.h"
 #include "native_image_guard.h"
 #include "vr_input.h"
 #include "native_aim_math.h"
@@ -133,6 +134,7 @@ bool g_lastWorldHeadContextValid = false;
 bool g_recenterHeadLock = false;
 int g_textureAnisotropy = 16;
 bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B, default legacy query path
+static bool g_startupShaderWarmup = false; // OFF; valid-device startup only, no native slot writes
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
 
@@ -602,6 +604,7 @@ void LoadConfig() {
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
     g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
+    g_startupShaderWarmup = GetPrivateProfileIntA("Render", "StartupShaderWarmup", 0, chosenIni)!=0;
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
     if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
@@ -5861,11 +5864,14 @@ static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
     // through it: SEH is not object validation. Only use CreateDevice results.
 }
 
+#include "startup_shader_warmup.inl"
+
 void HookDevice(IDirect3DDevice9* dev) {
     d2vr_sampling::InvalidateSamplerCaps();
     StartAsyncLogging();
     g_renderThreadId = GetCurrentThreadId();
     if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;
+    StartupShaderWarmup(dev); // before our CreateShader hooks; native owner not yet supplied this device
     LogStartupStage(11, "HookDevice (D3D9 vtable + replay hooks)");
     g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);
     if (g_smallRecordCopyRequested) Log("[SmallRecordCopy] requested=1 admitted=%d guardProbe=%d limit=%zu (failed reads retain legacy copy)",

@@ -309,3 +309,12 @@ Pinned captured x86 EXE is already LAA. Ghidra B61190 retains receiver+0x0C and
 requests via manager010A1CBC virtual+28; loading/async/owner contracts unresolved.
 No helper, residency override or shader warmup admitted. See
 `docs/research/level-preloading-residency-20261027.md` and companion evidence JSON.
+
+## 2026-10-27 - Actual default-OFF startup shader preparation prototype
+
+Added same-device startup create/release pass before native device return, with a
+bounded private SM3 package and no native getter/owner access. No persistent shader
+references or async D3D9 calls. Full production/diagnostic x86 builds and core,
+package, stereo transfer and actual replay regressions PASS.19 available private
+shaders packaged;84 trace hashes missing. Driver/game benefit still unverified;
+see tools/shader-startup-warmup/README.md. No deployment or Steam/game launch.
