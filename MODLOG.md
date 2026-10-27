@@ -487,3 +487,27 @@ failure HRESULT, failed/successful Reset and ResetEx PASS. REF lifecycle fixture
 also PASS, but its zero result does not establish raster visibility. Both DLL
 builds PASS. Installed-image/runtime admission and gameplay FPS remain NOT RUN.
 This targets measured query-creation stalls, not a claimed24.45ms average saving.
+
+## 2026-10-27: install native sizing before window construction
+
+User b6ef258 test: minimum reported72FPS, CPU ON, both eyes correct, visibly low
+resolution. Saved runtime log confirms source1920x1071 despite2676x2728 XR eyes
+and requested Exact sizing. This is NOT native2676x2728 performance acceptance.
+Shader preload served444/512 requests; query preload served128/392; native copy
+faults remained0. This uncontrolled test does not isolate individual FPS gains.
+
+Verified installed-image native lifecycle: C27160 calls CF2C30 (loads D3D9 and
+invokes Direct3DCreate9/Ex) BEFORE A0B540 creates its HWND and calls C96440.
+C96440 reads GetClientRect at C9646E and stores manager dimensions. Installing
+the sizing observer in HookDevice misses this initial call. Move installation
+to both factory export entries, outside DllMain and before native window creation.
+Keep exact SHA/PE/call/import admission. Before CreateDevice supplies the HWND,
+only the exact native sizing caller may bind a successful, process-owned HWND.
+After that, existing exact-window filtering and Reset window updates remain.
+Other callers, invalid HWNDs, failures and null outputs retain native behavior.
+Add an explicit unconfirmed-size log when RT0 is seen without a sizing request.
+
+x86 real external-trampoline tests PASS for Quality, Exact and pre-window Exact
+lifecycle, including invalid-window/wrong-caller/null rejection, BOOL/last-error,
+one original forward and unchanged test EXE text. Production and diagnostic
+builds PASS. Game sizing, upstream dependencies and FPS require runtime testing.

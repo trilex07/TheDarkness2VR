@@ -46,8 +46,9 @@ int main(int argc,char** argv) {
     assert(!Eligible(false,true,1,1,4,4) && !Eligible(true,false,1,1,4,4));
     assert(!Eligible(true,true,2,1,4,4) && !Eligible(true,true,1,1,5,4));
     assert(!Eligible(true,true,0,0,4,4) && !Eligible(true,true,1,1,0,0));
-    assert(argc==2 || argc==3);
-    const bool exactMode=argc==3 && !std::strcmp(argv[2],"exact");
+    assert(argc>=2 && argc<=4);
+    const bool exactMode=argc>=3 && !std::strcmp(argv[2],"exact");
+    const bool deferred=argc==4 && !std::strcmp(argv[3],"deferred");
     const auto selected=exactMode?Mode::Exact:Mode::Quality;
     const LONG expectedW=exactMode?2676:2160,expectedH=exactMode?2728:1204;
     HMODULE fixture=LoadLibraryA(argv[1]);assert(fixture);
@@ -68,7 +69,15 @@ int main(int argc,char** argv) {
     ClientSize qualityHook;
     assert(!qualityHook.Start(query,guard,Mode::Off,window,nativeCaller));
     assert(!qualityHook.Start(query,guard,Mode::Exact,window,nativeCaller,nullptr,{3840,3840}));
-    assert(qualityHook.Start(query,guard,selected,window,nativeCaller,nullptr,{2676,2728}));
+    assert(!qualityHook.Start(query,guard,selected,nullptr,nativeCaller,nullptr,{2676,2728}));
+    assert(qualityHook.Start(query,guard,selected,deferred?nullptr:window,nativeCaller,nullptr,{2676,2728},deferred));
+    if(deferred) {
+        assert(invoke(window,&rect) && rect.right==1920 && qualityHook.requests==0); // invalid HWND
+        window=CreateWindowExW(0,L"STATIC",L"source sizing fixture",WS_POPUP,0,0,640,480,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+        assert(window);
+        assert(other(window,&rect) && rect.right==1920 && qualityHook.requests==0); // wrong caller must not bind
+        assert(!invoke(window,nullptr) && qualityHook.requests==0);
+    }
     auto before=calls();assert(invoke(window,&rect));
     assert(calls()==before+1 && GetLastError()==0x1234);
     assert(rect.left==0 && rect.top==0 && rect.right==expectedW && rect.bottom==expectedH && qualityHook.requests==1);
@@ -84,5 +93,6 @@ int main(int argc,char** argv) {
     for(unsigned i=0;i<1000;++i) {assert(invoke(window,&rect));assert(rect.right==expectedW && rect.bottom==expectedH);}
     assert(qualityHook.requests==1001);
     assert(Text()==originalText);
+    if(deferred) assert(DestroyWindow(window));
     std::printf("PASS source quality mode=%s: bounded/aspect/exact sizing, native ABI, exact caller/window, failure/null, one forward, last error, image denial\n",exactMode?"Exact2676x2728":"Quality");
 }

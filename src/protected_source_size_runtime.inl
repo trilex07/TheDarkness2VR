@@ -1,4 +1,5 @@
 static void InstallProtectedSourceQuality() {
+    if(g_protectedSourceSize.Installed()) return;
     if(g_sourceQualityMode==d2vr_source_quality::Mode::Off) return;
     if(!g_imagePreservingPresent || !g_nativeImageGuard.enabled || g_imagePresent.Failed()) {
         Log("[SourceQuality] refused: protected external Present architecture required");return;
@@ -21,6 +22,6 @@ static void InstallProtectedSourceQuality() {
     }
     const bool ready=g_protectedSourceSize.Start(target,g_nativeImageGuard,g_sourceQualityMode,
         g_renderSizeHwnd,reinterpret_cast<uintptr_t>(image)+0x896474,Log,
-        {unsigned(g_renderW),unsigned(g_renderH)});
+        {unsigned(g_renderW),unsigned(g_renderH)},true);
     Log("[SourceQuality] installed=%d mode=%u; engine owns dependent RT/depth/viewport creation; no resource substitution",ready,unsigned(g_sourceQualityMode));
 }

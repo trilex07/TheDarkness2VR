@@ -21,6 +21,7 @@ class ClientSize {
     uintptr_t caller_=0;
     Logger log_=nullptr;
     bool installed_=false;
+    bool discoverWindow_=false;
     static __declspec(noinline) BOOL WINAPI Hook(HWND hwnd,LPRECT rect) {
         return instance_.load(std::memory_order_acquire)->QuerySize(hwnd,rect,reinterpret_cast<uintptr_t>(_ReturnAddress()));
     }
@@ -29,6 +30,16 @@ class ClientSize {
         // Publish next_ before enabling so concurrent calls always forward once.
         const BOOL ok=next_.load(std::memory_order_acquire)(hwnd,rect);
         const DWORD error=GetLastError();
+        // Factory creation precedes the engine's window constructor. Only the
+        // verified native sizing call may bind its first process-owned HWND.
+        // Never infer ownership from an arbitrary USER32 caller or failed call.
+        if(discoverWindow_ && !hwnd_.load() && ok && rect && caller==caller_ && hwnd) {
+            DWORD process=0;
+            if(GetWindowThreadProcessId(hwnd,&process) && process==GetCurrentProcessId()) {
+                HWND empty=nullptr;
+                hwnd_.compare_exchange_strong(empty,hwnd);
+            }
+        }
         if(Eligible(ok!=FALSE,rect!=nullptr,reinterpret_cast<uintptr_t>(hwnd),
                     reinterpret_cast<uintptr_t>(hwnd_.load()),caller,caller_)) {
             if(rect->left==0 && rect->top==0 && rect->right>0 && rect->bottom>0) {
@@ -61,16 +72,16 @@ class ClientSize {
     }
 public:
     std::atomic<uint64_t> requests{0};
-    bool Start(void* target,d2vr_native_image::Guard guard,Mode mode,HWND hwnd,uintptr_t caller,Logger log=nullptr,Size exact={}) {
+    bool Start(void* target,d2vr_native_image::Guard guard,Mode mode,HWND hwnd,uintptr_t caller,Logger log=nullptr,Size exact={},bool discoverWindow=false) {
         if(installed_) return true;
-        if(instance_.load(std::memory_order_acquire) || !hwnd || !caller || mode==Mode::Off || unsigned(mode)>4 ||
+        if(instance_.load(std::memory_order_acquire) || (!hwnd && !discoverWindow) || !caller || mode==Mode::Off || unsigned(mode)>4 ||
            (mode==Mode::Exact && !Choose(mode,640,480,exact).width) || !External(target,guard)) return false;
         HMODULE self=nullptr;
         if(!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
             reinterpret_cast<LPCSTR>(&Hook),&self)) return false;
         const auto init=MH_Initialize();
         if(init!=MH_OK && init!=MH_ERROR_ALREADY_INITIALIZED) return false;
-        mode_=mode;exact_=exact;hwnd_=hwnd;caller_=caller;log_=log;
+        mode_=mode;exact_=exact;hwnd_=hwnd;caller_=caller;log_=log;discoverWindow_=discoverWindow;
         ClientSize* empty=nullptr;
         if(!instance_.compare_exchange_strong(empty,this,std::memory_order_release)) return false;
         void* trampoline=nullptr;
@@ -92,7 +103,12 @@ public:
         // upstream G-buffer/postprocess source has the same dimensions.
         if(!installed_) return;
         const auto expected=expected_.load(),actual=(uint64_t(width)<<32)|height;
-        if(!expected) return; // no proven native sizing request yet
+        if(!expected) {
+            if(reportedActual_.exchange(actual)!=actual && log_)
+                log_("[SourceQuality] outputRT0=%ux%u format=%u nativeRequests=%llu; native sizing not observed, resolution request UNCONFIRMED",
+                    width,height,format,requests.load());
+            return;
+        }
         if(expected==reportedExpected_.load() && actual==reportedActual_.load()) return;
         reportedExpected_=expected;reportedActual_=actual;
         if(log_) log_("[SourceQuality] outputRT0=%ux%u format=%u requested=%ux%u match=%d nativeRequests=%llu; request is NOT resolution proof",

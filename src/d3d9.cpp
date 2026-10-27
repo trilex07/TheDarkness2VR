@@ -6402,6 +6402,11 @@ extern "C" {
 
 IDirect3D9* WINAPI Direct3DCreate9(UINT sdk) {
     if (!p_C9) return nullptr;
+#ifdef D2VR_MATCHED_CAPTURE
+    // Native C27160 calls the factory before A0B540 creates/sizes the window.
+    // CreateDevice is too late to intercept C96440's initial size request.
+    InstallProtectedSourceQuality();
+#endif
     Log("Direct3DCreate9(sdk=%u)", sdk);
     if (p_C9Ex) {
         IDirect3D9Ex* ex = nullptr;
@@ -6418,6 +6423,9 @@ IDirect3D9* WINAPI Direct3DCreate9(UINT sdk) {
 
 HRESULT WINAPI Direct3DCreate9Ex(UINT sdk, IDirect3D9Ex** o) {
     if (!p_C9Ex || !o) return E_INVALIDARG;
+#ifdef D2VR_MATCHED_CAPTURE
+    InstallProtectedSourceQuality();
+#endif
     LogStartupStage(7, "Direct3DCreate9Ex");
     Log("Direct3DCreate9Ex(sdk=%u)", sdk);
     IDirect3D9Ex* ex = nullptr;

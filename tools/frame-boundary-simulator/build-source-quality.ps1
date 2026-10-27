@@ -13,10 +13,12 @@ try {
     $mh=Join-Path $repo 'third_party\minhook\src'
     cmd /c "`"$vcvars`" x86 && cl /nologo /LD /EHsc /W3 /Od /MD /std:c++17 `"$fixture`" /Fe:fixture.dll /link /OPT:NOICF"
     if($LASTEXITCODE -ne 0){throw 'fixture build failed'}
-    cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W3 /O2 /MD /std:c++17 `"$test`" `"$mh\buffer.c`" `"$mh\hook.c`" `"$mh\trampoline.c`" `"$mh\hde\hde32.c`" /Fe:source-quality-test.exe"
+    cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W3 /O2 /MD /std:c++17 `"$test`" `"$mh\buffer.c`" `"$mh\hook.c`" `"$mh\trampoline.c`" `"$mh\hde\hde32.c`" /Fe:source-quality-test.exe /link user32.lib"
     if($LASTEXITCODE -ne 0){throw 'test build failed'}
     & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll')
     if($LASTEXITCODE -ne 0){throw 'source quality tests failed'}
     & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll') exact
     if($LASTEXITCODE -ne 0){throw 'exact native source tests failed'}
+    & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll') exact deferred
+    if($LASTEXITCODE -ne 0){throw 'pre-window source sizing lifecycle tests failed'}
 } finally {Pop-Location}
