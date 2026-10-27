@@ -430,3 +430,30 @@ three pending objects remain and later requests use them without original API
 creation. Existing consumed-repeat, exact bytes/device/stage,16-thread ownership,
 guard behavior, failed/successful Reset and persistence tests PASS. Production
 and diagnostic DLL builds PASS. Gameplay/FPS saving remains NOT VERIFIED.
+
+## 2026-10-27 - Retained hitch: shader and native query critical waits
+
+Bounded CSwitch/ReadyThread export of the same zero-loss ETL, no new capture:
+mainTID20940 in16185351..16270807us has24365us scheduled and61091us off CPU,
+partitioning85456us. Scheduled residency includes any DPC/ISR overhead; it is
+not pure exclusive execution. PresentMon CPUBusy84.9786ms was not scheduler RUN.
+Matched switch pairs and resumed thread waiting stacks identify16 wait intervals
+/32660us in CreatePixelShader,5 intervals/24451us in CreateQuery,3980us other.
+Intervals are NOT API invocation counts. Largest query wait10186us and shader
+wait7606us have only10us/9us ready delay. This identifies a particular transition
+hitch, not steady outdoor90Hz. Observer overhead is not subtracted.
+
+Installed-image Ghidra SHA verified:9FBDD0 loads device from argument, passes
+current object's field+4 as output, pushes type9, calls vtable+1D8 (slot118),
+returns at9FBDE5. SDK type9 is OCCLUSION. This newly established high-impact native
+producer is outside the closed resource cycle. No query correction installed yet.
+
+Next implementation boundary: bounded precreated unused occlusion-query inventory,
+one transfer per object to the exact caller/device/type. Preserve Issue/GetData,
+null-output support probes, native errors and exhausted-inventory fallback.
+Queries are lost on device loss, so unused inventory must be released before
+Reset/ResetEx and recreated only after success, unlike shader retention.
+Reference: https://learn.microsoft.com/en-us/windows/win32/direct3d9/asynchronous-notification
+Actual D3D9 ownership, Issue/GetData and Reset regression is required before use.
+Private evidence in existing capture analysis-derived: hitch-85ms-scheduler.json,
+hitch-85ms-scheduler-raw.txt and hitch-query-site-asm.txt. Native EXE unchanged.
