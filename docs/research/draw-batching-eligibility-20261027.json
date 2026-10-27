@@ -1,0 +1,6325 @@
+{
+  "records": 4744,
+  "op_counts": {
+    "1": 25,
+    "2": 22,
+    "3": 1,
+    "4": 1,
+    "5": 9,
+    "7": 122,
+    "8": 470,
+    "9": 394,
+    "11": 450,
+    "12": 46,
+    "13": 14,
+    "14": 215,
+    "15": 16,
+    "17": 38,
+    "19": 95,
+    "20": 866,
+    "23": 822,
+    "24": 12,
+    "25": 178,
+    "26": 141,
+    "27": 806,
+    "30": 1
+  },
+  "draw_count": 245,
+  "adjacent_pair_partition": {
+    "other_or_changed_visible_state": 148,
+    "ordering_or_resource_barrier": 23,
+    "different_visible_geometry_same_visible_material_only": 55,
+    "same_visible_geometry_signature_only": 17,
+    "user_pointer_geometry_unknown": 1
+  },
+  "repeated_inline_setter_attempts": {
+    "8": 87,
+    "23": 577,
+    "17": 12,
+    "11": 88,
+    "25": 32,
+    "9": 3
+  },
+  "stream_frequency_records": [
+    {
+      "record": 210,
+      "stream": 0,
+      "setting": 1073741832
+    },
+    {
+      "record": 212,
+      "stream": 1,
+      "setting": 2147483649
+    },
+    {
+      "record": 250,
+      "stream": 0,
+      "setting": 1
+    },
+    {
+      "record": 251,
+      "stream": 1,
+      "setting": 1
+    },
+    {
+      "record": 270,
+      "stream": 0,
+      "setting": 1073741832
+    },
+    {
+      "record": 272,
+      "stream": 1,
+      "setting": 2147483649
+    },
+    {
+      "record": 291,
+      "stream": 0,
+      "setting": 1
+    },
+    {
+      "record": 292,
+      "stream": 1,
+      "setting": 1
+    },
+    {
+      "record": 3398,
+      "stream": 0,
+      "setting": 1073741842
+    },
+    {
+      "record": 3400,
+      "stream": 1,
+      "setting": 2147483649
+    },
+    {
+      "record": 3435,
+      "stream": 0,
+      "setting": 1
+    },
+    {
+      "record": 3436,
+      "stream": 1,
+      "setting": 1
+    }
+  ],
+  "draws": [
+    {
+      "record": 29,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2051,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": false,
+      "opaque_epoch": 11,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508233728,
+      "ps_pointer": 0,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 37,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        809,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": false,
+      "opaque_epoch": 14,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508229856,
+      "ps_pointer": 0,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 46,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        461,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": false,
+      "opaque_epoch": 18,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508231136,
+      "ps_pointer": 0,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 65,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1184,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": false,
+      "opaque_epoch": 23,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762975104,
+      "ps_pointer": 0,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 89,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        6740,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": false,
+      "opaque_epoch": 31,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508231136,
+      "ps_pointer": 0,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 95,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        6740,
+        10014
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": false,
+      "opaque_epoch": 35,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508231136,
+      "ps_pointer": 0,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 129,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        180,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 50,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508230496,
+      "ps_pointer": 408830144,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 136,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        180,
+        150
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 55,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508230496,
+      "ps_pointer": 408830144,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 143,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        180,
+        300
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 60,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508230496,
+      "ps_pointer": 408830144,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 150,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        180,
+        450
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 65,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508230496,
+      "ps_pointer": 408830144,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 157,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        180,
+        600
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 70,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508230496,
+      "ps_pointer": 408830144,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 191,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        351,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 87,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508235680,
+      "ps_pointer": 408830144,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 249,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 102,
+      "already_instanced": true,
+      "instance_count": 8,
+      "vs_pointer": 762978336,
+      "ps_pointer": 676135424,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 290,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 117,
+      "already_instanced": true,
+      "instance_count": 8,
+      "vs_pointer": 762978336,
+      "ps_pointer": 676135424,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 332,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        7573,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 133,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508231808,
+      "ps_pointer": 787870112,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 371,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        7507,
+        336
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 150,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508233088,
+      "ps_pointer": 787870432,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 396,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4563,
+        15774
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 165,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681750144,
+      "ps_pointer": 787871232,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 408,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        3622,
+        19758
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 171,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 508231808,
+      "ps_pointer": 787870112,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 432,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        3550,
+        20106
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 186,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681750144,
+      "ps_pointer": 787871232,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 454,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        884,
+        32124
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 201,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681750144,
+      "ps_pointer": 787871232,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 472,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        442,
+        34164
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 216,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681750144,
+      "ps_pointer": 787871232,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 493,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2860,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 227,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681755968,
+      "ps_pointer": 787870592,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 513,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2860,
+        11106
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 241,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681750144,
+      "ps_pointer": 787870912,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 564,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        470,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 252,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681760512,
+      "ps_pointer": 787871072,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 590,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 260,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869792,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 610,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        260,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 269,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870752,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 626,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 277,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869792,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 645,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        470,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 285,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 662,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        925,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 294,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 676,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        84,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 303,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870752,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 691,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 312,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868992,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 714,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        873,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 322,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752096,
+      "ps_pointer": 787869152,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 728,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        873,
+        66
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 331,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 745,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        873,
+        138
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 340,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869472,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 764,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        104,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 349,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 784,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        439,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 358,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869632,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 799,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 366,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869952,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 816,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        788,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 375,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 833,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        764,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 384,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 787866752,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 850,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 393,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 870,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        182,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 403,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864992,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 895,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        151,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 413,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681756608,
+      "ps_pointer": 787863872,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 913,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        73,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 422,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 926,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        73,
+        33
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 431,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 940,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        73,
+        111
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 440,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864832,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 956,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 449,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 972,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        702,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 458,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 986,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        256,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 466,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787865632,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1001,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        160,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 474,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787865792,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1016,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        8,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 482,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869952,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1031,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 491,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1055,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        439,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 500,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 787865952,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1074,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        256,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 508,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787865632,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1089,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        472,
+        3198
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 517,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1101,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        402,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 526,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1117,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        787,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 535,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1134,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        764,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 544,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 787866752,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1151,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        402,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 553,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1171,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        182,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 563,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864992,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1190,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        210,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 573,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681756608,
+      "ps_pointer": 787863872,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1206,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        472,
+        3198
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 582,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1218,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 591,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1236,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        702,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 600,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1250,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        256,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 608,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787865632,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1266,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1101,
+        18
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 616,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1283,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1101,
+        54
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 626,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681756608,
+      "ps_pointer": 787865152,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1301,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        38,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 635,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1314,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        38,
+        6
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 644,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1328,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        38,
+        66
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 653,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864832,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1344,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1840,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 661,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1359,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1840,
+        30
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 670,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868032,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1379,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1840,
+        2745
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 681,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752096,
+      "ps_pointer": 787866912,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1400,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        256,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 689,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787865632,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1413,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        54,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 697,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869952,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1429,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        472,
+        3198
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 706,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1445,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        787,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 715,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1462,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        764,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 724,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 787866752,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1484,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        439,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 733,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 787865952,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1508,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        182,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 743,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864992,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1528,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        151,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 753,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681756608,
+      "ps_pointer": 787863872,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1545,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 762,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863712,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1565,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        104,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 771,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1582,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        925,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 780,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1595,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 788,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869952,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1614,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        377,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 797,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1629,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        740,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 806,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868992,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1648,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        943,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 814,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787865312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1658,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        943,
+        1836
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 822,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787865312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1677,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        464,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 831,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787869312,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1698,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        6740,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 843,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681759200,
+      "ps_pointer": 787867872,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1717,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        6740,
+        10014
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 852,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681764384,
+      "ps_pointer": 787867072,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1737,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1175,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 861,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864832,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1752,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1175,
+        2601
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 871,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863392,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1772,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        7804,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 881,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864032,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1787,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        7804,
+        5799
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 891,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864192,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1809,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        378,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 901,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 787864352,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1827,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        106,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 910,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1843,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        511,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 919,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864832,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1858,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        106,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 928,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1874,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        402,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 937,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 787866112,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1890,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        511,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 946,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864832,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1907,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        505,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 956,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 787866272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1930,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2767,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 966,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681761792,
+      "ps_pointer": 787867232,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1947,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2767,
+        231
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 975,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864832,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1962,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2767,
+        4533
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 985,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752736,
+      "ps_pointer": 787866432,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 1979,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2767,
+        5343
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 995,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681761792,
+      "ps_pointer": 787868192,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2001,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        511,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1005,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787866592,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2023,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        694,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1014,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868352,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2042,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        694,
+        1344
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1022,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2060,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        694,
+        1452
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1033,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681753376,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2083,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        694,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1042,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868352,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2102,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        694,
+        1344
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1050,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2120,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        694,
+        1452
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1061,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681753376,
+      "ps_pointer": 787870272,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2137,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2092,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1069,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2159,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2092,
+        63
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1080,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681756608,
+      "ps_pointer": 787867392,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2183,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        591,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1090,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787867552,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2203,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        591,
+        1110
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1099,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787863552,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2222,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        591,
+        1200
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1111,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681753376,
+      "ps_pointer": 787864512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2239,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2466,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1119,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2251,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2466,
+        72
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1128,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864672,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2269,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2466,
+        3858
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1139,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752096,
+      "ps_pointer": 787866912,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2282,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2466,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1147,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787868512,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2294,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2466,
+        72
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1156,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681751424,
+      "ps_pointer": 787864672,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2310,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2466,
+        3858
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1167,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752096,
+      "ps_pointer": 787866912,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2325,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        44,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1176,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 676140704,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2338,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        44,
+        18
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1185,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681757920,
+      "ps_pointer": 676140864,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2352,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        44,
+        24
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1193,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681762464,
+      "ps_pointer": 676141504,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2367,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1200,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2369,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1201,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2371,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1202,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2375,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1203,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2379,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1204,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2381,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1205,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2383,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1206,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2385,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1207,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2387,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1208,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2389,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1209,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2391,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1210,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2393,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1211,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2395,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1212,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2397,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1213,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2399,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1214,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2401,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1215,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2403,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1216,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2405,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1217,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982880,
+      "ps_pointer": 676141344,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2446,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1230,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762989376,
+      "ps_pointer": 676141664,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2464,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1239,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762989376,
+      "ps_pointer": 676141664,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2492,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        73,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1248,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2499,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        84,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1252,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2506,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        260,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1256,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2513,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        470,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1260,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2520,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1264,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2527,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        925,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1268,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2534,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        873,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1272,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2539,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        873,
+        66
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1276,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2544,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        873,
+        138
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1280,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2551,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        470,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1284,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2563,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        7507,
+        336
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1290,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762977056,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2570,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4563,
+        15774
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1295,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762977056,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2577,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        3550,
+        20106
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1300,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762977056,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2584,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        884,
+        32124
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1305,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762977056,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2587,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        442,
+        34164
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1306,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762977056,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2595,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2860,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1311,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762977056,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2601,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2860,
+        11106
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1316,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762977056,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2611,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        38,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1321,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2618,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        439,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1325,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2626,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1329,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2634,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1333,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2641,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        151,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1337,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2648,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        182,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1341,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2655,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        788,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1345,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2662,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        764,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1349,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2669,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        104,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1353,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2676,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        160,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1357,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2684,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1361,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2689,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1365,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2697,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        256,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1369,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2704,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        702,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1373,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2711,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        256,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1377,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2719,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        402,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1381,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2727,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        787,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1385,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2735,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        472,
+        3198
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1389,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2742,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        402,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1393,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2750,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        8,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1397,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2757,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        182,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1401,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2764,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        210,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1405,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2772,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        472,
+        3198
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1409,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2779,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        664,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1413,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2787,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        256,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1417,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2794,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        764,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1421,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2801,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        54,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1425,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2808,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        256,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1429,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2815,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        702,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1433,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2822,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        439,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1437,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2829,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        44,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1441,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2836,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1101,
+        18
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1445,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2841,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1101,
+        54
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1449,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2848,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1840,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1453,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762986784,
+      "ps_pointer": 676138944,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2909,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        83744,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1465,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762974464,
+      "ps_pointer": 676140544,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2972,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2092,
+        33
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1480,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752096,
+      "ps_pointer": 676139104,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 2989,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        6740,
+        18933
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1491,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681759200,
+      "ps_pointer": 676139264,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3007,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        24,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1501,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752096,
+      "ps_pointer": 676139104,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3027,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        982,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1506,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762975744,
+      "ps_pointer": 787870112,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3054,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        1101,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1516,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752096,
+      "ps_pointer": 676139104,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3067,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        873,
+        18
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1526,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 681752096,
+      "ps_pointer": 676139104,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3087,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        93,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1531,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762975744,
+      "ps_pointer": 787870112,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3124,
+      "op": 13,
+      "visible_args": [
+        4,
+        7620,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1536,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3162,
+      "op": 15,
+      "visible_args": [
+        5,
+        2,
+        32,
+        87272,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1543,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 698302176,
+      "ps_pointer": 676137184,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3222,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        87632,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1554,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 698311904,
+      "ps_pointer": 676134624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3295,
+      "op": 13,
+      "visible_args": [
+        4,
+        7626,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1564,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3347,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        88136,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1572,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 698299584,
+      "ps_pointer": 676137024,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3434,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1590,
+      "already_instanced": true,
+      "instance_count": 18,
+      "vs_pointer": 698309312,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3486,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        88784,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1598,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 698300864,
+      "ps_pointer": 676136864,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3549,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        7573,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1615,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3558,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        7507,
+        336
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1621,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3568,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        4563,
+        15774
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1627,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3578,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        3622,
+        19758
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1633,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3588,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        3550,
+        20106
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1639,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3598,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        884,
+        32124
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1645,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3607,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        442,
+        34164
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1651,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3617,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2860,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1657,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3625,
+      "op": 14,
+      "visible_args": [
+        4,
+        0,
+        0,
+        2860,
+        11106
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1663,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762987424,
+      "ps_pointer": 676139584,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3676,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        97520,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1672,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409883456,
+      "ps_pointer": 408828704,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3729,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        97880,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1685,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409892512,
+      "ps_pointer": 408829664,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3762,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        98064,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1690,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409893184,
+      "ps_pointer": 408829824,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3794,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        98248,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1695,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409893184,
+      "ps_pointer": 408829824,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3830,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        98496,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1704,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409893824,
+      "ps_pointer": 408826304,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3862,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        99144,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1708,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409894464,
+      "ps_pointer": 408829024,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3893,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        99808,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1713,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409884736,
+      "ps_pointer": 408827904,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3927,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        99992,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1718,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982240,
+      "ps_pointer": 676140224,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 3959,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        100176,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1723,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 762982240,
+      "ps_pointer": 676140224,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4106,
+      "op": 15,
+      "visible_args": [
+        5,
+        2,
+        32,
+        101144,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1771,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409895104,
+      "ps_pointer": 676140384,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4151,
+      "op": 15,
+      "visible_args": [
+        4,
+        1,
+        32,
+        101360,
+        0
+      ],
+      "geometry_binding_known": false,
+      "shaders_known": true,
+      "opaque_epoch": 1776,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409896416,
+      "ps_pointer": 408826784,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4270,
+      "op": 13,
+      "visible_args": [
+        4,
+        7632,
+        36,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1794,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4310,
+      "op": 13,
+      "visible_args": [
+        5,
+        7740,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1798,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4354,
+      "op": 13,
+      "visible_args": [
+        5,
+        7744,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1802,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4396,
+      "op": 13,
+      "visible_args": [
+        5,
+        7748,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1806,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4437,
+      "op": 13,
+      "visible_args": [
+        4,
+        7752,
+        36,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1810,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4477,
+      "op": 13,
+      "visible_args": [
+        5,
+        7860,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1814,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4521,
+      "op": 13,
+      "visible_args": [
+        5,
+        7864,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1818,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4563,
+      "op": 13,
+      "visible_args": [
+        5,
+        7868,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1822,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4604,
+      "op": 13,
+      "visible_args": [
+        4,
+        7872,
+        36,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1826,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4644,
+      "op": 13,
+      "visible_args": [
+        5,
+        7980,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1830,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4688,
+      "op": 13,
+      "visible_args": [
+        5,
+        7984,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1834,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    },
+    {
+      "record": 4730,
+      "op": 13,
+      "visible_args": [
+        5,
+        7988,
+        2,
+        0,
+        0
+      ],
+      "geometry_binding_known": true,
+      "shaders_known": true,
+      "opaque_epoch": 1838,
+      "already_instanced": false,
+      "instance_count": null,
+      "vs_pointer": 409888640,
+      "ps_pointer": 408826624,
+      "admission": "BLOCKED_INCOMPLETE_CAPTURE"
+    }
+  ],
+  "pairs": [
+    {
+      "previous": 29,
+      "next": 37,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 37,
+      "next": 46,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 46,
+      "next": 65,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 65,
+      "next": 89,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 89,
+      "next": 95,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 95,
+      "next": 129,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 129,
+      "next": 136,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 136,
+      "next": 143,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 143,
+      "next": 150,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 150,
+      "next": 157,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 157,
+      "next": 191,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 191,
+      "next": 249,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 249,
+      "next": 290,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 290,
+      "next": 332,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 332,
+      "next": 371,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 371,
+      "next": 396,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 396,
+      "next": 408,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 408,
+      "next": 432,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 432,
+      "next": 454,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 454,
+      "next": 472,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 472,
+      "next": 493,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 493,
+      "next": 513,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 513,
+      "next": 564,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 564,
+      "next": 590,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 590,
+      "next": 610,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 610,
+      "next": 626,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 626,
+      "next": 645,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 645,
+      "next": 662,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 662,
+      "next": 676,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 676,
+      "next": 691,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 691,
+      "next": 714,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 714,
+      "next": 728,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 728,
+      "next": 745,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 745,
+      "next": 764,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 764,
+      "next": 784,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 784,
+      "next": 799,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 799,
+      "next": 816,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 816,
+      "next": 833,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 833,
+      "next": 850,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 850,
+      "next": 870,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 870,
+      "next": 895,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 895,
+      "next": 913,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 913,
+      "next": 926,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 926,
+      "next": 940,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 940,
+      "next": 956,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 956,
+      "next": 972,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 972,
+      "next": 986,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 986,
+      "next": 1001,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1001,
+      "next": 1016,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1016,
+      "next": 1031,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1031,
+      "next": 1055,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1055,
+      "next": 1074,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1074,
+      "next": 1089,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1089,
+      "next": 1101,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1101,
+      "next": 1117,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1117,
+      "next": 1134,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1134,
+      "next": 1151,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1151,
+      "next": 1171,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1171,
+      "next": 1190,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1190,
+      "next": 1206,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1206,
+      "next": 1218,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1218,
+      "next": 1236,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1236,
+      "next": 1250,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1250,
+      "next": 1266,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1266,
+      "next": 1283,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1283,
+      "next": 1301,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1301,
+      "next": 1314,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1314,
+      "next": 1328,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1328,
+      "next": 1344,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1344,
+      "next": 1359,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1359,
+      "next": 1379,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1379,
+      "next": 1400,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1400,
+      "next": 1413,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1413,
+      "next": 1429,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1429,
+      "next": 1445,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1445,
+      "next": 1462,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1462,
+      "next": 1484,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1484,
+      "next": 1508,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1508,
+      "next": 1528,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1528,
+      "next": 1545,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1545,
+      "next": 1565,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1565,
+      "next": 1582,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1582,
+      "next": 1595,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1595,
+      "next": 1614,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1614,
+      "next": 1629,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1629,
+      "next": 1648,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1648,
+      "next": 1658,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1658,
+      "next": 1677,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1677,
+      "next": 1698,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1698,
+      "next": 1717,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1717,
+      "next": 1737,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1737,
+      "next": 1752,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1752,
+      "next": 1772,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1772,
+      "next": 1787,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1787,
+      "next": 1809,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1809,
+      "next": 1827,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1827,
+      "next": 1843,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1843,
+      "next": 1858,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1858,
+      "next": 1874,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1874,
+      "next": 1890,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1890,
+      "next": 1907,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1907,
+      "next": 1930,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1930,
+      "next": 1947,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1947,
+      "next": 1962,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1962,
+      "next": 1979,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 1979,
+      "next": 2001,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2001,
+      "next": 2023,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2023,
+      "next": 2042,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2042,
+      "next": 2060,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2060,
+      "next": 2083,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2083,
+      "next": 2102,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2102,
+      "next": 2120,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2120,
+      "next": 2137,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2137,
+      "next": 2159,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2159,
+      "next": 2183,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2183,
+      "next": 2203,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2203,
+      "next": 2222,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2222,
+      "next": 2239,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2239,
+      "next": 2251,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2251,
+      "next": 2269,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2269,
+      "next": 2282,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2282,
+      "next": 2294,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2294,
+      "next": 2310,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2310,
+      "next": 2325,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2325,
+      "next": 2338,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2338,
+      "next": 2352,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2352,
+      "next": 2367,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2367,
+      "next": 2369,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2369,
+      "next": 2371,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2371,
+      "next": 2375,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2375,
+      "next": 2379,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2379,
+      "next": 2381,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2381,
+      "next": 2383,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2383,
+      "next": 2385,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2385,
+      "next": 2387,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2387,
+      "next": 2389,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2389,
+      "next": 2391,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2391,
+      "next": 2393,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2393,
+      "next": 2395,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2395,
+      "next": 2397,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2397,
+      "next": 2399,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2399,
+      "next": 2401,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2401,
+      "next": 2403,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2403,
+      "next": 2405,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2405,
+      "next": 2446,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2446,
+      "next": 2464,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2464,
+      "next": 2492,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2492,
+      "next": 2499,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2499,
+      "next": 2506,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2506,
+      "next": 2513,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2513,
+      "next": 2520,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2520,
+      "next": 2527,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2527,
+      "next": 2534,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2534,
+      "next": 2539,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2539,
+      "next": 2544,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2544,
+      "next": 2551,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2551,
+      "next": 2563,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2563,
+      "next": 2570,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2570,
+      "next": 2577,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2577,
+      "next": 2584,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2584,
+      "next": 2587,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2587,
+      "next": 2595,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2595,
+      "next": 2601,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2601,
+      "next": 2611,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2611,
+      "next": 2618,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2618,
+      "next": 2626,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2626,
+      "next": 2634,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2634,
+      "next": 2641,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2641,
+      "next": 2648,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2648,
+      "next": 2655,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2655,
+      "next": 2662,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2662,
+      "next": 2669,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2669,
+      "next": 2676,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2676,
+      "next": 2684,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2684,
+      "next": 2689,
+      "category": "same_visible_geometry_signature_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2689,
+      "next": 2697,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2697,
+      "next": 2704,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2704,
+      "next": 2711,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2711,
+      "next": 2719,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2719,
+      "next": 2727,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2727,
+      "next": 2735,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2735,
+      "next": 2742,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2742,
+      "next": 2750,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2750,
+      "next": 2757,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2757,
+      "next": 2764,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2764,
+      "next": 2772,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2772,
+      "next": 2779,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2779,
+      "next": 2787,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2787,
+      "next": 2794,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2794,
+      "next": 2801,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2801,
+      "next": 2808,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2808,
+      "next": 2815,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2815,
+      "next": 2822,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2822,
+      "next": 2829,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2829,
+      "next": 2836,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2836,
+      "next": 2841,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2841,
+      "next": 2848,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2848,
+      "next": 2909,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2909,
+      "next": 2972,
+      "category": "user_pointer_geometry_unknown",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2972,
+      "next": 2989,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 2989,
+      "next": 3007,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3007,
+      "next": 3027,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3027,
+      "next": 3054,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3054,
+      "next": 3067,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3067,
+      "next": 3087,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3087,
+      "next": 3124,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3124,
+      "next": 3162,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3162,
+      "next": 3222,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3222,
+      "next": 3295,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3295,
+      "next": 3347,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3347,
+      "next": 3434,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3434,
+      "next": 3486,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3486,
+      "next": 3549,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3549,
+      "next": 3558,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3558,
+      "next": 3568,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3568,
+      "next": 3578,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3578,
+      "next": 3588,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3588,
+      "next": 3598,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3598,
+      "next": 3607,
+      "category": "different_visible_geometry_same_visible_material_only",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3607,
+      "next": 3617,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3617,
+      "next": 3625,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3625,
+      "next": 3676,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3676,
+      "next": 3729,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3729,
+      "next": 3762,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3762,
+      "next": 3794,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3794,
+      "next": 3830,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3830,
+      "next": 3862,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3862,
+      "next": 3893,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3893,
+      "next": 3927,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3927,
+      "next": 3959,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 3959,
+      "next": 4106,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4106,
+      "next": 4151,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4151,
+      "next": 4270,
+      "category": "ordering_or_resource_barrier",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4270,
+      "next": 4310,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4310,
+      "next": 4354,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4354,
+      "next": 4396,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4396,
+      "next": 4437,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4437,
+      "next": 4477,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4477,
+      "next": 4521,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4521,
+      "next": 4563,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4563,
+      "next": 4604,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4604,
+      "next": 4644,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4644,
+      "next": 4688,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    },
+    {
+      "previous": 4688,
+      "next": 4730,
+      "category": "other_or_changed_visible_state",
+      "opaque_state_changed": true
+    }
+  ],
+  "proven_safe_merge_draws": 0,
+  "true_eligible_draw_count": "UNKNOWN",
+  "limitations": [
+    "Missing DIP a[5] primitive count and Rec.n",
+    "Missing bit-exact arena and large constant payloads",
+    "Missing initial stateblock, declaration and resource contents",
+    "Missing query/mutation history and setter HRESULTs",
+    "Known bindings describe recorded attempts only",
+    "No static-object, transform, skinning or lifetime proof"
+  ],
+  "source": {
+    "path": "C:\\Users\\Trilex\\Darkness2VR\\test-output\\run_43052_frame_003_trace.txt",
+    "sha256": "443e849527668e8454cf4e2fba46d612bcc8397c313646c93380cda982934f66",
+    "bytes": 320649
+  },
+  "inspection": {
+    "base_sha": "63b04ea902f9ee9ea815289457f43f29235ace63",
+    "date": "2026-10-27",
+    "candidate_runs": [
+      {
+        "draw_records": [
+          2367,
+          2369,
+          2371
+        ],
+        "intervening_ops": [
+          20
+        ],
+        "vs_hash": "B7EDA4FD"
+      },
+      {
+        "draw_records": [
+          2379,
+          2381,
+          2383,
+          2385,
+          2387,
+          2389,
+          2391,
+          2393,
+          2395,
+          2397,
+          2399,
+          2401,
+          2403,
+          2405
+        ],
+        "intervening_ops": [
+          20
+        ],
+        "vs_hash": "B7EDA4FD"
+      }
+    ],
+    "potential_removed_calls_if_all_missing_contracts_pass": 15,
+    "not_a_performance_prediction": true,
+    "existing_instance_draws": [
+      {
+        "record": 249,
+        "instances": 8,
+        "vs_hash": "9E39DAF1"
+      },
+      {
+        "record": 290,
+        "instances": 8,
+        "vs_hash": "9E39DAF1"
+      },
+      {
+        "record": 3434,
+        "instances": 18,
+        "vs_hash": "76CBA109"
+      }
+    ],
+    "artifact_hashes": [
+      {
+        "path": "C:\\Users\\Trilex\\Darkness2VR\\test-output\\shaders\\DepthPrePass_02_vs.bin",
+        "sha256": "226569512ea21719defce9515a6f91d750a81be885b1503a492a21d75f08a095",
+        "bytes": 252,
+        "fnv1a32": "B7EDA4FD"
+      },
+      {
+        "path": "C:\\Users\\Trilex\\Darkness2VR\\test-output\\shaders\\DepthPrePass_02_vs.asm",
+        "sha256": "17baf6632fc1ce7f3d696ae5d7ea422143a88f12655b9726d98214f37d095013",
+        "bytes": 453
+      },
+      {
+        "path": "C:\\Users\\Trilex\\Darkness2VR\\test-output\\shaders\\DeferredAOLight_02_vs.bin",
+        "sha256": "a06aeae7532392fbfa03dc7a83325b6417dff0f01b3d8ef7a50f67866eb11652",
+        "bytes": 380,
+        "fnv1a32": "68EEE79C"
+      },
+      {
+        "path": "C:\\Users\\Trilex\\Darkness2VR\\test-output\\shader_index.json",
+        "sha256": "5f0d9645a26119fa74939ddd103474f52345912f78014d3cf2f3760722dfb8d4",
+        "bytes": 127915
+      }
+    ]
+  }
+}
