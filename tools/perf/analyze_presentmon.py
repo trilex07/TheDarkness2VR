@@ -16,6 +16,24 @@ from pathlib import Path
 FIELDS = ("FrameTime", "CPUBusy", "CPUWait", "GPUBusy", "GPUWait", "GPUTime", "GPULatency")
 
 
+def normalize_row(row: dict[str, str]) -> dict[str, str]:
+    """Normalize the legacy column names emitted by PresentMon 2.6.
+
+    CPUStartQPCTimeInMs is explicitly QPC milliseconds. Do not reinterpret
+    CPUStartQPC (ticks) or TimeInSeconds (relative Present timestamp).
+    MsBetweenPresents is NOT the CPU frame interval; MsBetweenAppStart is.
+    See PresentMon/CsvOutput.cpp, WriteCsvHeader and WriteCsvRow.
+    """
+    result = dict(row)
+    aliases = {"CPUStartQPCTime": "CPUStartQPCTimeInMs",
+               "FrameTime": "MsBetweenAppStart"}
+    aliases.update({key: "Ms" + key for key in FIELDS if key != "FrameTime"})
+    for canonical, legacy in aliases.items():
+        if canonical not in result and legacy in result:
+            result[canonical] = result[legacy]
+    return result
+
+
 def percentile(values: list[float], percent: float) -> float:
     ordered = sorted(values)
     if not ordered:
@@ -62,7 +80,7 @@ def summarize(rows: list[dict[str, str]]) -> dict:
 def analyze(directory: Path) -> dict:
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8-sig"))
     with (directory / "presentmon.csv").open(newline="", encoding="utf-8-sig") as source:
-        rows = list(csv.DictReader(source))
+        rows = [normalize_row(row) for row in csv.DictReader(source)]
     game_pid = str(manifest["processIds"]["game"])
     rows = [row for row in rows if row.get("ProcessID") == game_pid]
     frequency = manifest["qpcFrequency"]

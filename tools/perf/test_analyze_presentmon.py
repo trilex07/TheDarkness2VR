@@ -4,10 +4,28 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from analyze_presentmon import analyze, percentile
+from analyze_presentmon import analyze, percentile, normalize_row
 
 
 class PresentMonAnalysisTest(unittest.TestCase):
+    def test_legacy_names_keep_cpu_and_present_intervals_distinct(self):
+        row = normalize_row({"CPUStartQPCTimeInMs": "91072068.9035",
+                             "MsBetweenAppStart": "12", "MsBetweenPresents": "99",
+                             "MsCPUBusy": "10", "MsCPUWait": "2", "MsGPUBusy": "3"})
+        self.assertEqual(row["FrameTime"], "12")
+        self.assertEqual(row["CPUStartQPCTime"], "91072068.9035")
+        self.assertEqual(row["CPUBusy"], "10")
+        self.assertEqual(row["GPUBusy"], "3")
+        self.assertEqual(row["MsBetweenPresents"], "99")
+
+    def test_legacy_normalization_does_not_guess_units_or_replace_v2(self):
+        row = normalize_row({"CPUStartQPC": "1234", "TimeInSeconds": "1.2",
+                             "MsBetweenPresents": "99"})
+        self.assertNotIn("CPUStartQPCTime", row)
+        self.assertNotIn("FrameTime", row)
+        row = normalize_row({"FrameTime": "NA", "MsBetweenAppStart": "12"})
+        self.assertEqual(row["FrameTime"], "NA")
+
     def test_interpolated_percentile(self):
         self.assertEqual(percentile([10, 40, 20, 30], 50), 25)
         self.assertAlmostEqual(percentile([10, 20, 30, 40], 95), 38.5)
