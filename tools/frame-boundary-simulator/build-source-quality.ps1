@@ -17,4 +17,6 @@ try {
     if($LASTEXITCODE -ne 0){throw 'test build failed'}
     & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll')
     if($LASTEXITCODE -ne 0){throw 'source quality tests failed'}
+    & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll') exact
+    if($LASTEXITCODE -ne 0){throw 'exact native source tests failed'}
 } finally {Pop-Location}

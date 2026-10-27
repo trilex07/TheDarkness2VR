@@ -20,6 +20,7 @@ static void InstallProtectedSourceQuality() {
         Log("[SourceQuality] refused: original SHA/PE/native sizing call/import mismatch; baseline retained");return;
     }
     const bool ready=g_protectedSourceSize.Start(target,g_nativeImageGuard,g_sourceQualityMode,
-        g_renderSizeHwnd,reinterpret_cast<uintptr_t>(image)+0x896474,Log);
+        g_renderSizeHwnd,reinterpret_cast<uintptr_t>(image)+0x896474,Log,
+        {unsigned(g_renderW),unsigned(g_renderH)});
     Log("[SourceQuality] installed=%d mode=%u; engine owns dependent RT/depth/viewport creation; no resource substitution",ready,unsigned(g_sourceQualityMode));
 }

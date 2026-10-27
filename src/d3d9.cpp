@@ -734,11 +734,15 @@ void LoadConfig() {
 #ifdef D2VR_MATCHED_CAPTURE
     const unsigned sourceQualityRequested=GetPrivateProfileIntA("Render","SourceQuality",0,chosenIni);
     g_sourceQualityMode=d2vr_source_quality::Parse(sourceQualityRequested);
-    if(sourceQualityRequested>3) Log("[SourceQuality] invalid mode=%u; OFF retained",sourceQualityRequested);
+    if(sourceQualityRequested>4) Log("[SourceQuality] invalid mode=%u; OFF retained",sourceQualityRequested);
 #endif
     g_stateBlockHookEnabled = GetPrivateProfileIntA("Render", "StateBlockHook", 0, chosenIni) != 0;
     if (g_renderW < 1280 || g_renderW > 7680) g_renderW = 2560;
     if (g_renderH < 720 || g_renderH > 4320) g_renderH = 1440;
+#ifdef D2VR_MATCHED_CAPTURE
+    if(g_sourceQualityMode==d2vr_source_quality::Mode::Exact)
+        Log("[NativeSourceTarget] requested=%dx%d per eye; engine sizing mode=Exact; actual geometry/depth/output verification required",g_renderW,g_renderH);
+#endif
 
     char buf[64]{};
     if (GetPrivateProfileStringA("Render", "ViewOffsetX", "0.0", buf, sizeof(buf), chosenIni)) {

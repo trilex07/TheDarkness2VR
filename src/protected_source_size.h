@@ -17,6 +17,7 @@ class ClientSize {
     std::atomic<HWND> hwnd_{nullptr};
     std::atomic<uint64_t> expected_{0},reportedExpected_{0},reportedActual_{0};
     Mode mode_=Mode::Off;
+    Size exact_{};
     uintptr_t caller_=0;
     Logger log_=nullptr;
     bool installed_=false;
@@ -31,7 +32,7 @@ class ClientSize {
         if(Eligible(ok!=FALSE,rect!=nullptr,reinterpret_cast<uintptr_t>(hwnd),
                     reinterpret_cast<uintptr_t>(hwnd_.load()),caller,caller_)) {
             if(rect->left==0 && rect->top==0 && rect->right>0 && rect->bottom>0) {
-                const auto size=Choose(mode_,unsigned(rect->right),unsigned(rect->bottom));
+                const auto size=Choose(mode_,unsigned(rect->right),unsigned(rect->bottom),exact_);
                 if(size.width) {
                     rect->right=LONG(size.width);rect->bottom=LONG(size.height);
                     expected_.store((uint64_t(size.width)<<32)|size.height);
@@ -60,15 +61,16 @@ class ClientSize {
     }
 public:
     std::atomic<uint64_t> requests{0};
-    bool Start(void* target,d2vr_native_image::Guard guard,Mode mode,HWND hwnd,uintptr_t caller,Logger log=nullptr) {
+    bool Start(void* target,d2vr_native_image::Guard guard,Mode mode,HWND hwnd,uintptr_t caller,Logger log=nullptr,Size exact={}) {
         if(installed_) return true;
-        if(instance_.load(std::memory_order_acquire) || !hwnd || !caller || mode==Mode::Off || unsigned(mode)>3 || !External(target,guard)) return false;
+        if(instance_.load(std::memory_order_acquire) || !hwnd || !caller || mode==Mode::Off || unsigned(mode)>4 ||
+           (mode==Mode::Exact && !Choose(mode,640,480,exact).width) || !External(target,guard)) return false;
         HMODULE self=nullptr;
         if(!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
             reinterpret_cast<LPCSTR>(&Hook),&self)) return false;
         const auto init=MH_Initialize();
         if(init!=MH_OK && init!=MH_ERROR_ALREADY_INITIALIZED) return false;
-        mode_=mode;hwnd_=hwnd;caller_=caller;log_=log;
+        mode_=mode;exact_=exact;hwnd_=hwnd;caller_=caller;log_=log;
         ClientSize* empty=nullptr;
         if(!instance_.compare_exchange_strong(empty,this,std::memory_order_release)) return false;
         void* trampoline=nullptr;

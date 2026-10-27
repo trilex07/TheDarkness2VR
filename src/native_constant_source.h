@@ -16,19 +16,23 @@ struct Sites {
     uintptr_t apiReturn[2];
     uintptr_t builderFirst[2],builderEnd[2];
     uintptr_t parentReturn[2][3];
-    uintptr_t fieldReturn[2][9] = {};
+    uintptr_t fieldReturn[2][10] = {};
 };
 inline constexpr Sites nativeSites{
     {0x00b74740,0x0096e3d0},
     {0x00571670,0x00ad3380},{0x00573750,0x00ad5460},
     {{0x0071f6db,0x0071f71f,0x008f8180},{0x0071f702,0x0071f736,0}},
-    {{0x571730,0x57176a,0x571787,0x5717ab,0x5717d0,0x571d6f,0x571e44,0x571e8d,0x572e2e},
-     {0xad3440,0xad347a,0xad3497,0xad34bb,0xad34e0,0xad3a7f,0xad3b54,0xad3b9d,0xad4b3e}}
+    {{0x571730,0x57176a,0x571787,0x5717ab,0x5717d0,0x571d6f,0x571e44,0x571e8d,0x572e2e,0x571e68},
+     {0xad3440,0xad347a,0xad3497,0xad34bb,0xad34e0,0xad3a7f,0xad3b54,0xad3b9d,0xad4b3e,0xad3b78}}
 };
 inline std::atomic<bool> enabled{false},admitted{false},faulted{false};
 inline std::atomic<bool> materialEnabled{false};
-inline constexpr size_t fieldOffset[]={0x10,0xd0,0xd0,0x110,0x220,0x4f0,0x470,0x260,0x580};
-inline constexpr size_t fieldVectors[]={12,4,1,17,4,6,4,4,1};
+// The common matrix callback may follow several native computations. Only its
+// current owner's fixed 0x330 scratch matrix qualifies, never a returned foreign
+// pointer. The full producer admission and fresh owner test remain mandatory.
+inline constexpr size_t fieldOffset[]={0x10,0xd0,0xd0,0x110,0x220,0x4f0,0x470,0x260,0x580,0x330};
+inline constexpr size_t fieldVectors[]={12,4,1,17,4,6,4,4,1,4};
+inline constexpr size_t fieldCount=sizeof(fieldOffset)/sizeof(fieldOffset[0]);
 struct Counts {uint64_t attempts=0,proved=0,copies=0,bytes=0,faults=0,materialProved=0,materialCopies=0;};
 inline thread_local Counts counts;
 
@@ -83,7 +87,7 @@ public:
             // No dynamic array, nested owner, page cache or cross-call pointer.
             if(materialEnabled.load(std::memory_order_relaxed) && owner && owner%4==0 &&
                owner<=UINTPTR_MAX-0x20) {
-                for(unsigned i=0;i<9;++i) {
+                for(unsigned i=0;i<fieldCount;++i) {
                     if(!sites.fieldReturn[bank][i] || slot[5]!=sites.fieldReturn[bank][i] ||
                        bytes!=fieldVectors[i]*16)continue;
                     const uintptr_t block=*reinterpret_cast<const uintptr_t*>(owner+0x1c);

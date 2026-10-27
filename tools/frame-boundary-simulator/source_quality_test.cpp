@@ -16,7 +16,7 @@ static std::vector<unsigned char> Text() {
 }
 int main(int argc,char** argv) {
     const auto originalText=Text();
-    assert(Parse(0)==Mode::Off && Parse(3)==Mode::High && Parse(4)==Mode::Off);
+    assert(Parse(0)==Mode::Off && Parse(3)==Mode::High && Parse(4)==Mode::Exact && Parse(5)==Mode::Off);
     assert(Parse((std::numeric_limits<unsigned>::max)())==Mode::Off);
     const auto native=Choose(Mode::Native,1920,1071),quality=Choose(Mode::Quality,1920,1071),high=Choose(Mode::High,1920,1071);
     assert(native.width==1920 && native.height==1071);
@@ -26,6 +26,12 @@ int main(int argc,char** argv) {
     assert(!Choose(Mode::High,3840,2160).width); // refuse excessive cost, no silent resize
     assert(!Choose(Mode::High,0,1071).width && !Choose(Mode::High,1920,0).width);
     assert(!Choose(Mode::Quality,0xffffffff,0xffffffff).width);
+    const auto exact=Choose(Mode::Exact,1920,1071,{2676,2728});
+    assert(exact.width==2676 && exact.height==2728);
+    assert(!Choose(Mode::Exact,1920,1071).width);
+    assert(!Choose(Mode::Exact,1920,1071,{3840,3840}).width);
+    assert(!Choose(Mode::Exact,1920,1071,{0xffffffff,2728}).width);
+    assert(!Choose(Mode::Exact,1920,1071,{2676,0}).width);
     for(unsigned w=640;w<=3840;w+=31) for(unsigned h=480;h<=3840;h+=29) {
         for(auto mode:{Mode::Native,Mode::Quality,Mode::High}) {
             const auto size=Choose(mode,w,h);
@@ -40,7 +46,10 @@ int main(int argc,char** argv) {
     assert(!Eligible(false,true,1,1,4,4) && !Eligible(true,false,1,1,4,4));
     assert(!Eligible(true,true,2,1,4,4) && !Eligible(true,true,1,1,5,4));
     assert(!Eligible(true,true,0,0,4,4) && !Eligible(true,true,1,1,0,0));
-    assert(argc==2);
+    assert(argc==2 || argc==3);
+    const bool exactMode=argc==3 && !std::strcmp(argv[2],"exact");
+    const auto selected=exactMode?Mode::Exact:Mode::Quality;
+    const LONG expectedW=exactMode?2676:2160,expectedH=exactMode?2728:1204;
     HMODULE fixture=LoadLibraryA(argv[1]);assert(fixture);
     using Query=BOOL(WINAPI*)(HWND,LPRECT);
     auto query=reinterpret_cast<Query>(GetProcAddress(fixture,"_SizeQuery@8"));
@@ -58,10 +67,11 @@ int main(int argc,char** argv) {
     assert(!blocked.Start(reinterpret_cast<void*>(&main),guard,Mode::Quality,window,nativeCaller));
     ClientSize qualityHook;
     assert(!qualityHook.Start(query,guard,Mode::Off,window,nativeCaller));
-    assert(qualityHook.Start(query,guard,Mode::Quality,window,nativeCaller));
+    assert(!qualityHook.Start(query,guard,Mode::Exact,window,nativeCaller,nullptr,{3840,3840}));
+    assert(qualityHook.Start(query,guard,selected,window,nativeCaller,nullptr,{2676,2728}));
     auto before=calls();assert(invoke(window,&rect));
     assert(calls()==before+1 && GetLastError()==0x1234);
-    assert(rect.left==0 && rect.top==0 && rect.right==2160 && rect.bottom==1204 && qualityHook.requests==1);
+    assert(rect.left==0 && rect.top==0 && rect.right==expectedW && rect.bottom==expectedH && qualityHook.requests==1);
     before=calls();assert(other(window,&rect));
     assert(calls()==before+1 && rect.right==1920 && rect.bottom==1071 && qualityHook.requests==1);
     before=calls();assert(!invoke(reinterpret_cast<HWND>(2),&rect));
@@ -71,8 +81,8 @@ int main(int argc,char** argv) {
     qualityHook.Window(reinterpret_cast<HWND>(3));
     assert(invoke(window,&rect) && rect.right==1920 && qualityHook.requests==1);
     qualityHook.Window(window);
-    for(unsigned i=0;i<1000;++i) {assert(invoke(window,&rect));assert(rect.right==2160 && rect.bottom==1204);}
+    for(unsigned i=0;i<1000;++i) {assert(invoke(window,&rect));assert(rect.right==expectedW && rect.bottom==expectedH);}
     assert(qualityHook.requests==1001);
     assert(Text()==originalText);
-    std::puts("PASS source quality: bounded/aspect sizing, native ABI, exact caller/window, failure/null, one forward, last error, image denial");
+    std::printf("PASS source quality mode=%s: bounded/aspect/exact sizing, native ABI, exact caller/window, failure/null, one forward, last error, image denial\n",exactMode?"Exact2676x2728":"Quality");
 }

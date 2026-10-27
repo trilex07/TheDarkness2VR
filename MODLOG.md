@@ -332,3 +332,13 @@ table changes. Default-OFF NativeOwnedMaterialCopy requires the existing image
 admission; loaded full producer bodies are fingerprinted. Detailed ownership,
 regressions and runtime acceptance gate are in
 docs/research/native-owned-material-copy-20261027.md.
+
+## 2026-10-27 - Common owner matrix and exact native source target
+
+Extended fresh owned material capture to the common VS571E68/PSAD3B78 callback,
+only for current block+330 and exactly four vectors. Added SourceQuality=4 to
+request explicit native RenderWidth/Height through the protected external sizing
+observer. Actual x86 gate4073 and both external source-size fixtures PASS.
+No native code/table changes or cached matrices. Runtime FPS and actual upstream
+2676x2728 resolution remain unverified. Integration and evidence boundaries:
+docs/research/native-matrix-and-exact-source-20261027.md.

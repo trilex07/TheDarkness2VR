@@ -168,12 +168,14 @@ int main() {
         copied=false;Parent();Check(copied,"actual gate preserves EBX owner and admits exact material field");
         Check(!std::memcmp(recorded,forwarded,sizeof(recorded)),"owned field bits match forwarding");
     }
-    for(unsigned field=0;field<9;++field) {
+    for(unsigned field=0;field<fieldCount;++field) {
         fixtureField=field;vectorCount=static_cast<unsigned>(fieldVectors[field]);
         overrideSource=reinterpret_cast<float*>(materialBlock+fieldOffset[field]);
         std::memset(recorded,0,sizeof(recorded));std::memset(forwarded,0,sizeof(forwarded));
         Parent();Check(copied,"every admitted fixed-field extent works through actual gate");
         Check(!std::memcmp(recorded,overrideSource,vectorCount*16)&&!std::memcmp(recorded,forwarded,sizeof(recorded)),"fixed-field nonzero payload bit equality");
+        overrideSource+=4;Parent();Check(!copied,"each field rejects shifted source");overrideSource-=4;
+        ++vectorCount;Parent();Check(!copied,"each field rejects oversized extent");--vectorCount;
     }
     fixtureField=7;vectorCount=4;overrideSource=reinterpret_cast<float*>(materialBlock+0x260);
     LARGE_INTEGER frequency{},begin{},end{};QueryPerformanceFrequency(&frequency);
