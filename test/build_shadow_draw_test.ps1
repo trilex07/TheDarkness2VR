@@ -15,7 +15,7 @@ $prefix=@'
 #include <d3d9.h>
 #include <cassert>
 #include <cstdio>
-bool g_skipShadowAtlasDraws=false,shadow=false;
+bool g_skipShadowAtlasDraws=false,g_skipObjectDraws=false,shadow=false;
 int g_replayEye=-1,queries=0,calls=0,scopes=0;
 bool IsShadowAtlasPass(IDirect3DDevice9*){++queries;return shadow;}
 void Log(const char*,...){}
@@ -29,11 +29,11 @@ struct Originals {
 }g_orig;
 '@
 $suffix=@'
-void Run(HRESULT expected){
- assert(DrawPrimitiveWithDiffuse(nullptr,D3DPT_TRIANGLELIST,0,1)==expected);
- assert(DrawIndexedPrimitiveWithDiffuse(nullptr,D3DPT_TRIANGLELIST,0,0,3,0,1)==expected);
- assert(DrawPrimitiveUPWithDiffuse(nullptr,D3DPT_TRIANGLELIST,1,nullptr,12)==expected);
- assert(DrawIndexedPrimitiveUPWithDiffuse(nullptr,D3DPT_TRIANGLELIST,0,3,1,nullptr,D3DFMT_INDEX16,nullptr,12)==expected);
+void Run(HRESULT expected,UINT pc=1){
+ assert(DrawPrimitiveWithDiffuse(nullptr,D3DPT_TRIANGLELIST,0,pc)==expected);
+ assert(DrawIndexedPrimitiveWithDiffuse(nullptr,D3DPT_TRIANGLELIST,0,0,3,0,pc)==expected);
+ assert(DrawPrimitiveUPWithDiffuse(nullptr,D3DPT_TRIANGLELIST,pc,nullptr,12)==expected);
+ assert(DrawIndexedPrimitiveUPWithDiffuse(nullptr,D3DPT_TRIANGLELIST,0,3,pc,nullptr,D3DFMT_INDEX16,nullptr,12)==expected);
 }
 int main(){
  D3DSURFACE_DESC rt{};rt.Format=D3DFMT_R5G6B5;rt.Width=rt.Height=2048;
@@ -49,6 +49,15 @@ int main(){
  shadow=true;
  for(int eye=-1;eye<=1;++eye){g_replayEye=eye;int before=scopes;Run(D3D_OK);assert(calls==8 && scopes==before);}
  g_skipShadowAtlasDraws=false;Run(E_FAIL);assert(calls==12);
+ shadow=false;Run(E_FAIL,12);assert(calls==16);
+ g_skipObjectDraws=true;
+ for(int eye=-1;eye<=1;++eye){g_replayEye=eye;int before=scopes;Run(D3D_OK,12);assert(calls==16 && scopes==before);}
+ Run(E_FAIL,2);assert(calls==20);
+ assert(!SkipObjectDrawForTest(D3DPT_LINELIST,100));
+ assert(!SkipObjectDrawForTest(D3DPT_POINTLIST,100));
+ assert(SkipObjectDrawForTest(D3DPT_TRIANGLESTRIP,3));
+ assert(SkipObjectDrawForTest(D3DPT_TRIANGLEFAN,3));
+ g_skipObjectDraws=false;Run(E_FAIL,12);assert(calls==24);
  puts("PASS actual four draw wrappers: default OFF/no query, native HRESULT, non-atlas forwarding, live+both replay eyes skipped; classifier excludes camera/full/invalid targets. No FPS claim.");
 }
 '@

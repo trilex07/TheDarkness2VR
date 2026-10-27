@@ -1251,7 +1251,21 @@ static bool SkipShadowDrawForTest(IDirect3DDevice9* dev) {
     }
     return true;
 }
+static bool SkipObjectDrawForTest(D3DPRIMITIVETYPE type,UINT primitives) {
+    if(!g_skipObjectDraws || primitives<=2 ||
+       (type!=D3DPT_TRIANGLELIST && type!=D3DPT_TRIANGLESTRIP && type!=D3DPT_TRIANGLEFAN)) return false;
+    static thread_local unsigned long long live=0,replay=0;
+    static thread_local ULONGLONG next=0;
+    if(g_replayEye<0) ++live; else ++replay;
+    const auto now=GetTickCount64();
+    if(now>=next) {
+        next=now+2000;
+        Log("[ObjectDrawTest] skippedLive=%llu skippedReplay=%llu; triangle batches >2, includes world; native preparation/state/recording retained",live,replay);
+    }
+    return true;
+}
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
+    if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -1260,6 +1274,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
     return g_orig.DrawPrimitive(dev, t, sv, pc);
 }
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
+    if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     const WorldDiffuseScope diffuse(dev);
     const TentacleHeadScope tentacle(dev);
@@ -1269,6 +1284,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
     return g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
 }
 static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT pc, const void* vb, UINT stride) {
+    if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -1277,6 +1293,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
     return g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
 }
 static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
+    if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
