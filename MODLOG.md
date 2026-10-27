@@ -457,3 +457,33 @@ Reference: https://learn.microsoft.com/en-us/windows/win32/direct3d9/asynchronou
 Actual D3D9 ownership, Issue/GetData and Reset regression is required before use.
 Private evidence in existing capture analysis-derived: hitch-85ms-scheduler.json,
 hitch-85ms-scheduler-raw.txt and hitch-query-site-asm.txt. Native EXE unchanged.
+
+## 2026-10-27 - One-use native occlusion-query startup inventory
+
+Implemented default-OFF Render/QueryPreloadCount (0..256). Protected diagnostic
+installation requires the exact installed EXE SHA, base400000 and all24 bytes
+of native constructor9FBDD0. Only caller9FBDE5, matching device, OCCLUSION type
+and non-null output qualify. The API gate preserves the original stdcall ABI.
+Unknown callers/types/devices and null-output support probes forward unchanged.
+
+Create at most the requested number of never-issued queries at startup, before
+native device handoff. Each object transfers once, with its original creation
+HRESULT and no extra retained reference. Exhaustion/native creation failure
+retains the original API; consumed queries never enter the inventory again.
+No Issue/GetData interception or substituted visibility values. No async creation.
+The2-second soft creation budget is checked between driver calls, not a promise
+to interrupt an individual blocking driver operation.
+
+Release unused objects before Reset/ResetEx, disable serving on failed Reset,
+refill synchronously only after successful Reset. Check TestCooperativeLevel for
+classic devices / CheckDeviceState for Ex before transfer. Preserve the fixed
+device/window identity; unavailable device-state checks fall back to original.
+Counters expose pending inventory, qualified requests and hits. This feature is
+startup/Reset scoped and does not toggle with L3+R3's replay CPU package.
+
+Actual x86 HAL/Ex fixture gives2016 visible pixels for both pooled and native
+query, also after Reset. Type/caller/device/probe bypass, pool exhaustion, native
+failure HRESULT, failed/successful Reset and ResetEx PASS. REF lifecycle fixture
+also PASS, but its zero result does not establish raster visibility. Both DLL
+builds PASS. Installed-image/runtime admission and gameplay FPS remain NOT RUN.
+This targets measured query-creation stalls, not a claimed24.45ms average saving.

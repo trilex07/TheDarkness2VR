@@ -143,6 +143,7 @@ int g_textureAnisotropy = 16;
 bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B, default legacy query path
 static bool g_startupShaderWarmup = false; // OFF; valid-device startup only, no native slot writes
 static bool g_startupShaderPool = false; // OFF; startup-owned shader objects, transferred once
+static unsigned g_queryPreloadCount=0; // bounded unused occlusion queries; startup only
 static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shadow image
 static std::atomic<bool> g_skipObjectDraws{false}; // diagnostic: omit triangle batches >2 primitives
 static bool g_objectDrawPadToggle = false; // diagnostic chord override; F8 retains recenter
@@ -646,6 +647,8 @@ void LoadConfig() {
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
     g_startupShaderWarmup = GetPrivateProfileIntA("Render", "StartupShaderWarmup", 0, chosenIni)!=0;
     g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
+    g_queryPreloadCount=GetPrivateProfileIntA("Render","QueryPreloadCount",0,chosenIni);
+    if(g_queryPreloadCount>256)g_queryPreloadCount=0;
     g_skipShadowAtlasDraws = GetPrivateProfileIntA("Render", "SkipShadowAtlasDraws", 0, chosenIni)!=0;
     g_skipObjectDraws = GetPrivateProfileIntA("Render", "SkipObjectDraws", 0, chosenIni)!=0;
     g_objectDrawPadToggle = GetPrivateProfileIntA("Render", "ObjectDrawPadToggle", 0, chosenIni)!=0;
@@ -1546,6 +1549,28 @@ static void MatchedCaptureInput(IDirect3DSurface9*,bool);
 static void NativeCameraUiScale(float& x,float& y);
 #endif
 #include "shader_preload_pool.inl"
+#include "query_preload_pool.h"
+static std::atomic<d2vr_query_preload::Pool*> g_queryPreload{nullptr};
+static d2vr_query_preload::CreateFn g_queryCreateOriginal=nullptr;
+__declspec(noinline) static HRESULT STDMETHODCALLTYPE Hook_CreateQuery(IDirect3DDevice9* device,D3DQUERYTYPE type,IDirect3DQuery9** out) {
+    const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
+    auto* pool=g_queryPreload.load(std::memory_order_acquire);
+    return pool ? pool->Create(device,type,out,caller) : g_queryCreateOriginal(device,type,out);
+}
+static void QueryPreloadBeginReset(IDirect3DDevice9* device) {
+    if(auto* pool=g_queryPreload.load())pool->BeginReset(device);
+}
+static void QueryPreloadEndReset(IDirect3DDevice9* device,HRESULT hr) {
+    if(auto* pool=g_queryPreload.load()) {
+        pool->EndReset(device,hr);
+        Log("[QueryPreload] Reset hr=%08lX pending=%u requests=%llu hits=%llu",hr,pool->Pending(),pool->requests.load(),pool->hits.load());
+    }
+}
+static void QueryPreloadTick() {
+    auto* pool=g_queryPreload.load();if(!pool)return;
+    static ULONGLONG next=0;const auto now=GetTickCount64();if(now<next)return;next=now+5000;
+    Log("[QueryPreload] pending=%u requests=%llu hits=%llu; one-use native occlusion objects",pool->Pending(),pool->requests.load(),pool->hits.load());
+}
 #include "stereo_replay.inl"
 
 static void UpdateHeadGeometry(const XrPosef& head) {
@@ -5381,6 +5406,7 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
     d2vr_shader_preload::BeginReset(dev);
+    QueryPreloadBeginReset(dev);
     d2vr_sampling::InvalidateSamplerCaps();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
@@ -5420,6 +5446,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_vrRefValid = false;
     HRESULT hr = g_origReset(dev, pp);
     d2vr_shader_preload::EndReset(dev,hr);
+    QueryPreloadEndReset(dev,hr);
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetEnd(SUCCEEDED(hr));
     g_capturePresent.ResetResult(SUCCEEDED(hr));
@@ -5437,6 +5464,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
     d2vr_shader_preload::BeginReset(dev);
+    QueryPreloadBeginReset(dev);
     d2vr_sampling::InvalidateSamplerCaps();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent) g_imagePresent.ResetBegin();
@@ -5473,6 +5501,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     g_vrRefValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
     d2vr_shader_preload::EndReset(dev,g_origResetEx?hr:E_FAIL);
+    QueryPreloadEndReset(dev,g_origResetEx?hr:E_FAIL);
 #ifdef D2VR_MATCHED_CAPTURE
     g_capturePresent.ResetResult(g_origResetEx && SUCCEEDED(hr));
     if(g_imagePreservingPresent) g_imagePresent.ResetEnd(g_origResetEx && SUCCEEDED(hr));
@@ -5506,6 +5535,7 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
         MessageBeep(MB_OK);
     }
     d2vr_shader_preload::Tick();
+    QueryPreloadTick();
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     TryInstallXInputHook();
@@ -6109,6 +6139,45 @@ static void TryHookSwapChainPresent(IDirect3DDevice9* dev) {
 
 #include "startup_shader_warmup.inl"
 
+static void InstallQueryPreload(IDirect3DDevice9* dev) {
+    if(!g_queryPreloadCount || g_queryPreload.load())return;
+#ifdef D2VR_MATCHED_CAPTURE
+    if(!g_imagePreservingPresent || !g_nativeImageGuard.enabled)return;
+    const auto* image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
+    char path[MAX_PATH]{};
+    if(reinterpret_cast<uintptr_t>(image)!=0x400000 || !GetModuleFileNameA(nullptr,path,MAX_PATH))return;
+    const auto sha=matched_capture::HashFile(path);
+    static constexpr BYTE site[]={0x8b,0x44,0x24,0x04,0x8b,0x10,0x83,0xc1,0x04,0x51,0x6a,0x09,
+        0x50,0x8b,0x82,0xd8,0x01,0x00,0x00,0xff,0xd0,0xc2,0x04,0x00};
+    if(sha!="d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1" ||
+       memcmp(image+0x5fbdd0,site,sizeof(site))) {
+        Log("[QueryPreload] refused: native SHA/site mismatch");return;
+    }
+    HMODULE pinned=nullptr;
+    if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
+        reinterpret_cast<LPCWSTR>(&Hook_CreateQuery),&pinned))return;
+    auto* table=*reinterpret_cast<void***>(dev);
+    g_queryCreateOriginal=reinterpret_cast<d2vr_query_preload::CreateFn>(table[118]);
+    try {
+    auto pool=std::make_unique<d2vr_query_preload::Pool>(dev,g_renderSizeHwnd,0x9fbde5,g_queryCreateOriginal,g_queryPreloadCount);
+    pool->EndReset(dev,D3D_OK);
+    // Publish before installing the API gate. Native code and query objects
+    // remain untouched; PatchVTable uses the existing device-hook architecture.
+    g_queryPreload.store(pool.get(),std::memory_order_release);
+    auto original=PatchVTable(dev,118,reinterpret_cast<void*>(&Hook_CreateQuery));
+    if(!original){g_queryPreload.store(nullptr);return;}
+    pool.release();
+    Log("[QueryPreload] installed count=%u pending=%u caller=009FBDE5; startup/Reset only, no visibility result changes",
+        g_queryPreloadCount,g_queryPreload.load()->Pending());
+    } catch(...) {
+        g_queryPreload.store(nullptr);
+        Log("[QueryPreload] initialization failed; original CreateQuery retained");
+    }
+#else
+    Log("[QueryPreload] refused: protected diagnostic architecture required");
+#endif
+}
+
 void HookDevice(IDirect3DDevice9* dev) {
     d2vr_sampling::InvalidateSamplerCaps();
     StartAsyncLogging();
@@ -6147,6 +6216,7 @@ void HookDevice(IDirect3DDevice9* dev) {
     d2vr_replay::g_orig.EndScene = g_origEndScene;
     d2vr_replay::g_orig.SetVertexShaderConstantF = g_origSetVertexShaderConstantF;
     d2vr_replay::InstallReplayHooks(dev);
+    InstallQueryPreload(dev);
 
     // SwapChain present hooks are installed after the first successful Device::Reset only.
 
