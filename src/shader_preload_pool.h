@@ -91,6 +91,11 @@ public:
         if(object) object->Release();
     }
     size_t Size() const {std::lock_guard<std::mutex> lock(mutex_);return entries_.size();}
+    size_t Pending() const {
+        std::lock_guard<std::mutex> lock(mutex_);size_t count=0;
+        for(const auto& entry:entries_)if(entry.object)++count;
+        return count;
+    }
     void Enable(bool enabled) {std::lock_guard<std::mutex> lock(mutex_);enabled_=enabled;}
     uint64_t Version() const {std::lock_guard<std::mutex> lock(mutex_);return version_;}
     std::vector<uint32_t> Archive(uint64_t& version) const {

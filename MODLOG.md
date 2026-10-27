@@ -405,3 +405,28 @@ These diagnostic settings now require restart. No shader-result cache or native
 owner change. Production/diagnostic x86 builds and actual D3D9 REF preload tests
 (ownership, misses/HRESULT, bytecode identity, concurrent requests, Reset) PASS.
 This removes proven hook I/O; FPS gain and remaining driver wait are unmeasured.
+
+## 2026-10-27 - Keep bounded startup shader inventory through menu delays
+
+Existing ad8db6a trace log records startup569 shaders,92 periodic reports (at
+least182s between first and last), ending537 requests/170 hits/575 learned.
+Hits reach170 at report58 and remain there. Source inspection found unconditional
+120-second expiry followed by releasing one unused precreated object per frame.
+This is a definite premature-inventory-expiry behavior; historical counters do
+not prove that every miss or the entire85ms creation interval came from expiry.
+Missing archive identities and repeated already-consumed requests still exist.
+
+Removed wall-clock expiry from Tick. The existing1024-entry/code-size bounds,
+single-device/full-bytecode match and one-use ownership transfer are preserved.
+Unused precreated COM objects now retain their allocation until consumption or
+pool teardown rather than being destroyed while the player waits in a menu.
+This trades longer bounded object residency for avoiding late startup misses;
+it does not enable shared shader-object caching, async D3D9 creation or reuse
+after native owner destruction. Failed Reset still disables serving.
+Existing periodic receipt now adds pending inventory count.
+
+Actual x86 D3D9 REF regression advances Tick by one hour for1024 ticks, proves
+three pending objects remain and later requests use them without original API
+creation. Existing consumed-repeat, exact bytes/device/stage,16-thread ownership,
+guard behavior, failed/successful Reset and persistence tests PASS. Production
+and diagnostic DLL builds PASS. Gameplay/FPS saving remains NOT VERIFIED.

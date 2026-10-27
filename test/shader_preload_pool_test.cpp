@@ -118,6 +118,14 @@ int main(int argc,char**) {
     CHECK(ReadArchive(cache).size()>8);
     v1->Release();v2->Release();p1->Release();p2->Release();state.store(nullptr);current.reset();
     current=PrepareState(device,cache,seed);state.store(current.get());CHECK(current->pool.Size()==3);
+    // A long menu/readiness delay cannot silently destroy the startup inventory.
+    // Advance Tick's clock without sleeping; no driver calls occur in Tick.
+    const auto late=GetTickCount64()+3600000;
+    CHECK(current->pool.Pending()==3);
+    current->nextTick=late+10000;
+    for(unsigned i=0;i<1024;++i)Tick(late+i);
+    CHECK(current->pool.Pending()==3);
+    current->nextTick=0;
     if(hardware) {BeginReset(device);HR(deviceEx->ResetEx(&pp,nullptr));EndReset(device,D3D_OK);}
     const unsigned before=creates;
     HR(Create(device,reinterpret_cast<const DWORD*>(otherPs.data()),&p2,originalPS));CHECK(creates==before);Same(p2,otherPs,false);

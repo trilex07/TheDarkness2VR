@@ -12,7 +12,7 @@ struct State {
     std::atomic<uint64_t> requests{0},hits{0},saved{0},writeFailures{0},captureFailures{0};
     std::atomic<bool> writing{false};
     std::atomic<bool> usable{true};
-    ULONGLONG expires=0,nextTick=0;
+    ULONGLONG nextTick=0;
     State(IDirect3DDevice9* dev,std::wstring file):device(dev),pool(dev),path(std::move(file)) {}
 };
 static std::atomic<State*> state{nullptr}; // process lifetime; never release COM under loader lock
@@ -109,7 +109,9 @@ static std::unique_ptr<State> PrepareState(IDirect3DDevice9* device,
                 else ++failed;
             }
         }
-        s->expires=GetTickCount64()+120000;s->nextTick=GetTickCount64()+2000;
+        // A menu/load/readiness delay must not discard precreated shaders before
+        // the level requests them. Keep the bounded one-use inventory available.
+        s->nextTick=GetTickCount64()+2000;
         if(alreadyPersisted) s->saved.store(s->pool.Version());
         Log("[ShaderPreload] startup ready=%u entries=%zu failed=%u budgetStop=%d elapsedMs=%llu; one-use owned objects, exact bytecode+device match",
             ready,s->pool.Size(),failed,int(budgetStop),GetTickCount64()-start);
@@ -171,13 +173,11 @@ static void EndReset(IDirect3DDevice9* device,HRESULT result) {
         Log("[ShaderPreload] Reset complete hr=0x%08lX usable=%d; shader objects preserved",result,int(s->usable.load()));
     }
 }
-static void Tick() {
+static void Tick(ULONGLONG now=GetTickCount64()) {
     State* s=state.load();if(!s) return;
-    const auto now=GetTickCount64();
-    if(now>s->expires) s->pool.ExpireOne(); // bounded cleanup, never touch transferred objects
     if(now<s->nextTick) return;s->nextTick=now+2000;
-    Log("[ShaderPreload] requests=%llu hits=%llu learned=%zu saved=%llu writeFailures=%llu captureFailures=%llu; no FPS claim",
-        s->requests.load(),s->hits.load(),s->pool.Size(),s->saved.load(),s->writeFailures.load(),s->captureFailures.load());
+    Log("[ShaderPreload] requests=%llu hits=%llu learned=%zu saved=%llu writeFailures=%llu captureFailures=%llu pending=%zu; no FPS claim",
+        s->requests.load(),s->hits.load(),s->pool.Size(),s->saved.load(),s->writeFailures.load(),s->captureFailures.load(),s->pool.Pending());
     if(!s->pool.Size() || s->saved.load()>=s->pool.Version() || s->writing.exchange(true)) return;
     try {
         auto job=std::make_unique<WriteJob>();job->owner=s;job->path=s->path;
