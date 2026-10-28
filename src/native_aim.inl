@@ -1,3 +1,5 @@
+#include "native_player_camera_owner.h"
+static bool g_nativePlayerOwnerAdmitted=false;
 // Pinned stock EXE, x86. C62F50 builds inventory aim; C6300F calls the camera
 // matrix getter (thiscall, no stack args, EAX pointer), then reads forward row2
 // and origin row3. Replacing ONLY that getter leaves native query filters,
@@ -190,6 +192,31 @@ static void CaptureNativeGameplay(void* self) {
         memcpy(lastEntities,s.entities,sizeof(lastEntities));
         Log("[NativeWeapon] active pistol model primary/right=%p secondary/left=%p",(void*)s.entities[0],(void*)s.entities[1]);
     }
+}
+static void ObserveSelectedPlayerCamera(void* renderer) {
+#ifdef D2VR_MATCHED_CAPTURE
+    if(!g_nativePlayerOwnerAdmitted || !g_imagePreservingInput || !g_protectedGestureActions ||
+       !g_nativeImageGuard.enabled || GetCurrentThreadId()!=g_renderThreadId)return;
+    const auto read=[](uint32_t address,uint32_t& value)->bool {
+        __try {value=*reinterpret_cast<const uint32_t*>(address);return true;}
+        __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+    };
+    d2vr_player_camera::Owner owner;
+    const auto status=d2vr_player_camera::Inspect(uint32_t(reinterpret_cast<uintptr_t>(renderer)),read,owner);
+    if(status==d2vr_player_camera::Status::Matched && NativeAimOwnerMatches(reinterpret_cast<void*>(owner.camera)))
+        CaptureNativeGameplay(reinterpret_cast<void*>(owner.camera));
+    else if(TryAcquireSRWLockExclusive(&g_nativeGameplayLock)) {
+        g_nativeGameplay={};
+        InterlockedExchangePointer(&g_nativeHandsSelectedResource,nullptr);
+        ReleaseSRWLockExclusive(&g_nativeGameplayLock);
+    }
+    static unsigned reports=0;
+    if(++reports<=3 || reports%600==0)
+        Log("[ProtectedPlayerOwner] status=%u renderer=%p avatar=%08X camera=%08X inventory=%08X; read-only ownership observation, native aim/throw/pose hooks unchanged",
+            unsigned(status),renderer,owner.avatar,owner.camera,owner.inventory);
+#else
+    (void)renderer;
+#endif
 }
 static float* NativeAimMatrixChecked(void* self,DWORD cameraVtable) {
     using Getter=float*(__thiscall*)(void*);

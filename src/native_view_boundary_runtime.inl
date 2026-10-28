@@ -46,6 +46,14 @@ static void InstallNativeViewBoundary() {
         "a0cae25a9ffff9e07deeba8621ccfa228fd5de6a2229a0e2b0d4d71b8bc91b15")) {
         Log("[NativeViewBoundary] refused native inverse-upload producer contract");return;
     }
+    // Independent read-only owner admission. Its rejection cannot disable the
+    // existing visibility correction. Mode3 preparation separately pins all
+    // of985D80, including the +460 use, before its callback can execute.
+    g_nativePlayerOwnerAdmitted=read(0x1001924,data,4) &&
+        !memcmp(data,"\x10\xc7\xc7\x00",4) && read(0xC7C710,data,9) &&
+        !memcmp(data,"\x8b\x81\x2c\x06\x00\x00\x8b\x00\xc3",9);
+    Log("[ProtectedPlayerOwner] admission=%d; avatar virtual+2F4 reads avatar+62C; read-only, visibility admission independent",
+        int(g_nativePlayerOwnerAdmitted));
     if(g_nativeViewBoundaryMode==2) {
         const bool installed=g_nativeFrustumBoundary.Start(reinterpret_cast<void*>(0x98618E),
             ObserveNativeFrustumCopy,g_nativeImageGuard);

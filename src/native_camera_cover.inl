@@ -7,6 +7,7 @@ static uint64_t g_nativeCoveredFrame=0, g_nativeCoverChanges=0;
 static uintptr_t g_nativeCoveredCamera=0;
 static float g_nativeCoveredProjection[16]{},g_nativeCoveredViewProjection[16]{};
 static void NativeCameraCaptureChanged();
+static void ObserveSelectedPlayerCamera(void* renderer);
 static void NativeCameraUiScale(float& x,float& y) {
     if(g_nativeCameraCoverInstalled && g_nativeCameraCoverConfirmed && g_nativeUiReferencePx>0 && g_nativeUiReferencePy>0) {
         // Pixel-space HUD is not rebuilt by the native camera setter. Preserve
@@ -246,6 +247,8 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
                                         const NativeCameraFields& fields,bool beforeCopy) {
     g_nativeCullingAppliedFrame=0;
     const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
+    if(beforeCopy && v==0x98618E && g_nativeViewBoundaryMode==3 && g_nativeTranslatedViewPrepared)
+        ObserveSelectedPlayerCamera(renderer);
     float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
     float expectedUpload[16];
     if(!d2vr_native_projection::ExpectedInverseUpload(fields.projection,expectedUpload))return;

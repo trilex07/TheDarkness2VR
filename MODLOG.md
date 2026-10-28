@@ -1588,3 +1588,29 @@ through avatar+4E4 via6B0CD0, not a global singleton. These do not establish a
 live owner publication route for a protected left-ray getter; no guessed
 pointer scan, old EXE hook or private camera vptr is enabled. Private Ghidra
 output remains outside the repository.
+
+## 2026-10-28: selected-renderer player-camera ownership observation
+
+Read-only Ghidra of the pinned EXE establishes a new candidate owner route:
+985FB4 loads renderer+460, dereferences its smart reference, then985FCB calls
+that object's virtual+2A0 for FOV. Avatar1001630 has494A40 in that slot; its
+virtual+2F4 is C7C710, the verified camera smart-reference getter at+62C.
+Earlier camera-step/view-update candidates offered no external owner boundary.
+Private evidence: d2vr-selected-camera-world-source-ghidra.txt and
+d2vr-player-camera-step-ghidra.txt in the user's local Temp directory.
+
+At the existing mode3 owned985D80 callback, optionally inspect this exact field
+and require the full avatar1001630 -> cameraFFC7C0 -> owner avatar reciprocal
+plus avatar -> inventoryFFCA10 -> owner avatar reciprocal. Only a complete
+match refreshes existing mod-owned gameplay feedback. No scanning, retained
+native object ownership, new native calls, private camera vptr publication,
+EXE/static-table/debug-register writes or native aim/throw/pose hook enablement.
+A failed graph clears old feedback. Owner admission has independent loaded
+getter/table pins; refusal preserves the visibility route. The existing cloned
+985D80 full digest pins the field consumer before callback execution.
+
+This is a read-only runtime corroboration path, not implemented controller
+targeting. A future log must show Matched(status8) before using this route to
+publish an aiming getter. Pure x86 graph regression4141 checks PASS: all links
+missing/corrupt/null/unaligned, wrapped addresses, reciprocal-owner mismatch,
+zero partial output and1000 successive owner substitutions. No game launch.
