@@ -592,6 +592,22 @@ atomic release-store unlock. Production and diagnostic tests each PASS96 streams
 transformed bits, caps, failures and SEH no-retry behavior. Runtime DLL unchanged
 from2331082; this test-only commit is not a new performance candidate.
 
+## 2026-10-28: exact live projection at right-eye replay
+
+VS float records now retain the live camera Px/Py in two previously unused record
+words. Replay uses those coefficients, including an explicit unknown-camera state,
+instead of the inverse projection observed at the end of the live frame. This
+prevents a later PS camera upload from changing the transform of earlier geometry
+in only the right eye. Record size, payload ownership and allocation count stay
+unchanged. Separately fix the median estimator insertion cursor: its saturated
+sample count previously pinned seven startup samples indefinitely.
+
+Actual-source x86 regression passes known/unknown camera changes, warmup, 100
+camera transitions, outliers and invalid inputs. Seven transfer-order tests and
+production/diagnostic x86 builds pass. No headset flicker or FPS improvement is
+claimed. Native visibility still precedes GPU-only FOV expansion; this correction
+does not establish a fix for native edge culling.
+
 ## 2026-10-28: contiguous constant-window flush
 
 Track whether each window bank's written union is provably contiguous. Empty,

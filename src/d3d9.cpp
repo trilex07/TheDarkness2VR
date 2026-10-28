@@ -1877,8 +1877,16 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
         const auto proof=d2vr_native_constants::InspectCurrent(
             nativeSlot,nativeFrame,pConstantData,
             sizeof(float)*4*Vector4fCount,d2vr_native_constants::Stage::Vertex,nativeOwner);
+        // Spare record words retain the exact live camera coefficients without
+        // another allocation/lock. Zero means the live pass inferred them from
+        // this WVP; a later PS inverse-projection upload must not change replay.
+        uint32_t camera[2]{};
+        if(d2vr_replay::g_cameraProjectionKnown) {
+            memcpy(&camera[0],&d2vr_replay::g_cameraPx,sizeof(float));
+            memcpy(&camera[1],&d2vr_replay::g_cameraPy,sizeof(float));
+        }
         d2vr_replay::RecEmitData(d2vr_replay::OP_SetVSConstF, pConstantData,
-                                 sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount,0,0,proof);
+                                 sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount,camera[0],camera[1],proof);
     }
 
     // ---- True stereo: live pass renders eye 0 (eye 1 comes from the replay pass) ----

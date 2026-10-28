@@ -285,6 +285,10 @@ struct StereoParams {
     float transY = 0.0f;
     float fovScaleX = 1.0f;    // <1 widens the rendered horizontal FOV (clip.x *= fovScaleX)
     float fovScaleY = 1.0f;
+    // Replay must use the camera knowledge present at this exact live upload,
+    // rather than the final inverse projection observed later in the frame.
+    bool projectionSnapshot = false;
+    float projectionPx = 0, projectionPy = 0;
     bool headGeometry = false; // opt-in render diagnostic; native culling not yet hooked
     float headClip[16]{}, inverseHeadClip[16]{};
 };
@@ -298,10 +302,14 @@ static float g_cameraInverseProjection[16]{};
 // g_cameraPx/g_cameraPy directly - those are exact.
 static float s_estHistX[8], s_estHistY[8];
 static int s_estHistN = 0;
+static unsigned s_estHistNext = 0;
 static void PublishProjectionEstimate(float px, float py) {
     if (!(px > 0.2f && px < 8.0f && py > 0.2f && py < 16.0f)) return;
-    s_estHistX[s_estHistN % 8] = px;
-    s_estHistY[s_estHistN % 8] = py;
+    // Count saturates; the insertion cursor must continue rotating. Using the
+    // saturated count pinned seven startup samples forever after the eighth.
+    s_estHistX[s_estHistNext] = px;
+    s_estHistY[s_estHistNext] = py;
+    s_estHistNext = (s_estHistNext + 1) % 8;
     if (s_estHistN < 8) ++s_estHistN;
     if (s_estHistN < 3) return;
     const int n = s_estHistN < 8 ? s_estHistN : 8;
@@ -343,8 +351,12 @@ static void ObserveInverseProjection(const float* src, UINT start, UINT count, i
 // Row-vector convention (verified from engine HLSL): clip = x*c0 + y*c1 + z*c2 + c3
 static void ApplyEyeShiftToMatrix(float* p, int n, const StereoParams& sp, bool estimate = true) {
     if (n < 4) return;
+    const bool cameraKnown = sp.projectionSnapshot
+        ? sp.projectionPx > 0 && sp.projectionPy > 0 : g_cameraProjectionKnown;
+    const float cameraPx = sp.projectionSnapshot ? sp.projectionPx : g_cameraPx;
+    const float cameraPy = sp.projectionSnapshot ? sp.projectionPy : g_cameraPy;
     float px = 0, py = 0;
-    d2vr_stereo::EstimatePxPy(p, g_cameraProjectionKnown, g_cameraPx, g_cameraPy, &px, &py);
+    d2vr_stereo::EstimatePxPy(p, cameraKnown, cameraPx, cameraPy, &px, &py);
     if (estimate) PublishProjectionEstimate(px, py);
     d2vr_stereo::EyeShiftParams ep{};
     ep.separation = sp.separation;
@@ -355,7 +367,7 @@ static void ApplyEyeShiftToMatrix(float* p, int n, const StereoParams& sp, bool 
     ep.fovScaleX = sp.fovScaleX;
     ep.fovScaleY = sp.fovScaleY;
     ep.headGeometry = sp.headGeometry;
-    d2vr_stereo::ApplyEyeShiftToMatrix(p, n, ep, g_cameraProjectionKnown, g_cameraPx, g_cameraPy,
+    d2vr_stereo::ApplyEyeShiftToMatrix(p, n, ep, cameraKnown, cameraPx, cameraPy,
                                        sp.headGeometry ? sp.headClip : nullptr);
 }
 
@@ -1842,6 +1854,10 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (auditUploads) uploadCounts.Record(d2vr_replay_batch::Stage::Vertex);
 #endif
             const float* src = (const float*)(dataBase + r.a[4]);
+            StereoParams uploadParams = sp;
+            uploadParams.projectionSnapshot = true;
+            memcpy(&uploadParams.projectionPx,&r.a[2],sizeof(float));
+            memcpy(&uploadParams.projectionPy,&r.a[3],sizeof(float));
             // MUST hold Vector4fCount vectors of 4 floats each (bone palettes upload up to
             // 68 vectors = 272 floats). The old size (17*4) overflowed the stack -> fail-fast.
             float tmp[68 * 4];
@@ -1849,7 +1865,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (g_skipLightVsShift && g_activeVs && g_activeVs->hash == 0x68EEE79Cu)
                 lightVs = true;   // candidate fix (Shift+F2): light volume in engine/world space
             if (eye >= 0 && r.a[1] <= 68 && !lightVs && !IsShadowAtlasPass(dev)) {
-                if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, sp)) src = tmp;
+                if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, uploadParams)) src = tmp;
             }
             if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Vertex,
                 r.a[0],src,r.a[1],sendConstants);
