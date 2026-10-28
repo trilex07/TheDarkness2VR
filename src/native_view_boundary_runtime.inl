@@ -1,3 +1,29 @@
+static bool PrepareNativeRenderViewTable() {
+    static bool ready=false;
+    if(ready)return true;
+    // FC8930 has 82 function entries. The following GUID at FC8A78 and the
+    // preceding header delimit the pinned table; copy every slot, not a prefix.
+    __try {
+        const auto table=reinterpret_cast<void**>(0xFC8930);
+        if(*reinterpret_cast<const uint32_t*>(0xFC892C)!=0x8fffffff ||
+           *reinterpret_cast<const uint32_t*>(0xFC8A78)!=0x0c733a8c ||
+           *reinterpret_cast<const uint32_t*>(0xFC8A7C)!=0x11ce2a1c ||
+           table[0]!=reinterpret_cast<void*>(0x9F9350) ||
+           table[42]!=reinterpret_cast<void*>(0x99F1B0) ||
+           table[81]!=reinterpret_cast<void*>(0xB62580))return false;
+        for(unsigned i=0;i<82;++i) {
+            const auto p=reinterpret_cast<uintptr_t>(table[i]);
+            MEMORY_BASIC_INFORMATION memory{};
+            if(p<0x400000 || p>=0xEE0000 || !VirtualQuery(table[i],&memory,sizeof(memory)) ||
+               memory.AllocationBase!=GetModuleHandleW(nullptr) ||
+               !(memory.Protect&(PAGE_EXECUTE|PAGE_EXECUTE_READ)) ||
+               (memory.Protect&(PAGE_GUARD|PAGE_NOACCESS)))return false;
+        }
+        ready=g_nativeRenderViewTable.Prepare(table,82,42,
+            reinterpret_cast<void*>(&NativeViewRenderEntry),g_nativeImageGuard);
+        return ready;
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+}
 static void InstallNativeViewBoundary() {
     if(!g_nativeViewBoundaryMode || g_nativeViewBoundary.Installed())return;
     if(!g_imagePreservingPresent || !g_nativeImageGuard.enabled || g_imagePresent.Failed() ||

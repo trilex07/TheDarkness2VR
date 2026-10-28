@@ -54,6 +54,7 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_camera_cover.h"
 #include "native_view_boundary.h"
 #include "native_view_witness.h"
+#include "native_view_instance.h"
 #include "native_culling_cover.h"
 static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe, 2 corroborated culling only
 static d2vr_native_view::Boundary g_nativeViewBoundary;
@@ -600,7 +601,7 @@ void LoadConfig() {
         const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
         const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(image+dos->e_lfanew);
         g_nativeImageGuard={true,reinterpret_cast<uintptr_t>(image),pe->OptionalHeader.SizeOfImage};
-        Log("[NativeImageGuard] enabled: externalObserverRequested=%d; native EXE/IAT/vtable writes forbidden; renderer parameters unchanged",g_imagePreservingPresent);
+        Log("[NativeImageGuard] enabled: externalObserverRequested=%d; native EXE/IAT/static vtable writes forbidden; renderer parameters unchanged",g_imagePreservingPresent);
     }
 #endif
     char localIni[MAX_PATH] = ".\\Darkness2VR.ini";

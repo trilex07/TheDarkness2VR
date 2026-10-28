@@ -787,3 +787,31 @@ remain unchanged. This optimizes CPU bookkeeping without eliding D3D calls.
 Actual-source production/diagnostic replay tests PASS576096 records/70090 barrier
 snapshots each, including transformed bits, sparse ranges and faults. Both DLL
 builds PASS. No measured runtime or FPS improvement is claimed.
+
+## 2026-10-28: private instance entry before native view rendering
+
+Runtime 3f7e644 reaches gameplay FOV60 with worldDraw=1 at A66486; QPC is
+therefore discovery/observation only. It cannot safely establish the intended
+pre-render mutation phase. Add a private read-only clone of all82 FC8930 slots
+and its preceding header, replacing only instance slot+A8 with a state-preserving
+tail wrapper to the original99F1B0 ->888720 ->985D80 path. SHA-pinned table
+boundaries FC892C/FC8A78, slot0, slot42 and slot81 are checked; every copied
+target must belong to executable game-image memory. The clone is prepared once,
+published atomically only to a matching aligned writable private-heap instance,
+and retained for process lifetime. No instance address is retained, no stale
+restoration runs, and C5BFA0's original destructor republishes FC8930. Original
+EXE, IAT and static tables are unchanged. This introduces a heap-instance vptr
+change, explicitly distinct from forbidden writes to hashed static tables.
+
+Only the +A8 wrapper can call the culling rebuild; QPC cannot. Matrix ownership
+still requires a fresh matching live inverse upload in the preceding frame.
+Accept either order of upload and boundary within the same frame, retaining
+the exact frame and numeric identities; old frames and mismatches reject.
+
+x86 instance regression PASS1000 publications/reconstructions, ECX/EAX forwarding,
+all82 unchanged slots except+A8, header preservation, read-only clone, original
+bytes and foreign-vptr/guard rejection. External ESI/witness regression PASS
+including both upload orders; actual-source culling1000 ABI/alignment checks
+PASS. Production and diagnostic builds PASS. Runtime activation, persistence
+through native camera updates, side coverage and headset/FPS acceptance remain
+unproven until the new candidate runs in the scene.

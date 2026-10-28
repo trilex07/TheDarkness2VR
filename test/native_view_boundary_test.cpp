@@ -39,6 +39,21 @@ int main(int argc,char** argv) {
     CHECK(!witness.CanCover(11,4,2,3) && !witness.CanCover(11,1,4,3) && !witness.CanCover(11,1,2,4));
     witness.Begin(11,1,2,3,inverse);CHECK(witness.Observe(11,true,inverse));
     CHECK(witness.CanCover(12,1,2,3));
+    d2vr_native_view::ProjectionWitness early;
+    CHECK(!early.Observe(20,true,inverse));
+    early.Begin(20,1,2,3,inverse);
+    CHECK(early.CanCover(21,1,2,3));
+    early.Begin(21,1,2,3,inverse);
+    CHECK(!early.CanCover(22,1,2,3)); // previous-frame upload cannot corroborate
+    CHECK(!early.Observe(21,false,inverse));
+    CHECK(!early.Observe(21,true,wrong));
+    CHECK(!early.CanCover(22,1,2,3));
+    CHECK(early.Observe(21,true,inverse));
+    CHECK(early.CanCover(22,1,2,3));
+    d2vr_native_view::ProjectionWitness mismatch;
+    CHECK(!mismatch.Observe(30,true,wrong));
+    mismatch.Begin(30,1,2,3,inverse);
+    CHECK(!mismatch.CanCover(31,1,2,3));
     CHECK(argc==2);auto fixture=LoadLibraryA(argv[1]);CHECK(fixture);
     using Invoke=BOOL(__cdecl*)(LARGE_INTEGER*,void*);
     auto known=reinterpret_cast<Invoke>(GetProcAddress(fixture,"InvokeKnown"));CHECK(known);

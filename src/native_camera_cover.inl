@@ -130,6 +130,8 @@ static void* g_nativeNearGetter=reinterpret_cast<void*>(0xD3A320);
 D2VR_SELECTED_CAMERA_SHIM(SelectedRenderCameraNear,CoverSelectedRenderCamera,g_nativeNearGetter)
 
 static d2vr_native_view::ProjectionWitness g_nativeViewWitness;
+static d2vr_native_view::InstanceTable g_nativeRenderViewTable;
+static bool PrepareNativeRenderViewTable();
 static void NativeViewProjectionObserved(const float* inverse) {
     if(!g_nativeViewBoundary.Installed() || GetCurrentThreadId()!=g_renderThreadId)return;
     if(g_nativeViewWitness.Observe(g_trackedFrame.id,g_had3DCameraThisFrame,inverse)) {
@@ -192,7 +194,7 @@ static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeC
         if(!root)return false;
         status.stage=1;
         const auto table=status.viewTable=*reinterpret_cast<uintptr_t*>(root);
-        if(table!=0xFC8930 && table!=0xFC6800)return false;
+        if(table!=0xFC8930 && table!=0xFC6800 && !g_nativeRenderViewTable.Owns(view))return false;
         status.stage=2;
         auto reference=*reinterpret_cast<void***>(root+0xa8);
         if(!reference || !(renderer=*reference))return false;
@@ -205,7 +207,7 @@ static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeC
         return valid;
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
-static void ObserveNativeViewBoundary(void* view) {
+static void ObserveNativeCameraBoundary(void* view,bool beforeRender) {
     if(GetCurrentThreadId()!=g_renderThreadId)return;
     static unsigned entries=0;
     const bool report=++entries<=3 || entries%600==0;
@@ -228,17 +230,36 @@ static void ObserveNativeViewBoundary(void* view) {
     d2vr_culling_cover::Input cullingInput;
     const bool cullingReady=PrepareOwnedCullingInput(camera,fields,cullingInput);
     bool cullingApplied=false;
-    if(g_nativeViewBoundaryMode==2 && ready && cullingReady && !g_hadWorldDrawThisFrame) {
+    // Only the instance +A8 render entry owns this mutation phase. QPC is
+    // discovery/observation only, even when no draw has yet been counted.
+    if(beforeRender && g_nativeViewBoundaryMode==2 && ready && cullingReady) {
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
         static unsigned appliedReports=0;
         if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
-            Log("[NativeCullingCover] frame=%llu camera=%p FOV=%.5g cullingFOV=%.5g planes+bounds=native-rebuilt renderProjection=unchanged",
+            Log("[NativeCullingCover] beforeNativeRender=1 frame=%llu camera=%p FOV=%.5g cullingFOV=%.5g planes+bounds=native-rebuilt renderProjection=unchanged",
                 g_trackedFrame.id,camera,fields.fov,cullingInput.fov);
     }
     float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
     g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
     static unsigned reports=0;
     if(++reports<=3 || reports%600==0)
-        Log("[NativeViewBoundary] frame=%llu ESI=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d cullingFOV=%.5g cullingApplied=%d; EXE/IAT unchanged",
-            g_trackedFrame.id,view,renderer,camera,fields.fov,ready,cullingReady,cullingInput.fov,cullingApplied);
+        Log("[NativeViewBoundary] beforeRender=%d frame=%llu ESI=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d cullingFOV=%.5g cullingApplied=%d uploadFrame=%llu inverseXY=%.6g,%.6g uploadXY=%.6g,%.6g; EXE/IAT unchanged",
+            int(beforeRender),g_trackedFrame.id,view,renderer,camera,fields.fov,ready,cullingReady,cullingInput.fov,cullingApplied,
+            g_nativeViewWitness.uploadedFrame,inverse[0],inverse[5],g_nativeViewWitness.uploadedInverse[0],g_nativeViewWitness.uploadedInverse[5]);
+}
+static void __fastcall BeforeNativeViewRender(void* view,void*) {
+    const DWORD error=GetLastError();
+    ObserveNativeCameraBoundary(view,true);
+    SetLastError(error);
+}
+static void* g_nativeViewRenderNext=reinterpret_cast<void*>(0x99F1B0);
+D2VR_SELECTED_CAMERA_SHIM(NativeViewRenderEntry,BeforeNativeViewRender,g_nativeViewRenderNext)
+static void ObserveNativeViewBoundary(void* view) {
+    if(GetCurrentThreadId()!=g_renderThreadId)return;
+    if(g_nativeViewBoundaryMode==2 && PrepareNativeRenderViewTable() &&
+       g_nativeRenderViewTable.Publish(view,g_nativeImageGuard)) {
+        static unsigned reports=0;
+        if(++reports<=3)Log("[NativeRenderEntry] instance=%p private read-only table; +A8 -> original99F1B0; EXE/static tables unchanged",view);
+    }
+    ObserveNativeCameraBoundary(view,false);
 }
