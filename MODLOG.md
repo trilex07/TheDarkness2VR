@@ -591,3 +591,16 @@ atomic release-store unlock. Production and diagnostic tests each PASS96 streams
 576096 records and70090 barrier snapshots, including batching/capture bypass,
 transformed bits, caps, failures and SEH no-retry behavior. Runtime DLL unchanged
 from2331082; this test-only commit is not a new performance candidate.
+
+## 2026-10-28: contiguous constant-window flush
+
+Track whether each window bank's written union is provably contiguous. Empty,
+overlapping and adjacent uploads preserve that proof; a disjoint upload disables
+the shortcut until Flush/Reset (later hole filling remains conservative). Flush
+of a proven contiguous span clears its dirty bytes in one memset and sends the
+same register range once, replacing the per-register branch/clear loop. Sparse
+ranges, VS/PS independence, failure disabling and consume-before-driver semantics
+remain unchanged. This optimizes CPU bookkeeping without eliding D3D calls.
+Actual-source production/diagnostic replay tests PASS576096 records/70090 barrier
+snapshots each, including transformed bits, sparse ranges and faults. Both DLL
+builds PASS. No measured runtime or FPS improvement is claimed.

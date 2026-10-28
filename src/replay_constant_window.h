@@ -11,6 +11,7 @@ class ConstantWindow {
     float values_[2][256 * 4]; // no initialization/read of unowned register holes
     bool dirty_[2][256];
     unsigned limits_[2]{}, first_[2]{}, end_[2]{};
+    bool contiguous_[2]{true,true};
     bool enabled_ = false;
 public:
     void Reset(unsigned vsLimit, unsigned psLimit) {
@@ -18,6 +19,7 @@ public:
         limits_[1] = psLimit > 224 ? 224 : psLimit;
         memset(dirty_, 0, sizeof(dirty_));
         first_[0] = limits_[0]; first_[1] = limits_[1]; end_[0] = end_[1] = 0;
+        contiguous_[0]=contiguous_[1]=true;
         enabled_ = true;
     }
     void Abort() { enabled_ = false; } // next Reset starts a new independent stream
@@ -27,6 +29,15 @@ public:
         for (unsigned bank = 0; bank < 2; ++bank) {
             unsigned first = first_[bank]; const unsigned last = end_[bank];
             first_[bank] = limits_[bank]; end_[bank] = 0;
+            const bool contiguous=contiguous_[bank];contiguous_[bank]=true;
+            if(contiguous && first<last) {
+                // A union of overlapping/adjacent uploads has no holes. Consume
+                // before driver entry, exactly as the sparse path does.
+                memset(dirty_[bank]+first,0,last-first);
+                failed |= send(bank==0?Stage::Vertex:Stage::Pixel,first,
+                    values_[bank]+first*4,last-first)<0;
+                continue;
+            }
             // Empty barriers are O(1); scan only the written bounding span.
             for (; first < last;) {
                 if (!dirty_[bank][first]) { ++first; continue; }
@@ -53,6 +64,8 @@ public:
         }
         memcpy(values_[bank] + first * 4, data, size_t(count) * 16);
         memset(dirty_[bank] + first, 1, count);
+        if(end_[bank] && (first>end_[bank] || first+count<first_[bank]))
+            contiguous_[bank]=false; // conservative: later hole fills use sparse path
         if (first < first_[bank]) first_[bank] = first;
         if (first + count > end_[bank]) end_[bank] = first + count;
     }
