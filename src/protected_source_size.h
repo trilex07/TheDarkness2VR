@@ -19,6 +19,7 @@ class ClientSize {
     Mode mode_=Mode::Off;
     Size exact_{};
     uintptr_t caller_=0;
+    uintptr_t resourceCaller_=0;
     Logger log_=nullptr;
     bool installed_=false;
     bool discoverWindow_=false;
@@ -41,13 +42,15 @@ class ClientSize {
             }
         }
         if(Eligible(ok!=FALSE,rect!=nullptr,reinterpret_cast<uintptr_t>(hwnd),
-                    reinterpret_cast<uintptr_t>(hwnd_.load()),caller,caller_)) {
+                    reinterpret_cast<uintptr_t>(hwnd_.load()),caller,
+                    caller==resourceCaller_ && resourceCaller_ ? resourceCaller_ : caller_)) {
             if(rect->left==0 && rect->top==0 && rect->right>0 && rect->bottom>0) {
                 const auto size=Choose(mode_,unsigned(rect->right),unsigned(rect->bottom),exact_);
                 if(size.width) {
                     rect->right=LONG(size.width);rect->bottom=LONG(size.height);
                     expected_.store((uint64_t(size.width)<<32)|size.height);
                     ++requests;
+                    if(caller==resourceCaller_) ++resourceRequests;
                 }
             }
         }
@@ -72,7 +75,8 @@ class ClientSize {
     }
 public:
     std::atomic<uint64_t> requests{0};
-    bool Start(void* target,d2vr_native_image::Guard guard,Mode mode,HWND hwnd,uintptr_t caller,Logger log=nullptr,Size exact={},bool discoverWindow=false) {
+    std::atomic<uint64_t> resourceRequests{0};
+    bool Start(void* target,d2vr_native_image::Guard guard,Mode mode,HWND hwnd,uintptr_t caller,Logger log=nullptr,Size exact={},bool discoverWindow=false,uintptr_t resourceCaller=0) {
         if(installed_) return true;
         if(instance_.load(std::memory_order_acquire) || (!hwnd && !discoverWindow) || !caller || mode==Mode::Off || unsigned(mode)>4 ||
            (mode==Mode::Exact && !Choose(mode,640,480,exact).width) || !External(target,guard)) return false;
@@ -81,7 +85,7 @@ public:
             reinterpret_cast<LPCSTR>(&Hook),&self)) return false;
         const auto init=MH_Initialize();
         if(init!=MH_OK && init!=MH_ERROR_ALREADY_INITIALIZED) return false;
-        mode_=mode;exact_=exact;hwnd_=hwnd;caller_=caller;log_=log;discoverWindow_=discoverWindow;
+        mode_=mode;exact_=exact;hwnd_=hwnd;caller_=caller;resourceCaller_=resourceCaller;log_=log;discoverWindow_=discoverWindow;
         ClientSize* empty=nullptr;
         if(!instance_.compare_exchange_strong(empty,this,std::memory_order_release)) return false;
         void* trampoline=nullptr;
@@ -94,6 +98,7 @@ public:
         }
         installed_=true;
         if(log_) log_("[SourceQuality] external USER32 observer mode=%u caller=%p target=%p; EXE/IAT unchanged; actual RT0 required",unsigned(mode_),reinterpret_cast<void*>(caller_),target);
+        if(log_ && resourceCaller_) log_("[SourceQuality] native additional-swapchain sizing caller=%p",reinterpret_cast<void*>(resourceCaller_));
         return true;
     }
     void Window(HWND hwnd) {if(hwnd_.exchange(hwnd)!=hwnd) expected_=0;}
@@ -113,6 +118,7 @@ public:
         reportedExpected_=expected;reportedActual_=actual;
         if(log_) log_("[SourceQuality] outputRT0=%ux%u format=%u requested=%ux%u match=%d nativeRequests=%llu; request is NOT resolution proof",
             width,height,format,unsigned(expected>>32),unsigned(expected),expected==actual,requests.load());
+        if(log_) log_("[SourceQuality] additionalSwapchainRequests=%llu",resourceRequests.load());
     }
 };
 }

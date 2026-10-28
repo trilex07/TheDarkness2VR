@@ -15,5 +15,8 @@ extern "C" __declspec(dllexport) __declspec(noinline) BOOL WINAPI SizeInvoke(HWN
 extern "C" __declspec(dllexport) __declspec(noinline) BOOL WINAPI OtherInvoke(HWND window,LPRECT out) {
     volatile BOOL result=SizeQuery(window,out);return result;
 }
+extern "C" __declspec(dllexport) __declspec(noinline) BOOL WINAPI ResourceInvoke(HWND window,LPRECT out) {
+    volatile BOOL result=SizeQuery(window,out);return result;
+}
 extern "C" __declspec(dllexport) uintptr_t WINAPI SizeCaller() {return lastCaller;}
 extern "C" __declspec(dllexport) unsigned WINAPI SizeCalls() {return calls;}

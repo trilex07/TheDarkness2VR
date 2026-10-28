@@ -56,11 +56,14 @@ int main(int argc,char** argv) {
     auto query=reinterpret_cast<Query>(GetProcAddress(fixture,"_SizeQuery@8"));
     auto invoke=reinterpret_cast<Query>(GetProcAddress(fixture,"_SizeInvoke@8"));
     auto other=reinterpret_cast<Query>(GetProcAddress(fixture,"_OtherInvoke@8"));
+    auto resource=reinterpret_cast<Query>(GetProcAddress(fixture,"_ResourceInvoke@8"));
     auto caller=reinterpret_cast<uintptr_t(WINAPI*)()>(GetProcAddress(fixture,"_SizeCaller@0"));
     auto calls=reinterpret_cast<unsigned(WINAPI*)()>(GetProcAddress(fixture,"_SizeCalls@0"));
-    assert(query && invoke && other && caller && calls);
+    assert(query && invoke && other && resource && caller && calls);
     RECT rect{};HWND window=reinterpret_cast<HWND>(1);
     assert(invoke(window,&rect));const auto nativeCaller=caller();
+    assert(resource(window,&rect));const auto resourceCaller=caller();
+    assert(resourceCaller!=nativeCaller);
     const auto image=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS*>(image+reinterpret_cast<const IMAGE_DOS_HEADER*>(image)->e_lfanew);
     d2vr_native_image::Guard guard{true,image,pe->OptionalHeader.SizeOfImage};
@@ -70,12 +73,13 @@ int main(int argc,char** argv) {
     assert(!qualityHook.Start(query,guard,Mode::Off,window,nativeCaller));
     assert(!qualityHook.Start(query,guard,Mode::Exact,window,nativeCaller,nullptr,{3840,3840}));
     assert(!qualityHook.Start(query,guard,selected,nullptr,nativeCaller,nullptr,{2676,2728}));
-    assert(qualityHook.Start(query,guard,selected,deferred?nullptr:window,nativeCaller,nullptr,{2676,2728},deferred));
+    assert(qualityHook.Start(query,guard,selected,deferred?nullptr:window,nativeCaller,nullptr,{2676,2728},deferred,resourceCaller));
     if(deferred) {
         assert(invoke(window,&rect) && rect.right==1920 && qualityHook.requests==0); // invalid HWND
         window=CreateWindowExW(0,L"STATIC",L"source sizing fixture",WS_POPUP,0,0,640,480,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
         assert(window);
         assert(other(window,&rect) && rect.right==1920 && qualityHook.requests==0); // wrong caller must not bind
+        assert(resource(window,&rect) && rect.right==1920 && qualityHook.requests==0); // resource caller cannot discover a window
         assert(!invoke(window,nullptr) && qualityHook.requests==0);
     }
     auto before=calls();assert(invoke(window,&rect));
@@ -92,6 +96,10 @@ int main(int argc,char** argv) {
     qualityHook.Window(window);
     for(unsigned i=0;i<1000;++i) {assert(invoke(window,&rect));assert(rect.right==expectedW && rect.bottom==expectedH);}
     assert(qualityHook.requests==1001);
+    before=calls();assert(resource(window,&rect));
+    assert(calls()==before+1 && GetLastError()==0x1234 && rect.right==expectedW && rect.bottom==expectedH);
+    assert(qualityHook.requests==1002);
+    assert(resource(reinterpret_cast<HWND>(3),&rect) && rect.right==1920 && qualityHook.requests==1002);
     assert(Text()==originalText);
     if(deferred) assert(DestroyWindow(window));
     std::printf("PASS source quality mode=%s: bounded/aspect/exact sizing, native ABI, exact caller/window, failure/null, one forward, last error, image denial\n",exactMode?"Exact2676x2728":"Quality");

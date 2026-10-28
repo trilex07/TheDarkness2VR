@@ -16,12 +16,14 @@ static void InstallProtectedSourceQuality() {
     if(!d2vr_present_patch::Identity(sha.c_str(),pe->FileHeader.Machine,pe->FileHeader.TimeDateStamp,
             pe->OptionalHeader.SizeOfImage,pe->OptionalHeader.ImageBase,pe->OptionalHeader.Magic) ||
        reinterpret_cast<uintptr_t>(image)!=0x400000 ||
-       memcmp(image+0x89646e,call,sizeof(call)) || !target ||
+       memcmp(image+0x89646e,call,sizeof(call)) ||
+       memcmp(image+0x564c7b,call,sizeof(call)) || !target ||
        *reinterpret_cast<void*const*>(image+0xaeb478)!=target) {
         Log("[SourceQuality] refused: original SHA/PE/native sizing call/import mismatch; baseline retained");return;
     }
     const bool ready=g_protectedSourceSize.Start(target,g_nativeImageGuard,g_sourceQualityMode,
         g_renderSizeHwnd,reinterpret_cast<uintptr_t>(image)+0x896474,Log,
-        {unsigned(g_renderW),unsigned(g_renderH)},true);
+        {unsigned(g_renderW),unsigned(g_renderH)},true,
+        reinterpret_cast<uintptr_t>(image)+0x564c81);
     Log("[SourceQuality] installed=%d mode=%u; engine owns dependent RT/depth/viewport creation; no resource substitution",ready,unsigned(g_sourceQualityMode));
 }
