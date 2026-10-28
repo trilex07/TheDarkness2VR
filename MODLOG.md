@@ -565,3 +565,19 @@ render-state/VS-constant/viewport captures compared with legacy creation,
 same-object retention, surface-reference clearing and successful Reset followed
 by recreation. Both builds PASS. Retained ETW motivates reducing per-frame D3D
 work but establishes no exclusive saving for this change. Gameplay/FPS NOT RUN.
+
+## 2026-10-28: reuse the independent live-end snapshot as well
+
+Extend ReuseStateSnapshots to the second ALL state block, captured after the
+live left-eye render. It remains a separate object from frame-start and is
+recaptured before replay every frame. Release explicit RT/depth references after
+restoration; both Reset paths fully release its cached block before native Reset.
+The bounded wrapper is process-lifetime allocated, so no COM release occurs from
+its static destructor. Allocation failure uses the existing local snapshot.
+Backup failure fully releases it. Default-OFF behavior remains local creation.
+
+Actual-source tests now alternate independent start/end constant values across
+1000 cycles and prove neither capture overwrites the other; legacy state,
+viewport, reference cleanup and Reset tests still PASS on x86 REF/HAL. Both
+builds PASS. Combined mode avoids two repeated ALL block creations per pair;
+it does not skip fresh capture or claim a measured runtime/FPS saving.

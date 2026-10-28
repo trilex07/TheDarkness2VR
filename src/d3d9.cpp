@@ -3306,6 +3306,8 @@ static void NativeCameraCaptureChanged() {
     if(matched_capture::active) matched_capture::Reject("selected native camera changed after capture header; request a stable frame");
 }
 #endif
+// Explicit Reset cleanup; avoid COM destruction from static teardown/DllMain.
+static d2vr_replay::DeviceSnapshot* g_liveEndSnapshot=nullptr;
 static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     if(g_stereoTransferFault) { d2vr_replay::g_recActive=false; g_eyePairReady=false; return; }
 #ifdef D2VR_MATCHED_CAPTURE
@@ -3415,8 +3417,11 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         sp1.transX = 0.0f;
         sp1.transY = 0.0f;
     }
-    d2vr_replay::DeviceSnapshot liveEnd;
-    if (!liveEnd.Capture(dev)) {
+    d2vr_replay::DeviceSnapshot localLiveEnd;
+    if(g_reuseStateSnapshots && !g_liveEndSnapshot)
+        g_liveEndSnapshot=new(std::nothrow) d2vr_replay::DeviceSnapshot;
+    auto& liveEnd=(g_reuseStateSnapshots && g_liveEndSnapshot)?*g_liveEndSnapshot:localLiveEnd;
+    if (!liveEnd.Capture(dev,g_reuseStateSnapshots)) {
         warnEarly("liveEnd.Capture failed");
         g_blitPass = 0; g_eyePairReady = false; return;
     }
@@ -3455,7 +3460,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         eye1Ok = false;
     liveEnd.Apply(dev);
     d2vr_replay::InvalidateShadowAtlasPass();
-    liveEnd.Release();
+    liveEnd.Release(g_reuseStateSnapshots);
     // Right interop overlaps D3D9 live-state restoration, but never XR/NIS,
     // capture readback, the next frame, Reset or shared-resource destruction.
     if(rightTransfer.Active()) eye1Ok=FinishStereoTransfer(rightTransfer,rightJob) && eye1Ok;
@@ -5440,6 +5445,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         g_sysmem = nullptr;
     }
     d2vr_replay::ReleaseRecording();
+    if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
     ReleaseSharedCapture();
     g_zeroCopyFailures = 0;
@@ -5495,6 +5501,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
         g_sysmem = nullptr;
     }
     d2vr_replay::ReleaseRecording();
+    if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
     ReleaseSharedCapture();
     g_zeroCopyFailures = 0;
