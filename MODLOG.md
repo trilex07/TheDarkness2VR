@@ -1114,3 +1114,28 @@ for both eyes. Existing culling regressions PASS100 cameras/64800 world-space
 points and240 tracked poses/249600 binocular points. Production and diagnostic
 builds PASS. WARP proves pixel behavior, not game activation, headset quality,
 GPU cost on the user's card or90FPS. Do not launch the game.
+
+## 2026-10-28: compare native culling against original-eye double-precision corners
+
+Extend the generated-case export with optional --reference-eyes (D2FRC002).
+It retains the original native-view matrix and both actual eye projections,
+in addition to the existing fitted VP/inverse and float-generated points.
+No executable bytes or game assets are exported. Legacy D2FRC001 stays valid.
+The emulator now optionally inverts the original view/eyes in double precision
+and measures native planes/AABB against all16 actual eye corners per pose.
+This avoids treating the rounded fitted inverse or float test points as the
+ground truth for strict containment. It does not change production rendering.
+
+Original native x86 builders,240 poses/480 calls: near-plane maximum excursion
+0.0001454; side planes at most0.0001466; far-plane2.85024; AABB3.78415 world units.
+210 poses have some plane excursion above1e-4,62 some AABB excursion above1e-4.
+Strict corner containment is false. The legacy PASS still explicitly refers
+only to its existing loose geometry/oracle tolerances; the diagnostic reference
+is separately reported and must not be described as strict containment PASS.
+These synthetic far-boundary errors are not proof of the broad side popup's
+runtime cause and do not justify guessed lateral expansion or native reference
+point changes. No new geometry adjustment or installed-DLL replacement here.
+
+Both generated geometry fixtures PASS their existing scopes. D2FRC002 emulator
+run completed against the pinned D46 executable with the above diagnostics.
+Keep the installed6c39998 NIS80 candidate and rollback intact; no game launch.

@@ -10,10 +10,12 @@ int main(int argc,char** argv) {
     // Optional generated inputs for the separate, private native-code emulator.
     // Only our matrices/points are exported; no executable bytes or game assets.
     FILE* exported=nullptr;
-    if(argc==2) {
+    const bool referenceEyes=argc==3 && !std::strcmp(argv[2],"--reference-eyes");
+    if(argc>1 && argc!=2 && !referenceEyes)return 2;
+    if(argc==2 || referenceEyes) {
         if(fopen_s(&exported,argv[1],"wb") || !exported)return 2;
         const unsigned cases=240;
-        if(fwrite("D2FRC001",1,8,exported)!=8 || fwrite(&cases,4,1,exported)!=1)return 2;
+        if(fwrite(referenceEyes?"D2FRC002":"D2FRC001",1,8,exported)!=8 || fwrite(&cases,4,1,exported)!=1)return 2;
     }
     d2vr_stereo::Rng rng(0x581031u);
     unsigned points=0,outsideOld=0;
@@ -54,6 +56,10 @@ int main(int argc,char** argv) {
         CHECK(out.stereoUnion && !std::memcmp(savedEye,eyeP,sizeof(eyeP)));
         if(exported) {
             const unsigned samples=1040;
+            if(referenceEyes) {
+                CHECK(fwrite(view,sizeof(float),16,exported)==16);
+                CHECK(fwrite(eyeP,sizeof(float),32,exported)==32);
+            }
             CHECK(fwrite(out.viewProjection,sizeof(float),16,exported)==16);
             CHECK(fwrite(out.inverseViewProjection,sizeof(float),16,exported)==16);
             CHECK(fwrite(&samples,4,1,exported)==1);

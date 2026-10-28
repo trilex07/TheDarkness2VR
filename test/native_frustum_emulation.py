@@ -87,12 +87,21 @@ def call(target, matrix):
 
 
 data = args.cases.read_bytes()
-require(data[:8] == b"D2FRC001", "Wrong generated-case format")
+require(data[:8] in (b"D2FRC001", b"D2FRC002"), "Wrong generated-case format")
+reference_eyes = data[:8] == b"D2FRC002"
 count = struct.unpack_from("<I", data, 8)[0]
 require(count == 240, "Incomplete generated cases")
 offset, total = 12, 0
 max_coeff = max_bounds = max_plane_outside = max_box_outside = 0.
+reference_plane_max = np.full(6, -np.inf)
+reference_box_max = -np.inf
+reference_plane_cases = reference_box_cases = 0
+clip_corners = np.array([[x, y, z, 1] for x in [-1, 1] for y in [-1, 1] for z in [0, 1]])
 for case in range(count):
+    if reference_eyes:
+        view = np.frombuffer(data, dtype="<f4", count=16, offset=offset).reshape(4, 4).astype(float)
+        eyes = np.frombuffer(data, dtype="<f4", count=32, offset=offset+64).reshape(2, 4, 4).astype(float)
+        offset += 192
     vp, ivp = data[offset:offset+64], data[offset+64:offset+128]
     offset += 128
     n = struct.unpack_from("<I", data, offset)[0]
@@ -127,6 +136,22 @@ for case in range(count):
     bounds_error = float(np.max(np.abs(bounds[:, :3]-expected_bounds)/(1+np.abs(expected_bounds))))
     require(bounds_error <= 1e-5, f"Native AABB convention mismatch case={case}")
     distances = points @ planes[:, :3].T - planes[:, 3]
+    if reference_eyes:
+        # Independent geometric reference: invert the ORIGINAL per-eye inputs
+        # in double precision, not the rounded fitted world VP/inverse or the
+        # float-generated test points. Report errors separately; legacy PASS
+        # still means the explicitly loose geometry checks below, not strict
+        # containment of these reference corners.
+        inverse_view = np.linalg.inv(view)
+        world = np.concatenate([clip_corners @ np.linalg.inv(eye) @ inverse_view for eye in eyes])
+        require(np.all(np.isfinite(world)) and np.all(world[:, 3] > 0), "Invalid double reference")
+        world = world[:, :3] / world[:, 3:]
+        outside = -(world @ planes[:, :3].T - planes[:, 3])
+        box_outside_reference = np.maximum(bounds[0, :3]-world, world-bounds[1, :3])
+        reference_plane_max = np.maximum(reference_plane_max, np.max(outside, axis=0))
+        reference_box_max = max(reference_box_max, float(np.max(box_outside_reference)))
+        reference_plane_cases += int(np.any(outside > 1e-4))
+        reference_box_cases += int(np.any(box_outside_reference > 1e-4))
     plane_outside = np.max(-distances, axis=1)
     box_outside = np.max(np.maximum(bounds[0, :3]-points, points-bounds[1, :3]), axis=1)
     # Same loose edge/depth tolerance as the existing geometry fixture. This
@@ -146,6 +171,15 @@ report = dict(status="PASS", executable_sha256=sha, cases=count, binocular_point
               raw_max_aabb_excursion_world_units=max_box_outside,
               runtime_acceptance="NOT_RUN", game_launched=False,
               scope="Original x86 functions in emulator; preallocated vectors; not runtime ownership or HMD proof")
+if reference_eyes:
+    report["double_eye_reference"] = dict(
+        plane_max_excursions_world_units=reference_plane_max.tolist(),
+        aabb_max_excursion_world_units=reference_box_max,
+        plane_cases_outside_1e_4=reference_plane_cases,
+        aabb_cases_outside_1e_4=reference_box_cases,
+        strict_corner_containment=bool(np.max(reference_plane_max) <= 0 and reference_box_max <= 0),
+        interpretation="Diagnostic reference, not covered by legacy PASS; includes far/depth boundary errors",
+        corners_per_pose=16)
 if args.report:
     args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
 print(json.dumps(report))
