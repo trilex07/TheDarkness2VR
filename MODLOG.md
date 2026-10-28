@@ -1614,3 +1614,47 @@ targeting. A future log must show Matched(status8) before using this route to
 publish an aiming getter. Pure x86 graph regression4141 checks PASS: all links
 missing/corrupt/null/unaligned, wrapped addresses, reciprocal-owner mismatch,
 zero partial output and1000 successive owner substitutions. No game launch.
+
+## 2026-10-28: protected per-controller left query ray
+
+Diagnostics.ProtectedLeftAim is a new opt-in, default OFF. It requires the
+protected image/input/gesture profile, head geometry and mode3 view boundary.
+After the runtime owner graph actually matches, publish an immutable private
+copy of the player's camera table (71 entries plus original RTTI/header),
+changing only heap-instance slot9C. All native EXE/static/IAT bytes remain
+unchanged. The mod module is pinned for the private table's process lifetime;
+no instance pointer is retained for later destruction or restoration.
+
+Read-only pinned EXE audit confirms C62F50 calls slot9C at C6300F and consumes
+the returned matrix's forward/origin immediately at C63011/C63015, replacing
+EAX at C63024 without retaining the pointer. The exact return address filters
+the bridge; every other caller tail-calls original504810 unchanged. The known
+caller gets the original leaf result once, then optionally a thread-local,
+16-byte-aligned matrix. Registers except EAX, EFLAGS, complete x87/SSE state
+and LastError are preserved. Nested calls use the native result. Admission
+pins the entire702-byte consumer and entire original table/header by SHA256.
+
+The controller ray is published only for tracked left aim while stock LB is
+held, with triggers released and protected gameplay unpaused. Right-controller
+tracking is irrelevant. Recenter reference orientation maps the ray into the
+native camera basis; origin uses the configured GameUnitsPerMeter, matching
+head translation/IPD. The native matrix stays untouched. Consumption requires
+the same current camera/reciprocal owner, a sample younger than100ms and a
+successful fresh gameplay capture. Character/retained-target branches keep
+native targeting. Lock contention, invalid scale/tracking/reference/owner,
+pause, trigger takeover and stale samples fall back to the original getter.
+
+This changes the left ordinary-target query only. Swing-directed release
+velocity is NOT implemented by this option. Legacy NativeLeftAim, native throw
+EXE patching and other legacy input/pose hooks stay OFF. Physical aim/visual
+alignment, private camera-table compatibility, CULL ON/peripheral visibility
+and sustained90FPS require a future real run; no performance gain is claimed.
+
+Offline x86: getter ABI/private-table fixture138015 checks PASS; actual-source
+left policy459 checks PASS (including current branch refresh, right-pad loss,
+TTL, five reference yaws and six world scales); owner graph4146 checks PASS.
+Read-only actual EXE consumer/table contract PASS. Existing protected gesture
+674 checks and controller/gesture profile tests PASS. Actual-source view phase
+routing30000 cases and culling rebuild1000 native+1000 union cases PASS.
+Production and diagnostic x86 builds PASS. Private disassembly stays outside
+the repository. No game launch or HMD acceptance was performed.

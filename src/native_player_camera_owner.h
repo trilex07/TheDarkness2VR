@@ -8,7 +8,7 @@ namespace d2vr_player_camera {
 struct Owner {uint32_t avatar=0,camera=0,inventory=0;};
 enum class Status {RendererReference,AvatarType,CameraReference,CameraType,
                    CameraOwner,InventoryReference,InventoryType,InventoryOwner,Matched};
-template<class Read> Status Inspect(uint32_t renderer,Read read,Owner& result) {
+template<class Read> Status Inspect(uint32_t renderer,Read read,Owner& result,uint32_t ownedCameraTable=0) {
     result={};Owner found;
     const auto word=[&](uint32_t object,uint32_t offset,uint32_t& value) {
         value=0;
@@ -21,7 +21,7 @@ template<class Read> Status Inspect(uint32_t renderer,Read read,Owner& result) {
     if(!ref(renderer,0x460,found.avatar))return Status::RendererReference;
     if(!word(found.avatar,0,table) || table!=0x1001630)return Status::AvatarType;
     if(!ref(found.avatar,0x62c,found.camera))return Status::CameraReference;
-    if(!word(found.camera,0,table) || table!=0xffc7c0)return Status::CameraType;
+    if(!word(found.camera,0,table) || (table!=0xffc7c0 && (!ownedCameraTable || table!=ownedCameraTable)))return Status::CameraType;
     if(!ref(found.camera,0x30,back) || back!=found.avatar)return Status::CameraOwner;
     if(!ref(found.avatar,0x630,found.inventory))return Status::InventoryReference;
     if(!word(found.inventory,0,table) || table!=0xffca10)return Status::InventoryType;

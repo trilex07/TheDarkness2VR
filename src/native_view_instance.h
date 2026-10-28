@@ -13,6 +13,7 @@ class InstanceTable {
     size_t count_=0,slot_=0;
     void* replacement_=nullptr;
 public:
+    void** Table()const {return clone_;}
     bool Prepare(void** source,size_t count,size_t slot,void* replacement,
                  const d2vr_native_image::Guard& guard) {
         if(clone_)return source_==source && count_==count && slot_==slot && replacement_==replacement;

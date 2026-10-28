@@ -1,5 +1,9 @@
 #include "native_player_camera_owner.h"
 static bool g_nativePlayerOwnerAdmitted=false;
+static bool ProtectedAimCameraOwned(void* camera);
+static DWORD ProtectedAimCameraTable();
+static bool PrepareProtectedAimCamera(void* camera);
+static void ResetProtectedLeftAim();
 // Pinned stock EXE, x86. C62F50 builds inventory aim; C6300F calls the camera
 // matrix getter (thiscall, no stack args, EAX pointer), then reads forward row2
 // and origin row3. Replacing ONLY that getter leaves native query filters,
@@ -42,6 +46,7 @@ static d2vr_input::GrabFeedback ReadNativeGrabFeedback() {
 }
 
 static void ResetNativeAim() {
+    ResetProtectedLeftAim();
     ResetNativeThrow();
     AcquireSRWLockExclusive(&g_nativeAimLock);
     g_nativeAim={};
@@ -113,7 +118,8 @@ static void PublishNativeAim(bool context,const XINPUT_GAMEPAD& gp,
 static bool NativeAimOwnerMatches(void* self,DWORD cameraVtable=0xFFC7C0) {
     __try {
         // Runtime verified bidirectionally; a shared method address alone is not a type check.
-        if(*(DWORD*)self!=cameraVtable) return false;
+        if(*(DWORD*)self!=cameraVtable &&
+           !(cameraVtable==0xFFC7C0 && ProtectedAimCameraOwned(self))) return false;
         auto avatar=**(BYTE***)((BYTE*)self+0x30);
         if(!avatar || *(DWORD*)avatar!=0x1001630) return false;
         if(**(void***)(avatar+0x62C)!=self) return false;
@@ -122,7 +128,7 @@ static bool NativeAimOwnerMatches(void* self,DWORD cameraVtable=0xFFC7C0) {
             **(BYTE***)(inventory+0x2A8)==avatar;
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
-static void CaptureNativeGameplay(void* self) {
+static bool CaptureNativeGameplay(void* self) {
     NativeGameplaySample s;
     __try {
         auto avatar=**(BYTE***)((BYTE*)self+0x30);
@@ -168,12 +174,14 @@ static void CaptureNativeGameplay(void* self) {
 #endif
         s.time=GetTickCount64();
     } __except(EXCEPTION_EXECUTE_HANDLER) { s={}; }
+    bool published=false;
     if(TryAcquireSRWLockExclusive(&g_nativeGameplayLock)) {
         g_nativeGameplay=s;
 #ifdef D2VR_MATCHED_CAPTURE
         InterlockedExchangePointer(&g_nativeHandsSelectedResource,(void*)(uintptr_t)s.avatarSkinResource);
 #endif
         ReleaseSRWLockExclusive(&g_nativeGameplayLock);
+        published=true;
     }
     static int last=-1;
     const int state=int(s.grab);
@@ -192,6 +200,7 @@ static void CaptureNativeGameplay(void* self) {
         memcpy(lastEntities,s.entities,sizeof(lastEntities));
         Log("[NativeWeapon] active pistol model primary/right=%p secondary/left=%p",(void*)s.entities[0],(void*)s.entities[1]);
     }
+    return published && s.camera!=0;
 }
 static void ObserveSelectedPlayerCamera(void* renderer) {
 #ifdef D2VR_MATCHED_CAPTURE
@@ -202,9 +211,12 @@ static void ObserveSelectedPlayerCamera(void* renderer) {
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}
     };
     d2vr_player_camera::Owner owner;
-    const auto status=d2vr_player_camera::Inspect(uint32_t(reinterpret_cast<uintptr_t>(renderer)),read,owner);
-    if(status==d2vr_player_camera::Status::Matched && NativeAimOwnerMatches(reinterpret_cast<void*>(owner.camera)))
+    const auto status=d2vr_player_camera::Inspect(uint32_t(reinterpret_cast<uintptr_t>(renderer)),read,owner,
+        ProtectedAimCameraTable());
+    if(status==d2vr_player_camera::Status::Matched && NativeAimOwnerMatches(reinterpret_cast<void*>(owner.camera))) {
         CaptureNativeGameplay(reinterpret_cast<void*>(owner.camera));
+        PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
+    }
     else if(TryAcquireSRWLockExclusive(&g_nativeGameplayLock)) {
         g_nativeGameplay={};
         InterlockedExchangePointer(&g_nativeHandsSelectedResource,nullptr);

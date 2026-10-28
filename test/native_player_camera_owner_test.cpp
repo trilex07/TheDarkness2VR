@@ -44,5 +44,14 @@ int main(){
         Check(Inspect(0x1000,read,result)==Status::Matched);
     }
     Check(memory==valid);
+    // Only the host's admitted private table may replace the native camera
+    // type. It does not waive either reciprocal ownership chain.
+    memory=valid;memory[0x3000]=0x77770000;
+    Check(Inspect(0x1000,read,result)==Status::CameraType);
+    Check(Inspect(0x1000,read,result,0x77770004)==Status::CameraType);
+    Check(Inspect(0x1000,read,result,0x77770000)==Status::Matched);
+    memory[0x5020]=0x9000;
+    Check(Inspect(0x1000,read,result,0x77770000)==Status::CameraOwner);
+    Check(!result.avatar&&!result.camera&&!result.inventory);
     std::printf("Native selected player owner read-only graph: %u checks PASS\n",checks);
 }
