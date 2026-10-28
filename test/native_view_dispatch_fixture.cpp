@@ -5,6 +5,7 @@ static unsigned currentThread=7,g_renderThreadId=7,observations=0,copies=0,reads
 static int g_nativeViewBoundaryMode=2,g_submitMode=4,g_stereoMode=1;
 static bool g_haveViews=true,g_in3DGameplayMode=true,readOK=true;
 static bool g_nativeTranslatedViewPrepared=true;
+static unsigned long long g_nativeCullingAppliedFrame=0;
 using DWORD=unsigned;
 static DWORD lastError=0x12345678;
 static DWORD GetLastError(){return lastError;}
@@ -23,6 +24,7 @@ static void ObserveNativeSelectedCamera(void* id,void* renderer,void* camera,con
     CHECK(id==reinterpret_cast<void*>(0x98618E) && before);
     CHECK(renderer==reinterpret_cast<void*>(0x20000000));
     CHECK(camera==reinterpret_cast<void*>(0x30000000));++copies;
+    g_nativeCullingAppliedFrame=1;
     SetLastError(123);
 }
 @TRANSLATED@
@@ -34,7 +36,8 @@ int main() {
     CHECK(observations==0);
     for(int i=0;i<10000;++i)ObserveNativeFrustumCopy(context);
     CHECK(copies==10000 && reads==10000);
-    readOK=false;ObserveNativeFrustumCopy(context);CHECK(copies==10000 && reads==10001);readOK=true;
+    CHECK(g_nativeCullingAppliedFrame==1);
+    readOK=false;ObserveNativeFrustumCopy(context);CHECK(copies==10000 && reads==10001 && !g_nativeCullingAppliedFrame);readOK=true;
     context.Eip++;ObserveNativeFrustumCopy(context);context.Eip--;
     context.Edi=0x3f3;ObserveNativeFrustumCopy(context);context.Edi=0x200003f4;
     g_trackedFrame.open=false;ObserveNativeFrustumCopy(context);g_trackedFrame.open=true;
@@ -65,7 +68,8 @@ int main() {
     g_in3DGameplayMode=false;refused();g_in3DGameplayMode=true;
     g_submitMode=0;refused();g_submitMode=4;
     g_stereoMode=0;refused();g_stereoMode=1;
-    readOK=false;ObserveTranslatedFrustum(camera,renderer);CHECK(copies==20000 && reads==20002);
+    g_nativeCullingAppliedFrame=1;
+    readOK=false;ObserveTranslatedFrustum(camera,renderer);CHECK(copies==20000 && reads==20002 && !g_nativeCullingAppliedFrame);
     CHECK(GetLastError()==0x12345678);
     std::puts("PASS actual-source phase routing:10000 hardware+10000 translated final-copy callbacks,10000 mode3 QPC publications,ECX camera/owner,LastError,mode/thread/gameplay/owner-read rejection");
     return 0;

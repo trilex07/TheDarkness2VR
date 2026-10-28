@@ -130,6 +130,7 @@ static void* g_nativeNearGetter=reinterpret_cast<void*>(0xD3A320);
 D2VR_SELECTED_CAMERA_SHIM(SelectedRenderCameraNear,CoverSelectedRenderCamera,g_nativeNearGetter)
 
 static d2vr_native_view::ProjectionWitness g_nativeViewWitness;
+static uint64_t g_nativeCullingAppliedFrame=0;
 static void NativeViewProjectionObserved(const float* inverse) {
     if((!g_nativeViewBoundary.Installed() && !g_nativeFrustumBoundary.Installed()) ||
        GetCurrentThreadId()!=g_renderThreadId)return;
@@ -217,6 +218,7 @@ static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeC
 }
 static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
                                         const NativeCameraFields& fields,bool beforeCopy) {
+    g_nativeCullingAppliedFrame=0;
     const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
     float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
     const bool ready=g_nativeViewWitness.CanCoverProjection(g_trackedFrame.id,v,r,c,inverse) &&
@@ -234,6 +236,7 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
     // the getter/copy. Neither QPC nor an earlier view-entry phase may write.
     if(cullingReady) {
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
+        if(cullingApplied)g_nativeCullingAppliedFrame=g_trackedFrame.id;
         static unsigned appliedReports=0;
         if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
             Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d route=%d planes=native+binocular bounds=native+binocular renderProjection=unchanged",
@@ -268,6 +271,7 @@ static void ObserveNativeCameraBoundary(void* view,bool) {
 }
 static void __fastcall ObserveTranslatedFrustum(void* camera,void* renderer) {
     const DWORD error=GetLastError();
+    if(g_nativeViewBoundaryMode==3 && GetCurrentThreadId()==g_renderThreadId)g_nativeCullingAppliedFrame=0;
     if(g_nativeViewBoundaryMode==3 && g_nativeTranslatedViewPrepared &&
        GetCurrentThreadId()==g_renderThreadId && g_trackedFrame.open &&
        g_haveViews && g_in3DGameplayMode && g_submitMode==4 && g_stereoMode==1) {
@@ -308,6 +312,7 @@ static void ObserveNativeFrustumCopy(const CONTEXT& context) {
        context.Eip!=0x98618E || context.Edi<0x3f4 || !g_trackedFrame.open ||
        !g_haveViews || !g_in3DGameplayMode || g_submitMode!=4 || g_stereoMode!=1)return;
     // Pinned8B078B08 loads ECX through the selected-camera reference at EDI.
+    g_nativeCullingAppliedFrame=0;
     // EDI is the renderer's +3F4 field. Its owner remains live in985D80.
     auto renderer=reinterpret_cast<void*>(context.Edi-0x3f4);
     auto camera=reinterpret_cast<void*>(context.Ecx);

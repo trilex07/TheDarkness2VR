@@ -1436,3 +1436,22 @@ game workload contention. It does not establish in-game NIS time or bound
 every possible input/clock/scheduling state. Do not add it to a different
 scene's timing window. It provides no support for NIS explaining multi-ms
 outdoor drops; prioritize native live/replay scene work over NIS shader rewrites.
+
+## 2026-10-28: show actual current-frame culling application in existing label
+
+SubmissionStatus adds a second CULL ON/OFF row when a correcting native
+boundary mode2/3 is requested. Green means RebuildOwnedCullingFrustum returned
+success for the current open gameplay frame, not merely that the route was
+prepared or CPU batching enabled. Clear receipt at frame begin, selected-camera
+observation, and before camera reads in final-copy callbacks; failed reads or
+rebuilds cannot retain green. Orange means no current successful application.
+Modes0/1 hide that row, SubmissionStatus=0 hides both. Existing CPU row unchanged.
+Use the same CB/draw/procedural font; no resource, upload, extra draw or EXE edit.
+The receipt confirms application, not binocular visual correctness or90FPS.
+
+Actual extracted production PS WARP PASS9 CPU/CULL state combinations with
+independent row-color readback. Actual-source phase fixture PASS10000+10000
+callbacks, rejected owner reads clear the receipt; both builds PASS. Offline
+only, installed9106f53 unchanged. Read-only static check of the two native
+method spans finds no direct absolute-memory overlap with the three observed
+DR0/1/2 addresses; indirect accesses/protection compatibility remain unproven.

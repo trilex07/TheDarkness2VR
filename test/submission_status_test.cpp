@@ -37,21 +37,22 @@ int main(){
  ctx->OMSetRenderTargets(1,&view,nullptr);ctx->VSSetShader(shader,nullptr,0);
  ctx->PSSetShader(ps,nullptr,0);ctx->PSSetConstantBuffers(0,1,&cb);
  ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
- for(unsigned mode=0;mode<3;++mode){
-  float constants[28]{};constants[24]=float(mode);
+ for(unsigned mode=0;mode<3;++mode)for(unsigned cull=0;cull<3;++cull){
+  float constants[28]{};constants[24]=float(mode);constants[25]=float(cull);
   ctx->UpdateSubresource(cb,0,nullptr,constants,0,0);
   float black[4]{};ctx->ClearRenderTargetView(view,black);ctx->Draw(3,0);
   ctx->CopyResource(read,rt);D3D11_MAPPED_SUBRESOURCE map{};
   CHECK(SUCCEEDED(ctx->Map(read,0,D3D11_MAP_READ,0,&map)));
-  unsigned green=0,orange=0;
+  unsigned green=0,orange=0,cullGreen=0,cullOrange=0;
   for(unsigned y=0;y<512;++y)for(unsigned x=0;x<512;++x){
    auto* p=(unsigned char*)map.pData+y*map.RowPitch+x*4;
-   if(p[1]>220 && p[0]<100)++green;
-   if(p[0]>220 && p[1]>100 && p[1]<180)++orange;
+   if(p[1]>220 && p[0]<100){if(y>=150)++cullGreen;else ++green;}
+   if(p[0]>220 && p[1]>100 && p[1]<180){if(y>=150)++cullOrange;else ++orange;}
   }
   ctx->Unmap(read,0);
   CHECK(mode==0?(green==0 && orange==0):mode==1?(orange>100 && green==0):(green>100 && orange==0));
-  printf("PASS actual PS WARP status mode=%u green=%u orange=%u\n",mode,green,orange);
+  CHECK(mode==0 || cull==0 ? (cullGreen==0 && cullOrange==0) : cull==1 ? (cullOrange>100 && cullGreen==0) : (cullGreen>100 && cullOrange==0));
+  printf("PASS actual PS WARP status CPU=%u CULL=%u green=%u orange=%u cullGreen=%u cullOrange=%u\n",mode,cull,green,orange,cullGreen,cullOrange);
  }
  ctx->ClearState();cb->Release();view->Release();rt->Release();read->Release();
  ps->Release();shader->Release();ctx->Release();dev->Release();
