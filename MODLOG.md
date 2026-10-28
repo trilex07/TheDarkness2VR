@@ -1066,3 +1066,21 @@ This does not justify guessing a much wider lateral margin. Native AABB raw
 excursion remains3.448 units and the original loose fixture is not exact
 containment proof. No culling arithmetic changed on the strength of this check.
 No game launch or FPS claim. Follow-up packaged separately from installed6e7d104.
+
+## 2026-10-28: verify history on real x86 D3D9 REF surfaces
+
+New isolated driver fixture compiles the actual EyeColorHistory, seed and
+completion implementations, loads system D3D9 by absolute system path, creates
+a hidden window and a REF device. It never loads the mod, game or OpenXR.
+PASS42 cycles across64x48,257x129 and native2676x2728 surfaces: full pixel readback
+verifies left preservation for world segments, right restoration for camera/UI,
+8x8 overlay persistence, rejection across failed replay/UI segments and recovery
+on new world replay. A real unsupported SYSTEMMEM-to-render-target StretchRect
+fails and invalidates history; fresh world replay recovers. Three device Reset
+cycles pass after explicit release. This covers single-sample A8R8G8B8 REF
+surfaces; no HAL, MSAA, game ownership, headset acceptance or FPS claim.
+
+The driver test changes no production source. Package/deploy the combined
+9274cb9 production changes only while DarknessII is absent, retain profiles and
+rollback, and do not launch the game. Installed status is recorded in the
+local runtime bundle rather than inferred from this test.
