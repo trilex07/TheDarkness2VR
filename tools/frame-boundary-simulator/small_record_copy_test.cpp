@@ -127,6 +127,25 @@ static void TestAtomicPayloadRecords() {
     RecEmitData(OP_SetPSConstF,reinterpret_cast<void*>(1),64);
     assert(g_recOverflow && g_recData.size()==bytes && g_rec.size()==400000 && g_recLock==0);
     g_rec.clear();g_recData.clear();g_recOverflow=false;cases+=2;
+    // Preserve the legacy command layouts while publishing each payload and
+    // record under one lock. Prefix bytes make offset-zero mistakes visible.
+    g_recData.resize(13);
+    const uint32_t data[16]={1,2,3,4};
+    RecEmitData(OP_Clear,data,32,11,22,33,44,{},4,2);
+    RecEmitData(OP_SetTransform,data,64,7,0,0,0,{},1,0);
+    RecEmitData(OP_SetViewport,data,24,0,0,0,0,{},0,0);
+    RecEmitData(OP_SetScissorRect,data,16,0,0,0,0,{},0,1);
+    assert(g_rec.size()==4 && g_recData.size()==149);
+    assert(g_rec[0].op==OP_Clear && g_rec[0].n==2 && g_rec[0].a[4]==13);
+    for(unsigned j=0;j<4;++j)assert(g_rec[0].a[j]==11*(j+1));
+    assert(g_rec[1].op==OP_SetTransform && !g_rec[1].n && g_rec[1].a[0]==7 && g_rec[1].a[1]==45);
+    assert(g_rec[2].op==OP_SetViewport && !g_rec[2].n && g_rec[2].a[0]==109);
+    assert(g_rec[3].op==OP_SetScissorRect && g_rec[3].n==1 && g_rec[3].a[0]==133);
+    for(unsigned i=0;i<4;++i) {
+        const unsigned slots[]={4,1,0,0},sizes[]={32,64,24,16};
+        assert(!memcmp(g_recData.data()+g_rec[i].a[slots[i]],data,sizes[i]));
+    }
+    g_rec.clear();g_recData.clear();cases+=9;
 }
 int main(int argc, char** argv) {
     assert(argc == 2);

@@ -575,13 +575,17 @@ static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 
 }
 static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
                                uint32_t a0 = 0, uint32_t a1 = 0, uint32_t a2 = 0, uint32_t a3 = 0,
-                               const d2vr_native_constants::Proof& proof = {}) {
+                               const d2vr_native_constants::Proof& proof = {},
+                               unsigned payloadSlot = 4, uint32_t recordCount = UINT32_MAX) {
     if (!g_recActive || g_recOverflow) return;
     RecLockGuard lock;
     if (!g_recActive || g_recOverflow) return;
     if (g_rec.size() >= 400000) { g_recOverflow = true; return; }
     uint32_t off = RecPushLocked(data, bytes, proof);
-    RecEmitLocked(op, (uint32_t)(bytes / 4), a0, a1, a2, a3, off);
+    uint32_t args[5]={a0,a1,a2,a3,0};
+    args[payloadSlot]=off; // internal callers use slots 0, 1 or 4
+    RecEmitLocked(op, recordCount==UINT32_MAX ? (uint32_t)(bytes / 4) : recordCount,
+                  args[0],args[1],args[2],args[3],args[4]);
 }
 
 // replay context: original device functions
@@ -1159,20 +1163,19 @@ static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWO
 static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, const D3DRECT* rects,
                                             DWORD flags, D3DCOLOR color, float z, DWORD st) {
     if (g_recActive && rects && count) {
-        uint32_t off = RecPush(rects, sizeof(D3DRECT) * count);
-        RecEmit(OP_Clear, count, flags, color, (uint32_t&)z, st, off);
+        RecEmitData(OP_Clear,rects,sizeof(D3DRECT)*count,flags,color,(uint32_t&)z,st,{},4,count);
     } else if (g_recActive) {
         RecEmit(OP_Clear, 0, flags, color, (uint32_t&)z, st);
     }
     return g_orig.Clear(dev, count, rects, flags, color, z, st);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetTransform(IDirect3DDevice9* dev, D3DTRANSFORMSTATETYPE st, const D3DMATRIX* m) {
-    if (g_recActive) { uint32_t off = RecPush(m, sizeof(D3DMATRIX)); RecEmit(OP_SetTransform, 0, st, off); }
+    if (g_recActive) RecEmitData(OP_SetTransform,m,sizeof(D3DMATRIX),st,0,0,0,{},1,0);
     return g_orig.SetTransform(dev, st, m);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetViewport(IDirect3DDevice9* dev, const D3DVIEWPORT9* vp) {
     InvalidateShadowAtlasPass();
-    if (g_recActive) { uint32_t off = RecPush(vp, sizeof(D3DVIEWPORT9)); RecEmit(OP_SetViewport, 0, off); }
+    if (g_recActive) RecEmitData(OP_SetViewport,vp,sizeof(D3DVIEWPORT9),0,0,0,0,{},0,0);
     return g_orig.SetViewport(dev, vp);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetClipPlane(IDirect3DDevice9* dev, DWORD index, const float* plane) {
@@ -1341,7 +1344,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect(IDirect3DDevice9* dev, const RECT* r) {
     if (g_recActive) {
-        if (r) { uint32_t off = RecPush(r, sizeof(RECT)); RecEmit(OP_SetScissorRect, 1, off); }
+        if (r) RecEmitData(OP_SetScissorRect,r,sizeof(RECT),0,0,0,0,{},0,1);
         else RecEmit(OP_SetScissorRect, 0);
     }
     return g_orig.SetScissorRect(dev, r);
