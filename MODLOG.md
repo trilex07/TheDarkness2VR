@@ -1493,7 +1493,8 @@ remain passing. These are offline input checks, not physical headset acceptance.
 
 ## 2026-10-28: validate and prepare scoped head-following tentacles
 
-The active game/local profiles explicitly had HeadAttachedTentacles=0, while
+The active game profile explicitly had HeadAttachedTentacles=0 (the local
+fallback omits the key and therefore also defaultsOFF), while
 HeadGeometry=1 was active in gameplay. Existing scoped head-following was thus
 disabled. Add a small override profile enabling that existing path; retain the
 three captured VS hashes, seven captured stream offsets, stride40, VB302920,
