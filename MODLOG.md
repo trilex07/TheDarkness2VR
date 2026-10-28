@@ -1815,3 +1815,20 @@ Read-only owner regression4162 checks PASS. Actual-source selected-camera
 admission and x86 boundary ABI regressions PASS; production and diagnostic x86
 builds PASS (diagnostic rebuilt after CULL logging). No game launch or runtime
 performance/visibility fix is claimed by this diagnostic candidate.
+
+## 2026-10-28: distinguish D2Avatar from LobbyAvatar before owner admission
+
+Verified D46 image constructor4AB030 publishes1001630. Derived constructor
+ABD6C0 subsequently publishes100C918; both tables share C7C710 at+2F4 and
+494A40 at+2A0. Native descriptor initializers identify110F5D8 as D2Avatar
+and1116B90 as LobbyAvatar. The latter must not be admitted merely because its
+camera/FOV getters match. No type checks were weakened. C5CC40 initializes
+the10DE3F8 manager's strong references to the native null sentinel, providing
+no always-present avatar. Functions9A08E0/55AFF0 copy unrelated470-byte array
+elements; their+460 operands are not a selected-renderer owner setter.
+
+Read-only Ghidra outputs completed with matching EXE SHA and remain private.
+The runtime log remains355464 bytes, last written18:29:38; it predates bd6d82a
+and contains no new context/getter rejection metadata. No current-view player
+source is established by this static pass. Do not change native aim/throw
+admission until the selected context's actual getter can be identified.
