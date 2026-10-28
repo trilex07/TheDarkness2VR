@@ -1,9 +1,10 @@
-// NIS D3D11 runtime for SingularityVR - research/nvidia-vr-upscaling
+// NIS D3D11 runtime adapted from SingularityVR - research/nvidia-vr-upscaling
 //
 // Official algorithm: NVIDIA Image Scaling SDK v1.0.3 (MIT).
 // Host config math: nis/NIS_Config.h -> NVScalerUpdateConfig / NVSharpenUpdateConfig.
-// Shader: nis/NIS_Main.hlsl compiled with NIS_VIEWPORT_SUPPORT=1 so each eye is
-// sampled directly from the full SBS texture (no eye-temp copy).
+// Shader: nis/NIS_Main.hlsl compiled with NIS_VIEWPORT_SUPPORT=1. Darkness2VR
+// supplies independent eye textures with zero-origin viewports, no SBS split
+// or extra input-eye copy.
 //
 // Color space: game backbuffer is sRGB-ENCODED LDR (D3D9 A8R8G8B8). Bridge and
 // NIS output are B8G8R8A8_UNORM (bit-identical layout). NIS runs with

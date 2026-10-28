@@ -8,6 +8,8 @@ static NisRuntime g_nisEye;
 static ID3D11ShaderResourceView* g_nisEyeSource[2]{};
 static ID3D11Texture2D* g_nisEyeSourceOwner[2]{};
 static bool g_nisScalerFailed=false;
+static bool g_nisEyeFailed=false;
+static bool g_nisEyeReported=false;
 
 static void NisEyeLog(const char* message) { Log("[NIS] %s",message); }
 
@@ -24,11 +26,20 @@ static void NisEyeShutdown() {
     NisEyeReleaseSources();
     NisShutdown(&g_nisEye);
     g_nisScalerFailed=false;
+    g_nisEyeFailed=false;
+    g_nisEyeReported=false;
+}
+
+static bool NisEyeFailure(const char* operation) {
+    g_nisEyeFailed=true;
+    Log("[NIS] %s failed; filter disabled until device Reset",operation);
+    return false;
 }
 
 static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
                           ID3D11Texture2D* filtered[2]) {
-    if((g_nisMode!=2 && g_nisMode!=3) || !g_dev11 || !g_ctx11 || !left || !right) return false;
+    filtered[0]=filtered[1]=nullptr;
+    if(g_nisEyeFailed || (g_nisMode!=2 && g_nisMode!=3) || !g_dev11 || !g_ctx11 || !left || !right) return false;
     ID3D11Texture2D* originals[2]={left,right};
     D3D11_TEXTURE2D_DESC desc[2]{};
     originals[0]->GetDesc(&desc[0]); originals[1]->GetDesc(&desc[1]);
@@ -37,24 +48,29 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
        desc[0].Format!=DXGI_FORMAT_B8G8R8A8_UNORM ||
        desc[1].Format!=desc[0].Format) return false;
     if(!NisInit(&g_nisEye,g_dev11,kNisScalerCS,sizeof(kNisScalerCS),
-                kNisSharpenCS,sizeof(kNisSharpenCS),nullptr,NisEyeLog)) return false;
+                kNisSharpenCS,sizeof(kNisSharpenCS),nullptr,NisEyeLog)) return NisEyeFailure("shader init");
     for(int eye=0;eye<2;++eye) if(g_nisEyeSourceOwner[eye]!=originals[eye]) {
         if(g_nisEyeSource[eye]) g_nisEyeSource[eye]->Release();
         if(g_nisEyeSourceOwner[eye]) g_nisEyeSourceOwner[eye]->Release();
         g_nisEyeSource[eye]=nullptr;
         g_nisEyeSourceOwner[eye]=nullptr;
         if(FAILED(g_dev11->CreateShaderResourceView(originals[eye],nullptr,&g_nisEyeSource[eye]))) {
-            NisEyeReleaseSources();return false;
+            NisEyeReleaseSources();return NisEyeFailure("eye SRV");
         }
         g_nisEyeSourceOwner[eye]=originals[eye]; originals[eye]->AddRef();
     }
     const UINT outW=g_nisMode==3 ? g_scW : desc[0].Width;
     const UINT outH=g_nisMode==3 ? g_scH : desc[0].Height;
-    if(!NisEnsureOutput(&g_nisEye,g_dev11,desc[0].Width,desc[0].Height,outW,outH)) return false;
+    if(!NisEnsureOutput(&g_nisEye,g_dev11,desc[0].Width,desc[0].Height,outW,outH)) return NisEyeFailure("output allocation");
     for(int eye=0;eye<2;++eye)
         if(!NisDispatchEye(&g_nisEye,g_ctx11,g_nisEyeSource[eye],
                            desc[eye].Width,desc[eye].Height,eye,
-                           outW,outH,g_nisSharpness,g_nisMode==2)) return false;
+                           outW,outH,g_nisSharpness,g_nisMode==2)) return NisEyeFailure("eye dispatch");
+    if(!g_nisEyeReported) {
+        Log("[NIS] pair dispatched mode=%d strength=%.2f source=%ux%u output=%ux%u; independent eyes, native projections retained",
+            g_nisMode,g_nisSharpness,desc[0].Width,desc[0].Height,outW,outH);
+        g_nisEyeReported=true;
+    }
     if(g_nisMode==3) {
         static UINT loggedInW=0,loggedInH=0,loggedOutW=0,loggedOutH=0;
         if(loggedInW!=desc[0].Width || loggedInH!=desc[0].Height ||

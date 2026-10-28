@@ -1084,3 +1084,33 @@ The driver test changes no production source. Package/deploy the combined
 9274cb9 production changes only while DarknessII is absent, retain profiles and
 rollback, and do not launch the game. Installed status is recorded in the
 local runtime bundle rather than inferred from this test.
+
+## 2026-10-28: enable strong same-resolution NIS and validate the actual eye host
+
+User explicitly requests strong NIS from Singularity alongside side visibility.
+Darkness2VR already vendors the same NVIDIA v1.0.3 embedded sharpen shader:
+NIS_Sharpen_CS.h SHA256 E09965870E95382AB689DF96E5FA3461DF19C7FD79D492D4BA247567AE6489E1
+matches the current local SingularityVR source. Reuse this implementation and
+set the requested candidate to NisMode=2,NisSharpness=0.80. Mode2 preserves
+native source/output dimensions; it adds compute sharpening, not render scaling
+or a replacement for geometry/culling fixes. Repository sample config now
+exposes those settings. No proprietary game data or Singularity source changed.
+
+Fix a host failure path before enabling it: failed SRV/output creation or
+dispatch could otherwise be retried on every submission. Latch NIS host failure
+until device Reset/shutdown; return null output pointers on failure, leaving
+the existing pair fallback in charge. A bounded first-success message records
+actual dispatch mode, strength and dimensions rather than startup intent alone.
+Successful frames retain SRVs/UAVs and issue no new input-eye copy. Existing
+final copy to XR remains. No per-frame compilation or resource creation at
+fixed resolution. NIS is additional GPU work; no FPS improvement is claimed.
+
+New x86 WARP fixture includes actual nis_eye.inl, not a duplicate dispatch.
+PASS independent66x35 eyes with distinct colours and all borders checked,
+20%vs80% changes2070 actual pixels, source changes do not contaminate eye1,
+persistent resources across10 frames, real invalid-SRV failure,1000 rejected
+subsequent attempts, shutdown/recovery, full native2676x2728 pixel readback
+for both eyes. Existing culling regressions PASS100 cameras/64800 world-space
+points and240 tracked poses/249600 binocular points. Production and diagnostic
+builds PASS. WARP proves pixel behavior, not game activation, headset quality,
+GPU cost on the user's card or90FPS. Do not launch the game.
