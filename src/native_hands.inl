@@ -1,7 +1,9 @@
 #include "native_hands_math.h"
-// The legacy pistol-pose trigger remains the default. The diagnostic opt-in
-// moves the same guarded IK edit immediately before the avatar skin packer.
-// It changes one verified resource vtable entry, never the failed code sites.
+static bool ProtectedHandsAvailable();
+static bool ProtectedHandsResourceOwned(void* resource);
+static bool CopyProtectedHandPoses(DWORD camera,NativeWeaponPose (&poses)[2]);
+// Shared guarded IK. Legacy triggers remain separate from the protected
+// private-instance packer in protected_hands.inl; neither is implicitly enabled.
 static bool g_nativeHandsInstalled=false;
 #ifdef D2VR_MATCHED_CAPTURE
 static volatile LONG g_nativeHandsWriteSeq=0; // completed CPU palette edits, diagnostic only
@@ -30,8 +32,8 @@ struct NativeHandsPaletteCache {
     float original[44][16]{},applied[44][16]{};
 };
 static NativeHandsPaletteCache g_nativeHandsCache[3];
-static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expectedResource=nullptr) {
-    if(!g_nativeHandsEnabled || !g_nativeHandsInstalled) return false;
+static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expectedResource=nullptr,bool protectedRoute=false) {
+    if(protectedRoute ? !ProtectedHandsAvailable() : (!g_nativeHandsEnabled || !g_nativeHandsInstalled)) return false;
     NativeGameplaySample sample;
     if(!CopyNativeGameplay(sample) || (!expectedResource && !sample.entities[0])) return false;
     // Grab/attach animations rewrite the same palette; defer human IK until empty.
@@ -40,11 +42,20 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
     float gunWorld[16]{};
     if(!expectedResource &&
        !TryNativeWeaponMatrix((void*)sample.entities[0],gunWorld,cameraVtable)) return false;
-    NativeWeaponPose left,right; bool support;
-    if(!TryAcquireSRWLockShared(&g_nativeWeaponLock)) return false;
-    left=g_nativeWeaponPoses[0]; right=g_nativeWeaponPoses[1]; support=g_nativeSupport;
-    ReleaseSRWLockShared(&g_nativeWeaponLock);
-    if(expectedResource && (!right.valid || GetTickCount64()-right.time>=100)) return false;
+    NativeWeaponPose left,right; bool support=false;
+    if(protectedRoute) {
+        NativeWeaponPose poses[2];
+        if(!expectedResource || !CopyProtectedHandPoses(sample.camera,poses))return false;
+        left=poses[0];right=poses[1];
+    } else {
+        if(!TryAcquireSRWLockShared(&g_nativeWeaponLock)) return false;
+        left=g_nativeWeaponPoses[0]; right=g_nativeWeaponPoses[1]; support=g_nativeSupport;
+        ReleaseSRWLockShared(&g_nativeWeaponLock);
+    }
+    const auto poseTime=GetTickCount64();
+    bool rightValid=!expectedResource || (right.valid && poseTime>=right.time && poseTime-right.time<100);
+    bool leftValid=left.valid && poseTime>=left.time && poseTime-left.time<100;
+    if(!rightValid && !leftValid)return false;
     bool locked=false;
     __try {
         // The pistol model's +3C4 parent is not proof of ownership of the
@@ -68,9 +79,9 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         auto outputVector=renderer+0x3F4+16*index;
         auto resource=**(BYTE***)(renderer+0x5BC);
         if(!resource || (expectedResource && resource!=expectedResource) ||
-           *(DWORD*)resource!=0xFC2578) return false;
-        if(expectedResource && !d2vr_aim::BuildWeaponMatrix((float*)(camera+0x80),right.local,gunWorld))
-            return false;
+           (*(DWORD*)resource!=0xFC2578 && !(protectedRoute && ProtectedHandsResourceOwned(resource)))) return false;
+        if(expectedResource && rightValid && !d2vr_aim::BuildWeaponMatrix((float*)(camera+0x80),right.local,gunWorld))
+            rightValid=false;
         auto skeleton=**(BYTE***)(resource+0x5E0);
         if(!skeleton || *(DWORD*)skeleton!=0xFC2338) return false;
         auto records=*(BYTE**)(skeleton+0x90);
@@ -85,12 +96,11 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         for(int i:{5,21,27,43}) if(!d2vr_hands::Valid(bones[i])) return false;
         float inverseParent[16],rightTarget[16],leftTarget[16];
         if(!d2vr_math::Invert((float*)(parent+0x140),inverseParent)) return false;
-        d2vr_math::Multiply(gunWorld,inverseParent,rightTarget);
-        const bool leftValid=left.valid && GetTickCount64()-left.time<100;
+        if(rightValid)d2vr_math::Multiply(gunWorld,inverseParent,rightTarget);
         if(leftValid) {
             float lw[16];
-            if(!d2vr_aim::BuildWeaponMatrix((float*)(sample.camera+0x80),left.local,lw)) return false;
-            d2vr_math::Multiply(lw,inverseParent,leftTarget);
+            if(!d2vr_aim::BuildWeaponMatrix((float*)(sample.camera+0x80),left.local,lw))leftValid=false;
+            else d2vr_math::Multiply(lw,inverseParent,leftTarget);
         }
         if(!TryAcquireSRWLockExclusive(&g_nativeHandsLock)) return false;
         locked=true;
@@ -116,29 +126,36 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
             d2vr_math::Multiply(bones[5],ir,cal.support);
             g_nativeHandCalibration=cal;
         }
-        float wrist[16]; d2vr_math::Multiply(cal.right,rightTarget,wrist);
-        if(!d2vr_hands::PoseArm(bones,25,26,27,44,45,wrist)) { ReleaseSRWLockExclusive(&g_nativeHandsLock); return false; }
-        if(leftValid) {
-            d2vr_math::Multiply(support ? cal.support:cal.left,support ? rightTarget:leftTarget,wrist);
-            if(!d2vr_hands::PoseArm(bones,3,4,5,22,23,wrist)) { ReleaseSRWLockExclusive(&g_nativeHandsLock); return false; }
+        float wrist[16];bool rightSolved=false,leftSolved=false;
+        if(rightValid) {
+            d2vr_math::Multiply(cal.right,rightTarget,wrist);
+            rightSolved=d2vr_hands::PoseArm(bones,25,26,27,44,45,wrist);
         }
-        const bool rightChanged=memcmp(bones+24,palette+24*16,22*64)!=0;
-        const bool leftChanged=leftValid && memcmp(bones+2,palette+2*16,22*64)!=0;
+        if(leftValid) {
+            const bool useSupport=support && rightSolved;
+            d2vr_math::Multiply(useSupport ? cal.support:cal.left,useSupport ? rightTarget:leftTarget,wrist);
+            leftSolved=d2vr_hands::PoseArm(bones,3,4,5,22,23,wrist);
+        }
+        if(!rightSolved && !leftSolved) {
+            ReleaseSRWLockExclusive(&g_nativeHandsLock);locked=false;return false;
+        }
+        const bool rightChanged=rightSolved && memcmp(bones+24,palette+24*16,22*64)!=0;
+        const bool leftChanged=leftSolved && memcmp(bones+2,palette+2*16,22*64)!=0;
         if(!rightChanged && !leftChanged) {
             ReleaseSRWLockExclusive(&g_nativeHandsLock);
             locked=false;
             return true;
         }
         // Keep the camera root and demon tentacles unchanged.
-        memcpy(palette+24*16,bones[24],22*64);
-        if(leftValid) memcpy(palette+2*16,bones[2],22*64);
+        if(rightSolved)memcpy(palette+24*16,bones[24],22*64);
+        if(leftSolved)memcpy(palette+2*16,bones[2],22*64);
         // Native pose setter 79927D marks this packed-skin buffer dirty after
         // editing model-space bones. 6C3C71 otherwise skips rebuilding the
         // 48-byte GPU matrices in renderer+428, leaving the visible arms stale.
         // Skin buffers (448, two slots) rotate independently of pose buffers
         // (424, three slots). Do not use the pose index for this byte.
         renderer[0x580+skinIndex]=1;
-        if(g_nativeHandsDirtyBoth) {
+        if(g_nativeHandsDirtyBoth || protectedRoute) {
             // The renderer repacks both 48-byte skin buffers from the selected
             // pose (6C3BC1..6C3C04), but the current dirty flag follows only
             // one alternating slot. Mark its partner as well so a later draw
@@ -160,7 +177,7 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         ReleaseSRWLockExclusive(&g_nativeHandsLock);
         locked=false;
         static ULONGLONG last=0; auto now=GetTickCount64();
-        if(now-last>1000) { last=now; Log("[NativeHands] wrists/fingers + arm IK applied; dirty=%s skin slot=%lu pose slot=%lu left=%s",g_nativeHandsDirtyBoth?"both":"current",skinIndex,index,leftValid ? (support ? "support":"free"):"tracking unavailable"); }
+        if(now-last>1000) { last=now; Log("[NativeHands] route=%s right=%d left=%d wrists/fingers + arm IK; dirty=%s skin slot=%lu pose slot=%lu",protectedRoute?"private-pack":"legacy-pistol",int(rightSolved),int(leftSolved),(g_nativeHandsDirtyBoth || protectedRoute)?"both":"current",skinIndex,index); }
         return true;
     } __except(EXCEPTION_EXECUTE_HANDLER) { if(locked) ReleaseSRWLockExclusive(&g_nativeHandsLock); return false; }
 }

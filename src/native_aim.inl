@@ -9,6 +9,9 @@ static bool ProtectedThrowAvailable();
 static bool ProtectedLeftAimHeld();
 static void PrepareProtectedThrowForCamera(void* camera);
 static void ResetProtectedLeftThrow();
+static bool ProtectedHandsResourceOwned(void* resource);
+static void PrepareProtectedHandsForCamera(void* camera);
+static void ResetProtectedHandPoses();
 // Pinned stock EXE, x86. C62F50 builds inventory aim; C6300F calls the camera
 // matrix getter (thiscall, no stack args, EAX pointer), then reads forward row2
 // and origin row3. Replacing ONLY that getter leaves native query filters,
@@ -61,6 +64,7 @@ static d2vr_input::GrabFeedback ReadNativeGrabFeedback() {
 }
 
 static void ResetNativeAim() {
+    ResetProtectedHandPoses();
     ResetProtectedLeftAim();
     ResetProtectedLeftThrow();
     ResetNativeThrow();
@@ -184,7 +188,7 @@ static bool CaptureNativeGameplay(void* self) {
             auto actor=parent && *(DWORD*)parent==0xFFC300 ? **(BYTE***)(parent+0xF8):nullptr;
             auto renderer=actor && *(DWORD*)actor==0xFC5F30 ? **(BYTE***)(actor+8):nullptr;
             auto resource=renderer ? **(BYTE***)(renderer+0x5BC):nullptr;
-            if(resource && *(DWORD*)resource==0xFC2578)
+            if(resource && (*(DWORD*)resource==0xFC2578 || ProtectedHandsResourceOwned(resource)))
                 s.avatarSkinResource=(DWORD)(uintptr_t)resource;
         } __except(EXCEPTION_EXECUTE_HANDLER) { s.avatarSkinResource=0; }
 #endif
@@ -246,6 +250,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference) {
         // The original native out-reference still owns the avatar here.
         PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
         PrepareProtectedThrowForCamera(reinterpret_cast<void*>(owner.camera));
+        PrepareProtectedHandsForCamera(reinterpret_cast<void*>(owner.camera));
         g_nativePlayerViewFrame=g_trackedFrame.id;g_nativePlayerViewRenderer=r;
         g_nativePlayerViewCamera=owner.camera;
     }
@@ -278,6 +283,7 @@ static void ObserveSelectedPlayerCamera(void* renderer) {
         CaptureNativeGameplay(reinterpret_cast<void*>(owner.camera));
         PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
         PrepareProtectedThrowForCamera(reinterpret_cast<void*>(owner.camera));
+        PrepareProtectedHandsForCamera(reinterpret_cast<void*>(owner.camera));
     }
     else if(TryAcquireSRWLockExclusive(&g_nativeGameplayLock)) {
         g_nativeGameplay={};

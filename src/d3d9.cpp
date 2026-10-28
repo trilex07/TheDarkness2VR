@@ -83,6 +83,7 @@ static bool g_imagePreservingInput=false;
 static bool g_protectedGestureActions=false;
 static bool g_protectedLeftAim=false;
 static bool g_protectedLeftThrow=false;
+static bool g_protectedTrackedHands=false;
 static d2vr_input::Tentacles g_protectedRightTentacle;
 static volatile LONG g_protectedRecenterRequested=0;
 static d2vr_protected_input::ExternalXInput g_protectedXInput;
@@ -611,7 +612,9 @@ void LoadConfig() {
     g_protectedGestureActions=GetPrivateProfileIntA("Diagnostics","ProtectedGestureActions",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_protectedLeftAim=GetPrivateProfileIntA("Diagnostics","ProtectedLeftAim",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_protectedLeftThrow=GetPrivateProfileIntA("Diagnostics","ProtectedLeftThrow",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_protectedTrackedHands=GetPrivateProfileIntA("Diagnostics","ProtectedTrackedHands",0,".\\Darkness2VR-diagnostic.ini")!=0;
     Log("[ProtectedLeftAim] requested=%d; private getter, legacy NativeLeftAim stays OFF; separate ProtectedLeftThrow=%d",int(g_protectedLeftAim),int(g_protectedLeftThrow));
+    Log("[ProtectedHands] requested=%d; private selected-resource packer only; legacy hands/weapon hooks remain independent",int(g_protectedTrackedHands));
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
         const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
         const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
@@ -3690,6 +3693,7 @@ static void ResetPoseInput() {
 #include "protected_left_throw.inl"
 #include "native_weapon.inl"
 #include "native_hands.inl"
+#include "protected_hands.inl"
 #include "native_recenter.inl"
 #ifdef D2VR_MATCHED_CAPTURE
 #include "native_hands_witness.inl"
@@ -4013,6 +4017,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
     ApplyProtectedLeftThrow(gp);
     PublishProtectedLeftAim(gp);
+    PublishProtectedHandPoses();
 #endif
     gp.wButtons |= GestureButtons(gp);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -6627,6 +6632,8 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         const bool protectedLeftAimRequested=g_protectedLeftAim;
         const bool protectedLeftThrowAllowed=!g_protectedLeftThrow || (g_protectedLeftAim && protectedLeftAimAllowed);
         const bool protectedLeftThrowRequested=g_protectedLeftThrow;
+        const bool protectedHandsAllowed=!g_protectedTrackedHands || (g_protectedLeftAim && protectedLeftAimAllowed &&
+            g_nativeViewBoundaryMode==3 && g_protectedHeadTracking);
         const bool inputFeatureAllowed=!g_enableVRGamepad || g_imagePreservingInput;
 #else
         const bool protectedInputAllowed=true,inputFeatureAllowed=!g_enableVRGamepad;
@@ -6634,8 +6641,9 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         const bool protectedLeftAimAllowed=true;
         const bool protectedLeftAimRequested=false;
         const bool protectedLeftThrowAllowed=true,protectedLeftThrowRequested=false;
+        const bool protectedHandsAllowed=true;
 #endif
-        const bool protectedFeatures=protectedInputAllowed && protectedGestureAllowed && protectedLeftAimAllowed && protectedLeftThrowAllowed && (!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
+        const bool protectedFeatures=protectedInputAllowed && protectedGestureAllowed && protectedLeftAimAllowed && protectedLeftThrowAllowed && protectedHandsAllowed && (!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
             !g_nativeLeftAim && !g_nativeWeaponPose && !g_nativeHandsEnabled && !g_gestureBridge && !g_tentacleBridge &&
             inputFeatureAllowed && g_headLookMode==0 &&
             (!g_protectedHeadTracking || ProtectedHeadConfigurationAllowed()) &&

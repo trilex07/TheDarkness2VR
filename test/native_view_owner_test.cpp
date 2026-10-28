@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include "../src/native_player_camera_owner.h"
-static unsigned checks=0,captures=0,aims=0,throws=0;
+static unsigned checks=0,captures=0,aims=0,throws=0,hands=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL %u line%d\n",checks,__LINE__);exit(1);}}while(0)
 static bool g_nativePlayerOwnerAdmitted=true,g_imagePreservingInput=true,g_protectedGestureActions=true;
 static bool g_haveViews=true,g_in3DGameplayMode=true;
@@ -27,13 +27,14 @@ static bool NativeAimOwnerMatches(void* p){return p==camera;}
 static bool CaptureNativeGameplay(void* p){CHECK(p==camera);++captures;return captureOK;}
 static bool PrepareProtectedAimCamera(void* p){CHECK(p==camera);++aims;return true;}
 static void PrepareProtectedThrowForCamera(void* p){CHECK(p==camera);++throws;}
+static void PrepareProtectedHandsForCamera(void* p){CHECK(p==camera);++hands;}
 static bool ReadSelectedRenderCamera(void* c,void* r,NativeCameraFields&){return readCamera && c==selected && r==renderer;}
 template<class... T> static void Log(const char*,T...){}
 #include "d2vr_native_view_owner_under_test.inl"
 static void Word(void* p,unsigned offset,uint32_t value){memcpy(static_cast<unsigned char*>(p)+offset,&value,4);}
 static void Ref(void* p,unsigned offset,unsigned block,void* object){blocks[block]=object;Word(p,offset,uint32_t(uintptr_t(&blocks[block])));}
 static void Reset(){
-    g_nativePlayerViewFrame=0;g_nativePlayerViewRenderer=0;captures=aims=throws=0;
+    g_nativePlayerViewFrame=0;g_nativePlayerViewRenderer=0;captures=aims=throws=hands=0;
     g_nativePlayerOwnerAdmitted=g_imagePreservingInput=g_protectedGestureActions=true;
     g_haveViews=g_in3DGameplayMode=g_nativeImageGuard.enabled=g_trackedFrame.open=readCamera=captureOK=true;
     g_submitMode=4;g_stereoMode=1;g_renderThreadId=GetCurrentThreadId();g_trackedFrame.id=17;
@@ -43,9 +44,9 @@ static void Reset(){
     Ref(camera,0x30,3,avatar);Ref(inventory,0x2a8,4,avatar);
 }
 static void Observe(){void* reference=&avatarBlock;SetLastError(0x87654321);ObserveNativeViewOwner(renderer,&reference);CHECK(GetLastError()==0x87654321);}
-template<class F> static void Reject(F change){Reset();change();Observe();CHECK(!g_nativePlayerViewFrame && !g_nativePlayerViewRenderer && !aims && !throws);}
+template<class F> static void Reject(F change){Reset();change();Observe();CHECK(!g_nativePlayerViewFrame && !g_nativePlayerViewRenderer && !aims && !throws && !hands);}
 int main(){
-    Reset();Observe();CHECK(captures==1 && aims==1 && throws==1);
+    Reset();Observe();CHECK(captures==1 && aims==1 && throws==1 && hands==1);
     CHECK(g_nativePlayerViewFrame==17 && g_nativePlayerViewRenderer==uintptr_t(renderer));
     // No renderer+460 override exists in this actual callback fixture.
     Reject([]{g_nativePlayerOwnerAdmitted=false;});Reject([]{g_imagePreservingInput=false;});

@@ -29,7 +29,7 @@ static std::string ConfigToken() {
     sprintf_s(token,"%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%.9g/%.9g/%.9g/%.9g/%d",
         g_submitMode,g_stereoMode,g_stereoDebugMode,g_stereoShiftMode,g_projectionFix,g_noInvProj,g_lightPosShift,g_skipLightVsShift,
         (int)g_headGeometry,g_stereoLayerPose,g_stereoPolarity,g_stereoIPD,g_gameUnitsPerMeter,g_fovWidenX,g_fovWidenY,g_lightingPreset);
-    return std::string(token)+"/"+(g_matchEyeResolutionToSource?"1":"0")+"/"+(g_worldDiffuseAnisotropy?"1":"0")+"/"+std::to_string(g_textureAnisotropy)+"/"+(g_disableCompositeHeightFog?"1":"0")+"/"+std::to_string(g_nativeStereoHeadGeometry)+"/"+(g_restoredTrackedGameplay?"1":"0")+"/"+(g_nativeCameraCoverInstalled?"1":"0")+"/"+(g_nativeHandsPackInstalled?"1":"0");
+    return std::string(token)+"/"+(g_matchEyeResolutionToSource?"1":"0")+"/"+(g_worldDiffuseAnisotropy?"1":"0")+"/"+std::to_string(g_textureAnisotropy)+"/"+(g_disableCompositeHeightFog?"1":"0")+"/"+std::to_string(g_nativeStereoHeadGeometry)+"/"+(g_restoredTrackedGameplay?"1":"0")+"/"+(g_nativeCameraCoverInstalled?"1":"0")+"/"+(g_nativeHandsPackInstalled?"1":"0")+"/"+(g_protectedTrackedHands?"1":"0");
 }
 static std::string directory, iniPath;
 static FILE *meta, *banks;
@@ -205,7 +205,9 @@ static void Begin() {
     const std::string dh=HashFile(dll), eh=HashFile(exe), ih=HashFile(iniPath.c_str()), rh=HashFile(request);
     fprintf(meta,"{\"kind\":\"header\",\"schema\":2,\"frame\":%llu,\"display_time\":%lld,\"dll_sha256\":\"%s\",\"exe_sha256\":\"%s\",\"ini_sha256\":\"%s\",\"request_sha256\":\"%s\",\"native_hooks_suppressed\":%s,\"world_state\":\"render heuristic\",\"submit_mode\":%d,\"stereo_mode\":%d,\"shift_mode\":%d,\"layer_pose\":%d,\"stereo_baseline_game_units\":%.9g}\n",
         frame,g_trackedFrame.state.predictedDisplayTime,dh.c_str(),eh.c_str(),ih.c_str(),rh.c_str(),
-        (g_restoredTrackedGameplay||g_nativeCameraCoverInstalled)?"false":"true",g_submitMode,g_stereoMode,g_stereoShiftMode,g_stereoLayerPose,g_stereoIPD);
+        (g_restoredTrackedGameplay||g_nativeCameraCoverInstalled||g_protectedTrackedHands)?"false":"true",g_submitMode,g_stereoMode,g_stereoShiftMode,g_stereoLayerPose,g_stereoIPD);
+    fprintf(meta,"{\"kind\":\"protected_hands_policy\",\"frame\":%llu,\"requested\":%s,\"visible_consumption_verified\":false}\n",
+        frame,g_protectedTrackedHands?"true":"false");
     fprintf(meta,"{\"kind\":\"capture_arm\",\"frame\":%llu,\"expected_serial\":%llu,\"epoch\":%llu,\"expected_game_frame\":%llu,\"reset_generation\":%ld,\"thread\":%lu,\"device\":\"%p\"}\n",
         frame,presentSerial,presentEpoch,presentFrame,resetGeneration,GetCurrentThreadId(),reinterpret_cast<void*>(presentDevice));
     FILE* saved=meta; FILE* config=nullptr;

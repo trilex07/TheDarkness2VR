@@ -1904,3 +1904,46 @@ Actual selected-camera x86 admission/ABI regression PASS. Actual final pixel
 shader WARP regression PASS for CPU/CULL combinations and all200 pixels of
 the eight refusal digits. Production and diagnostic x86 builds PASS. Game
 not launched; the cause of this user's OFF state still requires a fresh run.
+
+## 2026-10-28: independent grip poses at the private avatar skin packer
+
+User clarified that CULL ON appears after several seconds and peripheral
+visibility then works. Treat that as their visibility acceptance; do not spend
+further work on the initial OFF interval without a new visibility regression.
+
+ProtectedTrackedHands is a separate, default-OFF diagnostic candidate. The
+selected-view live avatar reference can publish a private copy of the resource
+FC2578 table,96 methods plus its preceding word. Only +EC is redirected;
+the original6C3890 thiscall(rendererRef) is forwarded exactly once and retains
+its native smart-reference release and all side effects. Native constructor
+AEDED0 and destructor541620 establish the concrete table; its next dword at
+FC26F8 is scalar data. Full table/header and6C3890..6C3EDB digests are pinned.
+Destruction retains the original first entry6905B0 ->541620, which restores
+the native vptr. No retained instance is dereferenced at shutdown.
+
+Read-only D46 Ghidra exports private-hand-packer.txt and private-hand-resource.txt
+both end EVIDENCE COMPLETE; their SHA256 values are
+24bd6771e5f8b0e10c544ee7217c8222e11e82d685870c4910f21de451e9d4f3 and
+7b7516a8abd0808b523a3feaa5f19a71e54a320d15ba3cb704ab55b23a64ffd8.
+Raw exports remain outside Git. Existing remap/GPU-consumption uncertainty
+remains: a CPU palette write is not proof of a visible human-hand correction.
+
+New grip-space samples are independent of legacy pistol hooks, aim-space
+tracking, optional support snapping and the peer controller. Fresh samples are
+camera-owned; recenter/reset clears them. The actual guarded IK callback now
+allows either arm to proceed when its peer loses tracking or cannot solve.
+Only solved human-arm ranges are committed; camera/tentacle bones and unsolved
+peer ranges remain unchanged. Full avatar/model/renderer/resource/skeleton
+identity is checked at the pack boundary. Busy/unknown/alternate native holds
+keep stock animation, leaving enemy actions and existing left throw untouched.
+Matched capture explicitly records the new policy and no longer labels such
+a candidate native-hooks-suppressed.
+
+Actual full-source protected hand fixture1088 checks PASS, including all six
+pose/skin slot combinations, repeated-pack drift, one-hand loss/invalid pose/
+failed IK, native thiscall/ref-count-once forwarding, x87/SSE/LastError,
+recursive bypass, hold/type/context refusal and all95 unchanged table entries.
+Native geometry ten seeds502400 cases/43368640 checks PASS; owner graph4167
+and actual selected-view callback57 checks PASS; protected throw/context171
+checks PASS. Production/diagnostic x86 builds PASS. Native owner activation,
+visible model alignment, opponent execution and90FPS remain unverified.

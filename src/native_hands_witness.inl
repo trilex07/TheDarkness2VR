@@ -76,7 +76,7 @@ static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9* vb,IDirect3DIndex
                 if(actor && *(DWORD*)actor==0xFC5F30) {
                     auto r=**(BYTE***)(actor+8);
                     auto resource=r ? **(BYTE***)(r+0x5BC):nullptr;
-                    auto skeleton=resource && *(DWORD*)resource==0xFC2578 ?
+                    auto skeleton=resource && (*(DWORD*)resource==0xFC2578 || ProtectedHandsResourceOwned(resource)) ?
                         **(BYTE***)(resource+0x5E0):nullptr;
                     if(skeleton && *(DWORD*)skeleton==0xFC2338) {
                         auto records=*(BYTE**)(skeleton+0x90);
