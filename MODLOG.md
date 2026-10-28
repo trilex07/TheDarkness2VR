@@ -697,6 +697,24 @@ No extra native reference operations or camera mutations were installed.
 Game was closed at this turn's authoritative process check. This is further
 offline evidence, not a peripheral-pop-in fix or runtime validation.
 
+## 2026-10-28: separate native culling input
+
+Implement native_culling_cover.h: validate the live native view/projection/VP
+composition, then prepare a separate binocular-covering VP and inverse without
+editing FOV or any render matrix. Connect this preparation to the current owned
+camera callback in observation mode. x86 regression PASS100 translated/rotated
+cameras, binocular angular coverage, inverse agreement, byte-preserved inputs,
+and unchanged output on mismatched native VP. Diagnostic DLL build PASS.
+
+4BE0C0 rebuilds camera+620 frustum via607CD0, inverse viaBBE8F0, then685050;
+the render VP at+500 is separately written earlier. 607CD0 extracts normalized
+planes, including near/far classifications, using62DD40. The frustum embeds
+vector headers at+30 and+150 and may own heap storage: shallow copying its
+416-byte region would alias plane/type buffers. No such copy is implemented.
+This identifies a culling-only implementation route that avoids retaining or
+restoring a temporarily widened camera FOV across render. Native frustum writes
+are not connected yet; matrix preparation alone does not fix pop-in.
+
 ## 2026-10-28: contiguous constant-window flush
 
 Track whether each window bank's written union is provably contiguous. Empty,

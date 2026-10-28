@@ -144,6 +144,20 @@ struct NativeViewReadStatus {
     unsigned stage=0;
     uintptr_t viewTable=0,cameraTable=0;
 };
+static bool PrepareOwnedCullingInput(void* camera,const NativeCameraFields& fields,d2vr_culling_cover::Input& input) {
+    float view[16],vp[16];
+    __try {
+        std::memcpy(view,static_cast<unsigned char*>(camera)+0x480,sizeof(view));
+        std::memcpy(vp,static_cast<unsigned char*>(camera)+0x500,sizeof(vp));
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+    float eyes[2][4];
+    for(int e=0;e<2;++e) {
+        const auto& f=g_eyeFov[e];
+        eyes[e][0]=f.angleLeft;eyes[e][1]=f.angleRight;eyes[e][2]=f.angleUp;eyes[e][3]=f.angleDown;
+    }
+    return d2vr_culling_cover::Prepare(view,fields.projection,vp,fields.fov,fields.aspect,
+        fields.nearZ,fields.farZ,eyes,g_autoFovCoverage,1+g_edgeCrop,input);
+}
 static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeCameraFields& fields,
                                NativeViewReadStatus& status) {
     __try {
@@ -184,10 +198,12 @@ static void ObserveNativeViewBoundary(void* view) {
     }
     const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
     const bool ready=g_nativeViewWitness.CanCover(g_trackedFrame.id,v,r,c);
+    d2vr_culling_cover::Input cullingInput;
+    const bool cullingReady=PrepareOwnedCullingInput(camera,fields,cullingInput);
     float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
     g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
     static unsigned reports=0;
     if(++reports<=3 || reports%600==0)
-        Log("[NativeViewBoundary] frame=%llu ESI=%p renderer=%p camera=%p FOV=%.5g corroborated=%d; observation only; EXE/IAT unchanged",
-            g_trackedFrame.id,view,renderer,camera,fields.fov,ready);
+        Log("[NativeViewBoundary] frame=%llu ESI=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d cullingFOV=%.5g; observation only; EXE/IAT unchanged",
+            g_trackedFrame.id,view,renderer,camera,fields.fov,ready,cullingReady,cullingInput.fov);
 }

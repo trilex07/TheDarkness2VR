@@ -54,6 +54,7 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_camera_cover.h"
 #include "native_view_boundary.h"
 #include "native_view_witness.h"
+#include "native_culling_cover.h"
 static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe; native mutation not accepted yet
 static d2vr_native_view::Boundary g_nativeViewBoundary;
 #include "exception_record_witness.h"
