@@ -10,10 +10,12 @@ namespace d2vr_native_view {
 class InstanceTable {
     void** source_=nullptr;
     void** clone_=nullptr;
+    size_t count_=0,slot_=0;
+    void* replacement_=nullptr;
 public:
     bool Prepare(void** source,size_t count,size_t slot,void* replacement,
                  const d2vr_native_image::Guard& guard) {
-        if(clone_)return source_==source;
+        if(clone_)return source_==source && count_==count && slot_==slot && replacement_==replacement;
         if(!guard.enabled || !source || !replacement || slot>=count || count>256)return false;
         auto storage=static_cast<void**>(VirtualAlloc(nullptr,(count+1)*sizeof(void*),
                                                      MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));
@@ -28,7 +30,7 @@ public:
         if(!VirtualProtect(storage,(count+1)*sizeof(void*),PAGE_READONLY,&old)) {
             VirtualFree(storage,0,MEM_RELEASE);return false;
         }
-        source_=source;clone_=storage+1;return true;
+        source_=source;clone_=storage+1;count_=count;slot_=slot;replacement_=replacement;return true;
     }
     bool Owns(void* instance)const {
         if(!instance || !clone_)return false;

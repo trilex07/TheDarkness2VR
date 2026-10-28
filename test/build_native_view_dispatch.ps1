@@ -4,9 +4,13 @@ $source=Get-Content -LiteralPath (Join-Path $repo 'src\native_camera_cover.inl')
 $begin=$source.IndexOf('static void ObserveNativeViewBoundary(void* view) {')
 if($begin -lt 0){throw 'Actual dispatch not found'}
 $body=$source.Substring($begin)
+$translatedBegin=$source.IndexOf('static void __fastcall ObserveTranslatedFrustum(')
+$translatedEnd=$source.IndexOf('static void* g_nativeFrustumGetter', $translatedBegin)
+if($translatedBegin -lt 0 -or $translatedEnd -lt 0){throw 'Actual translated-frustum dispatch not found'}
+$translated=$source.Substring($translatedBegin,$translatedEnd-$translatedBegin)
 $fixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'native_view_dispatch_fixture.cpp') -Raw
 $generated=Join-Path $env:TEMP 'd2vr-native-view-dispatch.cpp'
-$fixture.Replace('@IMPLEMENTATION@',$body)|Set-Content -LiteralPath $generated -Encoding UTF8
+$fixture.Replace('@IMPLEMENTATION@',$body).Replace('@TRANSLATED@',$translated)|Set-Content -LiteralPath $generated -Encoding UTF8
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
 $exe=Join-Path $env:TEMP 'd2vr-native-view-phase.exe'

@@ -225,8 +225,9 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
     d2vr_culling_cover::Input cullingInput;
     // Candidate construction now includes double-precision binocular bounds.
     // Do not compute unused candidates for observations/unmatched cameras.
-    const bool canApply=beforeCopy && v==0x98618E && g_nativeFrustumBoundary.Installed() &&
-        g_nativeViewBoundaryMode==2 && ready;
+    const bool boundaryReady=(g_nativeViewBoundaryMode==2 && g_nativeFrustumBoundary.Installed()) ||
+        (g_nativeViewBoundaryMode==3 && g_nativeTranslatedViewPrepared);
+    const bool canApply=beforeCopy && v==0x98618E && boundaryReady && ready;
     const bool cullingReady=canApply && PrepareOwnedCullingInput(camera,fields,cullingInput);
     bool cullingApplied=false;
     // The exact98618E instruction follows native camera rebuilding and precedes
@@ -235,8 +236,8 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
         static unsigned appliedReports=0;
         if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
-            Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d planes=native+binocular bounds=native+binocular renderProjection=unchanged",
-                g_trackedFrame.id,camera,fields.fov,int(cullingInput.stereoUnion));
+            Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d route=%d planes=native+binocular bounds=native+binocular renderProjection=unchanged",
+                g_trackedFrame.id,camera,fields.fov,int(cullingInput.stereoUnion),g_nativeViewBoundaryMode);
     }
     g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
     static unsigned reports=0;
@@ -265,7 +266,40 @@ static void ObserveNativeCameraBoundary(void* view,bool) {
     }
     ObserveNativeSelectedCamera(view,renderer,camera,fields,false);
 }
+static void __fastcall ObserveTranslatedFrustum(void* camera,void* renderer) {
+    const DWORD error=GetLastError();
+    if(g_nativeViewBoundaryMode==3 && g_nativeTranslatedViewPrepared &&
+       GetCurrentThreadId()==g_renderThreadId && g_trackedFrame.open &&
+       g_haveViews && g_in3DGameplayMode && g_submitMode==4 && g_stereoMode==1) {
+        NativeCameraFields fields{};
+        if(ReadSelectedRenderCamera(camera,renderer,fields))
+            ObserveNativeSelectedCamera(reinterpret_cast<void*>(0x98618E),renderer,camera,fields,true);
+    }
+    SetLastError(error);
+}
+static void* g_nativeFrustumGetter=reinterpret_cast<void*>(0x9962D0);
+D2VR_SELECTED_CAMERA_SHIM(TranslatedFrustumGetter,ObserveTranslatedFrustum,g_nativeFrustumGetter)
+
+static void PublishTranslatedNativeView(void* view) {
+    if(!g_nativeTranslatedViewPrepared || !view || !g_trackedFrame.open || !g_haveViews ||
+       !g_in3DGameplayMode || g_submitMode!=4 || g_stereoMode!=1)return;
+    if(g_nativeViewTables[0].Owns(view) || g_nativeViewTables[1].Owns(view))return;
+    uintptr_t table=0;
+    __try {table=*reinterpret_cast<uintptr_t*>(view);}
+    __except(EXCEPTION_EXECUTE_HANDLER){return;}
+    const int kind=table==0xFC8930?0:table==0xFC6800?1:-1;
+    if(kind<0)return;
+    if(g_nativeViewTables[kind].Publish(view,g_nativeImageGuard)) {
+        static unsigned published=0;
+        if(++published<=4)
+            Log("[NativeTranslatedView] private instance published view=%p class=%08X count=%u; original destructor/table entries retained; no EXE/debug-register writes",
+                view,unsigned(table),published);
+    }
+}
 static void ObserveNativeViewBoundary(void* view) {
+    if(g_nativeViewBoundaryMode==3 && GetCurrentThreadId()==g_renderThreadId) {
+        PublishTranslatedNativeView(view);return;
+    }
     if(g_nativeViewBoundaryMode==1 && GetCurrentThreadId()==g_renderThreadId)
         ObserveNativeCameraBoundary(view,false);
 }

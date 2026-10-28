@@ -1279,3 +1279,48 @@ The existing hardware-boundary route cannot be treated as a working culling
 solution on this game's native debug-state contract. Need a separate route
 to the proven post-rebuild/pre-copy point while retaining native code bytes
 and all original debug state. No native handler/dispatcher modification.
+
+## 2026-10-28: experimental owned-method route to final stereo frustum copy
+
+Add opt-in NativeViewBoundary=3. The original hardware route remains unchanged
+and refuses occupied debug state. The new route never reads/writes thread
+debug contexts. At the existing external QPC observation point A66486, publish
+an immutable private vtable on the matched heap view instance, replacing only
+slot+A8. Preserve the preceding header word and every other entry (82 or77
+entries for the two pinned native tables), including native destruction.
+No native instance pointer is retained. Code and tables remain pinned for
+process lifetime. No EXE/IAT/static vtable bytes are changed.
+
+Copy the two exact SHA-pinned methods888720 and985D80 into owned storage.
+Relocate131 audited E8 calls, retain internal branch offsets, and redirect
+only the copied98618E getter call through the existing register/flags/x87/SSE
+preserving shim. The callback is after the native camera rebuild and before
+935A70 copies the frustum. It uses the existing camera/projection witness and
+conservative binocular plane/bounds correction; it does not widen render FOV
+or skip geometry. Seal copies RX before publishing any entry. Validate live
+function digests and complete table digests; any mismatch refuses activation.
+Repeated table preparation must match source/count/slot/replacement exactly.
+
+Read-only Capstone CFG audit PASS:461+1110 instructions,4 returns each,
+29+102 relative calls, no indirect jumps, escaping branches, local FS/GS SEH,
+or explicit copied-code references. Generated metadata is byte reproducible
+from the pinned EXE; native bytes/decompilation are not committed.
+
+Offline x86 PASS:10000 owned copied-method callbacks with cross-block and
+external calls; source bytes and foreign debug state preserved; RW-to-RX and
+digest/plan refusals. Private table1000 publications/reconstructions preserve
+82 entries/header and ECX/EAX. Actual-source routing10000 hardware callbacks,
+10000 translated callbacks and10000 publication observations; invalid phase,
+thread, mode and owner gates refuse, LastError preserved. Real x86 shim7126
+checks PASS. Actual-source culling rebuild1000 native+1000 corrected calls
+PASS. Production and diagnostic builds PASS. Existing third-party HDE emits
+C4701 in its fixture build; no new production warning from this route.
+
+This remains an experimental compatibility candidate: copied calls have new
+return addresses and execute outside the original image range. The native
+exception handler filters EIP by image range; fixture debug-state preservation
+does not prove compatibility with native protection, indirect watched-memory
+access, or return-address-sensitive callees. No handler/range bypass is added.
+Only the user's real-game test can establish activation, stability and side
+visibility. Native2676x2728 per eye and NIS80 are retained; unchanged private
+NIS config upload reuse is also included. No measured FPS gain or90FPS claim.

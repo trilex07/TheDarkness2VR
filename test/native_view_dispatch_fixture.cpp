@@ -1,14 +1,20 @@
 #include <cstdio>
 #include <cstdlib>
 #define CHECK(x) do {if(!(x)){std::printf("FAIL line %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
-static unsigned currentThread=7,g_renderThreadId=7,observations=0,copies=0,reads=0;
+static unsigned currentThread=7,g_renderThreadId=7,observations=0,copies=0,reads=0,publications=0;
 static int g_nativeViewBoundaryMode=2,g_submitMode=4,g_stereoMode=1;
 static bool g_haveViews=true,g_in3DGameplayMode=true,readOK=true;
+static bool g_nativeTranslatedViewPrepared=true;
+using DWORD=unsigned;
+static DWORD lastError=0x12345678;
+static DWORD GetLastError(){return lastError;}
+static void SetLastError(DWORD value){lastError=value;}
 static struct {bool open=true;} g_trackedFrame;
 struct CONTEXT {unsigned Eip=0x98618E,Edi=0x200003f4,Ecx=0x30000000;};
 struct NativeCameraFields {};
 static unsigned GetCurrentThreadId(){return currentThread;}
 static void ObserveNativeCameraBoundary(void*,bool render){CHECK(!render);++observations;}
+static void PublishTranslatedNativeView(void*){++publications;}
 static bool ReadSelectedRenderCamera(void* camera,void* renderer,NativeCameraFields&) {
     CHECK(camera==reinterpret_cast<void*>(0x30000000));
     CHECK(renderer==reinterpret_cast<void*>(0x20000000));++reads;return readOK;
@@ -17,7 +23,9 @@ static void ObserveNativeSelectedCamera(void* id,void* renderer,void* camera,con
     CHECK(id==reinterpret_cast<void*>(0x98618E) && before);
     CHECK(renderer==reinterpret_cast<void*>(0x20000000));
     CHECK(camera==reinterpret_cast<void*>(0x30000000));++copies;
+    SetLastError(123);
 }
+@TRANSLATED@
 @IMPLEMENTATION@
 int main() {
     void* view=reinterpret_cast<void*>(0x1234);
@@ -40,6 +48,25 @@ int main() {
     CHECK(observations==1 && copies==10000 && reads==10001);
     currentThread=8;ObserveNativeViewBoundary(view);
     CHECK(observations==1);
-    std::puts("PASS actual-source phase routing: 10000 final-copy callbacks, EDI owner/ECX camera, QPC observation-only, PC/thread/gameplay/owner-read rejection");
+    g_nativeViewBoundaryMode=3;ObserveNativeViewBoundary(view);CHECK(!publications);
+    currentThread=7;
+    for(unsigned i=0;i<10000;++i)ObserveNativeViewBoundary(view);
+    CHECK(publications==10000 && observations==1 && copies==10000);
+    auto camera=reinterpret_cast<void*>(0x30000000),renderer=reinterpret_cast<void*>(0x20000000);
+    SetLastError(0x12345678);
+    for(unsigned i=0;i<10000;++i)ObserveTranslatedFrustum(camera,renderer);
+    CHECK(copies==20000 && reads==20001 && GetLastError()==0x12345678);
+    auto refused=[&]{const auto count=copies,read=reads;ObserveTranslatedFrustum(camera,renderer);CHECK(copies==count && reads==read);};
+    g_nativeTranslatedViewPrepared=false;refused();g_nativeTranslatedViewPrepared=true;
+    g_nativeViewBoundaryMode=2;refused();g_nativeViewBoundaryMode=3;
+    currentThread=8;refused();currentThread=7;
+    g_trackedFrame.open=false;refused();g_trackedFrame.open=true;
+    g_haveViews=false;refused();g_haveViews=true;
+    g_in3DGameplayMode=false;refused();g_in3DGameplayMode=true;
+    g_submitMode=0;refused();g_submitMode=4;
+    g_stereoMode=0;refused();g_stereoMode=1;
+    readOK=false;ObserveTranslatedFrustum(camera,renderer);CHECK(copies==20000 && reads==20002);
+    CHECK(GetLastError()==0x12345678);
+    std::puts("PASS actual-source phase routing:10000 hardware+10000 translated final-copy callbacks,10000 mode3 QPC publications,ECX camera/owner,LastError,mode/thread/gameplay/owner-read rejection");
     return 0;
 }

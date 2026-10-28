@@ -20,6 +20,9 @@ int main() {
     CHECK(!table.Prepare(source+1,82,82,reinterpret_cast<void*>(&Entry),guard));
     CHECK(!table.Prepare(source+1,82,42,reinterpret_cast<void*>(&Entry),{}));
     CHECK(table.Prepare(source+1,82,42,reinterpret_cast<void*>(&Entry),guard));
+    CHECK(!table.Prepare(source+1,81,42,reinterpret_cast<void*>(&Entry),guard));
+    CHECK(!table.Prepare(source+1,82,41,reinterpret_cast<void*>(&Entry),guard));
+    CHECK(!table.Prepare(source+1,82,42,reinterpret_cast<void*>(&Original),guard));
     auto instance=static_cast<Instance*>(VirtualAlloc(nullptr,4096,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));
     CHECK(instance);
     using Call=unsigned(__thiscall*)(void*);
@@ -42,4 +45,5 @@ int main() {
     VirtualFree(instance,0,MEM_RELEASE);
     CHECK(!table.Owns(instance)); // guarded stale observation, never restore it
     std::puts("PASS x86 instance table: 1000 publications/reconstructions, exact ECX/EAX, 82 slots+header, immutable clone, original bytes, guard and foreign-vptr rejection");
+    return 0;
 }

@@ -56,9 +56,16 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_view_witness.h"
 #include "native_execution_boundary.h"
 #include "native_culling_cover.h"
-static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe, 2 corroborated culling only
+#include "native_view_clone_plan.h"
+#include "native_view_instance.h"
+static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe, 2 HW boundary, 3 experimental owned method copies
 static d2vr_native_view::Boundary g_nativeViewBoundary;
 static d2vr_native_execution::Boundary g_nativeFrustumBoundary;
+// Process-lifetime code/tables after publication. QPC boundary pins this DLL;
+// never free callable copies or dereference a native instance on unload.
+static d2vr_native_clone::Code* g_nativeViewCode=nullptr;
+static d2vr_native_view::InstanceTable g_nativeViewTables[2];
+static bool g_nativeTranslatedViewPrepared=false;
 #include "exception_record_witness.h"
 #include "image_present_observer.h"
 #include "protected_xinput.h"
@@ -732,7 +739,7 @@ void LoadConfig() {
     g_autoFovWiden = GetPrivateProfileIntA("Render", "AutoFovWiden", 1, chosenIni) ? 1 : 0;
 #ifdef D2VR_MATCHED_CAPTURE
     g_nativeViewBoundaryMode=GetPrivateProfileIntA("Render","NativeViewBoundary",0,chosenIni);
-    if(g_nativeViewBoundaryMode<0 || g_nativeViewBoundaryMode>2)g_nativeViewBoundaryMode=0;
+    if(g_nativeViewBoundaryMode<0 || g_nativeViewBoundaryMode>3)g_nativeViewBoundaryMode=0;
 #endif
     {
         g_startupMode = GetPrivateProfileIntA("Render", "StartupMode", 0, chosenIni);

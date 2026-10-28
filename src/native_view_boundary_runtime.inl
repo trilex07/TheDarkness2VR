@@ -47,6 +47,36 @@ static void InstallNativeViewBoundary() {
             g_nativeFrustumBoundary.Debug(2),g_nativeFrustumBoundary.Debug(3),g_nativeFrustumBoundary.Debug(4));
         return;
     }
+    if(g_nativeViewBoundaryMode==3) {
+        auto* code=g_nativeViewCode;
+        const d2vr_native_clone::Override replacement{1,0x98618E-0x985D80,
+            reinterpret_cast<void*>(&TranslatedFrustumGetter)};
+        if(!code) {
+            code=new(std::nothrow) d2vr_native_clone::Code;
+            if(!code || !code->Prepare(d2vr_native_clone::viewBlocks,2,
+                d2vr_native_clone::viewCalls,sizeof(d2vr_native_clone::viewCalls)/sizeof(d2vr_native_clone::viewCalls[0]),
+                &replacement,g_nativeImageGuard)) {
+                Log("[NativeTranslatedView] refused code preparation status=%s",code?code->Status():"allocation");
+                delete code;return;
+            }
+            g_nativeViewCode=code;
+        }
+        const uintptr_t tables[]={0xFC8930,0xFC6800};
+        for(unsigned i=0;i<2;++i) {
+            unsigned char snapshot[83*4]{};
+            const auto bytes=(d2vr_native_clone::viewTableCounts[i]+1)*4;
+            if(!read(uint32_t(tables[i]-4),snapshot,bytes) ||
+               !d2vr_native_clone::MatchesDigest(snapshot,bytes,d2vr_native_clone::viewTableDigests[i]) ||
+               !g_nativeViewTables[i].Prepare(reinterpret_cast<void**>(tables[i]),d2vr_native_clone::viewTableCounts[i],0xA8/4,
+                    code->Entry(0),g_nativeImageGuard)) {
+                Log("[NativeTranslatedView] refused native table contract class=%08X",unsigned(tables[i]));
+                // A prepared table may already refer to this code. Retain it;
+                // no instance has been published, and no cleanup reads native memory.
+                g_nativeViewCode=code;return;
+            }
+        }
+        g_nativeViewCode=code;
+    }
     const auto kernel=GetModuleHandleW(L"kernel32.dll");
     const auto target=reinterpret_cast<void*>(GetProcAddress(kernel,"QueryPerformanceCounter"));
     if(!target || *reinterpret_cast<void*const*>(image+0xAEB35C)!=target) {
@@ -58,6 +88,11 @@ static void InstallNativeViewBoundary() {
     // to 985D80 is present in the retained real-game ETW stacks. +F0's
     // 6DBE80 is a separate test-render path, not the captured gameplay path.
     const bool installed=g_nativeViewBoundary.Start(target,0xA66486,ObserveNativeViewBoundary,g_nativeImageGuard);
-    Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A66486; ESI view +A8 -> renderer +3F4 -> camera; observation only; EXE/IAT unchanged",
-        installed,g_nativeViewBoundaryMode);
+    if(g_nativeViewBoundaryMode==3) {
+        g_nativeTranslatedViewPrepared=installed;
+        Log("[NativeTranslatedView] prepared=%d QPC=%d viewCopy=%p rendererCopy=%p point=0098618E; experimental, native calls/branch offsets retained; foreign debug state unchanged",
+            int(g_nativeTranslatedViewPrepared),int(installed),g_nativeViewCode->Entry(0),g_nativeViewCode->Entry(1));
+    }
+    Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A66486; ESI view +A8 -> renderer +3F4 -> camera; %s; EXE/IAT/static tables unchanged",
+        installed,g_nativeViewBoundaryMode,g_nativeViewBoundaryMode==3?"private instance publication":"observation only");
 }
