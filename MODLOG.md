@@ -547,3 +547,21 @@ release use the same atomic protocol. No command elision or concurrent access
 to the protected arena is admitted. Actual-source x86 recorder regression
 6087 checks (including concurrent uniquely tagged payloads) and both builds
 PASS. No runtime millisecond or FPS saving claimed.
+
+## 2026-10-28: reuse frame-start ALL state-block object
+
+Add default-OFF ReuseStateSnapshots. The frame-start snapshot retains its
+D3DSBT_ALL object and refreshes values via Capture every frame instead of
+CreateStateBlock. Render targets/depth references are released and reacquired
+each time. Cache identity is the exact device; changed device or failed Capture
+releases it and falls back to creation. Both Reset paths still use full
+ReleaseRecording before native Reset, including releasing the cached block.
+The live-end snapshot remains independently created/released as before.
+This removes one repeated state-block creation and caps query per frame after
+initialization, not any native engine state changes or draw operations.
+
+Actual-source DeviceSnapshot x86 tests on REF and HAL PASS across1000 changing
+render-state/VS-constant/viewport captures compared with legacy creation,
+same-object retention, surface-reference clearing and successful Reset followed
+by recreation. Both builds PASS. Retained ETW motivates reducing per-frame D3D
+work but establishes no exclusive saving for this change. Gameplay/FPS NOT RUN.

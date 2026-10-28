@@ -435,28 +435,37 @@ struct RecLockGuard {
 // D3D state blocks exclude render targets and depth surfaces. Keep those explicitly.
 static void SyncActiveShader(IDirect3DDevice9* dev);
 struct DeviceSnapshot {
+    IDirect3DDevice9* owner = nullptr;
     IDirect3DStateBlock9* state = nullptr;
     IDirect3DSurface9* targets[4] = {};
     IDirect3DSurface9* depth = nullptr;
     DWORD targetCount = 0;
     UINT vertexFloatLimit = 0, pixelFloatLimit = 0;
     ~DeviceSnapshot() { Release(); }
-    void Release() {
-        if (state) { state->Release(); state = nullptr; }
+    void Release(bool keepState=false) {
+        if (!keepState) {
+            if (state) { state->Release(); state = nullptr; }
+            owner=nullptr;
+        }
         for (auto& t : targets) if (t) { t->Release(); t = nullptr; }
         if (depth) { depth->Release(); depth = nullptr; }
     }
-    bool Capture(IDirect3DDevice9* dev) {
-        Release();
+    bool Capture(IDirect3DDevice9* dev,bool reuse=false) {
+        Release(reuse && owner==dev);
+        if(state && FAILED(state->Capture())) Release();
+        if(!state) {
         D3DCAPS9 caps{};
         if (FAILED(dev->GetDeviceCaps(&caps))) return false;
         targetCount = std::min<DWORD>(4, caps.NumSimultaneousRTs);
         vertexFloatLimit = caps.MaxVertexShaderConst;
         pixelFloatLimit = D3DSHADER_VERSION_MAJOR(caps.PixelShaderVersion)>=3 ? 224 : 32;
         if (FAILED(dev->CreateStateBlock(D3DSBT_ALL, &state))) return false;
+        owner=dev;
+        }
         for (DWORD i = 0; i < targetCount; ++i) dev->GetRenderTarget(i, &targets[i]);
         dev->GetDepthStencilSurface(&depth);
-        return targets[0] != nullptr;
+        if(!targets[0]) {Release();return false;}
+        return true;
     }
     void Apply(IDirect3DDevice9* dev) {
         if (!state) return;
@@ -469,19 +478,19 @@ struct DeviceSnapshot {
 };
 static DeviceSnapshot g_frameStart;
 static FrameResourceRefs<IUnknown> g_recordRefs;
-static void ReleaseRecording() {
+static void ReleaseRecording(bool keepSnapshot=false) {
     g_recActive = false;
     g_rec.clear();
     g_recData.clear();
     g_recordRefs.Clear();
-    g_frameStart.Release();
+    g_frameStart.Release(keepSnapshot);
 }
 
 static void RecBeginFrame(IDirect3DDevice9* dev) {
     RecLockGuard lock;
-    ReleaseRecording();
+    ReleaseRecording(g_reuseStateSnapshots);
     g_recordRefs.Begin(g_uniqueReplayRefs);
-    if (!g_frameStart.Capture(dev)) {
+    if (!g_frameStart.Capture(dev,g_reuseStateSnapshots)) {
         static int s_captureFails = 0;
         if (s_captureFails++ < 8) Log("[Record] frame-start capture failed - recording stays off");
         return;

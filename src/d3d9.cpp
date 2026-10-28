@@ -145,6 +145,7 @@ bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B
 static bool g_startupShaderWarmup = false; // OFF; valid-device startup only, no native slot writes
 static bool g_startupShaderPool = false; // OFF; startup-owned shader objects, transferred once
 static unsigned g_startupShaderCopies=1; // independent startup creation references per exact bytecode
+static bool g_reuseStateSnapshots=false; // refresh frame-start state via Capture, release before Reset
 static unsigned g_queryPreloadCount=0; // bounded unused occlusion queries; startup only
 static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shadow image
 static std::atomic<bool> g_skipObjectDraws{false}; // diagnostic: omit triangle batches >2 primitives
@@ -650,6 +651,7 @@ void LoadConfig() {
     g_startupShaderWarmup = GetPrivateProfileIntA("Render", "StartupShaderWarmup", 0, chosenIni)!=0;
     g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
     g_startupShaderCopies=GetPrivateProfileIntA("Render","StartupShaderCopies",1,chosenIni)==2?2:1;
+    g_reuseStateSnapshots=GetPrivateProfileIntA("Render","ReuseStateSnapshots",0,chosenIni)!=0;
     g_queryPreloadCount=GetPrivateProfileIntA("Render","QueryPreloadCount",0,chosenIni);
     if(g_queryPreloadCount>d2vr_query_preload::MaxQueries)g_queryPreloadCount=0;
     g_skipShadowAtlasDraws = GetPrivateProfileIntA("Render", "SkipShadowAtlasDraws", 0, chosenIni)!=0;

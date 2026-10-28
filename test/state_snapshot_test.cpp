@@ -1,0 +1,42 @@
+#define NOMINMAX
+#include <windows.h>
+#include <d3d9.h>
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#define CHECK(x) do{if(!(x)){printf("FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
+using ApplyFn=HRESULT(STDMETHODCALLTYPE*)(IDirect3DStateBlock9*);
+static ApplyFn g_origSBApply=nullptr;
+static void SyncActiveShader(IDirect3DDevice9*){}
+#include "actual_snapshot.inl"
+int main(int argc,char**) {
+    wchar_t path[MAX_PATH];CHECK(GetSystemDirectoryW(path,MAX_PATH));wcscat_s(path,L"\\d3d9.dll");
+    HMODULE dll=LoadLibraryW(path);CHECK(dll);
+    auto create=reinterpret_cast<IDirect3D9*(WINAPI*)(UINT)>(GetProcAddress(dll,"Direct3DCreate9"));CHECK(create);
+    auto* api=create(D3D_SDK_VERSION);CHECK(api);
+    HWND w=CreateWindowExW(0,L"STATIC",L"snapshot test",WS_POPUP,0,0,64,64,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);CHECK(w);
+    D3DPRESENT_PARAMETERS pp{};pp.Windowed=TRUE;pp.SwapEffect=D3DSWAPEFFECT_DISCARD;pp.hDeviceWindow=w;pp.BackBufferWidth=pp.BackBufferHeight=64;
+    IDirect3DDevice9* d=nullptr;CHECK(SUCCEEDED(api->CreateDevice(0,argc>1?D3DDEVTYPE_HAL:D3DDEVTYPE_REF,w,D3DCREATE_SOFTWARE_VERTEXPROCESSING|D3DCREATE_MULTITHREADED,&pp,&d)));
+    DeviceSnapshot reusable,legacy;
+    IDirect3DStateBlock9* first=nullptr;
+    for(unsigned i=0;i<1000;++i) {
+        D3DVIEWPORT9 vp{0,0,32+i%32,32+i%32,0,1};float values[4]={float(i),2,3,4};
+        CHECK(SUCCEEDED(d->SetViewport(&vp)));CHECK(SUCCEEDED(d->SetRenderState(D3DRS_ALPHABLENDENABLE,i%2)));
+        CHECK(SUCCEEDED(d->SetVertexShaderConstantF(0,values,1)));
+        CHECK(reusable.Capture(d,true));CHECK(legacy.Capture(d));
+        if(!i)first=reusable.state;CHECK(reusable.state==first);
+        CHECK(SUCCEEDED(d->SetRenderState(D3DRS_ALPHABLENDENABLE,!(i%2))));
+        float dirty[4]={-1,-1,-1,-1};CHECK(SUCCEEDED(d->SetVertexShaderConstantF(0,dirty,1)));
+        reusable.Apply(d);DWORD state;float got[4];D3DVIEWPORT9 actual{};
+        CHECK(SUCCEEDED(d->GetRenderState(D3DRS_ALPHABLENDENABLE,&state)) && state==i%2);
+        CHECK(SUCCEEDED(d->GetVertexShaderConstantF(0,got,1)) && !memcmp(got,values,sizeof(got)));
+        CHECK(SUCCEEDED(d->GetViewport(&actual)) && !memcmp(&actual,&vp,sizeof(vp)));
+        legacy.Apply(d);CHECK(SUCCEEDED(d->GetVertexShaderConstantF(0,got,1)) && !memcmp(got,values,sizeof(got)));
+        reusable.Release(true);legacy.Release();
+        CHECK(reusable.state==first && !reusable.targets[0] && !reusable.depth);
+    }
+    reusable.Release();CHECK(!reusable.state && !reusable.owner);
+    CHECK(SUCCEEDED(d->Reset(&pp)));CHECK(reusable.Capture(d,true));reusable.Release();
+    d->Release();api->Release();DestroyWindow(w);FreeLibrary(dll);
+    puts("PASS actual x86 DeviceSnapshot: 1000 fresh captures, state/constant/viewport equality, same object, released surfaces, Reset recreation");
+}
