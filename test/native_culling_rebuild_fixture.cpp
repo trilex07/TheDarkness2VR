@@ -43,11 +43,23 @@ int main() {
     CHECK(!std::memcmp(original,camera,0x620)); // FOV, P, V, VP untouched
     CHECK(!std::memcmp(original+0x7c0,camera+0x7c0,0x20));
     CHECK(*reinterpret_cast<float**>(f+0x30)==planes);
+    input.stereoUnion=input.haveBounds=true;
+    for(unsigned axis=0;axis<3;++axis){input.lower[axis]=-10.f;input.upper[axis]=30.f;}
+    for(unsigned i=0;i<1000;++i) {
+        CHECK(RebuildOwnedCullingFrustum(camera,input));
+        const auto bounds=reinterpret_cast<const float*>(f+0x10);
+        for(unsigned axis=0;axis<3;++axis)CHECK(bounds[axis]==-10.f && bounds[4+axis]==30.f);
+        CHECK(bounds[3]==3.f && bounds[7]==7.f);
+    }
+    CHECK(!std::memcmp(original,camera,0x620));
+    CHECK(!std::memcmp(original+0x7c0,camera+0x7c0,0x20));
+    input.lower[0]=NAN;CHECK(!RebuildOwnedCullingFrustum(camera,input));input.lower[0]=-10.f;
+    input.haveBounds=false;CHECK(!RebuildOwnedCullingFrustum(camera,input));input.haveBounds=true;
     types[5]=0;CHECK(!RebuildOwnedCullingFrustum(camera,input));types[5]=2;
     *reinterpret_cast<float**>(f+0x38)=planes+23;CHECK(!RebuildOwnedCullingFrustum(camera,input));
     *reinterpret_cast<float**>(f+0x38)=planes+24;
     planes[0]=NAN;CHECK(!RebuildOwnedCullingFrustum(camera,input));planes[0]=0;
     *reinterpret_cast<unsigned**>(f+0x154)=types+5;CHECK(!RebuildOwnedCullingFrustum(camera,input));
-    CHECK(planeCalls==1000 && boundCalls==1000);
-    puts("PASS actual-source culling rebuild: 1000 ABI/order/alignment calls, render camera preserved, malformed vectors rejected; native plane algorithms not emulated");
+    CHECK(planeCalls==2000 && boundCalls==2000);
+    puts("PASS actual-source culling rebuild: 1000 native+1000 conservative bounds ABI/order/alignment calls, W/render fields preserved, invalid bounds rejected before calls, malformed vectors rejected; native algorithms not emulated");
 }

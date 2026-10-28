@@ -1139,3 +1139,38 @@ point changes. No new geometry adjustment or installed-DLL replacement here.
 Both generated geometry fixtures PASS their existing scopes. D2FRC002 emulator
 run completed against the pinned D46 executable with the above diagnostics.
 Keep the installed6c39998 NIS80 candidate and rollback intact; no game launch.
+
+## 2026-10-28: conservatively include binocular corners in native AABB
+
+PrepareStereo now derives a separate world AABB from the16 original per-eye
+clip corners, with camera-local/eye inverses and compositions in double
+precision. Round extrema outward to float using nextafter. The native rebuilt
+AABB previously excluded some of those reference corners by up to3.78415 world
+units in the synthetic translated/rotated corpus. After native607CD0/685050,
+expand only the owned AABB XYZ minima/maxima to also include these bounds.
+Never shrink native bounds. W, flags, owning vectors, plane equations, camera
+reference point, FOV and render V/P/VP remain unchanged. Invalid stereo bounds
+are rejected before either native builder. This corrects an AABB containment
+defect; far-plane equation error remains, and broad side-popup causality is
+not proven. No EXE/IAT/vtable patch and no arbitrary world-space padding.
+
+Avoid the added inversions for unused candidates: construct the stereo input
+only after the existing exact-copy-phase, installed-hook, mode and projection
+corroboration predicates all pass. Previously unmatched/observation cameras
+still computed discarded candidates. Witness observation/update remains in
+place. No runtime CPU saving or90FPS claim.
+
+Extend optional export to D2FRC003 (D2FRC001/002 still readable) and add a
+bounded binary helper mode to the actual C++ geometry fixture. The emulator
+runs original native builders then feeds their output and the generated
+candidate bounds to the actual C++ ExpandOwnedBounds helper in one batch.
+Independent NumPy double original-eye corners are strictly inside corrected
+AABBs in all240 poses; native bounds never shrink and both W fields match.
+Plane results are unchanged and strict full-frustum containment still fails
+at the previously reported far boundary. Do not label that failure fixed.
+
+Actual-source rebuild ABI fixture PASS1000 legacy +1000 expanded rebuilds,
+render/reference/W preservation, invalid-input-before-call rejection and
+malformed-vector rejection. Phase routing10000 PASS; geometry64800+249600
+points PASS; production and diagnostic builds PASS. No game launch, headset
+or performance claim. Keep NIS80 and native2676x2728 in the combined candidate.

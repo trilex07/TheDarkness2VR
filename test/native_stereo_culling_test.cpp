@@ -7,6 +7,21 @@ static void Transform(const float* p,const float* m,float* out) {
     for(unsigned c=0;c<4;++c) {out[c]=0;for(unsigned r=0;r<4;++r)out[c]+=p[r]*m[r*4+c];}
 }
 int main(int argc,char** argv) {
+    if(argc==4 && !std::strcmp(argv[1],"--expand-native-bounds")) {
+        FILE* input=nullptr;FILE* output=nullptr;
+        if(fopen_s(&input,argv[2],"rb") || !input || fopen_s(&output,argv[3],"wb") || !output)return 2;
+        char magic[8];unsigned count=0;
+        if(fread(magic,1,8,input)!=8 || std::memcmp(magic,"D2BND001",8) || fread(&count,4,1,input)!=1 || count>10000)return 2;
+        if(fwrite(magic,1,8,output)!=8 || fwrite(&count,4,1,output)!=1)return 2;
+        for(unsigned i=0;i<count;++i) {
+            d2vr_culling_cover::Input data;data.haveBounds=true;
+            float bounds[8];
+            if(fread(data.lower,4,3,input)!=3 || fread(data.upper,4,3,input)!=3 || fread(bounds,4,8,input)!=8)return 2;
+            if(!d2vr_culling_cover::ExpandOwnedBounds(data,bounds) || fwrite(bounds,4,8,output)!=8)return 2;
+        }
+        if(fgetc(input)!=EOF || fclose(input) || fclose(output))return 2;
+        return 0;
+    }
     // Optional generated inputs for the separate, private native-code emulator.
     // Only our matrices/points are exported; no executable bytes or game assets.
     FILE* exported=nullptr;
@@ -15,7 +30,7 @@ int main(int argc,char** argv) {
     if(argc==2 || referenceEyes) {
         if(fopen_s(&exported,argv[1],"wb") || !exported)return 2;
         const unsigned cases=240;
-        if(fwrite(referenceEyes?"D2FRC002":"D2FRC001",1,8,exported)!=8 || fwrite(&cases,4,1,exported)!=1)return 2;
+        if(fwrite(referenceEyes?"D2FRC003":"D2FRC001",1,8,exported)!=8 || fwrite(&cases,4,1,exported)!=1)return 2;
     }
     d2vr_stereo::Rng rng(0x581031u);
     unsigned points=0,outsideOld=0;
@@ -59,6 +74,9 @@ int main(int argc,char** argv) {
             if(referenceEyes) {
                 CHECK(fwrite(view,sizeof(float),16,exported)==16);
                 CHECK(fwrite(eyeP,sizeof(float),32,exported)==32);
+                CHECK(out.haveBounds);
+                CHECK(fwrite(out.lower,sizeof(float),3,exported)==3);
+                CHECK(fwrite(out.upper,sizeof(float),3,exported)==3);
             }
             CHECK(fwrite(out.viewProjection,sizeof(float),16,exported)==16);
             CHECK(fwrite(out.inverseViewProjection,sizeof(float),16,exported)==16);

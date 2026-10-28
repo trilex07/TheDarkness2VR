@@ -1,6 +1,7 @@
 #pragma once
 #include "native_camera_cover.h"
 #include "stereo_math.h"
+#include <limits>
 
 namespace d2vr_culling_cover {
 // Prepare separate culling input; never edit the render camera's projection,
@@ -10,7 +11,78 @@ struct alignas(16) Input {
     float viewProjection[16]{},inverseViewProjection[16]{};
     float fov=0;
     bool stereoUnion=false;
+    float lower[3]{},upper[3]{};
+    bool haveBounds=false;
 };
+// Keep camera-local inversions in double precision. Inverting a rounded world
+// VP loses far-corner accuracy when the native camera has a large translation.
+inline bool InvertBoundsMatrix(const float* matrix,double inverse[4][4]) {
+    double a[4][8]{};
+    for(unsigned r=0;r<4;++r)for(unsigned c=0;c<4;++c) {
+        if(!std::isfinite(matrix[r*4+c]))return false;
+        a[r][c]=matrix[r*4+c];a[r][c+4]=r==c?1.:0.;
+    }
+    for(unsigned c=0;c<4;++c) {
+        unsigned pivot=c;
+        for(unsigned r=c+1;r<4;++r)if(std::fabs(a[r][c])>std::fabs(a[pivot][c]))pivot=r;
+        if(std::fabs(a[pivot][c])<1e-10)return false;
+        for(unsigned k=0;k<8;++k)std::swap(a[c][k],a[pivot][k]);
+        const double scale=a[c][c];for(double& value:a[c])value/=scale;
+        for(unsigned r=0;r<4;++r)if(r!=c) {
+            const double factor=a[r][c];
+            for(unsigned k=0;k<8;++k)a[r][k]-=factor*a[c][k];
+        }
+    }
+    for(unsigned r=0;r<4;++r)for(unsigned c=0;c<4;++c) {
+        inverse[r][c]=a[r][c+4];if(!std::isfinite(inverse[r][c]))return false;
+    }
+    return true;
+}
+inline bool PrepareStereoBounds(const float* view,const float eyeProjection[2][16],Input& candidate) {
+    double inverseView[4][4],lower[3],upper[3];
+    if(!InvertBoundsMatrix(view,inverseView))return false;
+    for(unsigned axis=0;axis<3;++axis){lower[axis]=std::numeric_limits<double>::infinity();upper[axis]=-lower[axis];}
+    for(unsigned eye=0;eye<2;++eye) {
+        double inverseEye[4][4];if(!InvertBoundsMatrix(eyeProjection[eye],inverseEye))return false;
+        for(unsigned corner=0;corner<8;++corner) {
+            const double p[4]={corner&1?1.:-1.,corner&2?1.:-1.,corner&4?1.:0.,1.};
+            double local[4]{},world[4]{};
+            for(unsigned col=0;col<4;++col)for(unsigned row=0;row<4;++row)local[col]+=p[row]*inverseEye[row][col];
+            for(unsigned col=0;col<4;++col)for(unsigned row=0;row<4;++row)world[col]+=local[row]*inverseView[row][col];
+            if(!std::isfinite(world[3]) || world[3]<1e-8)return false;
+            for(unsigned axis=0;axis<3;++axis) {
+                const double value=world[axis]/world[3];if(!std::isfinite(value))return false;
+                lower[axis]=(std::min)(lower[axis],value);upper[axis]=(std::max)(upper[axis],value);
+            }
+        }
+    }
+    for(unsigned axis=0;axis<3;++axis) {
+        // Outward float rounding; no guessed world-space expansion constant.
+        candidate.lower[axis]=std::nextafter(float(lower[axis]),-std::numeric_limits<float>::infinity());
+        candidate.upper[axis]=std::nextafter(float(upper[axis]),std::numeric_limits<float>::infinity());
+        if(!std::isfinite(candidate.lower[axis]) || !std::isfinite(candidate.upper[axis]))return false;
+    }
+    candidate.haveBounds=true;return true;
+}
+inline bool ValidStereoBounds(const Input& input) {
+    if(!input.haveBounds)return false;
+    for(unsigned axis=0;axis<3;++axis)
+        if(!std::isfinite(input.lower[axis]) || !std::isfinite(input.upper[axis]) ||
+           input.lower[axis]>input.upper[axis])return false;
+    return true;
+}
+inline bool ExpandOwnedBounds(const Input& input,float bounds[8]) {
+    if(!ValidStereoBounds(input))return false;
+    for(unsigned axis=0;axis<3;++axis)
+        if(!std::isfinite(bounds[axis]) || !std::isfinite(bounds[4+axis]) ||
+           bounds[axis]>bounds[4+axis])return false;
+    // Keep the native bounds too: the correction may only widen, never shrink.
+    for(unsigned axis=0;axis<3;++axis) {
+        bounds[axis]=(std::min)(bounds[axis],input.lower[axis]);
+        bounds[4+axis]=(std::max)(bounds[4+axis],input.upper[axis]);
+    }
+    return true;
+}
 inline bool Prepare(const float* view,const float* projection,const float* nativeViewProjection,
                     float fov,float aspect,float nearZ,float farZ,const float eyes[2][4],
                     float coverage,float crop,Input& output) {
@@ -90,6 +162,7 @@ inline bool PrepareStereo(const float* view,const float* projection,const float*
         for(unsigned row=0;row<4;++row)w+=double(p[row])*candidate.inverseViewProjection[row*4+3];
         if(!std::isfinite(w) || w<1e-8)return false;
     }
+    if(!PrepareStereoBounds(view,eyeProjection,candidate))return false;
     output=candidate;return true;
 }
 }

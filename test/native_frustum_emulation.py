@@ -11,12 +11,15 @@ import json
 from pathlib import Path
 import struct
 import sys
+import subprocess
+import tempfile
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--exe", required=True, type=Path)
 parser.add_argument("--cases", required=True, type=Path)
 parser.add_argument("--dependency-root", type=Path)
 parser.add_argument("--report", type=Path)
+parser.add_argument("--bounds-helper", type=Path, help="Built native_stereo_culling_test.exe for actual C++ correction")
 args = parser.parse_args()
 if args.dependency_root:
     sys.path.insert(0, str(args.dependency_root))
@@ -87,8 +90,12 @@ def call(target, matrix):
 
 
 data = args.cases.read_bytes()
-require(data[:8] in (b"D2FRC001", b"D2FRC002"), "Wrong generated-case format")
-reference_eyes = data[:8] == b"D2FRC002"
+require(data[:8] in (b"D2FRC001", b"D2FRC002", b"D2FRC003"), "Wrong generated-case format")
+reference_eyes = data[:8] in (b"D2FRC002", b"D2FRC003")
+have_bounds = data[:8] == b"D2FRC003"
+require(not args.bounds_helper or have_bounds, "Bounds helper requires D2FRC003")
+correction_inputs = bytearray(b"D2BND001" + data[8:12])
+correction_references = []
 count = struct.unpack_from("<I", data, 8)[0]
 require(count == 240, "Incomplete generated cases")
 offset, total = 12, 0
@@ -102,6 +109,10 @@ for case in range(count):
         view = np.frombuffer(data, dtype="<f4", count=16, offset=offset).reshape(4, 4).astype(float)
         eyes = np.frombuffer(data, dtype="<f4", count=32, offset=offset+64).reshape(2, 4, 4).astype(float)
         offset += 192
+    if have_bounds:
+        input_bounds = data[offset:offset+24]
+        require(len(input_bounds) == 24, "Truncated candidate bounds")
+        offset += 24
     vp, ivp = data[offset:offset+64], data[offset+64:offset+128]
     offset += 128
     n = struct.unpack_from("<I", data, offset)[0]
@@ -152,6 +163,9 @@ for case in range(count):
         reference_box_max = max(reference_box_max, float(np.max(box_outside_reference)))
         reference_plane_cases += int(np.any(outside > 1e-4))
         reference_box_cases += int(np.any(box_outside_reference > 1e-4))
+        if args.bounds_helper:
+            correction_inputs += input_bounds + struct.pack("<8f", *bounds.flatten())
+            correction_references.append((bounds.copy(), world.copy()))
     plane_outside = np.max(-distances, axis=1)
     box_outside = np.max(np.maximum(bounds[0, :3]-points, points-bounds[1, :3]), axis=1)
     # Same loose edge/depth tolerance as the existing geometry fixture. This
@@ -180,6 +194,28 @@ if reference_eyes:
         strict_corner_containment=bool(np.max(reference_plane_max) <= 0 and reference_box_max <= 0),
         interpretation="Diagnostic reference, not covered by legacy PASS; includes far/depth boundary errors",
         corners_per_pose=16)
+if args.bounds_helper:
+    with tempfile.TemporaryDirectory(prefix="d2vr-bounds-correction-") as directory:
+        source, target = Path(directory)/"input.bin", Path(directory)/"output.bin"
+        source.write_bytes(correction_inputs)
+        subprocess.run([str(args.bounds_helper), "--expand-native-bounds", str(source), str(target)],
+                       check=True, timeout=30)
+        corrected = target.read_bytes()
+    require(corrected[:12] == correction_inputs[:12] and len(corrected) == 12+count*32,
+            "Correction output format mismatch")
+    for case, (original, world) in enumerate(correction_references):
+        expanded = np.frombuffer(corrected, dtype="<f4", count=8, offset=12+case*32).reshape(2, 4)
+        require(np.all(np.isfinite(expanded)), "Nonfinite corrected bounds")
+        require(np.all(expanded[0, :3] <= original[0, :3]) and
+                np.all(expanded[1, :3] >= original[1, :3]), "Correction shrank native bounds")
+        require(np.array_equal(expanded[:, 3], original[:, 3]), "Bounds W fields changed")
+        require(np.all(expanded[0, :3] <= np.min(world, axis=0)) and
+                np.all(expanded[1, :3] >= np.max(world, axis=0)),
+                f"Corrected bounds do not strictly contain reference corners case={case}")
+    report["corrected_aabb"] = dict(cases=count, strict_double_reference_corner_containment=True,
+                                    native_bounds_never_shrunk=True, w_fields_unchanged=True,
+                                    implementation="Actual C++ ExpandOwnedBounds helper",
+                                    planes="Unchanged; far-plane errors remain outside this correction")
 if args.report:
     args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
 print(json.dumps(report))

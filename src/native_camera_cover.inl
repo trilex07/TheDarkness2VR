@@ -148,6 +148,7 @@ struct NativeViewReadStatus {
 // Native frustum plane/type vectors already contain six entries. Reusing their
 // existing capacity mirrors 4BE0C0 without shallow-copying an owning structure.
 static bool RebuildOwnedCullingFrustum(void* camera,const d2vr_culling_cover::Input& input) {
+    if(input.stereoUnion && !d2vr_culling_cover::ValidStereoBounds(input))return false;
     __try {
         auto frustum=static_cast<unsigned char*>(camera)+0x620;
         const auto planes=*reinterpret_cast<float**>(frustum+0x30);
@@ -170,7 +171,11 @@ static bool RebuildOwnedCullingFrustum(void* camera,const d2vr_culling_cover::In
     auto frustum=static_cast<unsigned char*>(camera)+0x620;
     reinterpret_cast<Build>(0x607CD0)(frustum,input.viewProjection);
     reinterpret_cast<Build>(0x685050)(frustum,input.inverseViewProjection);
-    return true;
+    // The native inverse of the rounded world VP can undershoot the actual
+    // binocular corners. Only widen its owned XYZ bounds, retaining W/flags,
+    // vectors and the native plane equations. No render-camera field changes.
+    return !input.stereoUnion || d2vr_culling_cover::ExpandOwnedBounds(input,
+        reinterpret_cast<float*>(frustum+0x10));
 }
 static bool PrepareOwnedCullingInput(void* camera,const NativeCameraFields& fields,d2vr_culling_cover::Input& input) {
     float view[16],vp[16];
@@ -218,16 +223,19 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
         d2vr_replay::g_cameraProjectionKnown &&
         d2vr_native_view::ProjectionWitness::SameProjection(inverse,d2vr_replay::g_cameraInverseProjection);
     d2vr_culling_cover::Input cullingInput;
-    const bool cullingReady=PrepareOwnedCullingInput(camera,fields,cullingInput);
+    // Candidate construction now includes double-precision binocular bounds.
+    // Do not compute unused candidates for observations/unmatched cameras.
+    const bool canApply=beforeCopy && v==0x98618E && g_nativeFrustumBoundary.Installed() &&
+        g_nativeViewBoundaryMode==2 && ready;
+    const bool cullingReady=canApply && PrepareOwnedCullingInput(camera,fields,cullingInput);
     bool cullingApplied=false;
     // The exact98618E instruction follows native camera rebuilding and precedes
     // the getter/copy. Neither QPC nor an earlier view-entry phase may write.
-    if(beforeCopy && v==0x98618E && g_nativeFrustumBoundary.Installed() &&
-       g_nativeViewBoundaryMode==2 && ready && cullingReady) {
+    if(cullingReady) {
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
         static unsigned appliedReports=0;
         if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
-            Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d planes+bounds=native-rebuilt renderProjection=unchanged",
+            Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d planes=native bounds=native+binocular renderProjection=unchanged",
                 g_trackedFrame.id,camera,fields.fov,int(cullingInput.stereoUnion));
     }
     g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
