@@ -40,14 +40,19 @@ remain unverified. No measured FPS improvement is associated with this option.
 
 ## Controller action access
 
-During gameplay, press left grip (L1) before triangle to send stock XInput Y.
+During a native-confirmed character/retained-target hold, triangle directly
+sends stock XInput Y; no extra grip press or valid controller pose is required.
+Outside that confirmed context, press left grip (L1) before triangle to send Y.
 The native game selects the action associated with Y, including context actions
 while holding an opponent. The other three face buttons retain A/B/X. Without
 this modifier, triangle keeps the existing menu tap / hold-to-recenter behavior;
 the separate menu button remains Start. Ownership is latched for the entire
 triangle press: releasing grip during Y cannot pause/recenter, and gripping
 after a menu press cannot turn it into Y. Focus loss or a polling gap requires
-a fresh triangle release. This mapping requires no native ownership admission.
+a fresh triangle release. The L1 modifier needs no native ownership admission;
+automatic held-target context requires fresh gameplay feedback and the owned
+private camera. A prop hold, stale/missing owner, menu or absent view does not
+enable the automatic action context.
 
 The 2026-10-28 18:29 runtime log confirms culling-cover receipts but rejects the
 renderer+460 player-owner path (status0 during gameplay). ProtectedLeftAim and

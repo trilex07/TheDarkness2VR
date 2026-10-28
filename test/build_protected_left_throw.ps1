@@ -23,6 +23,7 @@ $protected=Get-Content (Join-Path $repo 'src\protected_left_throw.inl') -Raw
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_protected_throw_types.inl'),(Extract $throw 'struct NativeThrowToken {')+';',[Text.Encoding]::UTF8)
 $bodies=@((Extract $main 'static XrVector3f RotVec('),(Extract $aim 'static bool NativeAimOwnerMatches('),
     (Extract $throw 'static void ResetNativeThrow() {'),(Extract $throw 'static bool NativeThrowFireOwnerMatches('),
+    (Extract $aim 'static bool NativeHeldActionContext() {'),
     (Extract $protected 'static bool ProtectedThrowAvailable() {'),
     (Extract $protected 'static bool ProtectedLeftAimHeld() {'),(Extract $protected 'static void ResetProtectedLeftThrow() {'),
     (Extract $throw 'static void PublishNativeThrow('),(Extract $throw 'static bool TryNativeThrowVelocity('),

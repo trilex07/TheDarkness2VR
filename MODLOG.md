@@ -1866,3 +1866,20 @@ references, output/CMP flags, stack, floating state and LastError; existing
 Both x86 builds PASS. No FPS gain, physical controller trajectory or independent
 tracked visual hand/bone pose completion is claimed. Enemy face-button mapping
 from cee43ef remains available independently of native-owner activation.
+
+## 2026-10-28: direct Y access during native-confirmed opponent holds
+
+The prop-throw recognizer owns LB and suppresses its pulses during alternate
+character/retained-target holds. Requiring another L1 press merely to select Y
+couples contextual action access to that separate native grip/release button.
+NativeHeldActionContext now allows triangle to select stock Y directly during
+a fresh alternate hold belonging to the admitted private camera. The existing
+ContextTriangle latch prevents disappearance of that feedback during a held Y
+from turning it into Start/recenter. Neither controller pose is needed for a
+face-button action. Outside this context, the prior L1 modifier/menu mapping
+remains. Native LB, native enemy action selection and prop physics are unchanged.
+
+Actual-source protected throw/context fixture171 checks PASS; existing XInput
+bridge production97/diagnostic151 checks PASS, including latched action/menu
+ownership and input/time loss. Both x86 builds PASS. Native-owner activation
+and physical opponent execution still require runtime evidence; no FPS claim.

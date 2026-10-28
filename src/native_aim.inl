@@ -45,6 +45,16 @@ static bool CopyNativeGameplay(NativeGameplaySample& out) {
     out=g_nativeGameplay; ReleaseSRWLockShared(&g_nativeGameplayLock);
     return out.camera && GetTickCount64()-out.time<150;
 }
+static bool NativeHeldActionContext() {
+#ifdef D2VR_MATCHED_CAPTURE
+    NativeGameplaySample owner;
+    return g_imagePreservingInput && g_protectedGestureActions && g_haveViews && g_in3DGameplayMode &&
+        CopyNativeGameplay(owner) && owner.alternateHeldTarget &&
+        ProtectedAimCameraOwned(reinterpret_cast<void*>(owner.camera));
+#else
+    return false;
+#endif
+}
 static d2vr_input::GrabFeedback ReadNativeGrabFeedback() {
     NativeGameplaySample s;
     return CopyNativeGameplay(s) ? s.grab:d2vr_input::GrabFeedback::Unknown;

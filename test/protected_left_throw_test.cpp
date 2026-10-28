@@ -1,4 +1,5 @@
 #define NOMINMAX
+#define D2VR_MATCHED_CAPTURE
 #include <windows.h>
 #include <xinput.h>
 #include <openxr/openxr.h>
@@ -79,6 +80,15 @@ static XINPUT_GAMEPAD Step(unsigned ms,float grip,float x,float velocity) {
     CHECK(gp.sThumbRX==12345&&gp.sThumbRY==-5432);return gp;
 }
 int main() {
+    Reset();CHECK(!NativeHeldActionContext());gameplay.alternateHeldTarget=true;
+    CHECK(NativeHeldActionContext());g_hands[0].valid=false;g_hands[1].valid=false;
+    CHECK(NativeHeldActionContext()); // face-button action needs no controller pose
+    g_haveViews=false;CHECK(!NativeHeldActionContext());g_haveViews=true;
+    g_in3DGameplayMode=false;CHECK(!NativeHeldActionContext());g_in3DGameplayMode=true;
+    g_imagePreservingInput=false;CHECK(!NativeHeldActionContext());g_imagePreservingInput=true;
+    copyOK=false;CHECK(!NativeHeldActionContext());copyOK=true;
+    gameplay.camera+=4;CHECK(!NativeHeldActionContext());gameplay.camera-=4;
+    Word(camera,0,0xffc7c0);CHECK(!NativeHeldActionContext());
     Reset();Arm();__declspec(align(16)) float velocity[4]={3,4,0,.75f};
     BYTE savedCamera[sizeof(camera)],savedFire[sizeof(fire)];memcpy(savedCamera,camera,sizeof(camera));memcpy(savedFire,fire,sizeof(fire));
     CHECK(ResolveProtectedThrowVelocity(fire,velocity));

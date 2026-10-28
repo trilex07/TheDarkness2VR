@@ -3974,7 +3974,10 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if (ReadBool(g_actX, g_pathHandLeft))  gp.wButtons |= XINPUT_GAMEPAD_X;
     bool triangleActive=false;
     const bool triangleDown=ReadBool(g_actY,g_pathHandLeft,&triangleActive);
-    const bool triangleModifier=g_in3DGameplayMode && g_hands[0].gripValid && g_hands[0].squeeze>.65f;
+    // A native-confirmed character/retained-target hold already supplies the
+    // action context. Do not require a second grip press (stock LB) just to Y.
+    const bool triangleModifier=NativeHeldActionContext() ||
+        (g_in3DGameplayMode && g_hands[0].gripValid && g_hands[0].squeeze>.65f);
     const auto triangle=g_triangleRecenter.Update(triangleActive,triangleDown,triangleModifier,
         GetTickCount64()*.001,g_triangleHoldRecenter);
     if(triangle.action)gp.wButtons|=XINPUT_GAMEPAD_Y;
