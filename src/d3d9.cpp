@@ -54,6 +54,7 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_camera_cover.h"
 #include "native_view_boundary.h"
 #include "native_view_witness.h"
+#include "native_projection_upload.h"
 #include "native_execution_boundary.h"
 #include "native_culling_cover.h"
 #include "native_view_clone_plan.h"

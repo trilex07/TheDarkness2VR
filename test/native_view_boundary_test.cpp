@@ -8,6 +8,7 @@
 #include <vector>
 #include "../src/native_view_boundary.h"
 #include "../src/native_view_witness.h"
+#include "../src/native_projection_upload.h"
 #define CHECK(x) do{if(!(x)){printf("FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 static volatile LONG callbacks=0;
 static void* expectedOwner=reinterpret_cast<void*>(0x12345678);
@@ -65,6 +66,33 @@ int main(int argc,char** argv) {
     CHECK(!mismatch.Observe(30,true,wrong));
     mismatch.Begin(30,1,2,3,inverse);
     CHECK(!mismatch.CanCover(31,1,2,3));
+    // Actual runtime rejection: depth components11/15, not a matrix transpose
+    // or frame-phase mismatch. Native projection remains its own witness.
+    const float py=1.f/std::tan(60.f*.00872664625997f),q=1000.f/(1000.f-.1f);
+    float projection[16]={py/.980938435f,0,0,0,0,py,0,0,0,0,q,1,0,0,-q*.1f,0};
+    float nativeInverse[16],shaderInverse[16];
+    CHECK(d2vr_math::Invert(projection,nativeInverse));
+    CHECK(d2vr_native_projection::ExpectedInverseUpload(projection,shaderInverse));
+    const float capturedUpload[16]={.566345036f,0,0,0,0,.577350199f,0,0,0,0,0,-10.5252628f,0,0,1,10.5263157f};
+    CHECK(witness.ProjectionMismatch(capturedUpload,nativeInverse)==0x8800);
+    CHECK(witness.SameProjection(capturedUpload,shaderInverse));
+    d2vr_native_view::ProjectionWitness converted;
+    converted.Begin(100,1,2,3,nativeInverse,shaderInverse);
+    CHECK(!converted.Observe(100,true,nativeInverse));
+    CHECK(converted.Observe(100,true,capturedUpload));
+    CHECK(converted.CanCoverProjection(101,1,2,3,nativeInverse));
+    CHECK(!converted.CanCoverProjection(101,1,2,3,shaderInverse));
+    CHECK(!converted.CanCoverProjection(101,1,2,4,nativeInverse));
+    CHECK(!converted.CanCoverProjection(102,1,2,3,nativeInverse));
+    for(unsigned i=0;i<16;++i) {
+        float changed[16];memcpy(changed,capturedUpload,sizeof(changed));changed[i]+=.01f;
+        d2vr_native_view::ProjectionWitness reject;
+        reject.Begin(100,1,2,3,nativeInverse,shaderInverse);
+        CHECK(!reject.Observe(100,true,changed));
+        CHECK(!reject.CanCoverProjection(101,1,2,3,nativeInverse));
+    }
+    CHECK(!d2vr_native_projection::ExpectedInverseUpload(nullptr,shaderInverse));
+    CHECK(!d2vr_native_projection::ExpectedInverseUpload(projection,nullptr));
     CHECK(argc==2);auto fixture=LoadLibraryA(argv[1]);CHECK(fixture);
     using Invoke=BOOL(__cdecl*)(LARGE_INTEGER*,void*);
     auto known=reinterpret_cast<Invoke>(GetProcAddress(fixture,"InvokeKnown"));CHECK(known);

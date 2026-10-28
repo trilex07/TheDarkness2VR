@@ -156,7 +156,7 @@ static void NativeViewProjectionObserved(const float* inverse) {
                     int(g_nativeViewWitness.active),int(g_nativeViewWitness.frame==g_trackedFrame.id),int(g_had3DCameraThisFrame),
                     reinterpret_cast<void*>(g_nativeViewWitness.view),reinterpret_cast<void*>(g_nativeViewWitness.renderer),
                     reinterpret_cast<void*>(g_nativeViewWitness.camera));
-                LogNativeProjectionPair("upload",g_nativeViewWitness.inverse,inverse);
+                LogNativeProjectionPair("expected-upload",g_nativeViewWitness.expectedUpload,inverse);
             }
         }
     }
@@ -247,9 +247,11 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
     g_nativeCullingAppliedFrame=0;
     const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
     float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
+    float expectedUpload[16];
+    if(!d2vr_native_projection::ExpectedInverseUpload(fields.projection,expectedUpload))return;
     const bool ready=g_nativeViewWitness.CanCoverProjection(g_trackedFrame.id,v,r,c,inverse) &&
         d2vr_replay::g_cameraProjectionKnown &&
-        d2vr_native_view::ProjectionWitness::SameProjection(inverse,d2vr_replay::g_cameraInverseProjection);
+        d2vr_native_view::ProjectionWitness::SameProjection(expectedUpload,d2vr_replay::g_cameraInverseProjection);
     d2vr_culling_cover::Input cullingInput;
     // Candidate construction now includes double-precision binocular bounds.
     // Do not compute unused candidates for observations/unmatched cameras.
@@ -268,7 +270,10 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
             Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d route=%d planes=native+binocular bounds=native+binocular renderProjection=unchanged",
                 g_trackedFrame.id,camera,fields.fov,int(cullingInput.stereoUnion),g_nativeViewBoundaryMode);
     }
-    g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
+    // Keep native camera identity/depth distinct from its shader reconstruction
+    // upload. Corroborate all16 elements against the proven native conversion;
+    // neither the camera nor eye/frustum construction uses the biased copy.
+    g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse,expectedUpload);
     static unsigned reports=0;
     if(++reports<=3 || reports%600==0) {
         Log("[NativeViewBoundary] beforeCopy=%d frame=%llu context=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d stereoVPUnion=%d cullingApplied=%d uploadFrame=%llu inverseXY=%.6g,%.6g uploadXY=%.6g,%.6g; EXE/IAT unchanged",
@@ -278,6 +283,7 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
             fields.nearZ,fields.farZ,fields.aspect,g_nativeViewWitness.verifiedFrame,
             int(g_nativeViewWitness.CanCover(g_trackedFrame.id,v,r,c)),int(d2vr_replay::g_cameraProjectionKnown));
         LogNativeProjectionPair("boundary",inverse,g_nativeViewWitness.uploadedInverse);
+        LogNativeProjectionPair("boundary-expected-upload",expectedUpload,g_nativeViewWitness.uploadedInverse);
     }
 }
 static void ObserveNativeCameraBoundary(void* view,bool) {

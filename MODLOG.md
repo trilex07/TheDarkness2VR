@@ -1514,3 +1514,32 @@ GetIndices. A rejected stream no longer needs GetIndices or either descriptor;
 a rejected VB no longer needs GetIndices/IB descriptor. Tests check actual call
 counts. No measured frame-time saving or90FPS claim. Default remainsOFF; the
 user-authorized runtime candidate can opt in with rollback.
+
+## 2026-10-28: fix corroboration across the native shader depth conversion
+
+Fresh user-run fb8b30e/PID34996 confirms CULL OFF. Full same-frame world uploads
+reject only components11/15 (mask8800): native inverse has -9.99900055,10;
+shader inverse has -10.5252628,10.5263157. X/Y agree. This is neither a transpose
+nor stale-frame mismatch. Read-only Ghidra analysis identifies AD3380 case1C:
+AD4021..AD4067 copies scene+100, scales projection[14] by native constant0.95
+atF185C8, then invokes BBE8F0 inversion. Scene+100 receives the selected camera
+projection at9861B9/9861C0. The corresponding producer at572337 does the same.
+
+The witness now retains the unmodified native inverse for next-frame camera
+identity/projection checks, and independently compares all16 uploaded elements
+against the exact expected native shader conversion. Its finite checks and
+2e-4 relative acceptance tolerance are unchanged. Current-global shader gating
+uses the same expected upload. Camera fields, rendering projections, actual
+eye-transform/frustum construction and native output buffers remain unchanged.
+Admission also checks the native constant/instruction and SHA256 of the whole
+AD4021..AD406C producer span. A modified producer refuses the boundary.
+
+Offline Unicorn execution of the actual AD403E..AD406C block and BBE8F0 matches
+all7 logged full matrix pairs, maximum relative component error1.6833e-7.
+All emulated writes remain in its private stack. No game starts or attaches,
+native code export, actual EXE write, relaxed matrix matching or guessed depth
+normalization. x86 witness tests reproduce mask8800, accept the proven converted
+upload, preserve native camera identity/frame gates and reject changes to each
+of16 components. Boundary ABI, actual dispatch and actual culling rebuild PASS;
+geometry/stereo union regressions PASS. This repairs the demonstrated activation
+blocker; in-game CULL ON, peripheral visibility and90FPS remain NOT VERIFIED.

@@ -9,6 +9,7 @@ struct ProjectionWitness {
     uint64_t frame=0,verifiedFrame=0;
     uintptr_t view=0,renderer=0,camera=0,verifiedView=0,verifiedRenderer=0,verifiedCamera=0;
     float inverse[16]{};
+    float expectedUpload[16]{};
     float verifiedInverse[16]{};
     float uploadedInverse[16]{};
     uint64_t uploadedFrame=0;
@@ -26,9 +27,12 @@ struct ProjectionWitness {
     static bool SameProjection(const float* a,const float* b) {
         return ProjectionMismatch(a,b)==0;
     }
-    void Begin(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c,const float* p) {
+    void Begin(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c,const float* p,const float* shaderExpected=nullptr) {
         frame=f;view=v;renderer=r;camera=c;active=p && v && r && c;
-        if(active)std::memcpy(inverse,p,sizeof(inverse));
+        if(active) {
+            std::memcpy(inverse,p,sizeof(inverse));
+            std::memcpy(expectedUpload,shaderExpected?shaderExpected:p,sizeof(expectedUpload));
+        }
         // The live upload may precede this boundary. Keep its frame identity,
         // rather than silently requiring one particular callback order.
         if(uploaded && uploadedFrame==f)Verify(f,uploadedInverse);
@@ -41,7 +45,7 @@ struct ProjectionWitness {
     }
     bool Verify(uint64_t f,const float* p) {
         if(!active || f!=frame || !p)return false;
-        if(!SameProjection(p,inverse))return false;
+        if(!SameProjection(p,expectedUpload))return false;
         verified=true;verifiedFrame=f;verifiedView=view;verifiedRenderer=renderer;verifiedCamera=camera;
         std::memcpy(verifiedInverse,inverse,sizeof(verifiedInverse));
         return true;

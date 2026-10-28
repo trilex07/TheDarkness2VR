@@ -21,6 +21,10 @@ static void InstallNativeViewBoundary() {
         Log("[NativeViewBoundary] refused native camera contract at %08X",failed);return;
     }
     const d2vr_camera_cover::Pin pins[]={
+        // Native shader reconstruction projection scales P[14], then inverts.
+        // Read-only admission checks, never an EXE patch or tolerance override.
+        {0xF185C8,"\x33\x33\x73\x3f",4},
+        {0xAD4047,"\xf3\x0f\x59\x05\xc8\x85\xf1\x00",8},
         {0xA66330,"\x83\xec\x44\x53\x55\x56\x8b\xf1\x8b\x46\x08\x33\xdb",13},
         {0xA66465,"\x8b\x2d\x5c\xb3\xee\x00",6},
         {0xA6647C,"\x89\x5c\x24\x2c\x89\x5c\x24\x30\xff\xd5\x8b\x54\x24\x28",14},
@@ -34,9 +38,13 @@ static void InstallNativeViewBoundary() {
         {0x888965,"\x8b\x8e\xa8\x00\x00\x00\x8b\x09\xe8\x0e\xd4\x0f\x00",13},
         {0x98618A,"\x8b\x07\x8b\x08\xe8\x3d\x01\x01\x00\x50\x8d\x8e\x90\x01\x00\x00\xe8\xd1\xf8\xfa\xff",21}
     };
-    unsigned char data[40];
+    unsigned char data[80];
     for(const auto& pin:pins)if(!read(pin.address,data,pin.size) || memcmp(data,pin.bytes,pin.size)) {
         Log("[NativeViewBoundary] refused native view contract at %08X",pin.address);return;
+    }
+    if(!read(0xAD4021,data,0x4b) || !d2vr_native_clone::MatchesDigest(data,0x4b,
+        "a0cae25a9ffff9e07deeba8621ccfa228fd5de6a2229a0e2b0d4d71b8bc91b15")) {
+        Log("[NativeViewBoundary] refused native inverse-upload producer contract");return;
     }
     if(g_nativeViewBoundaryMode==2) {
         const bool installed=g_nativeFrustumBoundary.Start(reinterpret_cast<void*>(0x98618E),
