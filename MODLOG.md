@@ -1658,3 +1658,15 @@ Read-only actual EXE consumer/table contract PASS. Existing protected gesture
 routing30000 cases and culling rebuild1000 native+1000 union cases PASS.
 Production and diagnostic x86 builds PASS. Private disassembly stays outside
 the repository. No game launch or HMD acceptance was performed.
+
+Bounded next-step release audit (read-only pinned EXE, private Ghidra output):
+D23220 is the fire table1004FE8 slot74 event method. Its ordinary held-object
+branch calls A856B0 at D2396B, then878930 at D23972. D23220 spans0x775 bytes
+through D23992 RET8; 878930 spans0x15BD through879EEC RET. Capstone and Ghidra
+agree on every instruction boundary in both spans. There are41 and139 direct
+calls, respectively; all jumps stay inside their own span. Neither span has a
+computed jump, FS/GS operand or immediate self-code address. The fire table has
+35 consecutive executable method entries. This narrows the candidate for a
+private release-method copy using the existing owned-code relocator; it is not
+yet an installed throw override or proof of full runtime compatibility.
+Private evidence: d2vr-protected-throw-event-ghidra.txt. No game launch.
