@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cassert>
 #include "../../src/replay_constant_window.h"
+#include "../../src/shader_register_history.h"
 using namespace d2vr_replay_batch;
 static_assert(sizeof(void*)==4,"production ABI");
 static_assert(std::is_trivially_destructible<ConstantWindow>::value,"SEH caller");
@@ -25,6 +26,8 @@ static std::vector<uint8_t> arena;
 static unsigned checkAt=0,checks=0,apiCalls=0,apiFail=0,throwAt=0;
 static bool g_replayConstantBatch=false,g_replayConstantWindow=false,capture=false,compensate=false;
 static bool g_replayConstantBindWindow=false;
+static bool g_recOverflow=false;
+static d2vr_shader_registers::History g_vsConstantHistory;
 static struct {unsigned vertexFloatLimit=256,pixelFloatLimit=224;} g_frameStart;
 [[maybe_unused]] static bool MatchedCaptureRecordingActive(){return capture;}
 namespace d2vr_cpu_sync {static struct {bool enabled=true;} timing;}
@@ -32,21 +35,40 @@ static struct {
     UploadCounts counts;unsigned streams=0,otherEyes=0,batched=0,windowed=0,bindWindowed=0,captureBypass=0;
 } g_constantUploadWindow;
 static bool g_skipLightVsShift=false;
-static struct Vs {uint32_t hash=0;} shader;
-static Vs* g_activeVs=&shader;
+static struct Vs {uint32_t hash=0;} vertexMetadata;
+static Vs* g_activeVs=&vertexMetadata;
+static bool bindingTransforms=false,collectReference=false,checkBindingSnapshots=false;
+static std::vector<std::array<const void*,2>> expectedBindings;
+static int ActiveWvpRegister(Vs*){return 0;}
 static bool IsShadowAtlasPass(void*){return false;}
-static bool ApplyShiftToUpload(float* dst,const float* src,UINT,UINT n,Vs*,const Params&){
+static bool ApplyShiftToUpload(float* dst,const float* src,UINT,UINT n,Vs* vi,const Params&,
+                              const d2vr_shader_registers::Reference* =nullptr){
     if(!n || n>68)return false;
-    memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);bits^=0x10000;memcpy(dst,&bits,4);return true;
+    memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);
+    bits^=0x10000;if(bindingTransforms)bits^=vi?vi->hash:0x1234;
+    memcpy(dst,&bits,4);return true;
 }
 static int g_activePsInverse=-1,g_activePsViewExtents=-1;
 static bool g_lightPosShift=false;
 static const void* g_replayPs=nullptr;
+static const void* g_replayVs=nullptr;
+static uint32_t g_activePsHash=0;
+static unsigned bindCalls=0,bindFailAt=0;
+static std::vector<uintptr_t> bindingOrder;
+static HRESULT Bind(void*,void* p){
+    ++bindCalls;bindingOrder.push_back(reinterpret_cast<uintptr_t>(p));
+    return bindCalls==bindFailAt?D3DERR_INVALIDCALL:S_FALSE;
+}
+static void SetActiveVertexShaderMetadata(IDirect3DVertexShader9* p){
+    vertexMetadata.hash=uint32_t(reinterpret_cast<uintptr_t>(p));g_activeVs=p?&vertexMetadata:nullptr;
+}
+static void SetActivePixelShaderMetadata(const void* p){g_activePsInverse=int(reinterpret_cast<uintptr_t>(p));}
 static const uint32_t kShadowLightPsHash=0xC4D1FB10u;
 static std::unordered_map<const void*,uint32_t> g_psHashByPtr;
-static bool CompensatePsConstants(float* dst,const float* src,UINT,UINT n,int,int,const Params&){
+static bool CompensatePsConstants(float* dst,const float* src,UINT,UINT n,int inverse,int,const Params&){
     if(!compensate || !n || n>224)return false;
-    memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);bits^=0x20000;memcpy(dst,&bits,4);return true;
+    memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);bits^=0x20000;
+    if(bindingTransforms)bits^=uint32_t(inverse);memcpy(dst,&bits,4);return true;
 }
 [[maybe_unused]] static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT){}
 static void Log(const char*,...){}
@@ -61,9 +83,12 @@ static HRESULT Submit(bool vertex,UINT first,const float* values,UINT count){
 }
 static HRESULT VS(void*,UINT first,const float* data,UINT n){return Submit(true,first,data,n);}
 static HRESULT PS(void*,UINT first,const float* data,UINT n){return Submit(false,first,data,n);}
-static struct {decltype(&VS) SetVertexShaderConstantF=VS;decltype(&PS) SetPixelShaderConstantF=PS;} g_orig;
+static struct {decltype(&VS) SetVertexShaderConstantF=VS;decltype(&PS) SetPixelShaderConstantF=PS;
+    decltype(&Bind) SetVertexShader=Bind;decltype(&Bind) SetPixelShader=Bind;} g_orig;
 static void CheckBanks(){
+    if(collectReference){expected.push_back(driver);expectedBindings.push_back({g_replayVs,g_replayPs});++checkAt;++checks;return;}
     assert(checkAt<expected.size());
+    if(checkBindingSnapshots)assert((expectedBindings[checkAt]==std::array<const void*,2>{g_replayVs,g_replayPs}));
     assert(driver.vs==expected[checkAt].vs && driver.ps==expected[checkAt].ps);++checkAt;++checks;
 }
 static bool Actual(){
@@ -153,7 +178,8 @@ static void BindingReduction(){
     // Every opcode outside the explicit whitelist, including unknown ones,
     // remains a barrier. Values are observed at all these boundaries.
     for(unsigned op=0;op<80;++op) {
-        assert(IsConstantMaterialBinding(op)==(op>=9 && op<=11));++checks;
+        assert(IsConstantMaterialBinding(op)==(op==OP_SetTexture || op==OP_SetTextureStageState ||
+            op==OP_SetSamplerState || op==OP_SetVertexShader || op==OP_SetPixelShader));++checks;
     }
     unsigned counts[2]{};
     for(unsigned extended=0;extended<2;++extended) {
@@ -172,8 +198,43 @@ static void BindingReduction(){
     assert(counts[0]==4 && counts[1]==1);++checks;
     g_replayConstantBindWindow=false;
 }
+static void ShaderBindingReduction(){
+    capture=false;compensate=bindingTransforms=true;checkBindingSnapshots=true;
+    g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
+    g_rec.clear();arena.assign(1024,0);
+    for(unsigned i=0;i<8;++i){
+        Rec upload;upload.op=i%2?OP_SetPSConstF:OP_SetVSConstF;
+        upload.a[0]=(i/2)%2;upload.a[1]=1;upload.a[4]=i*16;
+        uint32_t bits[4]={i+19,i+31,i+79,i+97};memcpy(arena.data()+i*16,bits,16);
+        g_rec.push_back(upload);
+        Rec binding;binding.op=i%2?OP_SetVertexShader:OP_SetPixelShader;
+        binding.a[0]=i%3?(0x1000+i*16):0;g_rec.push_back(binding);
+        if(i==3 || i==7){Rec draw;draw.op=OP_DrawIndexedPrimitive;g_rec.push_back(draw);}
+    }
+    unsigned counts[4]{};
+    for(bindFailAt=0;bindFailAt<=8;++bindFailAt){
+        std::vector<uintptr_t> expectedOrder;
+        expected.clear();expectedBindings.clear();
+        for(unsigned mode=0;mode<4;++mode){
+            driver={};apiCalls=apiFail=checkAt=bindCalls=0;bindingOrder.clear();
+            g_replayVs=g_replayPs=nullptr;g_activePsInverse=-1;
+            g_activeVs=&vertexMetadata;vertexMetadata.hash=0;g_vsConstantHistory.Clear();
+            g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
+            collectReference=mode==0;
+            assert(Actual()==(bindFailAt==0));
+            assert(checkAt==2 && bindCalls==8 && apiFail==0);
+            if(mode==0)expectedOrder=bindingOrder;else assert(bindingOrder==expectedOrder);
+            counts[mode]=apiCalls;++checks;
+        }
+        // Two draw boundaries, one VS and PS upload each: 8 setters -> 4.
+        assert(counts[0]==8 && counts[1]==8 && counts[2]==8 && counts[3]==4);++checks;
+    }
+    bindFailAt=0;bindingTransforms=collectReference=checkBindingSnapshots=false;
+    compensate=false;g_activeVs=&vertexMetadata;vertexMetadata.hash=0;
+    g_activePsInverse=-1;g_replayVs=g_replayPs=nullptr;
+}
 int main(){
-    HeaderCases();ActualReduction();BindingReduction();unsigned streams=0,records=0;
+    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();unsigned streams=0,records=0;
     for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
     for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
@@ -205,5 +266,5 @@ int main(){
 #ifdef D2VR_MATCHED_CAPTURE
     assert(g_constantUploadWindow.counts.exceptions==1 && g_constantUploadWindow.counts.calls[0]==1);
 #endif
-    printf("PASS actual replay float loop: %u streams / %u records / %u barrier snapshots; OFF/adjacent/window/material-bind/capture, transformed bits, caps, failures, forwarding receipts, SEH no retry\n",streams,records,checks);
+    printf("PASS actual replay float loop: %u streams / %u records / %u barrier snapshots; OFF/adjacent/window/material+shader-bind/capture, binding-dependent transformed bits, 8->4 setters, exact bind order, failed/null binds, caps, failures, forwarding receipts, SEH no retry\n",streams,records,checks);
 }

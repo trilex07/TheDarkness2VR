@@ -1765,11 +1765,13 @@ static void LightEndOfWindowSnapshot(IDirect3DDevice9* dev) {
 
 // These setters neither read nor modify float registers. Keep their original
 // order and arguments; only already-transformed, owned float writes may span
-// them. No shader/RT/viewport/draw/resource/stateblock command is admitted.
+// them. Shader bindings select code but do not restore/consume float registers.
+// No RT/viewport/draw/resource mutation/stateblock command is admitted.
 static bool IsConstantMaterialBinding(unsigned op) {
     // SetRenderState is deliberately excluded: vendor FourCC states can trigger
     // operations (for example depth resolves), rather than merely bind state.
-    return op==OP_SetTexture || op==OP_SetTextureStageState || op==OP_SetSamplerState;
+    return op==OP_SetTexture || op==OP_SetTextureStageState || op==OP_SetSamplerState ||
+        op==OP_SetVertexShader || op==OP_SetPixelShader;
 }
 static bool MoreFloatBeforeBarrier(size_t at) {
     for(size_t j=at+1;j<g_rec.size();++j) {
