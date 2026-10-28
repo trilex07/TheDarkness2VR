@@ -8,6 +8,7 @@
 namespace d2vr_shader_preload {
 constexpr size_t MaxShaders=1024;
 constexpr unsigned MaxCopies=2;
+enum class TakeStatus { Ineligible, Disabled, UnknownCode, Depleted, Transferred };
 inline bool ValidateArchive(const unsigned char* data,size_t bytes) {
     using namespace d2vr_startup_shader;
     if(!data || bytes<8 || bytes>MaxBytes || Word(data)!=Magic) return false;
@@ -68,12 +69,17 @@ public:
         auto* e=Find(code);if(!e || e->count>=copies_) return false;
         e->objects[e->count]=object;e->results[e->count++]=result;return true;
     }
-    Object* Take(const void* device,const std::vector<uint32_t>& code,uint32_t version,int32_t& result) {
+    Object* Take(const void* device,const std::vector<uint32_t>& code,uint32_t version,int32_t& result,
+                 TakeStatus* status=nullptr) {
+        if(status) *status=TakeStatus::Ineligible;
         if(device!=device_ || code.empty() || code[0]!=version) return nullptr;
         std::lock_guard<std::mutex> lock(mutex_);
-        if(!enabled_) return nullptr;
-        auto* e=Find(code);if(!e || !e->count) return nullptr;
+        if(!enabled_) {if(status)*status=TakeStatus::Disabled;return nullptr;}
+        auto* e=Find(code);
+        if(!e) {if(status)*status=TakeStatus::UnknownCode;return nullptr;}
+        if(!e->count) {if(status)*status=TakeStatus::Depleted;return nullptr;}
         const auto index=--e->count;
+        if(status)*status=TakeStatus::Transferred;
         Object* object=e->objects[index];e->objects[index]=nullptr;result=e->results[index];return object;
     }
     // No driver call under the pool mutex. Consumed objects belong to the game

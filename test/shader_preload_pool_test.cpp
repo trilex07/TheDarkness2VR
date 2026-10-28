@@ -47,9 +47,15 @@ static void Core() {
         CHECK(two.Adopt(&device,code,&first,1));CHECK(two.Adopt(&device,code,&second,0));
         CHECK(!two.Adopt(&device,code,&excess,0) && two.Pending()==2);
         int32_t result=99;
-        CHECK(two.Take(&device,code,code[0],result)==&second && result==0);
+        TakeStatus status;
+        CHECK(!two.Take(&other,code,code[0],result,&status) && status==TakeStatus::Ineligible);
+        CHECK(!two.Take(&device,different,code[0],result,&status) && status==TakeStatus::UnknownCode);
+        two.Enable(false);
+        CHECK(!two.Take(&device,code,code[0],result,&status) && status==TakeStatus::Disabled);
+        two.Enable(true);
+        CHECK(two.Take(&device,code,code[0],result,&status)==&second && result==0 && status==TakeStatus::Transferred);
         CHECK(two.Take(&device,code,code[0],result)==&first && result==1);
-        CHECK(!two.Take(&device,code,code[0],result) && two.Pending()==0);
+        CHECK(!two.Take(&device,code,code[0],result,&status) && two.Pending()==0 && status==TakeStatus::Depleted);
         two.ClearObjects();CHECK(first.releases==0 && second.releases==0);
         first.Release();second.Release();
         CHECK(two.Adopt(&device,code,&excess,0));two.ClearObjects();CHECK(excess.releases==1);
@@ -123,6 +129,8 @@ int main(int argc,char**) {
     Same(v1,vs,true);Same(p1,ps,false);
     HR(Create(device,reinterpret_cast<const DWORD*>(vs.data()),&v2,originalVS));CHECK(creates==1); // cannot reuse consumed pool object
     HR(Create(device,reinterpret_cast<const DWORD*>(otherPs.data()),&p2,originalPS));CHECK(creates==2 && current->pool.Size()==3);
+    CHECK(current->requests==4 && current->hits==2 && current->unknownMisses==1 &&
+          current->depletedMisses==1 && current->otherMisses==0);
     auto fail=[](IDirect3DDevice9*,const DWORD*,IDirect3DVertexShader9**){return E_ACCESSDENIED;};
     CHECK(Create(device,static_cast<const DWORD*>(nullptr),&v1,fail)==E_ACCESSDENIED);
     current->nextTick=0;Tick();

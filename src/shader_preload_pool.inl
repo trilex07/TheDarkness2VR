@@ -10,6 +10,7 @@ struct State {
     Pool<IUnknown> pool;
     std::wstring path;
     std::atomic<uint64_t> requests{0},hits{0},saved{0},writeFailures{0},captureFailures{0};
+    std::atomic<uint64_t> unknownMisses{0},depletedMisses{0},otherMisses{0};
     std::atomic<bool> writing{false};
     std::atomic<bool> usable{true};
     ULONGLONG nextTick=0;
@@ -142,15 +143,19 @@ static HRESULT Create(IDirect3DDevice9* device,const DWORD* code,Shader** out,Cr
     if(!s || device!=s->device || !s->usable.load() || !out || !code) return original(device,code,out);
     ++s->requests;
     constexpr uint32_t kind=std::is_same<Shader,IDirect3DVertexShader9>::value ? 0xfffe0300u : 0xffff0300u;
+    TakeStatus status=TakeStatus::Ineligible;
     try {
         std::vector<uint32_t> snapshot;
         if(Snapshot(code,snapshot)) {
             int32_t result=0;
-            if(IUnknown* object=s->pool.Take(device,snapshot,kind,result)) {
+            if(IUnknown* object=s->pool.Take(device,snapshot,kind,result,&status)) {
                 *out=static_cast<Shader*>(object);++s->hits;return HRESULT(result);
             }
         }
     } catch(...) {} // unreadable/unsupported/allocation failure: use the original API
+    if(status==TakeStatus::UnknownCode) ++s->unknownMisses;
+    else if(status==TakeStatus::Depleted) ++s->depletedMisses;
+    else ++s->otherMisses;
     const HRESULT hr=original(device,code,out);
     if(SUCCEEDED(hr) && *out) try {
         // Learn the effective, successfully created shader, including any mod
@@ -182,8 +187,9 @@ static void EndReset(IDirect3DDevice9* device,HRESULT result) {
 static void Tick(ULONGLONG now=GetTickCount64()) {
     State* s=state.load();if(!s) return;
     if(now<s->nextTick) return;s->nextTick=now+2000;
-    Log("[ShaderPreload] requests=%llu hits=%llu learned=%zu saved=%llu writeFailures=%llu captureFailures=%llu pending=%zu; no FPS claim",
-        s->requests.load(),s->hits.load(),s->pool.Size(),s->saved.load(),s->writeFailures.load(),s->captureFailures.load(),s->pool.Pending());
+    Log("[ShaderPreload] requests=%llu hits=%llu learned=%zu saved=%llu writeFailures=%llu captureFailures=%llu pending=%zu unknownMisses=%llu depletedMisses=%llu otherMisses=%llu; no FPS claim",
+        s->requests.load(),s->hits.load(),s->pool.Size(),s->saved.load(),s->writeFailures.load(),s->captureFailures.load(),s->pool.Pending(),
+        s->unknownMisses.load(),s->depletedMisses.load(),s->otherMisses.load());
     if(!s->pool.Size() || s->saved.load()>=s->pool.Version() || s->writing.exchange(true)) return;
     try {
         auto job=std::make_unique<WriteJob>();job->owner=s;job->path=s->path;
