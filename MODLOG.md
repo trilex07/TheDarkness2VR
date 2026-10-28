@@ -1417,3 +1417,22 @@ scope setters and this experiment excludes nonconstant APIs/draws/driver-worker
 contention. Thus this is not a complete upper bound on MT cost. It does refute
 claiming multi-ms savings from these constant setters based on the MT flag
 alone. Keep mode3 as an A/B option; do not promote it as the main90FPS fix.
+
+## 2026-10-28: actual RTX5070 NIS dispatch-cost bound at native eye size
+
+Extend the existing NIS host fixture with opt-in -Hardware (default stays WARP).
+Same embedded official bytecode, exact host code, NIS mode2/strength0.80 and
+independent2676x2728 eyes. Identify actual DXGI adapter and run the existing
+pixel/cache/failure/reset tests. Then measure each pair with real D3D11 GPU
+timestamps, four warmups and20 samples each for constant images and independent
+deterministic noise textures. Explicit submission/wait is fixture-only; runtime
+polling remains DONOTFLUSH. No draw/Present/game/OpenXR/Steam or installed change.
+
+NVIDIA GeForce RTX5070: constant mean0.246685ms/median0.231664/max0.493536;
+noise mean0.251901ms/median0.251760/max0.253888 per pair. Actual hardware pixel
+regressions PASS. Raw output retained in TEMP/d2vr-nis-hardware-cost.txt.
+This is isolated dispatch elapsed GPU time, excluding final copies/XR and
+game workload contention. It does not establish in-game NIS time or bound
+every possible input/clock/scheduling state. Do not add it to a different
+scene's timing window. It provides no support for NIS explaining multi-ms
+outdoor drops; prioritize native live/replay scene work over NIS shader rewrites.

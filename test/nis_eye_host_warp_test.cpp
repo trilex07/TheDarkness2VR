@@ -6,6 +6,8 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
+#include <dxgi.h>
 #define CHECK(x) do{if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 static ID3D11Device* g_dev11=nullptr;
 static ID3D11DeviceContext* g_ctx11=nullptr;
@@ -38,8 +40,42 @@ static void Constant(ID3D11Texture2D* texture,unsigned expected) {
     for(unsigned pixel:Read(texture))for(unsigned shift=0;shift<24;shift+=8)
         CHECK(abs(int((pixel>>shift)&255)-int((expected>>shift)&255))<=2);
 }
-int main() {
-    CHECK(SUCCEEDED(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&g_dev11,nullptr,&g_ctx11)));
+static void RetireTiming() {
+    g_ctx11->Flush(); // Standalone fixture has no Present/runtime submitting work.
+    for(unsigned i=0;i<2000 && g_nisEye.timingPending;++i) {
+        NisTimingPoll(&g_nisEye,g_ctx11);if(g_nisEye.timingPending)Sleep(1);
+    }
+    CHECK(!g_nisEye.timingPending);
+}
+static void HardwareCost(ID3D11Texture2D* left,ID3D11Texture2D* right) {
+    RetireTiming();
+    for(unsigned pattern=0;pattern<2;++pattern) {
+        if(pattern) {
+            std::vector<unsigned> pixels(2676*2728);unsigned random=12345;
+            for(auto& pixel:pixels){random^=random<<13;random^=random>>17;random^=random<<5;pixel=0xff000000|(random&0xffffff);}
+            g_ctx11->UpdateSubresource(left,0,nullptr,pixels.data(),2676*4,0);
+            std::reverse(pixels.begin(),pixels.end());
+            g_ctx11->UpdateSubresource(right,0,nullptr,pixels.data(),2676*4,0);
+        }
+        double samples[20]{},total=0;
+        for(unsigned i=0;i<24;++i) {
+            const auto before=g_nisEye.timingFrames;ID3D11Texture2D* output[2]{};
+            CHECK(NisEyeProcess(left,right,output));RetireTiming();
+            CHECK(g_nisEye.timingFrames==before+1);
+            if(i>=4){samples[i-4]=g_nisEye.msGpu;total+=g_nisEye.msGpu;}
+        }
+        std::sort(samples,samples+20);
+        printf("NIS_COST native2676x2728 pair strength=0.80 pattern=%s samples=20 meanMs=%.6f medianMs=%.6f maxMs=%.6f; dispatch bracket only, isolated GPU\n",
+            pattern?"noise":"constant",total/20,(samples[9]+samples[10])/2,samples[19]);
+    }
+}
+int main(int argc,char** argv) {
+    const bool hardware=argc==2 && !strcmp(argv[1],"--hardware");
+    CHECK(SUCCEEDED(D3D11CreateDevice(nullptr,hardware?D3D_DRIVER_TYPE_HARDWARE:D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&g_dev11,nullptr,&g_ctx11)));
+    IDXGIDevice* dxgi=nullptr;CHECK(SUCCEEDED(g_dev11->QueryInterface(__uuidof(IDXGIDevice),reinterpret_cast<void**>(&dxgi))));
+    IDXGIAdapter* adapter=nullptr;CHECK(SUCCEEDED(dxgi->GetAdapter(&adapter)));
+    DXGI_ADAPTER_DESC adapterDesc{};CHECK(SUCCEEDED(adapter->GetDesc(&adapterDesc)));
+    printf("NIS fixture adapter=%ls hardware=%d\n",adapterDesc.Description,int(hardware));adapter->Release();dxgi->Release();
     auto left=Source(66,35,0xff406080),right=Source(66,35,0xffb09070);
     ID3D11Texture2D* output[2]{};CHECK(NisEyeProcess(left,right,output));
     CHECK(output[0]!=output[1]);Constant(output[0],0xff406080);Constant(output[1],0xffb09070);
@@ -116,7 +152,8 @@ int main() {
     NisTimingBegin(&g_nisEye,g_ctx11);CHECK(g_nisEye.timingActive);
     NisTimingEnd(&g_nisEye,g_ctx11);CHECK(!g_nisEye.timingActive && g_nisEye.timingPending);
     NisTimingEnd(&g_nisEye,g_ctx11);CHECK(g_nisEye.timingPending);
+    if(hardware)HardwareCost(left,right);
     NisEyeShutdown();CHECK(!g_nisEye.timingPending && !g_nisEye.timingActive && !g_nisEye.timingFrames);
     left->Release();right->Release();g_ctx11->ClearState();g_ctx11->Release();g_dev11->Release();
-    printf("PASS actual NIS eye host WARP: independent eyes/full borders,20%% vs80%% changed %u pixels, persistent resources,22 dispatches/one config upload,16 cached-vs-forced-upload pixel comparisons across sharpness/mode/resize,real Map failure/recovery, failure latch1000 attempts, shutdown recovery, native2676x2728; not game/FPS evidence\n",changed);
+    printf("PASS actual NIS eye host %s: independent eyes/full borders,20%% vs80%% changed %u pixels, persistent resources,22 dispatches/one config upload,16 cached-vs-forced-upload pixel comparisons across sharpness/mode/resize,real Map failure/recovery, failure latch1000 attempts, shutdown recovery, native2676x2728; not game/FPS evidence\n",hardware?"HARDWARE":"WARP",changed);
 }
