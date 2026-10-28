@@ -1490,3 +1490,26 @@ x86 system-XInput forwarding/preservation fixture PASS20041 checks. Actual-sourc
 protected gestures PASS231 checks, including up/down right-hand strokes while
 left tracking is absent. Existing pause/focus/rearm and lateral-stroke checks
 remain passing. These are offline input checks, not physical headset acceptance.
+
+## 2026-10-28: validate and prepare scoped head-following tentacles
+
+The active game/local profiles explicitly had HeadAttachedTentacles=0, while
+HeadGeometry=1 was active in gameplay. Existing scoped head-following was thus
+disabled. Add a small override profile enabling that existing path; retain the
+three captured VS hashes, seven captured stream offsets, stride40, VB302920,
+IB213588 and camera-local WVP gates. Never classify all skinned meshes as the
+player. This restores head-relative mesh rendering only, not independent
+controller poses, controller targeting or physics throws.
+
+New x86 fixture extracts the actual TentacleHeadScope body. PASS19062 checks,
+including1890 shader/stream/eye/tracked-pose combinations, complete constant
+restoration, balanced resource references and foreign mesh/shader, shadow,
+mode, descriptor/API failure and nonfinite-WVP rejection. This is source/math
+evidence, not current-scene mesh attribution or physical-headset acceptance.
+
+Reduce the scope's COM work without caching: reject wrong stream offset/stride
+immediately after GetStreamSource, and reject wrong vertex-buffer size before
+GetIndices. A rejected stream no longer needs GetIndices or either descriptor;
+a rejected VB no longer needs GetIndices/IB descriptor. Tests check actual call
+counts. No measured frame-time saving or90FPS claim. Default remainsOFF; the
+user-authorized runtime candidate can opt in with rollback.

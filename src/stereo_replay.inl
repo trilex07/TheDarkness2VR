@@ -1285,13 +1285,19 @@ struct TentacleHeadScope {
         IDirect3DIndexBuffer9* ib=nullptr;
         UINT offset=0,stride=0;
         if(FAILED(dev->GetStreamSource(0,&vb,&offset,&stride)) || !vb) return;
-        if(FAILED(dev->GetIndices(&ib)) || !ib) {vb->Release();return;}
+        // Reject unrelated streams before querying another COM resource. Shared
+        // skinned shaders are frequent on world characters; no cache or inferred
+        // ownership is needed to eliminate these unnecessary descriptor calls.
+        if(stride!=40 || !(offset==0 || offset==2640 || offset==120400 || offset==158040 ||
+                          offset==160920 || offset==267560 || offset==285240)) {
+            vb->Release();return;
+        }
         D3DVERTEXBUFFER_DESC vd{};D3DINDEXBUFFER_DESC id{};
-        const bool geometry=SUCCEEDED(vb->GetDesc(&vd)) && SUCCEEDED(ib->GetDesc(&id)) &&
-            vd.Size==302920 && id.Size==213588 && stride==40 &&
-            (offset==0 || offset==2640 || offset==120400 || offset==158040 ||
-             offset==160920 || offset==267560 || offset==285240);
-        ib->Release();vb->Release();
+        const bool vertexGeometry=SUCCEEDED(vb->GetDesc(&vd)) && vd.Size==302920;
+        vb->Release();
+        if(!vertexGeometry || FAILED(dev->GetIndices(&ib)) || !ib)return;
+        const bool geometry=SUCCEEDED(ib->GetDesc(&id)) && id.Size==213588;
+        ib->Release();
         if(!geometry || FAILED(dev->GetVertexShaderConstantF(0,original,4))) return;
         float attached[16];d2vr_math::Multiply(original,sp.inverseHeadClip,attached);
         // After cancellation, the captured camera-local player WVP has c3.z
