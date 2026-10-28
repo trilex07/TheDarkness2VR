@@ -1543,3 +1543,22 @@ upload, preserve native camera identity/frame gates and reject changes to each
 of16 components. Boundary ABI, actual dispatch and actual culling rebuild PASS;
 geometry/stereo union regressions PASS. This repairs the demonstrated activation
 blocker; in-game CULL ON, peripheral visibility and90FPS remain NOT VERIFIED.
+
+## 2026-10-28: recognize protected right-pad strokes after head turns
+
+Protected slash directions were transformed by the fixed level/recenter yaw.
+With head-following tentacles this is the wrong visual plane: after a90-degree
+head turn, a visible left/right pad stroke becomes mostly depth in that old
+frame and can be rejected. The actual-source x86 fixture reproduced the failure
+before correction. Transform right-pad world velocity by the current tracked
+head's inverse quaternion instead. This handles left/right and up/down strokes
+after yaw, pitch and roll while preserving grip/rearm, threshold, pulse, pause,
+focus and per-controller validity contracts. No native hook, targeting change,
+bone adaptation or physics write. The legacy native-input path is unchanged.
+
+Actual-body x86 fixture PASS671 checks:20 signed horizontal/vertical strokes
+across five rotated/tilted head poses with the left pad untracked; stationary
+pad/head-only motion and depth-only thrusts cannot slash. Existing focus/pause,
+release/rearm, objective and reload checks pass. Profile isolation tests and
+both builds PASS. Physical gesture acceptance and controller-directed left
+pickup/throws remain unverified/unimplemented in the protected runtime path.

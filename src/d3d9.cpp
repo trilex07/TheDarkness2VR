@@ -4098,9 +4098,12 @@ static void ApplyProtectedGestureActions(XINPUT_GAMEPAD& gp) {
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     const bool context=g_haveViews && g_in3DGameplayMode && (g_trackedFrame.flags & tracked)==tracked;
     const auto head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
-    const float yaw=ComputeHorizontalYaw(g_headGeometryReferenceValid ? g_headGeometryReference.orientation:head.orientation);
     const auto velocity=g_hands[1].motion.velocity;
-    const auto local=RotVec({0,-std::sin(yaw*.5f),0,std::cos(yaw*.5f)},velocity.x,velocity.y,velocity.z);
+    // Stock tentacle gestures are directions in the visible head-attached
+    // plane. A fixed level/recenter yaw loses side strokes after a head turn
+    // and misclassifies vertical strokes when the head is tilted.
+    const auto& q=head.orientation;
+    const auto local=RotVec({-q.x,-q.y,-q.z,q.w},velocity.x,velocity.y,velocity.z);
     const auto out=g_protectedRightTentacle.Update(context,(gp.wButtons & XINPUT_GAMEPAD_START)!=0,
         false,g_hands[1].valid,0,g_hands[1].squeeze,{},{},{local.x,local.y,local.z},
         g_trackedFrame.state.predictedDisplayTime*1e-9);
@@ -4108,7 +4111,7 @@ static void ApplyProtectedGestureActions(XINPUT_GAMEPAD& gp) {
     if(out.ownsRightStick) {
         gp.sThumbRX=StickShort(out.slashX); gp.sThumbRY=StickShort(out.slashY);
     }
-    if(out.slash) Log("[ProtectedGesture] planar right stroke -> stock RB + stick; native aim/throw/pose hooks OFF");
+    if(out.slash) Log("[ProtectedGesture] current-head planar right stroke -> stock RB + stick; native aim/throw/pose hooks OFF");
 }
 #endif
 
