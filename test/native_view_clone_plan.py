@@ -19,6 +19,22 @@ EXE_SHA = "d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1"
 FUNCTIONS = [(0x888720, 0x554), (0x985D80, 0xF5E)]
 
 
+def dominates(edges, entry, boundary, target):
+    """Intraprocedural only: calls return normally; no callee-side-effect claim."""
+    def reaches(blocked):
+        pending, seen = [entry], set()
+        while pending:
+            node = pending.pop()
+            if node == blocked or node in seen:
+                continue
+            if node == target:
+                return True
+            seen.add(node)
+            pending.extend(edges.get(node, ()))
+        return False
+    return reaches(None) and not reaches(boundary)
+
+
 def audit(pe, start, size):
     base = pe.OPTIONAL_HEADER.ImageBase
     decoder = cs.Cs(cs.CS_ARCH_X86, cs.CS_MODE_32)
@@ -67,13 +83,36 @@ def audit(pe, start, size):
         prior_end = address + instruction.size
     assert prior_end == start + size
     assert all(target in instructions for _, target in branches)
+    edges = {}
+    for address, instruction in instructions.items():
+        successors = []
+        if not instruction.group(cs.CS_GRP_RET):
+            if instruction.group(cs.CS_GRP_JUMP):
+                successors.append(instruction.operands[0].imm)
+            if instruction.mnemonic != "jmp":
+                successors.append(address + instruction.size)
+        edges[address] = successors
+    order = []
+    if start == 0x985D80:
+        # Getter interception must be unavoidable on every normal path to the
+        # native deep copy. Also prove ordering of two later direct consumers;
+        # their semantic role and indirect earlier callees remain unproven.
+        for boundary, target in ((0x98618E, 0x98619A),
+                                 (0x98619A, 0x9863B1), (0x98619A, 0x9863C3)):
+            assert target in instructions and dominates(edges, start, boundary, target), \
+                f"frustum ordering bypass: {boundary:x} -> {target:x}"
+            order.append([boundary, target])
     body = pe.get_data(start-base, size)
     return {"address": start, "size": size, "sha256": hashlib.sha256(body).hexdigest(),
             "instructions": len(instructions), "returns": returns,
-            "branches": branches, "calls": sorted(calls)}
+            "branches": branches, "calls": sorted(calls), "dominance": order}
 
 
 def main():
+    # A real bypass, an unreachable consumer and a mandatory boundary differ.
+    assert dominates({0: [1], 1: [2], 2: [3]}, 0, 1, 3)
+    assert not dominates({0: [1, 2], 1: [3], 2: [3]}, 0, 1, 3)
+    assert not dominates({0: [1], 1: []}, 0, 1, 3)
     parser = argparse.ArgumentParser()
     parser.add_argument("--exe", required=True, type=Path)
     parser.add_argument("--header", type=Path)
