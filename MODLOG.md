@@ -739,6 +739,23 @@ bad capacity, tags, counts and NaN. Pure covering math PASS100 cameras; both DLL
 builds PASS. Runtime application must be witnessed by NativeCullingCover lines;
 physical side-pop-in, lighting, right-eye stability and FPS remain NOT RUN.
 
+## 2026-10-28: runtime rejects late boundary; move before update dispatch
+
+98aebd7 gameplay logs show world=1, views=1 and had3D=1 repeatedly atA6677B
+(frames6598..9598). No NativeCullingCover application is established. The guard
+correctly refused writing after drawing; this runtime contradicts the earlier
+assumption that the final +B0 QPC precedes world rendering. Select first QPC
+return A66486 instead, before view virtual+114/AC6E70 and later update dispatches.
+Pin its exact call/continuation bytes too. Native callbacks retain the existing
+before-3D and fresh-camera gates. Whether later native updates overwrite this
+earlier frustum remains a runtime question, not an assumed fix.
+
+Expanded x86 geometry regression PASS64800 world-space edge/depth points across
+100 translated/rotated cameras,53600 outside the original cone. Near/far depth
+mapping and render inputs remain unchanged; mismatched, singular and NaN camera
+inputs reject without changing output. External ESI ABI fixture and diagnostic
+build PASS. No headset or FPS acceptance is claimed.
+
 ## 2026-10-28: contiguous constant-window flush
 
 Track whether each window bank's written union is provably contiguous. Empty,

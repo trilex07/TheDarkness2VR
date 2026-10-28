@@ -23,6 +23,7 @@ static void InstallNativeViewBoundary() {
     const d2vr_camera_cover::Pin pins[]={
         {0xA66330,"\x83\xec\x44\x53\x55\x56\x8b\xf1\x8b\x46\x08\x33\xdb",13},
         {0xA66465,"\x8b\x2d\x5c\xb3\xee\x00",6},
+        {0xA6647C,"\x89\x5c\x24\x2c\x89\x5c\x24\x30\xff\xd5\x8b\x54\x24\x28",14},
         {0xA6676A,"\xdd\xd8\x8d\x54\x24\x28\x52\x89\x5c\x24\x2c\x89\x5c\x24\x30\xff\xd5\x5e\x5d\x5b\x83\xc4\x44\xc3",24},
         {0xFC89E0,"\x30\x63\xa6\x00",4},
         {0xFC68B0,"\x30\x63\xa6\x00",4},
@@ -41,11 +42,12 @@ static void InstallNativeViewBoundary() {
     if(!target || *reinterpret_cast<void*const*>(image+0xAEB35C)!=target) {
         Log("[NativeViewBoundary] refused original QPC import identity");return;
     }
-    // +B0 finishes its update with QPC, ESI=this, then restores ESI and
-    // returns. +A8 dispatches through 99F1B0 to 888720, whose 88896D call
+    // The final +B0 QPC is too late in real gameplay (had3D=1). Select its
+    // first QPC, before virtual+114 and the remaining update dispatches.
+    // ESI=this at both sites. +A8 dispatches through 99F1B0 to 888720, whose 88896D call
     // to 985D80 is present in the retained real-game ETW stacks. +F0's
     // 6DBE80 is a separate test-render path, not the captured gameplay path.
-    const bool installed=g_nativeViewBoundary.Start(target,0xA6677B,ObserveNativeViewBoundary,g_nativeImageGuard);
-    Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A6677B; ESI view +A8 -> renderer +3F4 -> camera; mode2=culling-only after corroboration; EXE/IAT unchanged",
+    const bool installed=g_nativeViewBoundary.Start(target,0xA66486,ObserveNativeViewBoundary,g_nativeImageGuard);
+    Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A66486; ESI view +A8 -> renderer +3F4 -> camera; mode2=culling-only after corroboration; EXE/IAT unchanged",
         installed,g_nativeViewBoundaryMode);
 }
