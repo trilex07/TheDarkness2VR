@@ -36,3 +36,21 @@ on restart. Runtime receipts are `[ProtectedLeftThrow] owned fire event
 published`, an armed `[NativeThrow] request`, then `[NativeThrow] APPLIED`.
 This candidate is offline-tested; copied-call compatibility and HMD trajectory
 remain unverified. No measured FPS improvement is associated with this option.
+
+## Controller action access
+
+During gameplay, press left grip (L1) before triangle to send stock XInput Y.
+The native game selects the action associated with Y, including context actions
+while holding an opponent. The other three face buttons retain A/B/X. Without
+this modifier, triangle keeps the existing menu tap / hold-to-recenter behavior;
+the separate menu button remains Start. Ownership is latched for the entire
+triangle press: releasing grip during Y cannot pause/recenter, and gripping
+after a menu press cannot turn it into Y. Focus loss or a polling gap requires
+a fresh triangle release. This mapping requires no native ownership admission.
+
+The 2026-10-28 18:29 runtime log confirms culling-cover receipts but rejects the
+renderer+460 player-owner path (status0 during gameplay). ProtectedLeftAim and
+ProtectedLeftThrow were requested without private publication in that run.
+Their native trajectory is therefore not runtime validated; repairing the
+player-owner source is separate from exposing Y. Do not loosen its type or
+reciprocal-owner checks to admit an unrelated object.

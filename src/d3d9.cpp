@@ -3660,7 +3660,7 @@ struct TrackedHand {
 };
 TrackedHand g_hands[2];
 d2vr_input::RecenterChord g_recenterChord;
-d2vr_input::RecenterHoldTap g_triangleRecenter;
+d2vr_input::ContextTriangle g_triangleRecenter;
 struct GestureState {
     d2vr_input::DwellZone objective,reload[2];
     d2vr_input::Slash slash;
@@ -3968,16 +3968,18 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     gp.sThumbRY = StickShort(ry);
     gp.bLeftTrigger = static_cast<BYTE>(lt * 255.f);
     gp.bRightTrigger = static_cast<BYTE>(rt * 255.f);
+    LocateTrackedHands(); // current grip sample also owns the triangle modifier
     if (ReadBool(g_actA, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_A;
     if (ReadBool(g_actB, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_B;
     if (ReadBool(g_actX, g_pathHandLeft))  gp.wButtons |= XINPUT_GAMEPAD_X;
     bool triangleActive=false;
     const bool triangleDown=ReadBool(g_actY,g_pathHandLeft,&triangleActive);
-    if(g_triangleHoldRecenter) {
-        const auto action=g_triangleRecenter.Update(triangleActive,triangleDown,GetTickCount64()*.001);
-        if(action.tap) gp.wButtons|=XINPUT_GAMEPAD_START;
-        if(action.recenter) RequestRecenter("VR triangle hold");
-    } else if(triangleDown) gp.wButtons |= XINPUT_GAMEPAD_START;
+    const bool triangleModifier=g_in3DGameplayMode && g_hands[0].gripValid && g_hands[0].squeeze>.65f;
+    const auto triangle=g_triangleRecenter.Update(triangleActive,triangleDown,triangleModifier,
+        GetTickCount64()*.001,g_triangleHoldRecenter);
+    if(triangle.action)gp.wButtons|=XINPUT_GAMEPAD_Y;
+    if(triangle.tap)gp.wButtons|=XINPUT_GAMEPAD_START;
+    if(triangle.recenter)RequestRecenter("VR triangle hold");
     if (ReadBool(g_actMenu, g_pathHandLeft)) gp.wButtons |= XINPUT_GAMEPAD_START;
     if (ReadBool(g_actView, g_pathHandLeft)) gp.wButtons |= XINPUT_GAMEPAD_BACK;
     bool leftActive=false,rightActive=false;
@@ -3998,7 +4000,6 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         else RequestRecenter("VR PAD L3+R3 click");
     }
     if (g_recenterChord.suppress) gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
-    LocateTrackedHands();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
         g_hands[0].gripValid,g_hands[1].gripValid);

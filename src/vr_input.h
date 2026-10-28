@@ -78,6 +78,33 @@ struct RecenterHoldTap {
         return {};
     }
 };
+// Left grip is an explicit modifier for the missing stock Y action. Choose
+// action/menu ownership once on the triangle press, so releasing grip cannot
+// turn an execution-button hold into pause/recenter. Tracking loss requires
+// a fresh triangle release; the native game selects the actual Y action.
+struct ContextTriangle {
+    struct Result {bool action=false,tap=false,recenter=false;};
+    RecenterHoldTap menu;
+    bool armed=false,holding=false,actionMode=false;
+    double last=-1;
+    Result Update(bool active,bool down,bool modifier,double time,bool holdRecenter=true) {
+        if(!active || !std::isfinite(time) || (last>=0 && (time<last || time-last>.25))) {
+            *this={};return {};
+        }
+        last=time;
+        if(!down) {
+            const auto result=menu.Update(true,false,time);
+            holding=actionMode=false;armed=true;
+            return {false,result.tap,result.recenter};
+        }
+        if(!armed)return {};
+        if(!holding){holding=true;actionMode=modifier;}
+        if(actionMode){menu={};return {true,false,false};}
+        if(!holdRecenter)return {false,true,false};
+        const auto result=menu.Update(true,true,time);
+        return {false,result.tap,result.recenter};
+    }
+};
 struct RecenterChord {
     double began=0;
     bool holding=false, fired=false;

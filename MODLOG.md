@@ -1764,3 +1764,34 @@ PASS. This is a reproduced admission bug, not proof that repeated callbacks
 caused the user's latest CULL OFF. The available runtime log still predates
 the installed depth fix. Current HMD visibility, gesture trajectory and90FPS
 remain NOT VERIFIED; no game was launched.
+
+## 2026-10-28: restore stock Y for held-target actions
+
+ReadVRGamepad mapped the left upper face button exclusively to Start/recenter,
+leaving no XR route to stock Y. Gameplay left-grip + triangle now emits Y;
+ContextTriangle latches action versus menu ownership at the button press.
+Grip changes cannot turn a held Y into pause/recenter or a menu hold into Y.
+Session loss, polling gaps, nonfinite/reversed time and startup-held input
+require release/rearm. Menu-button Start and the remaining face buttons retain
+their mapping. LocateTrackedHands runs once, before triangle selection, so the
+modifier uses the current synchronized grip rather than a previous-frame pose.
+The native engine selects its own contextual action; no execution function,
+target, EXE bytes or gameplay state is overridden.
+
+XInput fixture production97 / diagnostic151 checks PASS, including held Y,
+grip-release ownership, menu/recenter ownership, focus/time loss and hold option
+OFF. Both x86 DLL builds PASS. Physical opponent actions remain NOT VERIFIED.
+
+New authoritative runtime log (18:29:38,355464 bytes) contains CULL applied
+receipts and native source2676x2728. User reports no disappearing elements when
+CULL ON. It also exposes rejected player ownership: renderer+460 is absent in
+normal gameplay (status0), and no private left camera/fire publication occurs.
+Thus the previously implemented native left aim/throw paths did not activate
+in this run. Renderer+460 is an optional native FOV override, not a proven
+always-present local-player source. Keep strict admission; investigate a
+correct native owner producer rather than bypassing the failed edge.
+
+Some GPUFrame batches report D3D9 live+replay11.787/13.993ms, excluding D3D11/XR,
+already over the11.111ms90Hz budget. These mixed/toggled scene batches are not
+a matched A/B and do not identify the expensive pass or prove a CPU saving.
+Current high-resolution90FPS acceptance remains open.

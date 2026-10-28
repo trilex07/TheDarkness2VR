@@ -120,6 +120,42 @@ static void ResetInstall() {
 }
 int main() {
     {
+        d2vr_input::ContextTriangle triangle;
+        auto neutral=[](const d2vr_input::ContextTriangle::Result& r){return !r.action&&!r.tap&&!r.recenter;};
+        Check(neutral(triangle.Update(true,true,true,0))); // startup-held
+        Check(neutral(triangle.Update(true,false,true,.1)));
+        auto r=triangle.Update(true,true,true,.2);Check(r.action&&!r.tap&&!r.recenter);
+        for(int i=1;i<=12;++i) {
+            r=triangle.Update(true,true,false,.2+i*.1); // grip released during Y
+            Check(r.action&&!r.tap&&!r.recenter);
+        }
+        Check(neutral(triangle.Update(true,false,false,1.5))); // never pause on Y release
+        Check(neutral(triangle.Update(true,true,false,1.6)));
+        r=triangle.Update(true,false,true,1.7);Check(r.tap&&!r.action&&!r.recenter);
+        // Menu ownership is also latched: gripping during a hold cannot turn it into Y.
+        Check(neutral(triangle.Update(true,true,false,1.8)));
+        for(int i=1;i<=9;++i)Check(neutral(triangle.Update(true,true,true,1.8+i*.1)));
+        r=triangle.Update(true,true,true,2.81);Check(r.recenter&&!r.action&&!r.tap);
+        Check(neutral(triangle.Update(true,true,true,2.9)));
+        Check(neutral(triangle.Update(true,false,true,3)));
+        Check(triangle.Update(true,true,true,3.1).action);
+        Check(neutral(triangle.Update(false,true,true,3.2))); // session/input loss
+        Check(neutral(triangle.Update(true,true,true,3.3)));
+        triangle.Update(true,false,false,3.4);
+        Check(triangle.Update(true,true,true,3.5).action);
+        Check(neutral(triangle.Update(true,true,true,4))); // polling gap
+        Check(neutral(triangle.Update(true,true,true,4.1)));
+        triangle.Update(true,false,false,4.2);
+        Check(triangle.Update(true,true,true,4.3).action);
+        Check(neutral(triangle.Update(true,true,true,4.0))); // reversed clock
+        triangle.Update(true,false,false,4.1);
+        r=triangle.Update(true,true,false,4.2,false);Check(r.tap&&!r.action&&!r.recenter);
+        r=triangle.Update(true,true,true,4.3,false);Check(r.tap&&!r.action&&!r.recenter);
+        triangle.Update(true,false,false,4.4,false);
+        r=triangle.Update(true,true,true,4.5,false);Check(r.action&&!r.tap&&!r.recenter);
+        Check(neutral(triangle.Update(true,true,true,NAN)));
+    }
+    {
         d2vr_input::RecenterHoldTap hold;
         Check(!hold.Update(true,true,0).recenter); // startup-held is not armed
         Check(!hold.Update(true,false,.1).tap);
