@@ -116,7 +116,21 @@ static void RepeatedEyesHaveOneDependencyEach() {
     }
     CHECK(fence.Wait(true,ops));CHECK(!fence.pending && ops.ends==2000);
 }
+static void TransferredWorkerReadIsNotReended() {
+    Fence fence;Ops ops;
+    CHECK(fence.TrackIssuedRead(ops));
+    CHECK(ops.events.empty() && fence.pending && !fence.CanRead(ops));
+    // Worker issues the exact event while it exclusively owns the context.
+    ops.Submit("worker-shared-read");ops.End();
+    CHECK(!fence.Wait(true,ops) && fence.pending && ops.ends==1);
+    ops.Submit("later-XR-copy");ops.completed=ops.cutoff;
+    CHECK(fence.Wait(true,ops) && !fence.pending && ops.ends==1);
+    CHECK(ops.completed<ops.submitted);
+    CHECK(fence.TrackIssuedRead(ops));
+    CHECK(!fence.TrackIssuedRead(ops) && fence.fault && ops.ends==1);
+}
 int main(){
+    TransferredWorkerReadIsNotReended();
     NoReaderOrFailedDraw();LastConsumerExcludesLateUnrelatedWork();
     LegacyRetainsOverwriteTimeEnd();PollFailureAndTimeoutRetainDependency();
     PendingQueryCannotBeReended();ContextQueryAndThreadMustMatch();

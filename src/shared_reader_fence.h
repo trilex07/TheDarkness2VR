@@ -24,6 +24,14 @@ struct Fence {
         context=ops.Context();query=ops.Query();thread=ops.Thread();pending=true;
         return true;
     }
+    // A joined transfer worker has issued (or will issue before returning its
+    // context lease) this exact query. Record its dependency without re-End.
+    // Caller must join the worker before polling or reusing the context.
+    template<class Ops> bool TrackIssuedRead(const Ops& ops) {
+        if(!CanRead(ops)) {fault=true;return false;}
+        context=ops.Context();query=ops.Query();thread=ops.Thread();pending=true;
+        return true;
+    }
     template<class Ops> static bool PollIssued(Ops& ops) {
         ops.Flush();
         const uint64_t start=ops.Now();

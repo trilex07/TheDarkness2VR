@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "../src/stereo_transfer_worker.h"
+#include "../src/shared_reader_fence.h"
 #include <dxgi.h>
 #include <d3dcompiler.h>
 #include <cstdio>
@@ -9,6 +10,23 @@
 #define CHECK(x) do {if(!(x)){std::printf("FAIL line %d: %s\n",__LINE__,#x); std::exit(1);}}while(0)
 #define HR(x) do {HRESULT h=(x);if(FAILED(h)){std::printf("FAIL line %d hr=%08lx: %s\n",__LINE__,h,#x);std::exit(1);}}while(0)
 using d2vr_transfer::Ref;
+struct ReaderOps {
+    ID3D11DeviceContext* context;ID3D11Query* query;
+    unsigned ends=0;
+    bool Valid() const {return context && query;}
+    const void* Context() const {return context;}
+    const void* Query() const {return query;}
+    uint32_t Thread() const {return GetCurrentThreadId();}
+    void Flush(){context->Flush();}
+    d2vr_shared_reader::Poll GetData(){
+        const auto hr=context->GetData(query,nullptr,0,0);
+        return hr==S_OK?d2vr_shared_reader::Poll::Ready:
+            hr==S_FALSE?d2vr_shared_reader::Poll::Pending:d2vr_shared_reader::Poll::Failed;
+    }
+    uint64_t Now() const {return GetTickCount64();}
+    void PauseThread(){SwitchToThread();}
+    void End(){++ends;context->End(query);}
+};
 template<class T> Ref<T> Adopt(T* p) {Ref<T> owned(p);if(p)p->Release();return owned;}
 template<class T> Ref<T> CreateShader(ID3D11Device* dev,const char* source,const char* target);
 static Ref<ID3DBlob> Compile(const char* source,const char* target) {
@@ -56,6 +74,13 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     D3D11_RASTERIZER_DESC rd{};rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.DepthClipEnable=TRUE;
     ID3D11RasterizerState* rasterRaw=nullptr;HR(dev11->CreateRasterizerState(&rd,&rasterRaw));auto raster=Adopt(rasterRaw);
     d2vr_transfer::Queue queue;bool fault=false;
+    d2vr_shared_reader::Fence fence;
+    std::shared_ptr<d2vr_transfer::Job> retained;
+    ReaderOps readerOps{ctx,q11.Get()};
+    auto track=[&](const std::shared_ptr<d2vr_transfer::Job>& job) {
+        if(!deferred)return;
+        CHECK(!retained);retained=job;CHECK(fence.TrackIssuedRead(readerOps));
+    };
     auto packet=[&](int eye) {
         auto j=std::make_shared<d2vr_transfer::Job>();
         j->producer=q9;j->reader=q11;j->context=Ref<ID3D11DeviceContext>(ctx);
@@ -68,13 +93,12 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         CHECK(job->readerSubmitted && job->result==S_OK);
         if(!deferred) {CHECK(job->readerComplete);return;}
         CHECK(!job->readerComplete);
-        const auto begin=GetTickCount64();HRESULT result;
-        while((result=ctx->GetData(job->reader.Get(),nullptr,0,0))==S_FALSE) {
-            CHECK(GetTickCount64()-begin<2000);SwitchToThread();
-        }
-        CHECK(result==S_OK);
+        CHECK(retained==job && fence.pending);
+        CHECK(fence.Wait(true,readerOps));CHECK(!fence.pending && !readerOps.ends);
+        retained.reset();
     };
     auto issue=[&] {
+        CHECK(!retained && !fence.pending); // native overwrite cannot bypass retirement
         HR(dev9->StretchRect(rt.Get(),nullptr,surf.Get(),nullptr,D3DTEXF_NONE));
         HR(q9->Issue(D3DISSUE_END));
         const HRESULT flushed=q9->GetData(nullptr,0,D3DGETDATA_FLUSH);
@@ -94,7 +118,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         HR(dev9->ColorFill(rt.Get(),nullptr,left));issue();
         auto l=packet(0);
         {
-            d2vr_transfer::Pending pending;CHECK(pending.Start(queue,l,fault));
+            d2vr_transfer::Pending pending;CHECK(pending.Start(queue,l,fault));track(l);
             // Model main-thread right replay while the worker consumes LEFT.
             for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,right));
             if(frame%2) CHECK(pending.Finish()); // other half tests destructor join
@@ -107,7 +131,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         l.reset();
         issue();auto r=packet(1);
         {
-            d2vr_transfer::Pending pending;CHECK(pending.Start(queue,r,fault));
+            d2vr_transfer::Pending pending;CHECK(pending.Start(queue,r,fault));track(r);
             HR(dev9->ColorFill(rt.Get(),nullptr,left)); // restore live image in parallel
             CHECK(pending.Finish());
         }

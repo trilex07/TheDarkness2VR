@@ -555,6 +555,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 }
 
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
+static bool g_deferStereoTransferReader = false; // startup-only; exact reader fence before shared reuse
 static int g_stereoTransferMode = 0; // 0 baseline, 1 worker, 2 serial control with same D3D9 MT flag
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
@@ -683,6 +684,8 @@ void LoadConfig() {
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
     g_stereoTransferMode = GetPrivateProfileIntA("Render", "StereoTransferWorker", 0, chosenIni);
+    g_deferStereoTransferReader = GetPrivateProfileIntA("Render", "DeferStereoTransferReader", 0, chosenIni)!=0;
+    Log("[StereoTransferWorker] deferReader=%d requires worker mode=1 and LastConsumerReaderFence=1",int(g_deferStereoTransferReader));
     if(g_stereoTransferMode<0 || g_stereoTransferMode>2) g_stereoTransferMode=0;
     Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control)",g_stereoTransferMode);
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
@@ -2978,6 +2981,8 @@ static d2vr_transfer::Queue* g_stereoTransferQueue=nullptr;
 static DWORD g_stereoTransferOwner=0;
 static IDirect3DDevice9* g_stereoTransferDevice=nullptr; // identity only; jobs retain their own COM resources
 static bool g_stereoTransferFault=false;
+// Retain the entire packet across CPU completion until its GPU read completes.
+static std::shared_ptr<d2vr_transfer::Job> g_deferredTransferReader;
 struct SharedReaderFenceOps {
     bool Valid() const {return g_ctx11 && g_sharedFence11;}
     const void* Context() const {return g_ctx11;}
@@ -3001,9 +3006,15 @@ static bool SealSharedUpload(ID3D11ShaderResourceView* source) {
     SharedReaderFenceOps ops;
     return source!=g_sharedSRV11 || g_sharedReaderFence.SealRead(ops);
 }
-static void ReleaseSharedCapture() {
+static bool WaitSharedReader();
+static bool ReleaseSharedCapture() {
     // A resource lifetime must not end underneath an outstanding interop job.
     if(g_stereoTransferQueue) g_stereoTransferQueue->Drain();
+    if(g_deferredTransferReader && !WaitSharedReader()) {
+        g_stereoTransferFault=true;
+        Log("[StereoTransferWorker] deferred reader incomplete; retain resources and refuse Reset/reuse");
+        return false;
+    }
     if (g_sharedFence9) g_sharedFence9->Release();
     if (g_sharedFence11) g_sharedFence11->Release();
     if (g_sharedSRV11) g_sharedSRV11->Release();
@@ -3016,6 +3027,7 @@ static void ReleaseSharedCapture() {
     g_sharedHandle = nullptr; g_sharedW = g_sharedH = 0;
     g_sharedReaderFence.Reset();
     g_stereoTransferFault=false;
+    return true;
 }
 
 static bool WaitSharedReader() {
@@ -3023,6 +3035,13 @@ static bool WaitSharedReader() {
     d2vr_cpu_sync::Scope cpuReader(d2vr_cpu_sync::SharedReader);
 #endif
     SharedReaderFenceOps ops;
+    if(g_deferredTransferReader) {
+        // Pending::Finish/queue Drain must reclaim the immediate context first.
+        // Failure retains BOTH the query dependency and the packet references.
+        if(!g_sharedReaderFence.pending || !g_sharedReaderFence.Wait(true,ops)) return false;
+        g_deferredTransferReader.reset();
+        return true;
+    }
     return g_sharedReaderFence.Wait(g_lastConsumerReaderFence,ops);
 }
 
@@ -3161,9 +3180,15 @@ static bool StartStereoTransfer(IDirect3DDevice9* dev,int eye,d2vr_transfer::Pen
     static_assert(sizeof(constants)<=256,"worker packet constants too small");
     memcpy(job->bytes.data(),&constants,sizeof(constants)); job->size=sizeof(constants);
     job->width=g_eyeCacheW; job->height=g_eyeCacheH;
+    job->deferReader=g_deferStereoTransferReader && g_lastConsumerReaderFence;
     if(!CaptureBackbufferToShared(dev,true)) { job.reset(); return false; }
     if(!pending.Start(*g_stereoTransferQueue,job,g_stereoTransferFault)) {
         g_stereoTransferFault=true; return false;
+    }
+    if(job->deferReader) {
+        g_deferredTransferReader=job;
+        SharedReaderFenceOps ops;
+        if(!g_sharedReaderFence.TrackIssuedRead(ops)) {g_stereoTransferFault=true;return false;}
     }
     return true;
 }
@@ -3438,8 +3463,8 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     d2vr_replay::ReplayStream(dev, 1, sp1);
     QueryPerformanceCounter(&perf[2]);
 
-    // This interval used D3D9 only. Reclaim the D3D11 immediate context and
-    // prove the left shared-texture reader finished BEFORE right overwrite.
+    // This interval used D3D9 only. Reclaim the D3D11 immediate context.
+    // CaptureBackbufferToShared fences a deferred reader before right overwrite.
     if(leftTransfer.Active()) eye0Ok=FinishStereoTransfer(leftTransfer,leftJob) && eye0Ok;
     leftJob.reset();
 
@@ -3461,8 +3486,8 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     liveEnd.Apply(dev);
     d2vr_replay::InvalidateShadowAtlasPass();
     liveEnd.Release(g_reuseStateSnapshots);
-    // Right interop overlaps D3D9 live-state restoration, but never XR/NIS,
-    // capture readback, the next frame, Reset or shared-resource destruction.
+    // Return the worker's context lease before XR/NIS or capture readback.
+    // A deferred GPU reader remains retained until shared reuse/Reset fences it.
     if(rightTransfer.Active()) eye1Ok=FinishStereoTransfer(rightTransfer,rightJob) && eye1Ok;
     rightJob.reset();
     QueryPerformanceCounter(&perf[3]);
@@ -5447,7 +5472,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     d2vr_replay::ReleaseRecording();
     if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
-    ReleaseSharedCapture();
+    if(!ReleaseSharedCapture()) return D3DERR_DEVICELOST;
     g_zeroCopyFailures = 0;
     if (g_liveColorBackup) { g_liveColorBackup->Release(); g_liveColorBackup = nullptr; }
     ReleaseDepthResources9();
@@ -5503,7 +5528,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     d2vr_replay::ReleaseRecording();
     if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
-    ReleaseSharedCapture();
+    if(!ReleaseSharedCapture()) return D3DERR_DEVICELOST;
     g_zeroCopyFailures = 0;
     if (g_liveColorBackup) { g_liveColorBackup->Release(); g_liveColorBackup = nullptr; }
     ReleaseDepthResources9();

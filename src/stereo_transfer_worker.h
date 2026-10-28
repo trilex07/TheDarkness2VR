@@ -40,7 +40,7 @@ struct Job {
     // Written by worker; read only after the queue completion barrier.
     HRESULT result=E_PENDING;
     bool readerSubmitted=false, readerComplete=false;
-    // Prototype only: caller must retain this job and wait for this exact
+    // Caller must retain this job and wait for this exact
     // reader query before overwriting the shared input or tearing it down.
     // Finish then returns the immediate-context lease, not GPU completion.
     bool deferReader=false;
@@ -99,7 +99,8 @@ struct Backend {
 using Queue=d2vr_render_worker::Queue<Backend,std::shared_ptr<Job>,2>;
 
 // Stack-bound lease: normal, error and early-return paths join before the
-// caller resumes D3D11 / overwrites shared input / destroys its resources.
+// caller resumes D3D11. With deferReader, the separate retained reader fence
+// must still complete before shared-input overwrite or resource teardown.
 class Pending {
     Queue* queue_=nullptr;
     std::uint64_t ticket_=0;

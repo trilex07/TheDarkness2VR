@@ -60,9 +60,29 @@ class StereoTransferOrder(unittest.TestCase):
         start = source.index('static bool EnsureSharedCapture(')
         body = source[start:source.index('static bool CaptureBackbufferToShared(', start)]
         self.assertLess(body.index('if (!WaitSharedReader()) return false;'), body.index('ReleaseSharedCapture();'))
-        start = source.index('static void ReleaseSharedCapture()')
+        start = source.index('static bool ReleaseSharedCapture()')
         body = source[start:source.index('static bool WaitSharedReader()', start)]
         self.assertGreater(body.index('g_sharedReaderFence.Reset()'), body.index('g_sharedTex9->Release()'))
+
+    def test_deferred_packet_is_retained_until_reader_completion(self):
+        source = (ROOT / 'src/d3d9.cpp').read_text(encoding='utf-8')
+        self.assertIn('"DeferStereoTransferReader", 0, chosenIni', source)
+        self.assertIn('job->deferReader=g_deferStereoTransferReader && g_lastConsumerReaderFence;', source)
+        start = source.index('static bool StartStereoTransfer(')
+        body = source[start:source.index('static bool FinishStereoTransfer(', start)]
+        self.assertLess(body.index('pending.Start('), body.index('g_deferredTransferReader=job;'))
+        self.assertLess(body.index('g_deferredTransferReader=job;'), body.index('TrackIssuedRead(ops)'))
+        start = source.index('static bool WaitSharedReader() {')
+        body = source[start:source.index('static bool EnsureSharedCapture(', start)]
+        self.assertLess(body.index('g_sharedReaderFence.Wait(true,ops)'), body.index('g_deferredTransferReader.reset();'))
+
+    def test_reset_refuses_to_release_an_incomplete_deferred_reader(self):
+        source = (ROOT / 'src/d3d9.cpp').read_text(encoding='utf-8')
+        start = source.index('static bool ReleaseSharedCapture()')
+        body = source[start:source.index('static bool WaitSharedReader() {', start)]
+        self.assertLess(body.index('g_stereoTransferQueue->Drain()'), body.index('!WaitSharedReader()'))
+        self.assertLess(body.index('return false;'), body.index('g_sharedFence9->Release()'))
+        self.assertEqual(source.count('if(!ReleaseSharedCapture()) return D3DERR_DEVICELOST;'), 2)
 
     def test_old_interleaving_reproduces_right_image_in_both_eyes(self):
         left, right, commands = delayed_left_read(False)
