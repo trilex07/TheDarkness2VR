@@ -21,6 +21,14 @@ int main(){
     Owner result{1,2,3};
     Check(Inspect(0x1000,read,result)==Status::Matched);
     Check(result.avatar==0x2000 && result.camera==0x3000 && result.inventory==0x4000);
+    memory.erase(0x1460);memory.erase(0x5000);
+    Check(Inspect(0x1000,read,result)==Status::RendererReference);
+    Check(InspectAvatar(0x2000,read,result)==Status::Matched);
+    Check(result.avatar==0x2000 && result.camera==0x3000 && result.inventory==0x4000);
+    memory[0x2000]=0x100c918;
+    Check(InspectAvatar(0x2000,read,result)==Status::AvatarType);
+    Check(!result.avatar && !result.camera && !result.inventory);
+    memory=valid;
     for(auto& entry:valid) {
         for(uint32_t replacement:{0u,1u,0xfffffffcu,0x98765430u}) {
             memory=valid;memory[entry.first]=replacement;result={1,2,3};

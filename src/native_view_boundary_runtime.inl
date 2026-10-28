@@ -67,11 +67,14 @@ static void InstallNativeViewBoundary() {
         auto* code=g_nativeViewCode;
         const d2vr_native_clone::Override replacement{1,0x98618E-0x985D80,
             reinterpret_cast<void*>(&TranslatedFrustumGetter)};
+        static const unsigned char ownerSpanBytes[]={0xff,0xd0,0x8b,0x08,0x83,0x39,0};
+        const d2vr_native_clone::CallSpan ownerSpan{1,0x985F75-0x985D80,ownerSpanBytes,sizeof(ownerSpanBytes),
+            reinterpret_cast<void*>(&TranslatedViewOwner)};
         if(!code) {
             code=new(std::nothrow) d2vr_native_clone::Code;
             if(!code || !code->Prepare(d2vr_native_clone::viewBlocks,2,
                 d2vr_native_clone::viewCalls,sizeof(d2vr_native_clone::viewCalls)/sizeof(d2vr_native_clone::viewCalls[0]),
-                &replacement,g_nativeImageGuard)) {
+                &replacement,g_nativeImageGuard,&ownerSpan)) {
                 Log("[NativeTranslatedView] refused code preparation status=%s",code?code->Status():"allocation");
                 delete code;return;
             }

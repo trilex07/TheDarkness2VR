@@ -15,7 +15,8 @@ held and neither trigger owns the input. The right controller can be untracked.
 Native ownership, query filters and collisions remain authoritative. This does
 not implement swing-directed throw velocity or prove physical VR alignment.
 
-Runtime evidence: `[ProtectedPlayerOwner] status=8`, then
+Runtime evidence: `[ProtectedViewOwner] status=8 accepted=1` (or the older
+`[ProtectedPlayerOwner] status=8` fallback), then
 `[ProtectedLeftAim] private camera getter published`, then
 `[ProtectedLeftAim] controller ray applied`. A requested flag alone proves
 neither installation nor ray application. The CULL label is a separate route.
@@ -54,3 +55,13 @@ ProtectedLeftThrow were requested without private publication in that run.
 Their native trajectory is therefore not runtime validated; repairing the
 player-owner source is separate from exposing Y. Do not loosen its type or
 reciprocal-owner checks to admit an unrelated object.
+
+The next candidate also observes the result of the renderer's existing native
+virtual+174 call at985F75. It forwards that call once inside the digest-pinned
+private985D80 copy, while the native out-reference is still live. Only a result
+passing the complete D2Avatar/camera/inventory reciprocal graph can publish
+the private aim/throw tables. No additional native getter is invoked and no
+renderer+460 FOV override is required by this route. The adapter replays the
+displaced native pointer load and comparison, including flags. This is an
+offline-tested candidate: an actual accepted result and controller trajectory
+still require runtime receipts. Tracked visual hand/bone poses are not added.

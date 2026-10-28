@@ -8,6 +8,9 @@ static uintptr_t g_nativeCoveredCamera=0;
 static float g_nativeCoveredProjection[16]{},g_nativeCoveredViewProjection[16]{};
 static void NativeCameraCaptureChanged();
 static void ObserveSelectedPlayerCamera(void* renderer);
+static void __cdecl ObserveNativeViewOwner(void* renderer,void* reference);
+#include "native_view_owner_shim.h"
+D2VR_VIEW_OWNER_SHIM(TranslatedViewOwner,ObserveNativeViewOwner)
 static void NativeCameraUiScale(float& x,float& y) {
     if(g_nativeCameraCoverInstalled && g_nativeCameraCoverConfirmed && g_nativeUiReferencePx>0 && g_nativeUiReferencePy>0) {
         // Pixel-space HUD is not rebuilt by the native camera setter. Preserve

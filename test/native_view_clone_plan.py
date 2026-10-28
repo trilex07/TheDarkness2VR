@@ -94,6 +94,14 @@ def audit(pe, start, size):
         edges[address] = successors
     order = []
     if start == 0x985D80:
+        # The private owner adapter displaces exactly CALL EAX, MOV ECX,[EAX],
+        # CMP [ECX],0. No branch may enter either displaced post-call instruction.
+        span_start, span_end = 0x985F75, 0x985F7C
+        assert pe.get_data(span_start-base, span_end-span_start) == bytes.fromhex("ffd08b08833900")
+        assert [(instructions[a].mnemonic, instructions[a].size)
+                for a in (span_start, span_start+2, span_start+4)] == [("call", 2), ("mov", 2), ("cmp", 3)]
+        assert all(not span_start < target < span_end for _, target in branches)
+        assert span_end in instructions
         # Getter interception must be unavoidable on every normal path to the
         # native deep copy. Also prove ordering of two later direct consumers;
         # their semantic role and indirect earlier callees remain unproven.

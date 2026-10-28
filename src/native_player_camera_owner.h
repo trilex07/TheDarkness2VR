@@ -31,8 +31,8 @@ template<class Read> RendererTrace TraceRenderer(uint32_t renderer,Read read) {
 }
 enum class Status {RendererReference,AvatarType,CameraReference,CameraType,
                    CameraOwner,InventoryReference,InventoryType,InventoryOwner,Matched};
-template<class Read> Status Inspect(uint32_t renderer,Read read,Owner& result,uint32_t ownedCameraTable=0) {
-    result={};Owner found;
+template<class Read> Status InspectAvatar(uint32_t avatar,Read read,Owner& result,uint32_t ownedCameraTable=0) {
+    result={};Owner found;found.avatar=avatar;
     const auto word=[&](uint32_t object,uint32_t offset,uint32_t& value) {
         value=0;
         return object && !(object&3) && object<=UINT32_MAX-offset && read(object+offset,value);
@@ -41,7 +41,6 @@ template<class Read> Status Inspect(uint32_t renderer,Read read,Owner& result,ui
         uint32_t reference=0;return word(object,offset,reference) && word(reference,0,value) && value;
     };
     uint32_t table=0,back=0;
-    if(!ref(renderer,0x460,found.avatar))return Status::RendererReference;
     if(!word(found.avatar,0,table) || table!=0x1001630)return Status::AvatarType;
     if(!ref(found.avatar,0x62c,found.camera))return Status::CameraReference;
     if(!word(found.camera,0,table) || (table!=0xffc7c0 && (!ownedCameraTable || table!=ownedCameraTable)))return Status::CameraType;
@@ -50,5 +49,11 @@ template<class Read> Status Inspect(uint32_t renderer,Read read,Owner& result,ui
     if(!word(found.inventory,0,table) || table!=0xffca10)return Status::InventoryType;
     if(!ref(found.inventory,0x2a8,back) || back!=found.avatar)return Status::InventoryOwner;
     result=found;return Status::Matched;
+}
+template<class Read> Status Inspect(uint32_t renderer,Read read,Owner& result,uint32_t ownedCameraTable=0) {
+    result={};uint32_t reference=0,avatar=0;
+    if(!renderer || (renderer&3) || renderer>UINT32_MAX-0x460 || !read(renderer+0x460,reference) ||
+       !reference || (reference&3) || !read(reference,avatar) || !avatar)return Status::RendererReference;
+    return InspectAvatar(avatar,read,result,ownedCameraTable);
 }
 }

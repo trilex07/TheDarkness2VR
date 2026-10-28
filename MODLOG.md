@@ -1832,3 +1832,37 @@ The runtime log remains355464 bytes, last written18:29:38; it predates bd6d82a
 and contains no new context/getter rejection metadata. No current-view player
 source is established by this static pass. Do not change native aim/throw
 admission until the selected context's actual getter can be identified.
+
+## 2026-10-28: observe the selected view's already-live native reference
+
+Followed native GetPlayerAvatar/GetLocalPlayer binding records to B73EE0,
+964570 and43BCB0. Confirmed RegionMgr base tableFC7D00, player vector+AC/+B0,
+and Player+74 avatar reference. These do not yet establish renderer+3F8's
+concrete region getter; no guessed RegionMgr traversal is installed.
+
+Instead, the existing private985D80 copy now observes the result of its native
+virtual+174 call at985F75, while the caller's out-reference remains live.
+The adapter forwards the original thiscall(out) exactly once; captures no new
+native reference; preserves SIMD/x87, native return/out pointer and LastError;
+then replays MOV ECX,[EAX] and CMP [ECX],0 with original flags. The seven-byte
+whole-instruction replacement exists only in owned, digest-pinned code before
+RX sealing. Static CFG independently verifies instruction boundaries and no
+incoming branch into the displaced span. Relative-call relocation overlap
+refuses. Native EXE/static vtables and debug registers remain untouched.
+
+The callback admits only the original selected renderer/camera context and
+complete D2Avatar1001630 -> cameraFFC7C0/private -> avatar and inventoryFFCA10
+-> avatar reciprocal graph. A valid live result can prepare existing private
+left aim/throw paths without the absent renderer+460 override. The later
+frustum callback preserves this receipt only for the exact frame/renderer and
+fresh matching gameplay camera. Invalid results retain strict fallback.
+Actual return type/acceptance in gameplay is NOT established offline.
+
+Read-only owner graph4167 checks PASS; actual-source live-reference callback54
+checks PASS; adapter1000 native calls/observations PASS for empty/nonempty
+references, output/CMP flags, stack, floating state and LastError; existing
+10000-callback clone checks PASS. Full pinned CFG PASS461+1110 instructions,
+131 direct calls. Existing CULL boundary and protected throw162 checks PASS.
+Both x86 builds PASS. No FPS gain, physical controller trajectory or independent
+tracked visual hand/bone pose completion is claimed. Enemy face-button mapping
+from cee43ef remains available independently of native-owner activation.

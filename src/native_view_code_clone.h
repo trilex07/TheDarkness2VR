@@ -15,6 +15,9 @@ namespace d2vr_native_clone {
 struct Block {const void* source;size_t bytes;const char* sha256;};
 struct Call {unsigned block;size_t offset;uintptr_t originalTarget;};
 struct Override {unsigned block;size_t offset;const void* target;};
+// A caller-audited whole-instruction span inside a digest-pinned copy only.
+// Its adapter must replay the displaced ABI/instructions, including flags.
+struct CallSpan {unsigned block;size_t offset;const unsigned char* expected;size_t bytes;const void* target;};
 
 inline bool Digest(const void* data,size_t bytes,unsigned char out[32]) {
     if(!data || !bytes || bytes>MAXDWORD)return false;
@@ -70,7 +73,7 @@ public:
     // This class never publishes Entry. A host which publishes it must retain
     // this object for the entire callable lifetime. Fixtures destroy at quiescence.
     bool Prepare(const Block* blocks,unsigned count,const Call* calls,size_t callCount,
-                 const Override* replacement,const d2vr_native_image::Guard& guard) {
+                 const Override* replacement,const d2vr_native_image::Guard& guard,const CallSpan* span=nullptr) {
         static_assert(sizeof(void*)==4,"x86 only");
         if(memory_)return Fail("already-prepared");
         if(!blocks || !count || count>8 || (!calls && callCount) || callCount>4096)
@@ -108,6 +111,16 @@ public:
             if(replacement && replacement->block==call.block && replacement->offset==call.offset)++replacements;
         }
         if(replacement && (!replacement->target || replacements!=1))return Fail("override-contract");
+        if(span) {
+            if(span->block>=count || !span->expected || !span->target || span->bytes<5 || span->bytes>16 ||
+               blocks[span->block].bytes<span->bytes || span->offset>blocks[span->block].bytes-span->bytes)
+                return Fail("span-range");
+            if(std::memcmp(snapshots[span->block].data()+span->offset,span->expected,span->bytes))
+                return Fail("span-contract");
+            for(size_t i=0;i<callCount;++i)if(calls[i].block==span->block &&
+                span->offset<calls[i].offset+5 && calls[i].offset<span->offset+span->bytes)
+                return Fail("span-overlap");
+        }
         std::unique_ptr<void,Free> code(VirtualAlloc(nullptr,total,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));
         if(!code || !guard.Allows(reinterpret_cast<uintptr_t>(code.get()),total))return Fail("owned-allocation");
         auto* output=static_cast<unsigned char*>(code.get());
@@ -127,6 +140,13 @@ public:
             std::memcpy(site+1,&relative,4);
         }
         DWORD previous=0;
+        if(span) {
+            auto* site=output+offsets[span->block]+span->offset;
+            std::memset(site,0x90,span->bytes);site[0]=0xe8;
+            const uint32_t relative=uint32_t(reinterpret_cast<uintptr_t>(span->target))-
+                uint32_t(reinterpret_cast<uintptr_t>(site)+5);
+            std::memcpy(site+1,&relative,4);
+        }
         if(!VirtualProtect(output,total,PAGE_EXECUTE_READ,&previous))return Fail("seal-rx");
         if(!FlushInstructionCache(GetCurrentProcess(),output,total))return Fail("flush-code");
         for(unsigned i=0;i<count;++i)offsets_[i]=offsets[i];
