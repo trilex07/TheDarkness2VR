@@ -101,7 +101,22 @@ int main() {
     NisEyeShutdown();invalid->Release();left->Release();right->Release();
     left=Source(2676,2728,0xff406080);right=Source(2676,2728,0xffb09070);
     CHECK(NisEyeProcess(left,right,output));Constant(output[0],0xff406080);Constant(output[1],0xffb09070);
-    CHECK(g_nisEye.outW==2676 && g_nisEye.outH==2728);NisEyeShutdown();
+    CHECK(g_nisEye.outW==2676 && g_nisEye.outH==2728);
+    CHECK(g_nisEye.timingPending && !g_nisEye.timingActive);
+    NisTimingBegin(&g_nisEye,g_ctx11); // pending receipt cannot be overwritten
+    CHECK(!g_nisEye.timingActive);
+    NisTimingEnd(&g_nisEye,g_ctx11); // unmatched End is inert
+    CHECK(g_nisEye.timingPending);
+    g_ctx11->Flush(); // fixture submission only; runtime polling never flushes
+    for(unsigned i=0;i<2000 && g_nisEye.timingPending;++i) {
+        NisTimingPoll(&g_nisEye,g_ctx11);if(g_nisEye.timingPending)Sleep(1);
+    }
+    CHECK(!g_nisEye.timingPending && g_nisEye.timingFrames==1 && g_nisEye.msGpu>=0);
+    NisTimingBegin(&g_nisEye,g_ctx11);CHECK(g_nisEye.timingActive);
+    NisTimingBegin(&g_nisEye,g_ctx11);CHECK(g_nisEye.timingActive);
+    NisTimingEnd(&g_nisEye,g_ctx11);CHECK(!g_nisEye.timingActive && g_nisEye.timingPending);
+    NisTimingEnd(&g_nisEye,g_ctx11);CHECK(g_nisEye.timingPending);
+    NisEyeShutdown();CHECK(!g_nisEye.timingPending && !g_nisEye.timingActive && !g_nisEye.timingFrames);
     left->Release();right->Release();g_ctx11->ClearState();g_ctx11->Release();g_dev11->Release();
     printf("PASS actual NIS eye host WARP: independent eyes/full borders,20%% vs80%% changed %u pixels, persistent resources,22 dispatches/one config upload,16 cached-vs-forced-upload pixel comparisons across sharpness/mode/resize,real Map failure/recovery, failure latch1000 attempts, shutdown recovery, native2676x2728; not game/FPS evidence\n",changed);
 }

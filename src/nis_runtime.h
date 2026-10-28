@@ -62,6 +62,7 @@ struct NisRuntime {
     ID3D11Query* tsStart = nullptr;
     ID3D11Query* tsEnd = nullptr;
     bool timingPending = false;
+    bool timingActive = false;
     double msGpu = 0.0, msGpuPeak = 0.0;
     int timingFrames = 0;
 };
@@ -357,15 +358,18 @@ static bool NisDispatchEye(NisRuntime* nis, ID3D11DeviceContext* ctx,
 // NisTimingEnd after; call NisTimingPoll once per frame (after submit) to
 // harvest the result without stalling. MEASURED GPU time, not CPU Dispatch.
 static void NisTimingBegin(NisRuntime* nis, ID3D11DeviceContext* ctx) {
-    if (!nis->ready || !nis->disjoint || !nis->tsStart || !nis->tsEnd) return;
+    // One query set: never overwrite an outstanding sample or nest Begin.
+    if (nis->timingPending || nis->timingActive || !nis->ready || !nis->disjoint || !nis->tsStart || !nis->tsEnd) return;
     ctx->Begin(nis->disjoint);
     ctx->End(nis->tsStart);
+    nis->timingActive = true;
 }
 
 static void NisTimingEnd(NisRuntime* nis, ID3D11DeviceContext* ctx) {
-    if (!nis->ready || !nis->disjoint || !nis->tsStart || !nis->tsEnd) return;
+    if (!nis->timingActive) return;
     ctx->End(nis->tsEnd);
     ctx->End(nis->disjoint);
+    nis->timingActive = false;
     nis->timingPending = true;
 }
 
@@ -373,12 +377,21 @@ static void NisTimingPoll(NisRuntime* nis, ID3D11DeviceContext* ctx) {
     if (!nis->timingPending) return;
     D3D11_QUERY_DATA_TIMESTAMP_DISJOINT dj = {};
     // S_FALSE = not ready yet; leave pending for a later frame (no stall).
-    if (ctx->GetData(nis->disjoint, &dj, sizeof(dj), 0) != S_OK) return;
+    const auto read = [&](ID3D11Query* query, void* data, UINT bytes) {
+        return ctx->GetData(query, data, bytes, D3D11_ASYNC_GETDATA_DONOTFLUSH);
+    };
+    HRESULT hr=read(nis->disjoint, &dj, sizeof(dj));
+    if (FAILED(hr)) {nis->timingPending=false;return;}
+    if (hr!=S_OK) return;
     UINT64 t0 = 0, t1 = 0;
-    if (ctx->GetData(nis->tsStart, &t0, sizeof(t0), 0) != S_OK) return;
-    if (ctx->GetData(nis->tsEnd, &t1, sizeof(t1), 0) != S_OK) return;
+    hr=read(nis->tsStart, &t0, sizeof(t0));
+    if (FAILED(hr)) {nis->timingPending=false;return;}
+    if (hr!=S_OK) return;
+    hr=read(nis->tsEnd, &t1, sizeof(t1));
+    if (FAILED(hr)) {nis->timingPending=false;return;}
+    if (hr!=S_OK) return;
     nis->timingPending = false;
-    if (dj.Disjoint) return;
+    if (dj.Disjoint || !dj.Frequency || t1<t0) return;
     double ms = (double)(t1 - t0) * 1000.0 / (double)dj.Frequency;
     nis->msGpu = ms;
     if (ms > nis->msGpuPeak) nis->msGpuPeak = ms;

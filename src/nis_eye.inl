@@ -62,10 +62,21 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
     const UINT outW=g_nisMode==3 ? g_scW : desc[0].Width;
     const UINT outH=g_nisMode==3 ? g_scH : desc[0].Height;
     if(!NisEnsureOutput(&g_nisEye,g_dev11,desc[0].Width,desc[0].Height,outW,outH)) return NisEyeFailure("output allocation");
+    const int previousSamples=g_nisEye.timingFrames;
+    NisTimingPoll(&g_nisEye,g_ctx11);
+    if(g_nisEye.timingFrames!=previousSamples &&
+       (g_nisEye.timingFrames==1 || g_nisEye.timingFrames%120==0))
+        Log("[NIS] GPU pair dispatch sample=%.3fms peak=%.3fms samples=%d; excludes final copies/XR, asynchronous DONOTFLUSH",
+            g_nisEye.msGpu,g_nisEye.msGpuPeak,g_nisEye.timingFrames);
+    NisTimingBegin(&g_nisEye,g_ctx11);
     for(int eye=0;eye<2;++eye)
         if(!NisDispatchEye(&g_nisEye,g_ctx11,g_nisEyeSource[eye],
                            desc[eye].Width,desc[eye].Height,eye,
-                           outW,outH,g_nisSharpness,g_nisMode==2)) return NisEyeFailure("eye dispatch");
+                           outW,outH,g_nisSharpness,g_nisMode==2)) {
+            NisTimingEnd(&g_nisEye,g_ctx11);
+            return NisEyeFailure("eye dispatch");
+        }
+    NisTimingEnd(&g_nisEye,g_ctx11);
     if(!g_nisEyeReported) {
         Log("[NIS] pair dispatched mode=%d strength=%.2f source=%ux%u output=%ux%u; independent eyes, native projections retained",
             g_nisMode,g_nisSharpness,desc[0].Width,desc[0].Height,outW,outH);

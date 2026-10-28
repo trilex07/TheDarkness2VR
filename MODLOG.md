@@ -1324,3 +1324,26 @@ access, or return-address-sensitive callees. No handler/range bypass is added.
 Only the user's real-game test can establish activation, stability and side
 visibility. Native2676x2728 per eye and NIS80 are retained; unchanged private
 NIS config upload reuse is also included. No measured FPS gain or90FPS claim.
+
+## 2026-10-28: connect bounded asynchronous NIS GPU timestamps (offline only)
+
+The retained log reports native D3D9 GPU windows near10-11ms but has no NIS
+GPU result. The existing optional timestamp queries were allocated and never
+used. Bracket the two eye dispatches, excluding final copies/XR; poll once
+at the next successful pair, with DONOTFLUSH and no wait/retry loop. One set
+stays pending until consumed; never overwrite it or nest Begin. End is inert
+without Begin, including failures. Disjoint/zero-frequency/reversed samples
+are discarded and GetData errors release the pending receipt. Reset clears
+all state. Log the first completed sample and every120 samples, not frames.
+The bracket measures GPU elapsed time including scheduling between endpoints,
+not exclusive shader execution or an additive CPU stall. Lifetime peak mixes
+workloads; compare only matched scene/size/config samples.
+
+Actual x86 WARP host PASS including the full-image previous NIS regressions,
+native2676x2728, pending Begin rejection, nested Begin/unmatched End guards,
+real timestamp completion and reset. Only the fixture explicitly Flushes to
+submit its standalone workload; production polling uses DONOTFLUSH. WARP
+timestamp values are not NVIDIA hardware/game performance evidence. Both
+builds PASS. No shader/pixel/resolution changes, no new general profiler and
+no launch. Installed9106f53 remains unchanged for the user's side-visibility
+test; this instrumentation is not in that candidate.
