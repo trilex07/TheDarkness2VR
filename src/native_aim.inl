@@ -225,7 +225,18 @@ static bool CaptureNativeGameplay(void* self) {
 static uint64_t g_nativePlayerViewFrame=0;
 static uintptr_t g_nativePlayerViewRenderer=0;
 static uint32_t g_nativePlayerViewCamera=0;
-static void ObserveNativeViewOwnerChecked(void* renderer,void* reference) {
+#ifdef D2VR_MATCHED_CAPTURE
+static uint32_t* ReadSelectedLocalPlayer(uint32_t receiver,uint32_t* out) {
+    using Getter=uint32_t*(__thiscall*)(void*,uint32_t*);
+    return reinterpret_cast<Getter>(0x964570)(reinterpret_cast<void*>(receiver),out);
+}
+static void ReleaseSelectedLocalPlayer(uint32_t ref) {
+    auto* words=reinterpret_cast<uint32_t*>(ref);
+    if(--words[1]+words[2]==0)
+        reinterpret_cast<void(__cdecl*)(void*)>(0x402550)(words);
+}
+#endif
+static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* manager) {
 #ifdef D2VR_MATCHED_CAPTURE
     if(GetCurrentThreadId()!=g_renderThreadId)return;
     g_nativePlayerViewFrame=0;g_nativePlayerViewRenderer=0;g_nativePlayerViewCamera=0;
@@ -237,33 +248,35 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference) {
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}
     };
     const auto r=uint32_t(reinterpret_cast<uintptr_t>(renderer));
-    uint32_t selectedReference=0,selected=0,avatarReference=0,avatar=0;
+    uint32_t selectedReference=0,selected=0,avatar=0;
     NativeCameraFields fields{};
     if(!r || r>UINT32_MAX-0x3f4 || !read(r+0x3f4,selectedReference) || !selectedReference ||
-       !read(selectedReference,selected) || !ReadSelectedRenderCamera(reinterpret_cast<void*>(selected),renderer,fields) ||
-       !read(uint32_t(reinterpret_cast<uintptr_t>(reference)),avatarReference) || !avatarReference ||
-       !read(avatarReference,avatar))return;
-    d2vr_player_camera::Owner owner;
-    const auto status=d2vr_player_camera::InspectAvatar(avatar,read,owner,ProtectedAimCameraTable());
-    if(status==d2vr_player_camera::Status::Matched && NativeAimOwnerMatches(reinterpret_cast<void*>(owner.camera)) &&
-       CaptureNativeGameplay(reinterpret_cast<void*>(owner.camera))) {
-        // The original native out-reference still owns the avatar here.
-        PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
-        PrepareProtectedThrowForCamera(reinterpret_cast<void*>(owner.camera));
-        PrepareProtectedHandsForCamera(reinterpret_cast<void*>(owner.camera));
-        g_nativePlayerViewFrame=g_trackedFrame.id;g_nativePlayerViewRenderer=r;
-        g_nativePlayerViewCamera=owner.camera;
-    }
+       !read(selectedReference,selected) || !ReadSelectedRenderCamera(reinterpret_cast<void*>(selected),renderer,fields))return;
+    const auto consume=[&](const d2vr_player_camera::Owner& owner) {
+        avatar=owner.avatar;
+        if(NativeAimOwnerMatches(reinterpret_cast<void*>(owner.camera)) &&
+           CaptureNativeGameplay(reinterpret_cast<void*>(owner.camera))) {
+            // The distinct +18C getter's strong reference owns this avatar here.
+            PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
+            PrepareProtectedThrowForCamera(reinterpret_cast<void*>(owner.camera));
+            PrepareProtectedHandsForCamera(reinterpret_cast<void*>(owner.camera));
+            g_nativePlayerViewFrame=g_trackedFrame.id;g_nativePlayerViewRenderer=r;
+            g_nativePlayerViewCamera=owner.camera;
+        }
+    };
+    const auto status=d2vr_player_camera::WithSelectedLocalPlayer(r,
+        uint32_t(reinterpret_cast<uintptr_t>(manager)),uint32_t(reinterpret_cast<uintptr_t>(reference)),
+        read,ReadSelectedLocalPlayer,ReleaseSelectedLocalPlayer,consume,ProtectedAimCameraTable());
     static unsigned reports=0;
     if(++reports<=3 || reports%600==0)
-        Log("[ProtectedViewOwner] frame=%llu renderer=%p nativeAvatar=%08X status=%u accepted=%d; original view getter once, live native reference, EXE unchanged",
-            g_trackedFrame.id,renderer,avatar,unsigned(status),int(g_nativePlayerViewFrame==g_trackedFrame.id));
+        Log("[ProtectedViewOwner] frame=%llu renderer=%p manager=%p nativeAvatar=%08X status=%u accepted=%d; selected RegionMgr local-player getter, balanced strong reference, EXE unchanged",
+            g_trackedFrame.id,renderer,manager,avatar,unsigned(status),int(g_nativePlayerViewFrame==g_trackedFrame.id));
 #else
-    (void)renderer;(void)reference;
+    (void)renderer;(void)reference;(void)manager;
 #endif
 }
-static void __cdecl ObserveNativeViewOwner(void* renderer,void* reference) {
-    const DWORD error=GetLastError();ObserveNativeViewOwnerChecked(renderer,reference);SetLastError(error);
+static void __cdecl ObserveNativeViewOwner(void* renderer,void* reference,void* manager) {
+    const DWORD error=GetLastError();ObserveNativeViewOwnerChecked(renderer,reference,manager);SetLastError(error);
 }
 static void ObserveSelectedPlayerCamera(void* renderer) {
 #ifdef D2VR_MATCHED_CAPTURE

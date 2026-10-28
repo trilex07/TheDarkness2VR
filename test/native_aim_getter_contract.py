@@ -24,6 +24,22 @@ def main():
     assert u32(0xFFC7C0+0x9C) == 0x504810
     assert u32(0x1001630+0x2F4) == 0xC7C710
     assert read(0xC7C710, 9) == bytes.fromhex("8b812c0600008b00c3")
+    # The selected renderer's +174 result is a scene reference, not an avatar.
+    # Follow its actual context receiver to the separate local-player getter.
+    assert read(0x985E5D, 0x16) == bytes.fromhex("8b93f80300008b0a8b018b90cc000000ffd28944241c")
+    assert u32(0xFC6D40+0xCC) == 0x603ED0
+    assert read(0x603ED0, 6) == bytes.fromhex("8b41648b00c3")
+    assert u32(0xFC7D00+0x174) == 0xB0EF20
+    assert read(0xB0EF20,18) == bytes.fromhex("8b89c80100008b442404ff41048908c20400")
+    assert u32(0xFC7D00+0x18C) == 0x964570
+    local_player_sha=hashlib.sha256(read(0x964570,0x56)).hexdigest()
+    assert local_player_sha == "0464a12d76e2f874a147fb000bc1adf928510143079a82e053fb944c3bdd471d"
+    assert read(0x43BCB0,15) == bytes.fromhex("8b49748b442404ff41048908c20400")
+    # Its nonempty path copies Player+74 with one strong-reference increment.
+    getter_calls=list(capstone.Cs(capstone.CS_ARCH_X86,capstone.CS_MODE_32).disasm(read(0x964570,0x56),0x964570))
+    assert [(i.address,i.op_str) for i in getter_calls if i.mnemonic=='call'] == [(0x96458B,'eax'),(0x9645BA,'0x43bcb0')]
+    owner_host=(Path(__file__).resolve().parents[1]/'src'/'native_view_boundary_runtime.inl').read_text()
+    assert local_player_sha in owner_host
     for slot in range(71):
         target = u32(0xFFC7C0+slot*4)
         assert any(section.Characteristics & 0x20000000 and
@@ -53,7 +69,7 @@ def main():
               "lifetime": "two immediate matrix row reads before EAX replacement; native collision ownership unchanged"}
     if args.report:
         args.report.write_text(json.dumps(report, indent=2)+"\n", encoding="utf-8")
-    print("PASS pinned native aim getter,71 methods/header,full consumer and immediate TLS-value consumption; no game execution")
+    print("PASS pinned native aim getter,71 methods/header,full consumer/immediate TLS consumption; distinct selected scene and local-player getters with strong-reference contract; no game execution")
 
 
 if __name__ == "__main__":

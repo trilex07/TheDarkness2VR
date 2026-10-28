@@ -8,7 +8,7 @@ static uintptr_t g_nativeCoveredCamera=0;
 static float g_nativeCoveredProjection[16]{},g_nativeCoveredViewProjection[16]{};
 static void NativeCameraCaptureChanged();
 static void ObserveSelectedPlayerCamera(void* renderer);
-static void __cdecl ObserveNativeViewOwner(void* renderer,void* reference);
+static void __cdecl ObserveNativeViewOwner(void* renderer,void* reference,void* manager);
 #include "native_view_owner_shim.h"
 D2VR_VIEW_OWNER_SHIM(TranslatedViewOwner,ObserveNativeViewOwner)
 static void NativeCameraUiScale(float& x,float& y) {

@@ -23,12 +23,14 @@ struct NativeHandsWriteStamp {
 static NativeHandsWriteStamp g_nativeHandsLastWrite;
 #endif
 struct NativeHandCalibration {
-    void* parent=nullptr; void* skeleton=nullptr;
+    void* parent=nullptr; void* skeleton=nullptr; void* resource=nullptr;
+    bool rightValid=false,leftValid=false,supportValid=false;
     float right[16]{},left[16]{},support[16]{};
 };
 static NativeHandCalibration g_nativeHandCalibration;
 struct NativeHandsPaletteCache {
-    void* renderer=nullptr; void* skeleton=nullptr; void* palette=nullptr;
+    void* renderer=nullptr; void* skeleton=nullptr; void* palette=nullptr; void* resource=nullptr;
+    bool appliedValid[2]{};
     float original[44][16]{},applied[44][16]{};
 };
 static NativeHandsPaletteCache g_nativeHandsCache[3];
@@ -93,7 +95,6 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         auto palette=*(float**)outputVector;
         if(*(float**)((BYTE*)outputVector+4)-palette!=130*16) return false;
         alignas(16) float bones[130][16]; memcpy(bones,palette,sizeof(bones));
-        for(int i:{5,21,27,43}) if(!d2vr_hands::Valid(bones[i])) return false;
         float inverseParent[16],rightTarget[16],leftTarget[16];
         if(!d2vr_math::Invert((float*)(parent+0x140),inverseParent)) return false;
         if(rightValid)d2vr_math::Multiply(gunWorld,inverseParent,rightTarget);
@@ -105,27 +106,47 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         if(!TryAcquireSRWLockExclusive(&g_nativeHandsLock)) return false;
         locked=true;
         auto& cache=g_nativeHandsCache[index];
-        const bool same=cache.renderer==renderer && cache.skeleton==skeleton && cache.palette==palette;
+        const bool same=cache.renderer==renderer && cache.skeleton==skeleton && cache.palette==palette && cache.resource==resource;
         // Cached native poses can be queried more than once before animation
         // runs again. Solve from their pristine human bones, never our last IK.
-        if(same && memcmp(palette+2*16,cache.applied,sizeof(cache.applied))==0)
-            memcpy(bones+2,cache.original,sizeof(cache.original));
-        else {
+        if(!same) {
             cache.renderer=renderer; cache.skeleton=skeleton; cache.palette=palette;
-            memcpy(cache.original,bones+2,sizeof(cache.original));
+            cache.resource=resource;cache.appliedValid[0]=cache.appliedValid[1]=false;
+        }
+        // Animation can update just one arm between pack calls. Its change
+        // must not turn our already-solved peer into a new pristine baseline.
+        for(unsigned hand=0;hand<2;++hand) {
+            const unsigned offset=hand*22;
+            if(cache.appliedValid[hand] && !memcmp(palette+(2+offset)*16,cache.applied+offset,22*64))
+                memcpy(bones+2+offset,cache.original+offset,22*64);
+            else {
+                memcpy(cache.original+offset,bones+2+offset,22*64);
+                cache.appliedValid[hand]=false;
+            }
         }
         NativeHandCalibration cal=g_nativeHandCalibration;
-        if(cal.parent!=parent || cal.skeleton!=skeleton) {
-            float ir[16],il[16];
-            if(!d2vr_math::Invert(bones[43],ir) || !d2vr_math::Invert(bones[21],il)) {
-                ReleaseSRWLockExclusive(&g_nativeHandsLock); return false;
-            }
-            cal.parent=parent; cal.skeleton=skeleton;
-            d2vr_math::Multiply(bones[27],ir,cal.right);
-            d2vr_math::Multiply(bones[5],il,cal.left);
-            d2vr_math::Multiply(bones[5],ir,cal.support);
-            g_nativeHandCalibration=cal;
+        if(cal.parent!=parent || cal.skeleton!=skeleton || cal.resource!=resource) {
+            cal={};cal.parent=parent;cal.skeleton=skeleton;cal.resource=resource;
         }
+        rightValid=rightValid && d2vr_hands::Valid(bones[27]) && d2vr_hands::Valid(bones[43]);
+        leftValid=leftValid && d2vr_hands::Valid(bones[5]) && d2vr_hands::Valid(bones[21]);
+        if(rightValid && !cal.rightValid) {
+            float inverse[16];rightValid=d2vr_math::Invert(bones[43],inverse);
+            if(rightValid){d2vr_math::Multiply(bones[27],inverse,cal.right);cal.rightValid=true;}
+        }
+        if(leftValid && !cal.leftValid) {
+            float inverse[16];leftValid=d2vr_math::Invert(bones[21],inverse);
+            if(leftValid){d2vr_math::Multiply(bones[5],inverse,cal.left);cal.leftValid=true;}
+        }
+        // Legacy two-hand support is optional. Protected grip poses never use
+        // this cross-hand calibration; failure cannot suppress the free hand.
+        if(support && rightValid && leftValid) {
+            if(!cal.supportValid) {
+                float inverse[16];support=d2vr_math::Invert(bones[43],inverse);
+                if(support){d2vr_math::Multiply(bones[5],inverse,cal.support);cal.supportValid=true;}
+            }
+        } else support=false;
+        g_nativeHandCalibration=cal;
         float wrist[16];bool rightSolved=false,leftSolved=false;
         if(rightValid) {
             d2vr_math::Multiply(cal.right,rightTarget,wrist);
@@ -162,8 +183,8 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
             // cannot consume the previous packed pose after this CPU edit.
             renderer[0x580+(1-skinIndex)]=1;
         }
-        // Preserve the actual unchanged left range on tracking loss.
-        memcpy(cache.applied,palette+2*16,sizeof(cache.applied));
+        if(leftSolved){memcpy(cache.applied,palette+2*16,22*64);cache.appliedValid[0]=true;}
+        if(rightSolved){memcpy(cache.applied+22,palette+24*16,22*64);cache.appliedValid[1]=true;}
 #ifdef D2VR_MATCHED_CAPTURE
         auto& stamp=g_nativeHandsLastWrite;
         stamp.frame=g_trackedFrame.id; stamp.time=GetTickCount64();

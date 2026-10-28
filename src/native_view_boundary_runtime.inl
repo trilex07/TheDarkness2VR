@@ -38,7 +38,7 @@ static void InstallNativeViewBoundary() {
         {0x888965,"\x8b\x8e\xa8\x00\x00\x00\x8b\x09\xe8\x0e\xd4\x0f\x00",13},
         {0x98618A,"\x8b\x07\x8b\x08\xe8\x3d\x01\x01\x00\x50\x8d\x8e\x90\x01\x00\x00\xe8\xd1\xf8\xfa\xff",21}
     };
-    unsigned char data[80];
+    unsigned char data[128];
     for(const auto& pin:pins)if(!read(pin.address,data,pin.size) || memcmp(data,pin.bytes,pin.size)) {
         Log("[NativeViewBoundary] refused native view contract at %08X",pin.address);return;
     }
@@ -51,8 +51,15 @@ static void InstallNativeViewBoundary() {
     // of985D80, including the +460 use, before its callback can execute.
     g_nativePlayerOwnerAdmitted=read(0x1001924,data,4) &&
         !memcmp(data,"\x10\xc7\xc7\x00",4) && read(0xC7C710,data,9) &&
-        !memcmp(data,"\x8b\x81\x2c\x06\x00\x00\x8b\x00\xc3",9);
-    Log("[ProtectedPlayerOwner] admission=%d; avatar virtual+2F4 reads avatar+62C; read-only, visibility admission independent",
+        !memcmp(data,"\x8b\x81\x2c\x06\x00\x00\x8b\x00\xc3",9) &&
+        read(0xFC6E0C,data,4) && !memcmp(data,"\xd0\x3e\x60\x00",4) &&
+        read(0xFC7E74,data,4) && !memcmp(data,"\x20\xef\xb0\x00",4) &&
+        read(0xFC7E8C,data,4) && !memcmp(data,"\x70\x45\x96\x00",4) &&
+        read(0x603ED0,data,6) && !memcmp(data,"\x8b\x41\x64\x8b\x00\xc3",6) &&
+        read(0xB0EF20,data,18) && !memcmp(data,"\x8b\x89\xc8\x01\x00\x00\x8b\x44\x24\x04\xff\x41\x04\x89\x08\xc2\x04\x00",18) &&
+        read(0x964570,data,0x56) && d2vr_native_clone::MatchesDigest(data,0x56,
+            "0464a12d76e2f874a147fb000bc1adf928510143079a82e053fb944c3bdd471d");
+    Log("[ProtectedPlayerOwner] admission=%d; selected context+CC RegionMgr, +174 scene, +18C local player; balanced native reference, visibility admission independent",
         int(g_nativePlayerOwnerAdmitted));
     if(g_nativeViewBoundaryMode==2) {
         const bool installed=g_nativeFrustumBoundary.Start(reinterpret_cast<void*>(0x98618E),

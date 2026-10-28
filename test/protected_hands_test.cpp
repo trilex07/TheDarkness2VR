@@ -38,6 +38,9 @@ static void* references[20];static unsigned nextRef=0;
 static void* sourceTable[96];
 static struct {const char* name;void* unused[2];} names[130];
 static __declspec(align(16)) float palette[130][16],pristine[130][16];
+using SkinPack=void(__cdecl*)(float*,const float*,const float*);
+static SkinPack nativeSkinPack=nullptr;
+static __declspec(align(16)) float bindPose[130][16],packed[34][12];
 static DWORD Ptr(const void* p){return DWORD(reinterpret_cast<uintptr_t>(p));}
 static void Word(BYTE* p,unsigned o,DWORD v){memcpy(p+o,&v,4);}
 static void Ref(BYTE* p,unsigned o,void* value){references[nextRef]=value;*reinterpret_cast<void***>(p+o)=&references[nextRef++];}
@@ -88,6 +91,44 @@ static void Reset(){
 static bool Apply(){PublishProtectedHandPoses();return ApplyNativeHandsChecked(renderer,0xFFC7C0,resource,true);}
 static bool Near(float a,float b){return std::fabs(a-b)<.0001f;}
 static void Untouched(unsigned first,unsigned end){for(unsigned i=first;i<end;++i)CHECK(!memcmp(palette[i],pristine[i],64));}
+static void PackFixtureMesh() {
+    // Fixture remaps deliberately differ from bone order. Native6C3890 selects
+    // a mesh bind ID, maps it through renderer+5A8, then passes the pose and
+    // resource+9C bind matrix to B1E500. No real mesh membership is inferred.
+    auto* selected=*reinterpret_cast<float**>(renderer+0x3F4+16**reinterpret_cast<DWORD*>(renderer+0x424));
+    for(unsigned j=0;j<34;++j) {
+        const unsigned bone=j<16?3+j:j<32?25+j-16:j==32?0:46;
+        const unsigned bindId=129-bone;
+        nativeSkinPack(packed[j],selected+bone*16,bindPose[bindId]);
+        float expected[16];d2vr_math::Multiply(bindPose[bindId],selected+bone*16,expected);
+        for(unsigned column=0;column<3;++column)for(unsigned row=0;row<4;++row)
+            CHECK(Near(packed[j][column*4+row],expected[row*4+column]));
+    }
+}
+static void NativePackOracle(const char* path) {
+    FILE* f=nullptr;CHECK(!fopen_s(&f,path,"rb")&&f);
+    auto* code=static_cast<BYTE*>(VirtualAlloc(nullptr,0x141,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));CHECK(code);
+    CHECK(fread(code,1,0x141,f)==0x141&&fgetc(f)==EOF);fclose(f);
+    DWORD old=0;CHECK(VirtualProtect(code,0x141,PAGE_EXECUTE_READ,&old));CHECK(FlushInstructionCache(GetCurrentProcess(),code,0x141));
+    nativeSkinPack=reinterpret_cast<SkinPack>(code);
+    for(unsigned i=0;i<130;++i) {
+        Matrix(bindPose[i],float(i%7)/16,float(i%5)/16,-float(i%3)/16);
+        if(i%2){bindPose[i][0]=bindPose[i][5]=0;bindPose[i][1]=1;bindPose[i][4]=-1;}
+    }
+    for(unsigned pose=0;pose<3;++pose)for(unsigned skin=0;skin<2;++skin) {
+        Reset();Word(renderer,0x424,pose);Word(renderer,0x448,skin);CHECK(Apply());PackFixtureMesh();
+        float before[34][12];memcpy(before,packed,sizeof(before));
+        g_hands[0].grip.position.y+=.125f;CHECK(Apply());PackFixtureMesh();
+        CHECK(memcmp(before,packed,16*48));CHECK(!memcmp(before+16,packed+16,18*48));
+        memcpy(before,packed,sizeof(before));
+        g_hands[1].grip.position.y+=.125f;CHECK(Apply());PackFixtureMesh();
+        CHECK(!memcmp(before,packed,16*48));CHECK(memcmp(before+16,packed+16,16*48));
+        CHECK(!memcmp(before+32,packed+32,2*48));memcpy(before,packed,sizeof(before));
+        for(unsigned n=0;n<20;++n){CHECK(Apply());PackFixtureMesh();CHECK(!memcmp(before,packed,sizeof(before)));}
+    }
+    nativeSkinPack=nullptr;CHECK(VirtualFree(code,0,MEM_RELEASE));
+    puts("PASS exact private B1E500 arithmetic: remapped nonidentity bind*pose, packed columns, independent peer output, six rotating slot combinations; fixture mesh only, NOT real GPU draw membership");
+}
 static unsigned expectedMxcsr=0;static unsigned short expectedStatus=0;static bool recursive=false;
 static void __fastcall Original(void* self,void*,void* argument){
     CHECK(self==resource);++originalCalls;
@@ -98,7 +139,8 @@ static void __fastcall Original(void* self,void*,void* argument){
     SetLastError(0x87654321);
 }
 template<class F>static void Reject(F change){Reset();change();CHECK(!Apply());CHECK(!memcmp(palette,pristine,sizeof(palette)));}
-int main(){
+int main(int argc,char** argv){
+    CHECK(argc==1||argc==2);
     resource=static_cast<BYTE*>(HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,0x620));CHECK(resource);
     for(auto& entry:sourceTable)entry=reinterpret_cast<void*>(&Original);
     CHECK(g_protectedHandsTable.Prepare(sourceTable,96,0xEC/4,reinterpret_cast<void*>(&ProtectedHandsPackHook),g_nativeImageGuard));
@@ -112,6 +154,20 @@ int main(){
     Reset();g_hands[1].grip.position.x=5;CHECK(Apply());CHECK(Near(palette[5][12],-.5f));Untouched(24,130);
     Reset();g_hands[0].grip.position.x=5;CHECK(Apply());CHECK(Near(palette[27][12],.5f));Untouched(0,24);
     Reset();g_hands[1].grip.orientation.w=NAN;CHECK(Apply());CHECK(Near(palette[5][12],-.5f));Untouched(24,130);
+    // A bad native wrist/socket/finger on one side cannot suppress its peer.
+    for(unsigned bone:{3u,5u,6u,21u,25u,27u,28u,43u}) {
+        Reset();palette[bone][0]=NAN;float before[22][16];
+        const unsigned first=bone<24?2:24;memcpy(before,palette+first,sizeof(before));
+        CHECK(Apply());CHECK(!memcmp(before,palette+first,sizeof(before)));
+        CHECK(Near(palette[bone<24?27:5][12],bone<24?.5f:-.5f));
+    }
+    // Each calibration can initialize and recover without the peer socket.
+    Reset();palette[43][0]=NAN;CHECK(Apply());
+    CHECK(g_nativeHandCalibration.leftValid&&!g_nativeHandCalibration.rightValid);
+    memcpy(palette[43],pristine[43],64);CHECK(Apply());CHECK(g_nativeHandCalibration.rightValid);
+    Reset();palette[21][0]=NAN;CHECK(Apply());
+    CHECK(g_nativeHandCalibration.rightValid&&!g_nativeHandCalibration.leftValid);
+    memcpy(palette[21],pristine[21],64);CHECK(Apply());CHECK(g_nativeHandCalibration.leftValid);
     for(unsigned pose=0;pose<3;++pose)for(unsigned skin=0;skin<2;++skin) {
         Reset();Word(renderer,0x424,pose);Word(renderer,0x448,skin);CHECK(Apply());
         CHECK(g_nativeHandsLastWrite.poseSlot==pose && g_nativeHandsLastWrite.skinSlot==skin);
@@ -120,6 +176,18 @@ int main(){
     // Repeated packing must solve from the cached pristine pose, without drift.
     Reset();CHECK(Apply());float once[130][16];memcpy(once,palette,sizeof(once));
     for(unsigned n=0;n<100;++n){CHECK(Apply());CHECK(!memcmp(once,palette,sizeof(once)));}
+    // A one-sided native animation update must preserve the pristine peer.
+    for(unsigned hand=0;hand<2;++hand) {
+        Reset();CHECK(Apply());const unsigned offset=hand*22,other=(1-hand)*22;
+        memcpy(palette+2+offset,pristine+2+offset,22*64);
+        palette[2+offset][12]=.03125f;
+        float nativeUpdated[22][16];memcpy(nativeUpdated,palette+2+offset,sizeof(nativeUpdated));
+        CHECK(Apply());
+        CHECK(!memcmp(g_nativeHandsCache[0].original+other,pristine+2+other,22*64));
+        CHECK(!memcmp(g_nativeHandsCache[0].original+offset,nativeUpdated,22*64));
+        memcpy(once,palette,sizeof(once));
+        for(unsigned n=0;n<100;++n){CHECK(Apply());CHECK(!memcmp(once,palette,sizeof(once)));}
+    }
     // Neither an unreachable arm nor its failed solve may suppress its peer.
     Reset();g_hands[1].grip.position={.15f,0,0};CHECK(Apply());CHECK(Near(palette[5][12],-.5f));Untouched(24,130);
     Reject([]{g_hands[0].gripValid=g_hands[1].gripValid=false;});
@@ -154,6 +222,7 @@ int main(){
     CHECK(g_nativeHandsWriteSeq==1);
     CHECK(sourceTable[0xEC/4]==reinterpret_cast<void*>(&Original));
     for(unsigned i=0;i<96;++i)if(i!=0xEC/4)CHECK(g_protectedHandsTable.Table()[i]==sourceTable[i]);
+    if(argc==2)NativePackOracle(argv[1]);
     printf("PASS actual protected hands: %u checks; per-hand tracking/IK failure, no pistol/support gate, pristine repeated pack, ownership/hold refusals, native ABI/ref once, floating state, LastError, reentrancy\n",checks);
     HeapFree(GetProcessHeap(),0,resource);
     return 0;

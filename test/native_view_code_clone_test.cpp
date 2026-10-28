@@ -17,9 +17,9 @@ static unsigned callbacks=0;
 static uintptr_t lastCaller=0;
 static void* viewReference=&owner;
 static unsigned viewGetterCalls=0,viewOwnerCalls=0;
-static void __cdecl ObserveViewOwner(void* renderer,void* reference) {
+static void __cdecl ObserveViewOwner(void* renderer,void* reference,void* manager) {
     const DWORD error=GetLastError();
-    CHECK(renderer==&owner && *static_cast<void**>(reference)==&viewReference);
+    CHECK(renderer==&owner && manager==&owner && *static_cast<void**>(reference)==&viewReference);
     ++viewOwnerCalls;
     _mm_setcsr(_mm_getcsr()^0x8000u);
     __asm fldpi
@@ -30,6 +30,7 @@ static void __declspec(naked) ViewGetter() {
     __asm inc viewGetterCalls
     __asm mov eax,[esp+4]
     __asm mov dword ptr [eax],offset viewReference
+    __asm xor ecx,ecx
     __asm ret 4
 }
 static unsigned __declspec(naked) ViewCaller(void**) {
