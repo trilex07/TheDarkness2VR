@@ -1266,3 +1266,16 @@ was not this run's blocker; no NativeCullingCover callback ran. Do not take
 the foreign debug state or claim side correction active. Same log confirms
 embedded official NIS mode2 strength0.80 dispatched at2676x2728 per eye.
 It does not establish visual/HMD or90FPS acceptance.
+
+Read-only disassembly of the same SHA-pinned installed EXE identifies the
+native owner contract: E35880 writes CONTEXT.Dr0/1/2 from this+238/+23C/+240,
+CONTEXT.Dr3=this and CONTEXT.Dr7=FFFF0015. Native VEH E355E0 reads the context
+DR3 field and invokes that object's virtual+8 when its own predicates pass.
+Thus the disabled slot3 is not free storage; replacing its nonzero address
+would also replace the handler's object. Preserve the refusal, not just the
+enabled-slot bits. Raw opcode substring matches in unrelated functions were
+discarded after aligned disassembly (some lie inside call displacements).
+The existing hardware-boundary route cannot be treated as a working culling
+solution on this game's native debug-state contract. Need a separate route
+to the proven post-rebuild/pre-copy point while retaining native code bytes
+and all original debug state. No native handler/dispatcher modification.
