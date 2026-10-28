@@ -80,14 +80,19 @@ int main() {
     const unsigned original=TextHash();
     d2vr_native_execution::Boundary boundary,second;
     CHECK(!boundary.Start(&owner,AtPoint,guard));
+    CHECK(!std::strcmp(boundary.Status(),"page-protection"));
     CHECK(!boundary.Start(reinterpret_cast<void*>(&Point),AtPoint,{}));
+    CHECK(!std::strcmp(boundary.Status(),"guard"));
     UnusedSlot(reinterpret_cast<DWORD>(&Point));
     CHECK(!boundary.Start(reinterpret_cast<void*>(&Point),AtPoint,guard));
+    CHECK(!std::strcmp(boundary.Status(),"occupied-debug-state"));
+    CHECK(boundary.Debug(1)==reinterpret_cast<DWORD>(&Point));
     CHECK(!boundary.Installed());
     UnusedSlot(0);
     CHECK(boundary.Start(reinterpret_cast<void*>(&Point),AtPoint,guard));
     CHECK(boundary.Installed());
     CHECK(!second.Start(reinterpret_cast<void*>(&Point),AtPoint,guard));
+    CHECK(!std::strcmp(second.Status(),"active-owner"));
     __declspec(align(16)) unsigned char before[512]{},after[512]{};
     __asm fld1
     __asm fldpi
@@ -120,6 +125,16 @@ int main() {
         CHECK(boundary.Stop());
     }
     CHECK(callbacks==10021 && original==TextHash());
-    std::printf("PASS x86 execution boundary: 10000 exact instruction callbacks, ECX/EBX/ESI/EDI/EAX/flags/LastError/x87/SSE, occupied-slot refusal, unmatched exception passthrough, other thread bypass/Stop refusal, 20 rearm cycles, Stop and unchanged EXE text; synthetic mean %.3fus/hit (not game evidence)\n",microseconds);
+    const DWORD protections[]={PAGE_EXECUTE_READWRITE,PAGE_EXECUTE_WRITECOPY};
+    for(DWORD protection:protections) {
+        DWORD previous=0;CHECK(VirtualProtect(reinterpret_cast<void*>(&Point),1,protection,&previous));
+        MEMORY_BASIC_INFORMATION actual{};CHECK(VirtualQuery(reinterpret_cast<void*>(&Point),&actual,sizeof(actual)));
+        CHECK(boundary.Start(reinterpret_cast<void*>(&Point),AtPoint,guard));
+        CHECK(!std::strcmp(boundary.Status(),"ready") && boundary.Protection()==actual.Protect);
+        CHECK(Invoke(&owner)==owner.value);CHECK(boundary.Stop());
+        DWORD ignored=0;CHECK(VirtualProtect(reinterpret_cast<void*>(&Point),1,previous,&ignored));
+    }
+    CHECK(callbacks==10023 && original==TextHash());
+    std::printf("PASS x86 execution boundary: 10000 exact instruction callbacks, ECX/EBX/ESI/EDI/EAX/flags/LastError/x87/SSE, occupied-slot refusal and failure diagnostics, unmatched exception passthrough, other thread bypass/Stop refusal, 20 rearm cycles, executable writable/copy-page requests, Stop and unchanged EXE text; synthetic mean %.3fus/hit (not game evidence)\n",microseconds);
     return 0;
 }

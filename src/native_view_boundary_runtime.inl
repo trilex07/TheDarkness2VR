@@ -41,8 +41,10 @@ static void InstallNativeViewBoundary() {
     if(g_nativeViewBoundaryMode==2) {
         const bool installed=g_nativeFrustumBoundary.Start(reinterpret_cast<void*>(0x98618E),
             ObserveNativeFrustumCopy,g_nativeImageGuard);
-        Log("[NativeFrustumBoundary] installed=%d mode=2 thread=%lu PC=0098618E; after native camera rebuild, before getter/copy; no EXE/IAT/vtable writes; debugger/occupied slot refuses",
-            installed,GetCurrentThreadId());
+        Log("[NativeFrustumBoundary] installed=%d mode=2 thread=%lu PC=0098618E status=%s error=%lu protect=%08lX DR0=%08lX DR1=%08lX DR2=%08lX DR3=%08lX DR7=%08lX; after native camera rebuild, before getter/copy; no EXE/IAT/vtable writes; debugger/occupied slot refuses",
+            installed,GetCurrentThreadId(),g_nativeFrustumBoundary.Status(),g_nativeFrustumBoundary.Error(),
+            g_nativeFrustumBoundary.Protection(),g_nativeFrustumBoundary.Debug(0),g_nativeFrustumBoundary.Debug(1),
+            g_nativeFrustumBoundary.Debug(2),g_nativeFrustumBoundary.Debug(3),g_nativeFrustumBoundary.Debug(4));
         return;
     }
     const auto kernel=GetModuleHandleW(L"kernel32.dll");

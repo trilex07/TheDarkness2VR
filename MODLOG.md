@@ -1209,3 +1209,31 @@ PASS1000 legacy+1000 corrected rebuilds, normals/W/render/reference preservation
 and malformed-input rejection. Production and diagnostic builds PASS. No
 headset/FPS claim or game launch. Combined candidate retains NIS80,2676x2728
 and rollback. Other engine visibility/occlusion filters remain unproven.
+
+## 2026-10-28: executable-page compatibility and exact boundary refusal status
+
+Retained gameplay log last written13:15 local reports NativeFrustumBoundary
+installed=0 at0098618E and no NativeCullingCover/beforeCopy corroboration.
+That run therefore did not activate the final binocular culling correction.
+It predates the NIS80 and conservative-plane candidates; it is not runtime
+validation of either. The old log does not expose the installation failure
+stage, so its exact cause remains unknown.
+
+The boundary validator accepted only EXECUTE/EXECUTE_READ. It now accepts
+EXECUTE_READWRITE/EXECUTE_WRITECOPY as well: the observer never writes code.
+Retain committed MEM_IMAGE, exact allocation base/image bounds, no guard or
+noaccess pages, debugger refusal and refusal of any foreign debug-slot state.
+Add one bounded installation status with failing stage, Win32 error, observed
+page protection and DR0-3/DR7 snapshot. Worker collects these using fixed stack
+data; no logging, allocation or loader calls while the owner is suspended.
+No retry loop, stolen debug slot, EXE/IAT/vtable write or launch.
+
+Own x86 fixture reproduced the old validator failure after requesting RWX;
+the corrected actual-source fixture passes10023 callbacks including requests
+for both writable executable protections (Windows may normalize image-copy
+protection). Checks also verify refusal stages, foreign DR1 preservation,
+registers/flags/LastError/x87/SSE, other-thread bypass,20 rearm cycles and
+unchanged text bytes. Actual-source final-copy routing10000 PASS. Production
+and diagnostic builds PASS. Preserve2676x2728 per-eye native rendering and
+NIS80 in the reversible candidate. Game activation, side visibility and FPS
+still require the user's next runtime test; no90FPS or popup-fix claim.
