@@ -78,3 +78,40 @@ nonzero copy receipts and zero runtime faults, then matched-scene OFF/ON measure
 The scoped source-copy portion may be much smaller than the full 2.22 ms exposure.
 Runtime benefit, hitch resolution and stable 90 Hz are NOT VERIFIED by these offline tests.
 Do not replace MAIN's renderer, its settings, or its worktree when integrating.
+
+## 2026-10-28: current-thread caller-stack extension
+
+The retained native forwarders B74720/96E3B0 preserve and duplicate the three
+constant arguments. The previous exact-builder test unnecessarily rejected an
+outer caller's live local buffer, including callers without a frame pointer.
+The synchronous API still requires these bytes until it returns. A second
+per-call receipt now accepts such a buffer only when the exact pinned native
+API return and duplicate arguments match, the register range fits the bank,
+and the entire aligned-float source lies above the incoming native call stack
+and below the current thread's freshly read TIB StackBase. StackLimit must
+contain the intercepted call stack. No EBP or heap owner is inferred by this
+receipt; heap material admission retains its existing exact-field rules.
+
+Normal automatic stack guards lie below the already active call stack and
+cannot intersect this source range. As with the earlier compiler-local proof,
+manually protecting active caller stack pages is outside this native readable
+buffer contract. Unexpected direct-copy faults still disable admission and use
+the baseline fallback. Other threads' stacks, heap/unknown sources, overflowing
+ranges and invalid/mismatched calls retain that fallback. No page permissions,
+stack addresses, values or ownership conclusions survive into a later call.
+
+The actual production InspectCurrent and PS hook are exercised through x86
+native-shaped aligned-frame and frame-pointer-omitted callers. 7104 checks
+PASS, including 2000 additional caller-local captures, bit equality with the
+forwarded original, other-thread/heap rejection, fresh bound changes, full
+VS/PS limits, options, material-owner replacement, guard fallback and sticky
+fault behavior. The actual RecPush/small-copy regression passes 6096 checks.
+Production and diagnostic x86 DLLs build. A synthetic 64-byte capture/stub
+forward comparison measured RPM 647.5 ns/call versus active-stack 41.0 ns/call;
+this is not driver, game, HMD or FPS evidence.
+
+The existing NativeOwnedConstantCopy option controls this extension. The
+runtime receipt adds activeStackProved/activeStackCopies so its incremental
+coverage can be measured separately. Current-game coverage and savings are
+unknown: the earlier 2.22 ms inclusive exposure is not a prediction for this
+extension. Native resolution, draws, uploads, hands and culling are unchanged.

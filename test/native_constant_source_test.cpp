@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
+#include <thread>
+#include <atomic>
 #include "../src/native_constant_source.h"
 #include "../src/native_constant_gate.h"
 #include "../src/small_record_copy.h"
@@ -55,6 +57,51 @@ static void ClassifierFailures() {
     Check((mbi.Protect&PAGE_GUARD)!=0,"fallback preserves foreign source guard");
     VirtualFree(guard,0,MEM_RELEASE);
 }
+static void ActiveStackFailures() {
+    auto* page=static_cast<unsigned char*>(VirtualAlloc(nullptr,8192,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
+    Check(page!=nullptr,"active stack classifier allocation");
+    const uintptr_t low=reinterpret_cast<uintptr_t>(page),high=low+8192;
+    auto* slot=reinterpret_cast<uintptr_t*>(page+64);
+    auto* source=reinterpret_cast<float*>(page+4096);
+    Sites sites{{11,12},{},{},{}};
+    slot[0]=12;slot[2]=0;slot[3]=reinterpret_cast<uintptr_t>(source);slot[4]=4;
+    slot[6]=0;slot[7]=slot[3];slot[8]=4;
+    auto inspect=[&](const void* p,size_t n,Stage stage=Stage::Pixel) {
+        return Proof::InspectActiveStack(slot,p,n,stage,low,high,sites);
+    };
+    Check(inspect(source,64).Matches(source,64),"fresh current-stack range accepts without EBP owner");
+    Check(inspect(source,64).ActiveStack()&&!inspect(source,64).Material(),"stack proof cannot grant material ownership");
+    for(unsigned field:{0u,2u,3u,4u,6u,7u,8u}) {
+        const auto saved=slot[field];slot[field]=~uintptr_t(0);
+        Check(!inspect(source,64).Matches(source,64),"active stack exact wrapper argument receipt rejects mismatches");slot[field]=saved;
+    }
+    Check(!inspect(source,64,Stage::Vertex).Matches(source,64),"active stack exact stage forwarder required");
+    slot[0]=11;slot[4]=slot[8]=256;
+    Check(inspect(source,4096,Stage::Vertex).Matches(source,4096),"active stack complete VS bank extent admits");
+    slot[0]=12;slot[4]=slot[8]=224;
+    Check(inspect(source,3584).Matches(source,3584),"active stack complete PS bank extent admits");
+    slot[4]=slot[8]=225;
+    Check(!inspect(source,3600).Matches(source,3600),"active stack PS hardware limit rejects");
+    slot[4]=slot[8]=4;
+    Check(!inspect(source,63).Matches(source,63),"active stack vector extent required");
+    for(uintptr_t p:{low-16,reinterpret_cast<uintptr_t>(slot)+44,high-48,high,UINTPTR_MAX-15}) {
+        auto* invalid=reinterpret_cast<void*>(p);
+        slot[3]=slot[7]=p;
+        Check(!inspect(invalid,64).Matches(invalid,64),"active stack lower/top/overflow range rejects");
+    }
+    slot[3]=slot[7]=high-64;
+    Check(inspect(reinterpret_cast<void*>(high-64),64).Matches(reinterpret_cast<void*>(high-64),64),"active stack exact upper extent admits");
+    Check(!Proof::InspectActiveStack(slot,reinterpret_cast<void*>(high-64),64,Stage::Pixel,low,high-16,sites).Matches(reinterpret_cast<void*>(high-64),64),"fresh reduced stack bounds cannot reuse old proof");
+    slot[3]=slot[7]=reinterpret_cast<uintptr_t>(source);slot[2]=slot[6]=223;slot[4]=slot[8]=2;
+    Check(!inspect(source,32).Matches(source,32),"active stack caps overflow rejects");
+    slot[2]=slot[6]=0;slot[4]=slot[8]=4;
+    auto proof=inspect(source,64);
+    Check(!proof.Matches(source+4,64)&&!proof.Matches(source,48),"active stack proof is one exact payload");
+    enabled=false;Check(!proof.Matches(source,64)&&!inspect(source,64).Matches(source,64),"active stack package off rejects");enabled=true;
+    admitted=false;Check(!inspect(source,64).Matches(source,64),"active stack image admission required");admitted=true;
+    faulted=true;Check(!inspect(source,64).Matches(source,64),"active stack sticky fault refuses");faulted=false;
+    VirtualFree(page,0,MEM_RELEASE);
+}
 static Proof InspectFixture(const uintptr_t* slot,uintptr_t frame,const void* p,size_t n,Stage stage,uintptr_t owner) {
     Sites sites{};
     for(unsigned b=0;b<2;++b) {
@@ -62,9 +109,7 @@ static Proof InspectFixture(const uintptr_t* slot,uintptr_t frame,const void* p,
         sites.builderEnd[b]=callbackReturn+1;sites.parentReturn[b][0]=parentReturn;
         if(fixtureMaterial)sites.fieldReturn[b][fixtureField]=callbackReturn;
     }
-    const auto* tib=reinterpret_cast<NT_TIB*>(NtCurrentTeb());
-    return Proof::Inspect(slot,frame,p,n,stage,reinterpret_cast<uintptr_t>(tib->StackLimit),
-        reinterpret_cast<uintptr_t>(tib->StackBase),sites,owner);
+    return InspectCurrent(slot,frame,p,n,stage,owner,sites);
 }
 static bool g_recActive=true;
 static int g_replayEye=-1,g_activePsInverse=-1,g_activePsViewExtents=-1,g_submitMode=0;
@@ -150,16 +195,55 @@ __declspec(naked) static void Parent() {
         ret
     }
 }
+__declspec(naked) static void FramePointerOmittedProducer() {
+    __asm {
+        push ebp
+        push ebx
+        xor ebp,ebp
+        xor ebx,ebx
+        push vectorCount
+        push overrideSource
+        push firstRegister
+        xor ecx,ecx
+        lea eax,afterCallback
+        mov callbackReturn,eax
+        call Wrapper
+    afterCallback:
+        pop ebx
+        pop ebp
+        ret
+    }
+}
 int main() {
     enabled=true;admitted=true;
     for(unsigned i=0;i<1000;++i) {
         copied=false;Parent();Check(copied,"actual hook accepts active native-shaped local frame");
         Check(std::memcmp(recorded,forwarded,sizeof(recorded))==0,"recorder and forwarded payload bits match");
     }
-    float heapLike[16]{};overrideSource=heapLike;Parent();
-    Check(!copied,"foreign frame source rejects fast copy");overrideSource=nullptr;
-    alignas(16) unsigned char ownerObject[0x20]{},materialBlock[0x600]{};
-    for(unsigned i=0;i<sizeof(materialBlock);++i)materialBlock[i]=static_cast<unsigned char>(i*73+19);
+    float outerLocal[16];for(unsigned i=0;i<16;++i)outerLocal[i]=float(i+1)/16;
+    overrideSource=outerLocal;
+    const auto beforeStack=counts.activeStackCopies;
+    for(unsigned i=0;i<1000;++i) {
+        Parent();Check(copied,"native caller local above incoming ESP admits active stack");
+        Check(!memcmp(recorded,outerLocal,64)&&!memcmp(recorded,forwarded,64),"outer native caller local bits match recorder and API");
+    }
+    Check(counts.activeStackCopies==beforeStack+1000,"separate active stack copy receipt");
+    for(unsigned i=0;i<1000;++i) {
+        FramePointerOmittedProducer();
+        Check(copied&&!memcmp(recorded,outerLocal,64)&&!memcmp(recorded,forwarded,64),"actual frame-pointer-omitted caller preserves current-stack payload bits");
+    }
+    auto* heapLike=static_cast<float*>(HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,64));Check(heapLike!=nullptr,"heap source allocation");
+    overrideSource=heapLike;Parent();Check(!copied,"unowned heap source rejects active stack copy");
+    HeapFree(GetProcessHeap(),0,heapLike);
+    std::atomic<const float*> peerSource{nullptr};std::atomic<bool> peerDone{false};
+    std::thread peer([&]{float local[16]{};peerSource.store(local);while(!peerDone.load())SwitchToThread();});
+    while(!peerSource.load())SwitchToThread();
+    overrideSource=peerSource.load();Parent();Check(!copied,"another live thread's stack rejects direct copy");
+    peerDone=true;peer.join();overrideSource=nullptr;
+    alignas(16) unsigned char ownerObject[0x20]{};
+    auto* materialBlock=static_cast<unsigned char*>(VirtualAlloc(nullptr,4096,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
+    Check(materialBlock!=nullptr,"material heap allocation independent of current stack");
+    for(unsigned i=0;i<0x600;++i)materialBlock[i]=static_cast<unsigned char>(i*73+19);
     *reinterpret_cast<uintptr_t*>(ownerObject+0x1c)=reinterpret_cast<uintptr_t>(materialBlock);
     fixtureOwner=reinterpret_cast<uintptr_t>(ownerObject);
     fixtureMaterial=true;materialEnabled=true;
@@ -190,6 +274,17 @@ int main() {
         elapsed[mode]=(end.QuadPart-begin.QuadPart)*1e9/frequency.QuadPart/benchCalls;
     }
     std::printf("OFFLINE gate + 64B owned capture + stub forward: RPM=%.1f ns/call owner=%.1f ns/call; not game/FPS evidence\n",elapsed[0],elapsed[1]);
+    overrideSource=outerLocal;
+    for(unsigned mode=0;mode<2;++mode) {
+        enabled=mode!=0;
+        for(unsigned i=0;i<200;++i)Parent();
+        QueryPerformanceCounter(&begin);
+        for(unsigned i=0;i<benchCalls;++i)Parent();
+        QueryPerformanceCounter(&end);
+        elapsed[mode]=(end.QuadPart-begin.QuadPart)*1e9/frequency.QuadPart/benchCalls;
+    }
+    std::printf("OFFLINE gate + 64B caller-stack capture + stub forward: RPM=%.1f ns/call activeStack=%.1f ns/call; not game/FPS evidence\n",elapsed[0],elapsed[1]);
+    enabled=true;overrideSource=reinterpret_cast<float*>(materialBlock+0x260);
     materialEnabled=false;Parent();Check(!copied,"material option off rejects field");materialEnabled=true;
     vectorCount=1;Parent();Check(!copied,"wrong fixed-field extent rejects");vectorCount=4;
     *reinterpret_cast<uintptr_t*>(ownerObject+0x1c)=reinterpret_cast<uintptr_t>(materialBlock)+16;
@@ -205,6 +300,9 @@ int main() {
     Check(!Proof::Inspect(nullptr,0,nullptr,64,Stage::Pixel,1,2).Matches(nullptr,64),"invalid bounds reject");
     Proof invalid;Check(!Copy(invalid,recorded,forwarded,sizeof(recorded)),"default proof rejects");
     ClassifierFailures();
+    ActiveStackFailures();
     Check(!AdmitImage("wrong",nullptr),"wrong image SHA rejects");
-    std::printf("PASS actual x86 gate/hook/native-shaped producer ABI: %u checks; copies=%llu materialCopies=%llu injectedFaults=%llu\n",checks,counts.copies,counts.materialCopies,counts.faults);
+    VirtualFree(materialBlock,0,MEM_RELEASE);
+    std::printf("PASS actual x86 gate/hook/native-shaped producer ABI: %u checks; copies=%llu materialCopies=%llu activeStackCopies=%llu injectedFaults=%llu\n",checks,counts.copies,counts.materialCopies,counts.activeStackCopies,counts.faults);
+    return 0;
 }

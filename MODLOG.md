@@ -1947,3 +1947,29 @@ Native geometry ten seeds502400 cases/43368640 checks PASS; owner graph4167
 and actual selected-view callback57 checks PASS; protected throw/context171
 checks PASS. Production/diagnostic x86 builds PASS. Native owner activation,
 visible model alignment, opponent execution and90FPS remain unverified.
+
+## 2026-10-28: remove system copies for fresh active native caller-stack buffers
+
+Continued the measured RecPush -> ReadProcessMemory -> WOW64 copy path rather
+than reopening resource-demand caching. The retained D46 forwarder contracts
+B74720/96E3B0 already pin the native API return and three duplicated arguments.
+Their synchronous source lifetime also covers an outer active caller's local
+buffer; the existing 571670/AD3380 EBP allocation check excluded these sources.
+InspectCurrent now tries a separate fresh-TIB stack-range receipt after the
+original receipt rejects. No heap/EBX ownership is inferred or remembered.
+The full source must lie above the incoming native stack and below this
+thread's current StackBase, with exact source/count/first-register duplication
+and the original image/feature/fault admission. Other threads and heap sources
+retain baseline copying. Unexpected copy faults still latch admission OFF.
+Manual protection of otherwise active stack pages remains outside the native
+readable-buffer contract, as for the previous compiler-owned local proof.
+
+Actual production inspector + extracted PS hook x86 test7104 checks PASS,
+including outer locals with and without EBP, exact nonzero payload equality,
+thread/heap rejection, fresh bounds, both register-bank limits, all existing
+material-field refusals and guard/fault regressions. Actual RecPush/small copy
+6096 checks PASS. Production and diagnostic x86 DLL builds PASS. Synthetic
+64-byte capture/stub forwarding measured647.5ns RPM versus41.0ns active stack;
+not a game saving. Separate activeStackProved/activeStackCopies receipts expose
+incremental runtime coverage. No game launch or90FPS proof; original resolution,
+hands, throw, opponent action and culling paths are retained.

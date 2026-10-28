@@ -9,8 +9,9 @@ namespace d2vr_native_constants {
 // Per-call ownership proof, not a stack/page permission cache. The selected
 // native builders allocate 0x794 bytes after aligning EBP, then save EBX/ESI/EDI.
 // Their simple API forwarders preserve EBP and copy three arguments verbatim.
-// Local buffers and separately enabled exact fixed fields of the active owner
-// qualify. The naked API gate captures owner EBX before any C++ register reuse.
+// Local buffers, freshly bounded active caller-stack buffers and separately
+// enabled exact fields of the active owner qualify. The naked API gate captures
+// owner EBX before any C++ register reuse.
 enum class Stage { Vertex, Pixel };
 struct Sites {
     uintptr_t apiReturn[2];
@@ -33,14 +34,16 @@ inline std::atomic<bool> materialEnabled{false};
 inline constexpr size_t fieldOffset[]={0x10,0xd0,0xd0,0x110,0x220,0x4f0,0x470,0x260,0x580,0x330};
 inline constexpr size_t fieldVectors[]={12,4,1,17,4,6,4,4,1,4};
 inline constexpr size_t fieldCount=sizeof(fieldOffset)/sizeof(fieldOffset[0]);
-struct Counts {uint64_t attempts=0,proved=0,copies=0,bytes=0,faults=0,materialProved=0,materialCopies=0;};
+struct Counts {uint64_t attempts=0,proved=0,copies=0,bytes=0,faults=0,materialProved=0,materialCopies=0,activeStackProved=0,activeStackCopies=0;};
 inline thread_local Counts counts;
 
 class Proof {
     const void* source_=nullptr;
     size_t bytes_=0;
     bool material_=false;
-    Proof(const void* p,size_t n,bool material=false):source_(p),bytes_(n),material_(material){}
+    bool activeStack_=false;
+    Proof(const void* p,size_t n,bool material=false,bool activeStack=false)
+        :source_(p),bytes_(n),material_(material),activeStack_(activeStack){}
 public:
     Proof()=default;
     bool Matches(const void* p,size_t n)const {
@@ -100,6 +103,37 @@ public:
         return {};
     }
     bool Material()const{return material_;}
+    bool ActiveStack()const{return activeStack_;}
+    // The pinned forwarders duplicate all three arguments without moving the
+    // payload. Any source wholly ABOVE the current native call stack and BELOW
+    // this thread's current StackBase is live until this synchronous call
+    // returns, including an outer native caller's local buffer. The current ESP
+    // is already below every source page: automatic stack guard growth cannot
+    // lie in this span. This does not admit heap buffers, another thread's stack,
+    // or a previous stack limit. As with compiler-owned locals, manually
+    // protected active stack pages violate the native readable-buffer contract;
+    // Copy's sticky exception path handles an unexpected violation.
+    // This fallback deliberately grants no material/EBX ownership receipt.
+    static Proof InspectActiveStack(const uintptr_t* slot,const void* source,size_t bytes,
+                                    Stage stage,uintptr_t stackLow,uintptr_t stackHigh,
+                                    const Sites& sites=nativeSites) {
+        if(!enabled.load(std::memory_order_relaxed) || !admitted.load(std::memory_order_relaxed) ||
+           faulted.load(std::memory_order_relaxed))return {};
+        const unsigned bank=stage==Stage::Vertex?0:1;
+        const uintptr_t sp=reinterpret_cast<uintptr_t>(slot),p=reinterpret_cast<uintptr_t>(source);
+        const size_t limit=bank==0?256*16:224*16;
+        if(!source || !bytes || bytes%16 || bytes>limit || p%4 ||
+           !stackLow || stackLow>=stackHigh || sp<stackLow || sp>stackHigh || sp%4 ||
+           stackHigh-sp<12*sizeof(uintptr_t) || p<sp+12*sizeof(uintptr_t) ||
+           p>stackHigh || bytes>stackHigh-p)return {};
+        __try {
+            if(slot[0]!=sites.apiReturn[bank] || slot[3]!=p || slot[4]!=bytes/16 ||
+               slot[2]>=limit/16 || slot[4]>limit/16-slot[2] ||
+               slot[6]!=slot[2] || slot[7]!=slot[3] || slot[8]!=slot[4])return {};
+        } __except(EXCEPTION_EXECUTE_HANDLER){return {};}
+        ++counts.proved;++counts.activeStackProved;
+        return Proof(source,bytes,false,true);
+    }
 };
 
 inline bool Copy(const Proof& proof,void* destination,const void* source,size_t bytes) {
@@ -111,14 +145,17 @@ inline bool Copy(const Proof& proof,void* destination,const void* source,size_t 
         ++counts.faults;faulted.store(true,std::memory_order_relaxed);
         admitted.store(false,std::memory_order_relaxed);return false;
     }
-    ++counts.copies;counts.bytes+=bytes;if(proof.Material())++counts.materialCopies;return true;
+    ++counts.copies;counts.bytes+=bytes;if(proof.Material())++counts.materialCopies;
+    if(proof.ActiveStack())++counts.activeStackCopies;return true;
 }
 
-inline Proof InspectCurrent(const uintptr_t* slot,uintptr_t frame,const void* source,size_t bytes,Stage stage,uintptr_t owner=0) {
+inline Proof InspectCurrent(const uintptr_t* slot,uintptr_t frame,const void* source,size_t bytes,Stage stage,
+                            uintptr_t owner=0,const Sites& sites=nativeSites) {
 #if defined(_M_IX86)
     const auto* tib=reinterpret_cast<const NT_TIB*>(NtCurrentTeb());
-    return Proof::Inspect(slot,frame,source,bytes,stage,reinterpret_cast<uintptr_t>(tib->StackLimit),
-        reinterpret_cast<uintptr_t>(tib->StackBase),nativeSites,owner);
+    const auto low=reinterpret_cast<uintptr_t>(tib->StackLimit),high=reinterpret_cast<uintptr_t>(tib->StackBase);
+    const auto proof=Proof::Inspect(slot,frame,source,bytes,stage,low,high,sites,owner);
+    return proof.Matches(source,bytes)?proof:Proof::InspectActiveStack(slot,source,bytes,stage,low,high,sites);
 #else
     return {};
 #endif
