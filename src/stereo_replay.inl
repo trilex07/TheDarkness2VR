@@ -31,6 +31,7 @@
 #include "projection_history.h"
 #include "pixel_shader_metadata.h"
 #include "vertex_shader_metadata.h"
+#include "up_geometry_capture.h"
 
 namespace d2vr_replay {
 
@@ -1505,15 +1506,15 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev
 static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     UINT pc, const void* vb, UINT stride) {
     HOOK_MARK(83);
-    if (g_recActive) {
-        UINT verts = (t == D3DPT_TRIANGLESTRIP || t == D3DPT_TRIANGLEFAN) ? pc + 2 :
-                     (t == D3DPT_TRIANGLELIST) ? pc * 3 :
-                     (t == D3DPT_LINESTRIP) ? pc + 1 : (t == D3DPT_LINELIST) ? pc * 2 : pc + 1;
-        if (verts < (1u << 20) && vb) {
-            uint32_t off = RecPush(vb, (size_t)stride * verts);
-            RecEmit(OP_DrawPrimitiveUP, 0, t, pc, stride, off);
-        } else {
-            RecEmit(OP_DrawPrimitiveUP, 1, t, pc, stride, (uint32_t)(uintptr_t)vb);   // data skipped (too large / null)
+    if (g_recActive && !g_recOverflow) {
+        RecLockGuard lock;
+        d2vr_up_geometry::Plan plan;
+        if(!d2vr_up_geometry::NonIndexed(t,pc,stride,plan) ||
+           !d2vr_up_geometry::SourceRange(vb,0,plan.vertices) || g_rec.size()>=400000 ||
+           uint64_t(g_recData.size())+plan.vertices>UINT32_MAX)g_recOverflow=true;
+        else {
+            const uint32_t off=RecPushLocked(vb,plan.vertices);
+            RecEmitLocked(OP_DrawPrimitiveUP,0,t,pc,stride,off);
         }
     }
     const UiClipState clip = BeginScaledUiClip(dev);
@@ -1524,29 +1525,28 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3D
 static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
     HOOK_MARK(84);
-    if (g_recActive) {
-        UINT verts = nv;
-        UINT idxSize = (fmt == D3DFMT_INDEX16) ? 2 : 4;
-        UINT idxCount = (t == D3DPT_TRIANGLELIST) ? pc * 3 :
-                        (t == D3DPT_TRIANGLESTRIP || t == D3DPT_TRIANGLEFAN) ? pc + 2 :
-                        (t == D3DPT_LINELIST) ? pc * 2 : pc + 1;
+    if (g_recActive && !g_recOverflow) {
+        RecLockGuard lock;
+        d2vr_up_geometry::Plan plan;
         // Single atomic record: aux fields live in the data arena (no adjacent-record pairing,
         // which breaks when the engine records from a second thread between two RecEmit calls).
         struct DipAux { uint32_t vbOff, stride, ibOff, idxCount, idxSize; };
-        DipAux aux{};
-        aux.stride = stride;
-        aux.idxCount = idxCount;
-        aux.idxSize = idxSize;
-        if (verts < (1u << 20) && vb && ib) {
-            aux.vbOff = RecPush(vb, (size_t)stride * verts);
-            aux.ibOff = RecPush(ib, (size_t)idxSize * idxCount);
-        } else {
-            aux.vbOff = (uint32_t)(uintptr_t)vb;
-            aux.ibOff = (uint32_t)(uintptr_t)ib;
-            aux.stride |= 0x80000000u;   // mark: pointers are live, not arena offsets
+        if(!d2vr_up_geometry::Indexed(t,mvi,nv,pc,fmt,stride,plan) ||
+           !d2vr_up_geometry::SourceRange(vb,plan.prefix,plan.vertices) ||
+           !d2vr_up_geometry::SourceRange(ib,0,plan.indices) || g_rec.size()>=400000 ||
+           uint64_t(g_recData.size())+plan.prefix+plan.vertices+plan.indices+sizeof(DipAux)>UINT32_MAX)
+            g_recOverflow=true;
+        else {
+            DipAux aux{};aux.vbOff=uint32_t(g_recData.size());aux.stride=stride;
+            aux.idxCount=plan.indexCount;aux.idxSize=plan.indexSize;
+            g_recData.resize(g_recData.size()+plan.prefix);
+            if(plan.prefix)std::memset(g_recData.data()+aux.vbOff,0,plan.prefix);
+            const auto* source=plan.vertices?static_cast<const uint8_t*>(vb)+plan.prefix:nullptr;
+            RecPushLocked(source,plan.vertices);
+            aux.ibOff=RecPushLocked(ib,plan.indices);
+            const uint32_t auxOff=RecPushLocked(&aux,sizeof(aux));
+            RecEmitLocked(OP_DrawIndexedPrimitiveUP,0,t,mvi,nv,pc,(uint32_t)fmt,auxOff);
         }
-        uint32_t auxOff = RecPush(&aux, sizeof(aux));
-        RecEmit(OP_DrawIndexedPrimitiveUP, 0, t, mvi, nv, pc, (uint32_t)fmt, auxOff);
     }
     const UiClipState clip = BeginScaledUiClip(dev);
     HRESULT hr = DrawIndexedPrimitiveUPWithDiffuse(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
@@ -1773,7 +1773,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     }
     // No driver/state reuse across frames. Capture retains exact original
     // upload boundaries so its per-record projection witnesses stay authoritative.
-    bool replayComplete=true;
+    bool replayComplete=!g_recOverflow;
     bool batchEnabled = g_replayConstantBatch;
 #ifdef D2VR_MATCHED_CAPTURE
     batchEnabled = batchEnabled && !MatchedCaptureRecordingActive();
@@ -1882,8 +1882,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         }
         case OP_DrawPrimitiveUP: {
             HOOK_MARK(900 + r.op);
-            const void* data = (r.n == 1) ? (const void*)(uintptr_t)r.a[3]
-                                          : (const void*)(dataBase + r.a[3]);
+            const void* data = (const void*)(dataBase + r.a[3]);
             const UiClipState clip = BeginScaledUiClip(dev);
             if(FAILED(DrawPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], data, r.a[2])))replayComplete=false;
             EndScaledUiClip(dev, clip);
@@ -1894,10 +1893,9 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             HOOK_MARK(900 + r.op);
             struct DipAux { uint32_t vbOff, stride, ibOff, idxCount, idxSize; };
             const DipAux* aux = (const DipAux*)(dataBase + r.a[5]);
-            const bool livePtrs = (aux->stride & 0x80000000u) != 0;
-            const UINT stride = aux->stride & 0x7FFFFFFFu;
-            const void* vb = livePtrs ? (const void*)(uintptr_t)aux->vbOff : (const void*)(dataBase + aux->vbOff);
-            const void* ib = livePtrs ? (const void*)(uintptr_t)aux->ibOff : (const void*)(dataBase + aux->ibOff);
+            const UINT stride = aux->stride;
+            const void* vb = (const void*)(dataBase + aux->vbOff);
+            const void* ib = (const void*)(dataBase + aux->ibOff);
             const UiClipState clip = BeginScaledUiClip(dev);
             if(FAILED(DrawIndexedPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
                                          ib, (D3DFORMAT)r.a[4], vb, stride)))replayComplete=false;
