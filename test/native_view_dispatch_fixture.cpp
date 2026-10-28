@@ -1,35 +1,45 @@
 #include <cstdio>
 #include <cstdlib>
 #define CHECK(x) do {if(!(x)){std::printf("FAIL line %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
-static unsigned currentThread=7,g_renderThreadId=7,prepares=0,observations=0;
-static int g_nativeViewBoundaryMode=2,g_nativeImageGuard=1;
-static bool prepareOK=true;
+static unsigned currentThread=7,g_renderThreadId=7,observations=0,copies=0,reads=0;
+static int g_nativeViewBoundaryMode=2,g_submitMode=4,g_stereoMode=1;
+static bool g_haveViews=true,g_in3DGameplayMode=true,readOK=true;
+static struct {bool open=true;} g_trackedFrame;
+struct CONTEXT {unsigned Eip=0x98618E,Edi=0x200003f4,Ecx=0x30000000;};
+struct NativeCameraFields {};
 static unsigned GetCurrentThreadId(){return currentThread;}
-static bool PrepareNativeRenderViewTable(){++prepares;return prepareOK;}
 static void ObserveNativeCameraBoundary(void*,bool render){CHECK(!render);++observations;}
-static void Log(const char*,...){ }
-struct Table {
-    bool owns=false,publishOK=true;
-    unsigned publications=0;
-    bool Owns(void*)const{return owns;}
-    bool Publish(void*,int){++publications;return publishOK;}
-} g_nativeRenderViewTable;
+static bool ReadSelectedRenderCamera(void* camera,void* renderer,NativeCameraFields&) {
+    CHECK(camera==reinterpret_cast<void*>(0x30000000));
+    CHECK(renderer==reinterpret_cast<void*>(0x20000000));++reads;return readOK;
+}
+static void ObserveNativeSelectedCamera(void* id,void* renderer,void* camera,const NativeCameraFields&,bool before) {
+    CHECK(id==reinterpret_cast<void*>(0x98618E) && before);
+    CHECK(renderer==reinterpret_cast<void*>(0x20000000));
+    CHECK(camera==reinterpret_cast<void*>(0x30000000));++copies;
+}
 @IMPLEMENTATION@
 int main() {
     void* view=reinterpret_cast<void*>(0x1234);
-    ObserveNativeViewBoundary(view);
-    CHECK(prepares==1 && g_nativeRenderViewTable.publications==1 && observations==0);
-    g_nativeRenderViewTable.owns=true;
+    CONTEXT context;
     for(int i=0;i<10000;++i)ObserveNativeViewBoundary(view);
-    CHECK(prepares==1 && g_nativeRenderViewTable.publications==1 && observations==0);
-    g_nativeRenderViewTable.owns=false;g_nativeRenderViewTable.publishOK=false;
-    ObserveNativeViewBoundary(view);
-    CHECK(prepares==2 && g_nativeRenderViewTable.publications==2 && observations==1);
-    prepareOK=false;ObserveNativeViewBoundary(view);
-    CHECK(prepares==3 && g_nativeRenderViewTable.publications==2 && observations==2);
+    CHECK(observations==0);
+    for(int i=0;i<10000;++i)ObserveNativeFrustumCopy(context);
+    CHECK(copies==10000 && reads==10000);
+    readOK=false;ObserveNativeFrustumCopy(context);CHECK(copies==10000 && reads==10001);readOK=true;
+    context.Eip++;ObserveNativeFrustumCopy(context);context.Eip--;
+    context.Edi=0x3f3;ObserveNativeFrustumCopy(context);context.Edi=0x200003f4;
+    g_trackedFrame.open=false;ObserveNativeFrustumCopy(context);g_trackedFrame.open=true;
+    g_haveViews=false;ObserveNativeFrustumCopy(context);g_haveViews=true;
+    g_in3DGameplayMode=false;ObserveNativeFrustumCopy(context);g_in3DGameplayMode=true;
+    g_submitMode=0;ObserveNativeFrustumCopy(context);g_submitMode=4;
+    g_stereoMode=0;ObserveNativeFrustumCopy(context);g_stereoMode=1;
+    currentThread=8;ObserveNativeFrustumCopy(context);currentThread=7;
     g_nativeViewBoundaryMode=1;ObserveNativeViewBoundary(view);
-    CHECK(prepares==3 && g_nativeRenderViewTable.publications==2 && observations==3);
+    ObserveNativeFrustumCopy(context);
+    CHECK(observations==1 && copies==10000 && reads==10001);
     currentThread=8;ObserveNativeViewBoundary(view);
-    CHECK(prepares==3 && observations==3);
-    std::puts("PASS actual-source QPC discovery: render witness isolation, 10000 unchanged instances without republish, failed admission observation-only, observe mode and foreign thread");
+    CHECK(observations==1);
+    std::puts("PASS actual-source phase routing: 10000 final-copy callbacks, EDI owner/ECX camera, QPC observation-only, PC/thread/gameplay/owner-read rejection");
+    return 0;
 }

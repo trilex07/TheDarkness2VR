@@ -869,3 +869,48 @@ Private decompilation stays outside Git.
 User steering: no game launch until explicitly requested; continue offline
 implementation without waiting for headset tests. No deployment/launch is made
 for this change. Current installed candidate remains5af8536.
+
+## 2026-10-28: apply stereo culling immediately before the final native copy
+
+Replace mode2's private instance render-entry interception with the exact
+98618E boundary inside985D80, after the conditional745E20 camera rebuild and
+before9962D0/935A70 expose/copy the frustum. Pinned instructions load the
+selected camera into ECX through the reference field at EDI; its owning
+renderer is EDI-3F4. Revalidate that relationship and camera contract while
+the native caller owns them. No borrowed object pointer survives the callback.
+QPC mode1 remains observation-only and cannot mutate culling or replace a
+mode2 witness. Production no longer uses the private view-table prototype.
+
+The boundary uses one local x86 execution debug slot and a narrowly filtered
+VEH on the render thread. It leaves EXE code, IAT, static tables and instance
+vptrs unchanged. The handler resumes the original instruction with RF and
+preserves LastError/x87/SSE; unrelated exceptions continue searching. Startup
+refuses debugger/occupied debug slots. Thread context changes use a helper
+that suspends only its own process's calling thread, performs context API
+operations, then resumes it. The module/state remain alive for the process;
+teardown is same-thread/quiescent only and restores only its owned slot.
+This is an opt-in diagnostic candidate, not an OS/dispatcher modification.
+
+The culling union uses the actual tracked stereo projection matrices from
+ff29a2e. The write still requires fresh primary-camera projection evidence,
+matching numeric camera/renderer identity, unchanged full inverse projection,
+finite bounded geometry, and the exact final-copy boundary. Native607CD0 and
+685050 rebuild only owned planes/bounds; render matrices, FOV and camera+7C0
+remain unchanged. No speculative ownership or invalidation bypass was added.
+
+Offline x86 PASS: 10000 execution hits with integer/flags/LastError/x87/SSE
+preservation, other-thread bypass/Stop refusal, occupied-slot refusal,
+unmatched single-step passthrough, foreign-slot preservation on Stop,
+20 rearm cycles and unchanged fixture EXE text. Synthetic mean was7-16us/hit
+across runs, not a measured game cost or FPS benefit. Actual-source routing
+PASS10000 final-copy callbacks with exact EDI/ECX ownership, wrong phase/thread,
+closed frame, unsupported render modes and invalid owner rejection.
+Geometry PASS249600 stereo points across240 poses plus64800 angular points;
+actual-source native-call ABI/order/alignment PASS1000 and external observer/
+projection-witness regression PASS. Production and diagnostic DLL builds PASS.
+Installed EXE SHA and21 final-copy instruction bytes verified read-only.
+
+Headset side-pop, right-eye flicker, actual native plane execution and FPS
+acceptance remain NOT RUN for this candidate. Prepare it for the user's
+requested test without launching the game. Preserve the prior DLL/profiles
+and native2676x2728 source resolution for rollback and comparison.

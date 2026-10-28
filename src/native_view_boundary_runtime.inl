@@ -1,31 +1,5 @@
-static bool PrepareNativeRenderViewTable() {
-    static bool ready=false;
-    if(ready)return true;
-    // FC8930 has 82 function entries. The following GUID at FC8A78 and the
-    // preceding header delimit the pinned table; copy every slot, not a prefix.
-    __try {
-        const auto table=reinterpret_cast<void**>(0xFC8930);
-        if(*reinterpret_cast<const uint32_t*>(0xFC892C)!=0x8fffffff ||
-           *reinterpret_cast<const uint32_t*>(0xFC8A78)!=0x0c733a8c ||
-           *reinterpret_cast<const uint32_t*>(0xFC8A7C)!=0x11ce2a1c ||
-           table[0]!=reinterpret_cast<void*>(0x9F9350) ||
-           table[42]!=reinterpret_cast<void*>(0x99F1B0) ||
-           table[81]!=reinterpret_cast<void*>(0xB62580))return false;
-        for(unsigned i=0;i<82;++i) {
-            const auto p=reinterpret_cast<uintptr_t>(table[i]);
-            MEMORY_BASIC_INFORMATION memory{};
-            if(p<0x400000 || p>=0xEE0000 || !VirtualQuery(table[i],&memory,sizeof(memory)) ||
-               memory.AllocationBase!=GetModuleHandleW(nullptr) ||
-               !(memory.Protect&(PAGE_EXECUTE|PAGE_EXECUTE_READ)) ||
-               (memory.Protect&(PAGE_GUARD|PAGE_NOACCESS)))return false;
-        }
-        ready=g_nativeRenderViewTable.Prepare(table,82,42,
-            reinterpret_cast<void*>(&NativeViewRenderEntry),g_nativeImageGuard);
-        return ready;
-    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
-}
 static void InstallNativeViewBoundary() {
-    if(!g_nativeViewBoundaryMode || g_nativeViewBoundary.Installed())return;
+    if(!g_nativeViewBoundaryMode || g_nativeViewBoundary.Installed() || g_nativeFrustumBoundary.Installed())return;
     if(!g_imagePreservingPresent || !g_nativeImageGuard.enabled || g_imagePresent.Failed() ||
        g_submitMode!=4 || g_stereoMode!=1 || !g_autoFovWiden || g_engineFovFactor>1 ||
        GetPrivateProfileIntA("Diagnostics","NativeCameraCover",0,".\\Darkness2VR-diagnostic.ini")) {
@@ -57,11 +31,19 @@ static void InstallNativeViewBoundary() {
         {0x99F1B0,"\xe9\x6b\x95\xee\xff",5},
         {0xFC68A8,"\x20\x87\x88\x00",4},
         {0x888720,"\x83\xec\x1c\x53\x55\x56\x8b\xf1\x8b\x06\x8b\x50\x24\x57",14},
-        {0x888965,"\x8b\x8e\xa8\x00\x00\x00\x8b\x09\xe8\x0e\xd4\x0f\x00",13}
+        {0x888965,"\x8b\x8e\xa8\x00\x00\x00\x8b\x09\xe8\x0e\xd4\x0f\x00",13},
+        {0x98618A,"\x8b\x07\x8b\x08\xe8\x3d\x01\x01\x00\x50\x8d\x8e\x90\x01\x00\x00\xe8\xd1\xf8\xfa\xff",21}
     };
     unsigned char data[40];
     for(const auto& pin:pins)if(!read(pin.address,data,pin.size) || memcmp(data,pin.bytes,pin.size)) {
         Log("[NativeViewBoundary] refused native view contract at %08X",pin.address);return;
+    }
+    if(g_nativeViewBoundaryMode==2) {
+        const bool installed=g_nativeFrustumBoundary.Start(reinterpret_cast<void*>(0x98618E),
+            ObserveNativeFrustumCopy,g_nativeImageGuard);
+        Log("[NativeFrustumBoundary] installed=%d mode=2 thread=%lu PC=0098618E; after native camera rebuild, before getter/copy; no EXE/IAT/vtable writes; debugger/occupied slot refuses",
+            installed,GetCurrentThreadId());
+        return;
     }
     const auto kernel=GetModuleHandleW(L"kernel32.dll");
     const auto target=reinterpret_cast<void*>(GetProcAddress(kernel,"QueryPerformanceCounter"));
@@ -74,6 +56,6 @@ static void InstallNativeViewBoundary() {
     // to 985D80 is present in the retained real-game ETW stacks. +F0's
     // 6DBE80 is a separate test-render path, not the captured gameplay path.
     const bool installed=g_nativeViewBoundary.Start(target,0xA66486,ObserveNativeViewBoundary,g_nativeImageGuard);
-    Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A66486; ESI view +A8 -> renderer +3F4 -> camera; mode2=culling-only after corroboration; EXE/IAT unchanged",
+    Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A66486; ESI view +A8 -> renderer +3F4 -> camera; observation only; EXE/IAT unchanged",
         installed,g_nativeViewBoundaryMode);
 }

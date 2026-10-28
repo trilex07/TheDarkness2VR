@@ -130,10 +130,9 @@ static void* g_nativeNearGetter=reinterpret_cast<void*>(0xD3A320);
 D2VR_SELECTED_CAMERA_SHIM(SelectedRenderCameraNear,CoverSelectedRenderCamera,g_nativeNearGetter)
 
 static d2vr_native_view::ProjectionWitness g_nativeViewWitness;
-static d2vr_native_view::InstanceTable g_nativeRenderViewTable;
-static bool PrepareNativeRenderViewTable();
 static void NativeViewProjectionObserved(const float* inverse) {
-    if(!g_nativeViewBoundary.Installed() || GetCurrentThreadId()!=g_renderThreadId)return;
+    if((!g_nativeViewBoundary.Installed() && !g_nativeFrustumBoundary.Installed()) ||
+       GetCurrentThreadId()!=g_renderThreadId)return;
     if(g_nativeViewWitness.Observe(g_trackedFrame.id,g_had3DCameraThisFrame,inverse)) {
         static unsigned reports=0;
         if(++reports<=3 || reports%600==0)
@@ -198,7 +197,7 @@ static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeC
         if(!root)return false;
         status.stage=1;
         const auto table=status.viewTable=*reinterpret_cast<uintptr_t*>(root);
-        if(table!=0xFC8930 && table!=0xFC6800 && !g_nativeRenderViewTable.Owns(view))return false;
+        if(table!=0xFC8930 && table!=0xFC6800)return false;
         status.stage=2;
         auto reference=*reinterpret_cast<void***>(root+0xa8);
         if(!reference || !(renderer=*reference))return false;
@@ -211,7 +210,34 @@ static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeC
         return valid;
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
-static void ObserveNativeCameraBoundary(void* view,bool beforeRender) {
+static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
+                                        const NativeCameraFields& fields,bool beforeCopy) {
+    const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
+    float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
+    const bool ready=g_nativeViewWitness.CanCoverProjection(g_trackedFrame.id,v,r,c,inverse) &&
+        d2vr_replay::g_cameraProjectionKnown &&
+        d2vr_native_view::ProjectionWitness::SameProjection(inverse,d2vr_replay::g_cameraInverseProjection);
+    d2vr_culling_cover::Input cullingInput;
+    const bool cullingReady=PrepareOwnedCullingInput(camera,fields,cullingInput);
+    bool cullingApplied=false;
+    // The exact98618E instruction follows native camera rebuilding and precedes
+    // the getter/copy. Neither QPC nor an earlier view-entry phase may write.
+    if(beforeCopy && v==0x98618E && g_nativeFrustumBoundary.Installed() &&
+       g_nativeViewBoundaryMode==2 && ready && cullingReady) {
+        cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
+        static unsigned appliedReports=0;
+        if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
+            Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d planes+bounds=native-rebuilt renderProjection=unchanged",
+                g_trackedFrame.id,camera,fields.fov,int(cullingInput.stereoUnion));
+    }
+    g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
+    static unsigned reports=0;
+    if(++reports<=3 || reports%600==0)
+        Log("[NativeViewBoundary] beforeCopy=%d frame=%llu context=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d stereoVPUnion=%d cullingApplied=%d uploadFrame=%llu inverseXY=%.6g,%.6g uploadXY=%.6g,%.6g; EXE/IAT unchanged",
+            int(beforeCopy),g_trackedFrame.id,view,renderer,camera,fields.fov,ready,cullingReady,int(cullingInput.stereoUnion),cullingApplied,
+            g_nativeViewWitness.uploadedFrame,inverse[0],inverse[5],g_nativeViewWitness.uploadedInverse[0],g_nativeViewWitness.uploadedInverse[5]);
+}
+static void ObserveNativeCameraBoundary(void* view,bool) {
     if(GetCurrentThreadId()!=g_renderThreadId)return;
     static unsigned entries=0;
     const bool report=++entries<=3 || entries%600==0;
@@ -229,47 +255,21 @@ static void ObserveNativeCameraBoundary(void* view,bool beforeRender) {
                 status.stage,unsigned(status.viewTable),renderer,camera,unsigned(status.cameraTable));
         return;
     }
-    const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
-    float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
-    const bool ready=g_nativeViewWitness.CanCoverProjection(g_trackedFrame.id,v,r,c,inverse) &&
-        d2vr_replay::g_cameraProjectionKnown &&
-        d2vr_native_view::ProjectionWitness::SameProjection(inverse,d2vr_replay::g_cameraInverseProjection);
-    d2vr_culling_cover::Input cullingInput;
-    const bool cullingReady=PrepareOwnedCullingInput(camera,fields,cullingInput);
-    bool cullingApplied=false;
-    // Only the instance +A8 render entry owns this mutation phase. QPC is
-    // discovery/observation only, even when no draw has yet been counted.
-    if(beforeRender && g_nativeViewBoundaryMode==2 && ready && cullingReady) {
-        cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
-        static unsigned appliedReports=0;
-        if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
-            Log("[NativeCullingCover] beforeNativeRender=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d planes+bounds=native-rebuilt renderProjection=unchanged",
-                g_trackedFrame.id,camera,fields.fov,int(cullingInput.stereoUnion));
-    }
-    g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
-    static unsigned reports=0;
-    if(++reports<=3 || reports%600==0)
-        Log("[NativeViewBoundary] beforeRender=%d frame=%llu ESI=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d stereoVPUnion=%d cullingApplied=%d uploadFrame=%llu inverseXY=%.6g,%.6g uploadXY=%.6g,%.6g; EXE/IAT unchanged",
-            int(beforeRender),g_trackedFrame.id,view,renderer,camera,fields.fov,ready,cullingReady,int(cullingInput.stereoUnion),cullingApplied,
-            g_nativeViewWitness.uploadedFrame,inverse[0],inverse[5],g_nativeViewWitness.uploadedInverse[0],g_nativeViewWitness.uploadedInverse[5]);
+    ObserveNativeSelectedCamera(view,renderer,camera,fields,false);
 }
-static void __fastcall BeforeNativeViewRender(void* view,void*) {
-    const DWORD error=GetLastError();
-    ObserveNativeCameraBoundary(view,true);
-    SetLastError(error);
-}
-static void* g_nativeViewRenderNext=reinterpret_cast<void*>(0x99F1B0);
-D2VR_SELECTED_CAMERA_SHIM(NativeViewRenderEntry,BeforeNativeViewRender,g_nativeViewRenderNext)
 static void ObserveNativeViewBoundary(void* view) {
-    if(GetCurrentThreadId()!=g_renderThreadId)return;
-    if(g_nativeViewBoundaryMode==2 && (g_nativeRenderViewTable.Owns(view) ||
-       (PrepareNativeRenderViewTable() && g_nativeRenderViewTable.Publish(view,g_nativeImageGuard)))) {
-        static unsigned reports=0;
-        if(++reports<=3)Log("[NativeRenderEntry] instance=%p private read-only table; +A8 -> original99F1B0; EXE/static tables unchanged",view);
-        // The render entry now owns the witness too. A later QPC must not
-        // replace its candidate with a camera updated after that render pass.
-        // An unchanged vptr needs neither VirtualQuery nor another atomic write.
-        return;
-    }
-    ObserveNativeCameraBoundary(view,false);
+    if(g_nativeViewBoundaryMode==1 && GetCurrentThreadId()==g_renderThreadId)
+        ObserveNativeCameraBoundary(view,false);
+}
+static void ObserveNativeFrustumCopy(const CONTEXT& context) {
+    if(g_nativeViewBoundaryMode!=2 || GetCurrentThreadId()!=g_renderThreadId ||
+       context.Eip!=0x98618E || context.Edi<0x3f4 || !g_trackedFrame.open ||
+       !g_haveViews || !g_in3DGameplayMode || g_submitMode!=4 || g_stereoMode!=1)return;
+    // Pinned8B078B08 loads ECX through the selected-camera reference at EDI.
+    // EDI is the renderer's +3F4 field. Its owner remains live in985D80.
+    auto renderer=reinterpret_cast<void*>(context.Edi-0x3f4);
+    auto camera=reinterpret_cast<void*>(context.Ecx);
+    NativeCameraFields fields{};
+    if(!ReadSelectedRenderCamera(camera,renderer,fields))return;
+    ObserveNativeSelectedCamera(reinterpret_cast<void*>(0x98618E),renderer,camera,fields,true);
 }

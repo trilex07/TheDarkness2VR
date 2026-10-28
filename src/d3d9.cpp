@@ -54,10 +54,11 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_camera_cover.h"
 #include "native_view_boundary.h"
 #include "native_view_witness.h"
-#include "native_view_instance.h"
+#include "native_execution_boundary.h"
 #include "native_culling_cover.h"
 static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe, 2 corroborated culling only
 static d2vr_native_view::Boundary g_nativeViewBoundary;
+static d2vr_native_execution::Boundary g_nativeFrustumBoundary;
 #include "exception_record_witness.h"
 #include "image_present_observer.h"
 #include "protected_xinput.h"
