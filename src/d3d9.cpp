@@ -52,6 +52,10 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "diagnostic_present_patch.h"
 #include "tracked_gameplay_gate.h"
 #include "native_camera_cover.h"
+#include "native_view_boundary.h"
+#include "native_view_witness.h"
+static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe; native mutation not accepted yet
+static d2vr_native_view::Boundary g_nativeViewBoundary;
 #include "exception_record_witness.h"
 #include "image_present_observer.h"
 #include "protected_xinput.h"
@@ -723,6 +727,10 @@ void LoadConfig() {
     if (g_dumpDelay < 0 || g_dumpDelay > 100000) g_dumpDelay = 300;
     g_replayTestClear = GetPrivateProfileIntA("Render", "ReplayTestClear", 0, chosenIni) != 0;
     g_autoFovWiden = GetPrivateProfileIntA("Render", "AutoFovWiden", 1, chosenIni) ? 1 : 0;
+#ifdef D2VR_MATCHED_CAPTURE
+    g_nativeViewBoundaryMode=GetPrivateProfileIntA("Render","NativeViewBoundary",0,chosenIni);
+    if(g_nativeViewBoundaryMode!=1)g_nativeViewBoundaryMode=0;
+#endif
     {
         g_startupMode = GetPrivateProfileIntA("Render", "StartupMode", 0, chosenIni);
     }
@@ -1578,6 +1586,9 @@ static void QueryPreloadTick() {
     static ULONGLONG next=0;const auto now=GetTickCount64();if(now<next)return;next=now+5000;
     Log("[QueryPreload] pending=%u requests=%llu hits=%llu; one-use native occlusion objects",pool->Pending(),pool->requests.load(),pool->hits.load());
 }
+#ifdef D2VR_MATCHED_CAPTURE
+static void NativeViewProjectionObserved(const float* inverse);
+#endif
 #include "stereo_replay.inl"
 
 static void UpdateHeadGeometry(const XrPosef& head) {
@@ -6000,6 +6011,7 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
 #ifdef D2VR_MATCHED_CAPTURE
 #include "image_present_runtime.inl"
 #include "protected_source_size_runtime.inl"
+#include "native_view_boundary_runtime.inl"
 // Explicit exception: changes five bytes in the LOADED EXE, never its file.
 // Called only from the first CreateDevice callback before returning the device
 // to the engine. Never install/reinstall asynchronously from EndScene/Reset.
@@ -6287,6 +6299,7 @@ void HookDevice(IDirect3DDevice9* dev) {
         ".\\Darkness2VR-diagnostic.ini")!=0);
     InstallImagePresent(dev);
     InstallProtectedSourceQuality();
+    InstallNativeViewBoundary();
     InstallDiagnosticEnginePresent();
     InstallDiagnosticTrackedGameplay();
     InstallDiagnosticCameraCover();

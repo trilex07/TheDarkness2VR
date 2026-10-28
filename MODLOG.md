@@ -636,6 +636,30 @@ production/diagnostic x86 builds pass. No headset flicker or FPS improvement is
 claimed. Native visibility still precedes GPU-only FOV expansion; this correction
 does not establish a fix for native edge culling.
 
+## 2026-10-28: external ESI view boundary candidate
+
+Diagnostic startup Render/NativeViewBoundary=1 observes the exact native final
+QPC return A6677B from view update virtual+B0. ESI is captured before C++ entry.
+The prior 6DBE80/+F0 lead belongs to another render path: retained gameplay ETW
+instead contains 888972, following view+A8 -> 99F1B0 -> 888720 -> 985D80.
+SHA-pinned instruction/vtable/import checks gate the external Win32 trampoline.
+EXE code, IAT and static native vtables are unchanged. Default0 disables it;
+restart with0 or restore the package to roll back.
+
+The callback validates view+A8 -> renderer+3F4 -> camera, then compares its
+inverse projection with a subsequent live primary-world PS upload in the same
+frame. Numeric identities do not extend native object lifetime. This candidate
+is observation only: native setter activation was withheld because missing
+callbacks/changed cameras also require a proven restore/residual contract.
+No native peripheral-culling fix or FPS improvement is claimed here. Existing
+right-eye projection and diagnostic RT-lifetime fixes remain included.
+
+x86 ABI fixture PASS: exact ESI/caller, original API once, BOOL/output/LastError,
+x87/SSE restoration, concurrent bypass and unchanged test EXE text. Projection
+witness tests reject wrong frames, non-world uploads and changed identities.
+All new pins match the installed D46 EXE. Production and diagnostic builds PASS.
+Physical headset acceptance and real native-boundary corroboration remain pending.
+
 ## 2026-10-28: contiguous constant-window flush
 
 Track whether each window bank's written union is provably contiguous. Empty,

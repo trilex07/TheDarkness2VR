@@ -128,3 +128,47 @@ static void* g_nativeNearGetter=reinterpret_cast<void*>(0xD3A320);
 // The original leaf getter only returns ST(0). Preserve even volatile registers
 // and the complete x87/SSE state; tail-call that getter for the exact near value.
 D2VR_SELECTED_CAMERA_SHIM(SelectedRenderCameraNear,CoverSelectedRenderCamera,g_nativeNearGetter)
+
+static d2vr_native_view::ProjectionWitness g_nativeViewWitness;
+static void NativeViewProjectionObserved(const float* inverse) {
+    if(!g_nativeViewBoundary.Installed() || GetCurrentThreadId()!=g_renderThreadId)return;
+    if(g_nativeViewWitness.Observe(g_trackedFrame.id,g_had3DCameraThisFrame,inverse)) {
+        static unsigned reports=0;
+        if(++reports<=3 || reports%600==0)
+            Log("[NativeViewBoundary] projection corroborated frame=%llu view=%p renderer=%p camera=%p",
+                g_trackedFrame.id,reinterpret_cast<void*>(g_nativeViewWitness.view),
+                reinterpret_cast<void*>(g_nativeViewWitness.renderer),reinterpret_cast<void*>(g_nativeViewWitness.camera));
+    }
+}
+static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeCameraFields& fields) {
+    __try {
+        const auto root=static_cast<unsigned char*>(view);
+        if(!root)return false;
+        const auto table=*reinterpret_cast<uintptr_t*>(root);
+        if(table!=0xFC8930 && table!=0xFC6800)return false;
+        auto reference=*reinterpret_cast<void***>(root+0xa8);
+        if(!reference || !(renderer=*reference))return false;
+        auto selected=*reinterpret_cast<void***>(static_cast<unsigned char*>(renderer)+0x3f4);
+        if(!selected || !(camera=*selected))return false;
+        return ReadSelectedRenderCamera(camera,renderer,fields);
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+}
+static void ObserveNativeViewBoundary(void* view) {
+    if(GetCurrentThreadId()!=g_renderThreadId)return;
+    static unsigned entries=0;
+    if(++entries<=3)
+        Log("[NativeViewBoundary] ESI captured=%p thread=%lu frame=%llu open=%d world=%d; observation only",
+            view,GetCurrentThreadId(),g_trackedFrame.id,int(g_trackedFrame.open),int(g_in3DGameplayMode));
+    if(GetCurrentThreadId()!=g_renderThreadId || !g_trackedFrame.open || !g_haveViews ||
+       !g_in3DGameplayMode || g_submitMode!=4 || g_stereoMode!=1 || g_had3DCameraThisFrame)return;
+    void* renderer=nullptr;void* camera=nullptr;NativeCameraFields fields{};
+    if(!ReadOwnedViewCamera(view,renderer,camera,fields))return;
+    const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
+    const bool ready=g_nativeViewWitness.CanCover(g_trackedFrame.id,v,r,c);
+    float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
+    g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
+    static unsigned reports=0;
+    if(++reports<=3 || reports%600==0)
+        Log("[NativeViewBoundary] frame=%llu ESI=%p renderer=%p camera=%p FOV=%.5g corroborated=%d; observation only; EXE/IAT unchanged",
+            g_trackedFrame.id,view,renderer,camera,fields.fov,ready);
+}

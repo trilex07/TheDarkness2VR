@@ -341,6 +341,9 @@ static void ObserveInverseProjection(const float* src, UINT start, UINT count, i
     if (!d2vr_math::IsViewInverseProjection(p)) return;
     g_cameraPx = 1.f/p[0]; g_cameraPy = 1.f/p[5]; g_cameraProjectionKnown = true;
     memcpy(g_cameraInverseProjection,p,sizeof(g_cameraInverseProjection));
+#ifdef D2VR_MATCHED_CAPTURE
+    NativeViewProjectionObserved(p);
+#endif
     g_estPx = g_cameraPx; g_estPy = g_cameraPy; InterlockedExchange(&g_estValid, 1);
 }
 
