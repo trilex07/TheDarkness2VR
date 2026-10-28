@@ -756,6 +756,25 @@ mapping and render inputs remain unchanged; mismatched, singular and NaN camera
 inputs reject without changing output. External ESI ABI fixture and diagnostic
 build PASS. No headset or FPS acceptance is claimed.
 
+## 2026-10-28: distinguish camera uploads from submitted world draws
+
+5b30d19 startup/transition logs establish the earlier callback can traverse
+FC8930 ->renderer ->camera and prepare a valid culling VP (FOV45 ->123.92),
+but do not corroborate/apply it. In later world frames had3D is again1. Source
+inspection corrects the interpretation of that flag: Native_SetVSConstantF sets
+it on recognized camera matrix uploads, not on a draw. Hence had3D alone does
+not prove either QPC site is after actual world drawing.
+
+Add a separate conservative world-draw-issued flag at the four actual live
+draw forwarding functions, after diagnostic skips and before the driver call.
+Replay, depth-only shaders, unrecognized WVP and skipped draws do not mark it;
+a failed driver call still blocks later mutation conservatively. Reset it at
+the same frame boundary as the camera-upload flag. Native view observation
+now runs after camera uploads too; only writes require no issued world draw.
+Bounded logs expose both states. Both x86 builds and actual-source culling
+rebuild1000 checks PASS. No runtime evidence yet for this follow-up; running
+candidate remains5b30d19 until a later controlled deployment.
+
 ## 2026-10-28: contiguous constant-window flush
 
 Track whether each window bank's written union is provably contiguous. Empty,

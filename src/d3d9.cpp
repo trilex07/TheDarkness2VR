@@ -1430,6 +1430,7 @@ XrPosef g_renderEyePose[2]{};
 XrFovf g_renderEyeFov[2]{};
 bool g_renderHaveViews = false;
 bool g_had3DCameraThisFrame = false;
+bool g_hadWorldDrawThisFrame = false;
 int g_3dCamCallsThisFrame = 0;
 bool g_in3DGameplayMode = false;
 d2vr_input::WorldActivity g_worldActivity;
@@ -5275,6 +5276,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
         g_renderHaveViews = true;
     }
     g_had3DCameraThisFrame = false;
+    g_hadWorldDrawThisFrame = false;
     g_3dCamCallsThisFrame = 0;
     g_depthCapturedThisFrame = false;
     g_lastStage = 21;

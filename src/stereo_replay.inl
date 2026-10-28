@@ -1343,6 +1343,8 @@ static bool SkipObjectDrawForTest(D3DPRIMITIVETYPE type,UINT primitives) {
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(g_replayEye<0 && g_had3DCameraThisFrame && g_activeVs && g_activeVs->wvpBase==0 && !g_activeVs->depthOnly)
+        g_hadWorldDrawThisFrame=true;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1352,6 +1354,8 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(g_replayEye<0 && g_had3DCameraThisFrame && g_activeVs && g_activeVs->wvpBase==0 && !g_activeVs->depthOnly)
+        g_hadWorldDrawThisFrame=true;
     const WorldDiffuseScope diffuse(dev);
     const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -1362,6 +1366,8 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
 static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT pc, const void* vb, UINT stride) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(g_replayEye<0 && g_had3DCameraThisFrame && g_activeVs && g_activeVs->wvpBase==0 && !g_activeVs->depthOnly)
+        g_hadWorldDrawThisFrame=true;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1371,6 +1377,8 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
 static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(g_replayEye<0 && g_had3DCameraThisFrame && g_activeVs && g_activeVs->wvpBase==0 && !g_activeVs->depthOnly)
+        g_hadWorldDrawThisFrame=true;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);

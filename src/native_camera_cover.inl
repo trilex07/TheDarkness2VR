@@ -210,10 +210,10 @@ static void ObserveNativeViewBoundary(void* view) {
     static unsigned entries=0;
     const bool report=++entries<=3 || entries%600==0;
     if(report)
-        Log("[NativeViewBoundary] ESI captured=%p thread=%lu frame=%llu open=%d world=%d views=%d had3D=%d",
-            view,GetCurrentThreadId(),g_trackedFrame.id,int(g_trackedFrame.open),int(g_in3DGameplayMode),int(g_haveViews),int(g_had3DCameraThisFrame));
+        Log("[NativeViewBoundary] ESI captured=%p thread=%lu frame=%llu open=%d world=%d views=%d had3D=%d worldDraw=%d",
+            view,GetCurrentThreadId(),g_trackedFrame.id,int(g_trackedFrame.open),int(g_in3DGameplayMode),int(g_haveViews),int(g_had3DCameraThisFrame),int(g_hadWorldDrawThisFrame));
     if(GetCurrentThreadId()!=g_renderThreadId || !g_trackedFrame.open || !g_haveViews ||
-       !g_in3DGameplayMode || g_submitMode!=4 || g_stereoMode!=1 || g_had3DCameraThisFrame)return;
+       !g_in3DGameplayMode || g_submitMode!=4 || g_stereoMode!=1)return;
     void* renderer=nullptr;void* camera=nullptr;NativeCameraFields fields{};
     NativeViewReadStatus status;
     if(!ReadOwnedViewCamera(view,renderer,camera,fields,status)) {
@@ -228,7 +228,7 @@ static void ObserveNativeViewBoundary(void* view) {
     d2vr_culling_cover::Input cullingInput;
     const bool cullingReady=PrepareOwnedCullingInput(camera,fields,cullingInput);
     bool cullingApplied=false;
-    if(g_nativeViewBoundaryMode==2 && ready && cullingReady) {
+    if(g_nativeViewBoundaryMode==2 && ready && cullingReady && !g_hadWorldDrawThisFrame) {
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
         static unsigned appliedReports=0;
         if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
