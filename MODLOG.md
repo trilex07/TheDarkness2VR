@@ -974,3 +974,39 @@ No dependency binaries, EXE bytes or decompilation are included in Git.
 Unicorn API reference: https://www.unicorn-engine.org/docs/tutorial.html
 Native scene ownership/activation and HMD side-pop/right-eye/FPS acceptance
 remain NOT RUN. Installed1cea63a and prepared8c2d6e1 remain unchanged.
+
+## 2026-10-28: reject partial right-eye replays instead of saving/submitting them
+
+ReplayStream previously swallowed a per-record SEH fault and returned void;
+RenderEyePairFromReplay then saved the resulting partial right-eye pixels to
+history and could mark the pair ready. Float constant setter and draw HRESULTs
+also did not affect pair validity. Return a completion result that becomes
+false on any caught record exception, failed float constant driver submission
+or failure from any of the four draw wrappers. Continue existing scene/state
+cleanup commands after an exception; do not retry the failing call. Gate right
+history Save and capture on that result. Left color/state restoration and
+transfer-worker joins still run. The existing same-frame pair validity gate
+therefore submits no XR layer for such a frame; it does not publish mixed eyes.
+Normal command ordering, native results and successful-frame driver calls stay
+the same. A bounded failure message distinguishes this rejection in logs.
+
+Correction to the initial audit lead: VrFrame already excludes g_recOverflow
+before invoking RenderEyePairFromReplay. Do not call overflow an exposed bug
+or add a redundant second guard. No retained log inspected here establishes
+that any replay exception/draw/float setter failure caused the reported street
+flicker. This is a proven error-propagation defect, not a proven runtime cause.
+Other D3D9 state-call HRESULTs are outside this correction's coverage.
+
+Actual-source x86 float-loop regression PASS in production and diagnostic:
+96 streams/576096 records/70090 bank observations per build, batching OFF,
+adjacent/window/material-bind/capture cases. Completion must agree with driver
+failure status; an injected SEH must return false with no retry. Actual-source
+right-history tests PASS1000 cycles plus failed-replay/history rejection,
+four draw HRESULTs and matching clip cleanup on success/failure, target change
+and copy/create failures. Production and diagnostic DLL builds PASS.
+
+Also inspected snapshot/inherited-shader state. StateBlockHook and LightPosShift
+are OFF in the current profile, so their dormant metadata paths do not justify
+a visual/performance claim or enabling them. Do not introduce a raw constant
+cache without device-bank/state-block ownership and invalidation proof.
+No runtime/headset/FPS claim, no game launch, no installed-baseline replacement.

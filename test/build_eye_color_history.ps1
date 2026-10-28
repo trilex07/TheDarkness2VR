@@ -8,6 +8,14 @@ $body=$source.Substring($begin,$end-$begin)
 $call=[regex]::Match($source,'const bool historyOk = SeedRightEyeBackground\(dev, liveEnd.targets\[0\], [^;]+;')
 if(-not $call.Success){throw 'Actual history caller missing'}
 $body+="`nstatic bool SeedActualCaller(IDirect3DDevice9* dev, IDirect3DSurface9* output) { struct {IDirect3DSurface9* targets[1];} liveEnd{{output}}; "+$call.Value+" return historyOk; }`n"
+$save=[regex]::Match($source,'bool eye1Ok = [^;]*g_rightColorHistory.Save\(dev, liveEnd.targets\[0\]\);')
+if(-not $save.Success){throw 'Actual history publication missing'}
+$body+="`nstatic bool SaveActualCaller(IDirect3DDevice9* dev, IDirect3DSurface9* output, bool replayOk, bool historyOk) { struct {IDirect3DSurface9* targets[1];} liveEnd{{output}}; "+$save.Value+" return eye1Ok; }`n"
+$replay=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw
+$drawBegin=$replay.IndexOf('        case OP_DrawPrimitive: {',$replay.IndexOf('static bool ReplayStream('))
+$drawEnd=$replay.IndexOf('        case OP_SetVertexDeclaration:', $drawBegin)
+if($drawBegin -lt 0 -or $drawEnd -le $drawBegin){throw 'Actual replay draw cases missing'}
+$body+="`nstatic bool ActualDraw(IDirect3DDevice9* dev, unsigned op) { bool replayComplete=true; struct {unsigned a[6]{};unsigned n=0;} r; const unsigned char dataBase[256]{};const void* replayTex[16]{};int eye=1;switch(op){`n"+$replay.Substring($drawBegin,$drawEnd-$drawBegin)+"`n}return replayComplete;}`n"
 $fixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'eye_color_history_test.cpp') -Raw
 $generated=Join-Path $env:TEMP 'd2vr-eye-color-history.cpp'
 $fixture.Replace('@IMPLEMENTATION@',$body)|Set-Content -LiteralPath $generated -Encoding UTF8

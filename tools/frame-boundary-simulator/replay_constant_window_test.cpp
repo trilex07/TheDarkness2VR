@@ -14,7 +14,8 @@ static_assert(sizeof(void*)==4,"production ABI");
 static_assert(std::is_trivially_destructible<ConstantWindow>::value,"SEH caller");
 #include "actual_record_ops.inl"
 struct Rec {unsigned op=0,n=0,a[6]{};};
-struct Params {float transX=0,transY=0;};
+struct Params {float transX=0,transY=0;bool projectionSnapshot=false;float projectionPx=0,projectionPy=0;};
+using StereoParams=Params;
 struct Banks {std::array<uint32_t,256*4> vs{},ps{};};
 static Banks driver;
 static std::vector<Banks> expected;
@@ -65,10 +66,11 @@ static void CheckBanks(){
     assert(checkAt<expected.size());
     assert(driver.vs==expected[checkAt].vs && driver.ps==expected[checkAt].ps);++checkAt;++checks;
 }
-static void Actual(){
+static bool Actual(){
     void* dev=nullptr;const int eye=1;const bool dump=false;const Params sp;
     const uint8_t* dataBase=arena.data();
 #include "actual_replay_float_loop.inl"
+    return replayComplete;
 }
 static uint32_t rng=0xa18478ed;
 static uint32_t Random(){rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;}
@@ -178,7 +180,8 @@ int main(){
         g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
         g_frameStart.vertexFloatLimit=caps;g_frameStart.pixelFloatLimit=caps==96?32:224;
         Build();const auto dataBefore=arena;
-        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};Actual();
+        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};
+        const bool complete=Actual();assert(complete==(apiFail==0));
         assert(checkAt==expected.size() && arena==dataBefore);
 #ifdef D2VR_MATCHED_CAPTURE
         if(diagnostics){
@@ -196,7 +199,8 @@ int main(){
     g_rec.clear();arena.assign(16*4,0);Rec one;one.op=OP_SetVSConstF;one.a[1]=4;g_rec.push_back(one);
     capture=false;g_replayConstantBatch=true;g_replayConstantWindow=true;
     g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
-    d2vr_cpu_sync::timing.enabled=true;g_constantUploadWindow={};apiCalls=0;throwAt=1;Actual();throwAt=0;
+    d2vr_cpu_sync::timing.enabled=true;g_constantUploadWindow={};apiCalls=0;throwAt=1;
+    assert(!Actual());throwAt=0;
     assert(apiCalls==1);
 #ifdef D2VR_MATCHED_CAPTURE
     assert(g_constantUploadWindow.counts.exceptions==1 && g_constantUploadWindow.counts.calls[0]==1);

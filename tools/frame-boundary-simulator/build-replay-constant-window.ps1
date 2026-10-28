@@ -9,7 +9,7 @@ if($main -notmatch 'g_replayConstantWindow = GetPrivateProfileIntA\("Render", "R
    $src -notmatch 'const bool windowEnabled = batchEnabled && g_replayConstantWindow;' -or
    $src -notmatch 'bindWindowEnabled && IsConstantMaterialBinding\(r.op\)' -or
    $src -notmatch 'constantWindow.Abort\(\); batchEnabled=false;') {throw 'Default/barrier/abort contract changed'}
-$begin=$src.IndexOf('    bool batchEnabled = g_replayConstantBatch;',[StringComparison]::Ordinal)
+$begin=$src.IndexOf('    bool replayComplete=true;',[StringComparison]::Ordinal)
 $cases=$src.IndexOf('        switch ((RecOp)r.op) {',$begin,[StringComparison]::Ordinal)
 $vs=$src.IndexOf('        case OP_SetVSConstF: {',$cases,[StringComparison]::Ordinal)
 $vsEnd=$src.IndexOf('        case OP_SetVSConstI:', $vs,[StringComparison]::Ordinal)
@@ -21,7 +21,7 @@ if(@($begin,$cases,$vs,$vsEnd,$ps,$psEnd,$footer,$end) | Where-Object {$_ -lt 0}
 # Compile actual admission, forwarding lambda, float cases, look-ahead, SEH and
 # receipt aggregation. Non-float commands become observers of the driver banks.
 $helperBegin=$src.IndexOf('static bool IsConstantMaterialBinding(unsigned op)',[StringComparison]::Ordinal)
-$helperEnd=$src.IndexOf('static void ReplayStream(', $helperBegin,[StringComparison]::Ordinal)
+$helperEnd=$src.IndexOf('static bool ReplayStream(', $helperBegin,[StringComparison]::Ordinal)
 if($helperBegin -lt 0 -or $helperEnd -lt 0){throw 'Actual binding classifier missing'}
 [IO.File]::WriteAllText((Join-Path $out 'actual_constant_binding_helpers.inl'),$src.Substring($helperBegin,$helperEnd-$helperBegin))
 $enumBegin=$src.IndexOf('enum RecOp : uint16_t {',[StringComparison]::Ordinal)

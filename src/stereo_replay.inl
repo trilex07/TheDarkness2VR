@@ -1717,7 +1717,7 @@ static bool MoreFloatBeforeBarrier(size_t at) {
     return false;
 }
 
-static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp) {
+static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp) {
     g_replayEye = eye;
     const void* replayTex[16] = {};
     static int s_dumpFrames = 0;
@@ -1737,6 +1737,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     }
     // No driver/state reuse across frames. Capture retains exact original
     // upload boundaries so its per-record projection witnesses stay authoritative.
+    bool replayComplete=true;
     bool batchEnabled = g_replayConstantBatch;
 #ifdef D2VR_MATCHED_CAPTURE
     batchEnabled = batchEnabled && !MatchedCaptureRecordingActive();
@@ -1749,11 +1750,13 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     // to avoid adding 8KB of stack probes on every OFF/adjacent replay.
     static d2vr_replay_batch::ConstantWindow constantWindow;
     if (windowEnabled) constantWindow.Reset(g_frameStart.vertexFloatLimit,g_frameStart.pixelFloatLimit);
-    auto forwardConstants = [dev](d2vr_replay_batch::Stage stage, unsigned first,
+    auto forwardConstants = [dev,&replayComplete](d2vr_replay_batch::Stage stage, unsigned first,
                                  const float* values, unsigned count) -> long {
-        return stage == d2vr_replay_batch::Stage::Vertex ?
+        const HRESULT result=stage == d2vr_replay_batch::Stage::Vertex ?
             g_orig.SetVertexShaderConstantF(dev,first,values,count) :
             g_orig.SetPixelShaderConstantF(dev,first,values,count);
+        if(FAILED(result))replayComplete=false;
+        return result;
     };
 #ifdef D2VR_MATCHED_CAPTURE
     const bool auditUploads = d2vr_cpu_sync::timing.enabled;
@@ -1830,14 +1833,14 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_DrawPrimitive: {
             if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
             const UiClipState clip = BeginScaledUiClip(dev);
-            DrawPrimitiveWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2]);
+            if(FAILED(DrawPrimitiveWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2])))replayComplete=false;
             EndScaledUiClip(dev, clip);
             break;
         }
         case OP_DrawIndexedPrimitive: {
             if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
             const UiClipState clip = BeginScaledUiClip(dev);
-            DrawIndexedPrimitiveWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], (INT)r.a[1], r.a[2], r.a[3], r.a[4], r.a[5]);
+            if(FAILED(DrawIndexedPrimitiveWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], (INT)r.a[1], r.a[2], r.a[3], r.a[4], r.a[5])))replayComplete=false;
             EndScaledUiClip(dev, clip);
             break;
         }
@@ -1846,7 +1849,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const void* data = (r.n == 1) ? (const void*)(uintptr_t)r.a[3]
                                           : (const void*)(dataBase + r.a[3]);
             const UiClipState clip = BeginScaledUiClip(dev);
-            DrawPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], data, r.a[2]);
+            if(FAILED(DrawPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], data, r.a[2])))replayComplete=false;
             EndScaledUiClip(dev, clip);
             HOOK_MARK(1900 + r.op);
             break;
@@ -1860,8 +1863,8 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const void* vb = livePtrs ? (const void*)(uintptr_t)aux->vbOff : (const void*)(dataBase + aux->vbOff);
             const void* ib = livePtrs ? (const void*)(uintptr_t)aux->ibOff : (const void*)(dataBase + aux->ibOff);
             const UiClipState clip = BeginScaledUiClip(dev);
-            DrawIndexedPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
-                                         ib, (D3DFORMAT)r.a[4], vb, stride);
+            if(FAILED(DrawIndexedPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
+                                         ib, (D3DFORMAT)r.a[4], vb, stride)))replayComplete=false;
             EndScaledUiClip(dev, clip);
             HOOK_MARK(1900 + r.op);
             break;
@@ -2029,15 +2032,17 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 constants.Flush(sendConstants);
         }
         } __except (1) {
+            replayComplete=false;
             constants.Abort(); constantWindow.Abort(); batchEnabled=false;
 #ifdef D2VR_MATCHED_CAPTURE
             if (auditUploads) ++uploadCounts.exceptions;
 #endif
             // The NVIDIA/D3D9 runtime can raise on stale resource pointers recorded
-            // earlier in the frame (temp textures). Skip the call - never kill the game.
+            // earlier in the frame (temp textures). Continue cleanup/scene commands,
+            // but report failure so the partial right eye is never published/saved.
             static int s_replayErrs = 0;
             if (s_replayErrs++ < 20) {
-                Log("[TrueStereo] replay: exception in record %zu op=%u a=[%u %u] - skipped",
+                Log("[TrueStereo] replay: exception in record %zu op=%u a=[%u %u] - skipped, pair invalid",
                     i, r.op, r.a[0], r.a[1]);
             }
         }
@@ -2055,6 +2060,7 @@ static void ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 #endif
     g_recLock.store(0,std::memory_order_release);
     g_replayEye = -1;
+    return replayComplete;
 }
 
 // ------------------------------------------------------------- state block hooks

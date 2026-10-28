@@ -3484,7 +3484,12 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     d2vr_replay::g_frameStart.Apply(dev);
     g_gpuTiming.MarkLiveEnd();
     d2vr_replay::InvalidateShadowAtlasPass();
-    d2vr_replay::ReplayStream(dev, 1, sp1);
+    const bool replayOk=d2vr_replay::ReplayStream(dev, 1, sp1);
+    if(!replayOk) {
+        static unsigned rejectedReplays=0;
+        if(++rejectedReplays<=8 || rejectedReplays%600==0)
+            Log("[StereoPair] incomplete replay count=%u; no right history save or XR layer",rejectedReplays);
+    }
     QueryPerformanceCounter(&perf[2]);
 
     // This interval used D3D9 only. Reclaim the D3D11 immediate context.
@@ -3495,7 +3500,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Source(dev,1);
 #endif
-    bool eye1Ok = historyOk && g_rightColorHistory.Save(dev, liveEnd.targets[0]);
+    bool eye1Ok = replayOk && historyOk && g_rightColorHistory.Save(dev, liveEnd.targets[0]);
     if (eye1Ok) eye1Ok = transferWorker ? StartStereoTransfer(dev,1,rightTransfer,rightJob) :
         (zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev));
     if(!transferWorker) {
