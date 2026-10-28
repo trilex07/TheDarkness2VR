@@ -29,6 +29,8 @@
 #include "replay_constant_window.h"
 #include "record_payload_storage.h"
 #include "projection_history.h"
+#include "pixel_shader_metadata.h"
+#include "vertex_shader_metadata.h"
 
 namespace d2vr_replay {
 
@@ -545,7 +547,7 @@ static inline uint32_t RecPush(const void* data, size_t bytes, const d2vr_native
 
 // Light-input readback state (diagnostic only, see LightInputReadback below).
 static const uint32_t kShadowLightPsHash = 0xC4D1FB10u;
-static std::unordered_map<const void*, uint32_t> g_psHashByPtr;       // PS pointer -> hash
+static d2vr_shader_metadata::Pixels g_pixelShaders;
 static std::unordered_map<const void*, const void*> g_surfToTex;      // diagnostic-only, owns BOTH identities
 static const void* g_replayPs = nullptr;                              // PS currently bound in replay
 static const void* g_replayVs = nullptr;                              // VS currently bound in replay
@@ -680,53 +682,47 @@ static OrigFns g_orig;
 static StereoParams g_stereo;          // current eye params (live pass = eye 0)
 static int g_replayEye = -1;           // -1 = live/mono, 0/1 = eye during replay
 static int g_stereoMode = 1;           // 0 = mono, 1 = same-frame dual eye, 2 = validation replay (shift 0)
-static std::unordered_map<IDirect3DVertexShader9*, VsInfo> g_vsInfo;
+static d2vr_shader_metadata::Vertices<VsInfo> g_vsInfo;
 static bool VertexShaderAnalysisKnown(IDirect3DVertexShader9* shader,const DWORD* code,size_t words) {
-    if(!shader || !code || !words || words>8192)return false;
-    RecLockGuard lock;
-    const auto entry=g_vsInfo.find(shader);
-    return entry!=g_vsInfo.end() && entry->second.bytecode.size()==words &&
-        !memcmp(entry->second.bytecode.data(),code,words*sizeof(DWORD));
+    return g_vsInfo.Known(shader,code,words);
 }
 static bool RememberVertexShader(IDirect3DVertexShader9* shader,VsInfo& analyzed) {
-    RecLockGuard lock;
-    const auto previous=g_vsInfo.find(shader);
-    // D3D may deduplicate a still-live identical shader. Preserve its ordered
-    // projection history. A different shader at a recycled address must replace
-    // ALL metadata/history; a pointer or 32-bit hash alone cannot establish this.
-    if(previous!=g_vsInfo.end() && previous->second.bytecode==analyzed.bytecode)return false;
-    g_vsInfo[shader]=std::move(analyzed);
-    return true;
+    return g_vsInfo.Remember(shader,analyzed);
 }
 static void ResetProjectionHistories() {
     RecLockGuard lock;
-    for(auto& entry:g_vsInfo)entry.second.wvpHistory={};
+    g_vsInfo.ForEach([](VsInfo& info){info.wvpHistory={};});
 }
+static std::shared_ptr<VsInfo> g_activeVsOwner;
 static VsInfo* g_activeVs = nullptr;
-static std::unordered_map<IDirect3DPixelShader9*, int> g_psInverse;
+static void SetActiveVertexShaderMetadata(const void* shader) {
+    g_vsInfo.Bind(shader,g_activeVsOwner);
+    g_activeVs=g_activeVsOwner.get();
+}
 static int g_activePsInverse = -1;
 // DeferredLight variants (projector / view-extent family) reconstruct the view-space
 // position as x = ndc.x * z * ViewExtents.x. ViewExtents must follow the render-FOV
 // scale or the projected light/shadow is compressed toward the screen centre and slides
 // with the camera (playtest 2026-10-19).
-static std::unordered_map<IDirect3DPixelShader9*, int> g_psViewExtents;
 static int g_activePsViewExtents = -1;
+static uint32_t g_activePsHash = 0;
+static void SetActivePixelShaderMetadata(const void* identity) {
+    const auto metadata=g_pixelShaders.Lookup(identity);
+    g_activePsInverse=metadata.inverse;
+    g_activePsViewExtents=metadata.extents;
+    g_activePsHash=metadata.hash;
+}
 static void SyncActiveShader(IDirect3DDevice9* dev) {
     IDirect3DVertexShader9* shader = nullptr;
-    g_activeVs = nullptr;
+    SetActiveVertexShaderMetadata(nullptr);
     if (SUCCEEDED(dev->GetVertexShader(&shader)) && shader) {
-        auto it = g_vsInfo.find(shader);
-        if (it != g_vsInfo.end()) g_activeVs = &it->second;
+        SetActiveVertexShaderMetadata(shader);
         shader->Release();
     }
     IDirect3DPixelShader9* ps = nullptr;
-    g_activePsInverse = -1;
-    g_activePsViewExtents = -1;
+    SetActivePixelShaderMetadata(nullptr);
     if (SUCCEEDED(dev->GetPixelShader(&ps)) && ps) {
-        auto it = g_psInverse.find(ps);
-        if (it != g_psInverse.end()) g_activePsInverse = it->second;
-        auto it2 = g_psViewExtents.find(ps);
-        if (it2 != g_psViewExtents.end()) g_activePsViewExtents = it2->second;
+        SetActivePixelShaderMetadata(ps);
         ps->Release();
     }
 }
@@ -797,17 +793,23 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         hr = d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
     }
     if (SUCCEEDED(hr) && out && *out && fn) {
+        // Start unknown even at a recycled COM address. A failed reflection
+        // must not retain a prior object's projection registers. Publish only
+        // after the complete analysis, outside any driver or recorder lock.
+        d2vr_shader_metadata::Pixel metadata;
         const size_t psWords = SafeShaderTokenCount(fn);
         if (psWords) {
             const uint32_t psHash = HashBytes(fn, (psWords + 1) * 4);
-            g_psHashByPtr[*out] = psHash;
+            metadata.hash=psHash;
             Log("[PSPtr] %p hash=%08X", (void*)*out, psHash);
         }
         // GetFunction provides the driver's validated bytecode length for PS.
         UINT bytes = 0;
-        if (SUCCEEDED((*out)->GetFunction(nullptr, &bytes)) && bytes <= 32768) {
-            std::vector<DWORD> code((bytes + 3)/4);
-            if (SUCCEEDED((*out)->GetFunction(code.data(), &bytes))) {
+        if (SUCCEEDED((*out)->GetFunction(nullptr, &bytes)) && bytes>=8 && bytes<=32768 && !(bytes&3)) {
+            std::vector<DWORD> code(bytes/4);
+            if (SUCCEEDED((*out)->GetFunction(code.data(), &bytes)) && bytes>=8 &&
+                bytes<=code.size()*4 && !(bytes&3) &&
+                d2vr_shader_metadata::ValidPixelCode(code.data(),bytes/4)) {
                 const std::string shaderBytes((const char*)code.data(), bytes);
                 if (g_shaderDebugDump && shaderBytes.find("InvRenderTargetSize") != std::string::npos &&
                     shaderBytes.find("ShadowMask") != std::string::npos) {
@@ -840,13 +842,13 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                         if (fopen_s(&file, path, "wb") == 0 && file) { fwrite(code.data(), 1, bytes, file); fclose(file); }
                     }
                 }
-                RecLockGuard lock;
-                g_psInverse[*out] = base;
-                g_psViewExtents[*out] = extents;
+                metadata.inverse=base;
+                metadata.extents=extents;
                 if (base >= 0) Log("[Lighting] named InverseProjection c%d", base);
                 if (extents >= 0) Log("[Lighting] named ViewExtents c%d", extents);
             }
         }
+        g_pixelShaders.Publish(*out,metadata);
     }
     return hr;
 }
@@ -915,7 +917,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
     if (SUCCEEDED(hr) && out && *out && fn) {
         size_t n = SafeShaderTokenCount(fn);
         if (n == 0) {
-            RecLockGuard lock;g_vsInfo[*out]=VsInfo{};
+            VsInfo unknown;RememberVertexShader(*out,unknown);
             return hr;
         }
         // The original synchronous native creation already returned an owned
@@ -949,7 +951,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         const bool isNew=RememberVertexShader(*out,vi);
         // Diagnostic: dump raw shader bytecode for offline pattern analysis
         {
-            static int s_dumpedShaders = 0;
+            static std::atomic<unsigned> s_dumpedShaders{0};
 #ifdef D2VR_MATCHED_CAPTURE
             static volatile LONG savedTentacleShaders=0;
             const LONG bit=h==0x34D4EEE8u?1:h==0x1CB7CEE2u?2:h==0xE3259C61u?4:0;
@@ -957,9 +959,10 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
 #else
             const bool tentacleShader = false;
 #endif
-            if ((s_dumpedShaders < 8 || tentacleShader) && n > 0) {
+            const auto dumpIndex=s_dumpedShaders.fetch_add(1,std::memory_order_relaxed);
+            if ((dumpIndex < 8 || tentacleShader) && n > 0) {
                 char spath[MAX_PATH];
-                sprintf_s(spath, "test-output\\shaders\\vs_%04d_%08X.bin", s_dumpedShaders, h);
+                sprintf_s(spath, "test-output\\shaders\\vs_%04u_%08X.bin", dumpIndex, h);
                 CreateDirectoryA("test-output", nullptr);
                 CreateDirectoryA("test-output\\shaders", nullptr);
                 FILE* sf = nullptr;
@@ -968,14 +971,14 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
                     fclose(sf);
                     Log("[ShaderDump] %s (%zu tokens)", spath, n + 1);
                 }
-                ++s_dumpedShaders;
             }
         }
-        static int s_logged = 0;
-        if (isNew && (s_logged < 15 || ((vi.wvpBase >= 0 || vi.stpBase >= 0) && s_logged < 40))) {
-            ++s_logged;
-            Log("[VS %08X] wvpBase=c%d stpBase=c%d depthOnly=%d bones=%d",
-                h, vi.wvpBase, vi.stpBase, (int)vi.depthOnly, (int)vi.hasBones);
+        static std::atomic<unsigned> s_logged{0};
+        const unsigned logLimit=vi.wvpBase>=0 || vi.stpBase>=0?40:15;
+        if (isNew && s_logged.load(std::memory_order_relaxed)<logLimit) {
+            if(s_logged.fetch_add(1,std::memory_order_relaxed)<logLimit)
+                Log("[VS %08X] wvpBase=c%d stpBase=c%d depthOnly=%d bones=%d",
+                    h, vi.wvpBase, vi.stpBase, (int)vi.depthOnly, (int)vi.hasBones);
         }
     }
     return hr;
@@ -985,14 +988,13 @@ static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDi
     if (g_recActive) RecEmit(OP_SetVertexShader, 0, (uint32_t)(uintptr_t)sh);
     if (sh) {
         RecLockGuard lock;
-        auto it = g_vsInfo.find(sh);
-        g_activeVs = (it != g_vsInfo.end()) ? &it->second : nullptr;
+        SetActiveVertexShaderMetadata(sh);
         // pointer -> hash map for the traces (once per shader, first 400 shaders)
         static std::unordered_map<const void*, int> s_vsPtrLogged;
         if (g_activeVs && s_vsPtrLogged.size() < 400 && s_vsPtrLogged.emplace(sh, 1).second)
             Log("[VSPtr] %p hash=%08X", (void*)sh, g_activeVs->hash);
     } else {
-        g_activeVs = nullptr;
+        SetActiveVertexShaderMetadata(nullptr);
     }
     return g_orig.SetVertexShader(dev, sh);
 }
@@ -1282,9 +1284,8 @@ struct WorldDiffuseScope {
             !g_activeVs || g_activeVs->hash != 0x293F456Bu) return;
         IDirect3DPixelShader9* ps = nullptr;
         if (FAILED(dev->GetPixelShader(&ps)) || !ps) return;
-        const auto found = g_psHashByPtr.find(ps);
-        const bool selected = found != g_psHashByPtr.end() &&
-            d2vr_sampling::IsWorldDiffuseMaterial(g_activeVs->hash, found->second);
+        const bool selected = d2vr_sampling::IsWorldDiffuseMaterial(g_activeVs->hash,
+            g_pixelShaders.Lookup(ps).hash);
         ps->Release();
         if (!selected || !filter.Apply(dev, g_orig.SetSamplerState, g_textureAnisotropy)) return;
         applied = true;
@@ -1580,10 +1581,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* ps) {
     if (g_recActive) RecEmit(OP_SetPixelShader, 0, (uint32_t)(uintptr_t)ps);
-    auto it = g_psInverse.find(ps);
-    g_activePsInverse = it == g_psInverse.end() ? -1 : it->second;
-    auto it2 = g_psViewExtents.find(ps);
-    g_activePsViewExtents = it2 == g_psViewExtents.end() ? -1 : it2->second;
+    SetActivePixelShaderMetadata(ps);
     return g_orig.SetPixelShader(dev, ps);
 }
 #pragma optimize("y", off)
@@ -1698,8 +1696,7 @@ static bool IsRenderTargetTexture(const void* tex) {
 // read back every bound render-target texture (within the budget) and log its hash.
 static void LightInputReadback(IDirect3DDevice9* dev, const void* ps, const void* const* texes, int eye) {
     if (g_lightRbBudget <= 0) return;
-    auto ph = g_psHashByPtr.find(ps);
-    if (ph == g_psHashByPtr.end() || ph->second != kShadowLightPsHash) return;
+    if (g_pixelShaders.Lookup(ps).hash != kShadowLightPsHash) return;
     --g_lightRbBudget;
     for (int st = 0; st < 16; ++st) {
         const void* tex = texes[st];
@@ -1912,8 +1909,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         case OP_SetVertexShader: {
             IDirect3DVertexShader9* sh = (IDirect3DVertexShader9*)(uintptr_t)r.a[0];
-            auto it = g_vsInfo.find(sh);
-            g_activeVs = (it != g_vsInfo.end()) ? &it->second : nullptr;
+            SetActiveVertexShaderMetadata(sh);
             g_replayVs = (const void*)sh;
             g_orig.SetVertexShader(dev, sh);
             break;
@@ -1961,10 +1957,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_SetPixelShader:
             {
             g_replayPs = (const void*)(uintptr_t)r.a[0];
-                auto it = g_psInverse.find((IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
-                g_activePsInverse = it == g_psInverse.end() ? -1 : it->second;
-                auto it2 = g_psViewExtents.find((IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
-                g_activePsViewExtents = it2 == g_psViewExtents.end() ? -1 : it2->second;
+                SetActivePixelShaderMetadata(g_replayPs);
             }
             g_orig.SetPixelShader(dev, (IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
             break;
@@ -1981,8 +1974,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             // invalid >224-vector upload, used to overrun adjusted[].
             if (g_lightPosShift && sp.transX != 0.0f && r.a[0] == 0 &&
                 r.a[1] > 0 && r.a[1] <= 224) {
-                auto psIt = g_psHashByPtr.find(g_replayPs);
-                if (psIt != g_psHashByPtr.end() && psIt->second == kShadowLightPsHash) {
+                if (g_activePsHash == kShadowLightPsHash) {
                     // LightViewPosRadius (PS c0) is a position in view space and is uploaded
                     // by the engine relative to the live (left-eye) camera. The replay renders
                     // the right eye with an IPD offset, so the position must follow the

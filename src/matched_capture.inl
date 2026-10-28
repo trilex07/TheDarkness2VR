@@ -421,16 +421,15 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
     const long offset=ftell(banks);
     ok=ok && offset>=0 && fwrite(constants,sizeof(constants),1,banks)==1;
     int wvp=-1,stp=-1; unsigned hash=0;
-    auto it=d2vr_replay::g_vsInfo.find(vs);
-    if (it!=d2vr_replay::g_vsInfo.end()) { wvp=it->second.wvpBase; stp=it->second.stpBase; hash=it->second.hash; }
+    const auto vertexMetadata=d2vr_replay::g_vsInfo.Lookup(vs);
+    if (vertexMetadata) { wvp=vertexMetadata->wvpBase; stp=vertexMetadata->stpBase; hash=vertexMetadata->hash; }
     fprintf(meta,"{\"kind\":\"draw\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"rt\":\"%p\",\"vs\":\"%p\",\"shader_hash\":%u,\"wvp_register\":%d,\"stp_register\":%d,\"bank_offset\":%ld,\"viewport\":[%u,%u,%u,%u,%.9g,%.9g]}\n",
         frame,eye,draws[eye]++,rt,vs,hash,wvp,stp,offset,vp.X,vp.Y,vp.Width,vp.Height,vp.MinZ,vp.MaxZ);
     IDirect3DVertexBuffer9* vb=nullptr;IDirect3DIndexBuffer9* ib=nullptr;IDirect3DPixelShader9* ps=nullptr;
     IDirect3DBaseTexture9* texture=nullptr;UINT streamOffset=0,stride=0;
     const bool geometry=SUCCEEDED(dev->GetStreamSource(0,&vb,&streamOffset,&stride)) &&
         SUCCEEDED(dev->GetIndices(&ib)) && SUCCEEDED(dev->GetPixelShader(&ps)) && SUCCEEDED(dev->GetTexture(0,&texture));
-    const auto psHash=d2vr_replay::g_psHashByPtr.find(ps);
-    const unsigned pixelHash=psHash==d2vr_replay::g_psHashByPtr.end()?0:psHash->second;
+    const unsigned pixelHash=d2vr_replay::g_pixelShaders.Lookup(ps).hash;
     if (d2vr_sampling::IsWorldDiffuseMaterial(hash,pixelHash)) {
         DWORD min=0,mag=0,mip=0,quality=0,bias=0;
         const bool sampler=SUCCEEDED(dev->GetSamplerState(0,D3DSAMP_MINFILTER,&min)) &&

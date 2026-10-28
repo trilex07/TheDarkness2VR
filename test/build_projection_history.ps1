@@ -20,7 +20,8 @@ $parts=@((Extract 'struct VsInfo {' $true),(Extract 'struct StereoParams {' $tru
 [IO.File]::WriteAllText((Join-Path $out 'actual_projection_history.inl'),($parts -join "`r`n"))
 [IO.File]::WriteAllText((Join-Path $out 'actual_shader_identity.inl'),
     (Extract 'static bool VertexShaderAnalysisKnown(')+"`r`n"+
-    (Extract 'static bool RememberVertexShader(')+"`r`n"+(Extract 'static void ResetProjectionHistories('))
+    (Extract 'static bool RememberVertexShader(')+"`r`n"+(Extract 'static void ResetProjectionHistories(')+"`r`n"+
+    (Extract 'static void SetActiveVertexShaderMetadata('))
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 $source=Join-Path $PSScriptRoot 'projection_history_test.cpp'

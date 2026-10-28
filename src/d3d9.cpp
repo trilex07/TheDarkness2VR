@@ -2980,15 +2980,13 @@ static void DumpEyeFramesIfRequested() {
                         r.a[0], desc.Width, desc.Height, (unsigned)desc.Format);
             }
             if (r.op == d2vr_replay::OP_SetVertexShader) {
-                auto it = d2vr_replay::g_vsInfo.find((IDirect3DVertexShader9*)(uintptr_t)r.a[0]);
-                if (it != d2vr_replay::g_vsInfo.end()) fprintf(trace, " VS %08X guessed=%d,%d named=%d,%d\n", it->second.hash,
-                    it->second.wvpBase,it->second.stpBase,it->second.reflectedWvp,it->second.reflectedStp);
+                const auto metadata=d2vr_replay::g_vsInfo.Lookup(reinterpret_cast<void*>(uintptr_t(r.a[0])));
+                if (metadata) fprintf(trace, " VS %08X guessed=%d,%d named=%d,%d\n",metadata->hash,
+                    metadata->wvpBase,metadata->stpBase,metadata->reflectedWvp,metadata->reflectedStp);
             }
             if (r.op == d2vr_replay::OP_SetPixelShader) {
-                auto it = d2vr_replay::g_psInverse.find((IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
-                auto hash = d2vr_replay::g_psHashByPtr.find((IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
-                fprintf(trace," PS inverse=%d hash=%08X\n", it == d2vr_replay::g_psInverse.end() ? -1 : it->second,
-                    hash == d2vr_replay::g_psHashByPtr.end() ? 0 : hash->second);
+                const auto metadata=d2vr_replay::g_pixelShaders.Lookup(reinterpret_cast<void*>(uintptr_t(r.a[0])));
+                fprintf(trace," PS inverse=%d hash=%08X\n",metadata.inverse,metadata.hash);
             }
             if (r.op == d2vr_replay::OP_SetTexture && r.a[1]) {
                 auto* texture = (IDirect3DBaseTexture9*)(uintptr_t)r.a[1];
@@ -3605,7 +3603,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
             (int)g_trueStereoFrames, recCount, recBytes / 1024,
             (int)d2vr_replay::g_recOverflow, (int)eye0Ok, (int)eye1Ok,
             (long)InterlockedExchange(&d2vr_replay::g_shiftCount, 0),
-            d2vr_replay::g_vsInfo.size(), (int)zeroCopy, (int)g_replayTestClear);
+            d2vr_replay::g_vsInfo.Size(), (int)zeroCopy, (int)g_replayTestClear);
         const uint64_t* c = d2vr_replay::g_recCounts;
         Log("[TrueStereo] ops: Begin=%llu End=%llu Clear=%llu RT=%llu DSS=%llu Draw=%llu DIP=%llu DPUP=%llu DIPUP=%llu VS=%llu VSCF=%llu Tex=%llu RS=%llu TSS=%llu Smp=%llu VP=%llu SB=%llu",
             c[3], c[4], c[5], c[1], c[2], c[13], c[14], c[15], c[16], c[19], c[20], c[9], c[8], c[10], c[11], c[7], c[36]);

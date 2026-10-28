@@ -9,6 +9,8 @@
 #include <vector>
 #include <unordered_map>
 #include <utility>
+#include <atomic>
+#include <thread>
 #include "../src/stereo_math.h"
 #include "../src/stereo_geometry.h"
 #include "../src/projection_history.h"
@@ -25,8 +27,11 @@ static uint64_t g_wvpHistoryGeneration=0;
 static void PublishProjectionEstimate(float,float){}
 template<class... T> static void Log(const char*,T...){}
 #include "actual_projection_history.inl"
+#include "../src/vertex_shader_metadata.h"
 struct IDirect3DVertexShader9 {};
-static std::unordered_map<IDirect3DVertexShader9*,VsInfo> g_vsInfo;
+static d2vr_shader_metadata::Vertices<VsInfo> g_vsInfo;
+static std::shared_ptr<VsInfo> g_activeVsOwner;
+static VsInfo* g_activeVs=nullptr;
 static unsigned lockDepth=0;
 struct RecLockGuard {RecLockGuard(){CHECK(!lockDepth++);}~RecLockGuard(){CHECK(!--lockDepth);}};
 #include "actual_shader_identity.inl"
@@ -76,7 +81,7 @@ int main(int argc,char** argv) {
     IDirect3DVertexShader9 shader;
     VsInfo original;original.hash=17;original.bytecode={1,2,3};original.wvpBase=0;original.stpBase=4;
     CHECK(RememberVertexShader(&shader,original));
-    auto& stored=g_vsInfo[&shader];stored.wvpHistory.live.valid=true;stored.wvpHistory.live.values[12]=7;
+    auto stored=g_vsInfo.Lookup(&shader);stored->wvpHistory.live.valid=true;stored->wvpHistory.live.values[12]=7;
     const DWORD sameCode[]={1,2,3},differentCode[]={1,2,4};IDirect3DVertexShader9 foreign;
     CHECK(VertexShaderAnalysisKnown(&shader,sameCode,3));
     CHECK(!VertexShaderAnalysisKnown(&shader,differentCode,3));
@@ -87,18 +92,66 @@ int main(int argc,char** argv) {
     CHECK(!VertexShaderAnalysisKnown(&shader,sameCode,8193));
     VsInfo duplicate;duplicate.hash=17;duplicate.bytecode={1,2,3};
     CHECK(!RememberVertexShader(&shader,duplicate));
-    CHECK(stored.wvpBase==0 && stored.stpBase==4 && stored.wvpHistory.live.valid && stored.wvpHistory.live.values[12]==7);
+    CHECK(stored->wvpBase==0 && stored->stpBase==4 && stored->wvpHistory.live.valid && stored->wvpHistory.live.values[12]==7);
     VsInfo recycled;recycled.hash=17;recycled.bytecode={1,2,4};recycled.wvpBase=8;recycled.stpBase=-1;
     CHECK(RememberVertexShader(&shader,recycled));
     CHECK(!VertexShaderAnalysisKnown(&shader,sameCode,3));
     CHECK(VertexShaderAnalysisKnown(&shader,differentCode,3));
-    CHECK(stored.wvpBase==8 && stored.stpBase==-1 && !stored.wvpHistory.live.valid && stored.bytecode==std::vector<DWORD>({1,2,4}));
-    stored.wvpHistory.live.valid=stored.wvpHistory.begin.valid=stored.wvpHistory.replay.valid=true;
-    stored.wvpHistory.capturedFrame=stored.wvpHistory.replayFrame=99;
+    // An active old binding remains alive and unchanged across publication.
+    CHECK(stored->wvpBase==0 && stored->stpBase==4 && stored->wvpHistory.live.values[12]==7);
+    stored=g_vsInfo.Lookup(&shader);
+    CHECK(stored->wvpBase==8 && stored->stpBase==-1 && !stored->wvpHistory.live.valid && stored->bytecode==std::vector<DWORD>({1,2,4}));
+    stored->wvpHistory.live.valid=stored->wvpHistory.begin.valid=stored->wvpHistory.replay.valid=true;
+    stored->wvpHistory.capturedFrame=stored->wvpHistory.replayFrame=99;
     ResetProjectionHistories();
-    CHECK(!stored.wvpHistory.live.valid && !stored.wvpHistory.begin.valid && !stored.wvpHistory.replay.valid);
-    CHECK(!stored.wvpHistory.capturedFrame && !stored.wvpHistory.replayFrame);
-    CHECK(stored.wvpBase==8 && stored.bytecode==std::vector<DWORD>({1,2,4}));
+    CHECK(!stored->wvpHistory.live.valid && !stored->wvpHistory.begin.valid && !stored->wvpHistory.replay.valid);
+    CHECK(!stored->wvpHistory.capturedFrame && !stored->wvpHistory.replayFrame);
+    CHECK(stored->wvpBase==8 && stored->bytecode==std::vector<DWORD>({1,2,4}));
+    // Creation analysis must not acquire the recorder's whole-replay lock.
+    lockDepth=1;
+    CHECK(VertexShaderAnalysisKnown(&shader,differentCode,3));
+    VsInfo duringReplay;duringReplay.bytecode={1,2,4};
+    CHECK(!RememberVertexShader(&shader,duringReplay));CHECK(lockDepth==1);lockDepth=0;
+    SetActiveVertexShaderMetadata(&shader);CHECK(g_activeVs==stored.get());
+    std::weak_ptr<VsInfo> retired=stored;
+    VsInfo next;next.hash=17;next.bytecode={1,2,5};next.wvpBase=12;
+    CHECK(RememberVertexShader(&shader,next));stored.reset();
+    CHECK(!retired.expired() && g_activeVs->wvpBase==8);
+    SetActiveVertexShaderMetadata(&shader);
+    CHECK(retired.expired() && g_activeVs->wvpBase==12);
+    SetActiveVertexShaderMetadata(&foreign);CHECK(!g_activeVs && !g_activeVsOwner);
+    SetActiveVertexShaderMetadata(nullptr);CHECK(!g_activeVs && !g_activeVsOwner);
     CHECK(!lockDepth);
+    // Actual production registry: creation can replace identities/rehash while
+    // the render thread retains and updates an older node's ordered history.
+    d2vr_shader_metadata::Vertices<VsInfo> concurrent;
+    VsInfo initial;initial.hash=17;initial.bytecode={1,0,3};initial.wvpBase=0;
+    CHECK(concurrent.Remember(&shader,initial));
+    std::atomic<bool> start{false},done{false};std::atomic<unsigned> invalid{0},snapshots{0};
+    std::thread reader([&]{while(!start.load())YieldProcessor();do {
+        auto node=concurrent.Lookup(&shader);
+        if(!node || node->hash!=17 || node->bytecode.size()!=3 ||
+            node->wvpBase!=int(node->bytecode[1]))++invalid;
+        else {
+            // Only this render-like reader writes the history; the creation
+            // writer must never mutate it, even when a COM address is reused.
+            const auto expected=node->wvpBase;
+            node->wvpHistory.live.valid=true;node->wvpHistory.live.values[12]=float(expected);
+            for(unsigned i=0;i<8;++i)YieldProcessor();
+            if(node->wvpBase!=expected || node->wvpHistory.live.values[12]!=float(expected))++invalid;
+        }
+        ++snapshots;
+    }while(!done.load());});
+    start.store(true);
+    for(unsigned i=1;i<=20000;++i) {
+        VsInfo item;item.hash=17;item.bytecode={1,i,3};item.wvpBase=int(i);
+        CHECK(concurrent.Remember(&shader,item));
+        if(i<2048) {
+            VsInfo extra;extra.bytecode={1,i,3};
+            CHECK(concurrent.Remember(reinterpret_cast<void*>(uintptr_t(i)*16),extra));
+        }
+    }
+    done.store(true);reader.join();CHECK(!invalid.load() && snapshots.load()>0);
+    printf("PASS vertex metadata concurrency: 20000 replacements, %u stable binding/history snapshots, 2047 rehash identities, retired-node reclamation\n",snapshots.load());
     printf("PASS actual-source split projection history: %u checks; identical-eye regression, future live WVP isolation, frame inheritance, independent shaders, exact bytecode/address reuse; no GPU/HMD claim\n",checks);
 }
