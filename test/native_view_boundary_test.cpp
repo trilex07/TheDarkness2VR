@@ -28,6 +28,14 @@ static uint64_t TextHash(HMODULE module) {
 int main(int argc,char** argv) {
     d2vr_native_view::ProjectionWitness witness;
     const float inverse[16]={1,0,0,0,0,2,0,0,0,0,0,-10,0,0,1,10};
+    CHECK(witness.ProjectionMismatch(inverse,inverse)==0);
+    CHECK(witness.ProjectionMismatch(nullptr,inverse)==0xffff);
+    for(unsigned i=0;i<16;++i) {
+        float changed[16];memcpy(changed,inverse,sizeof(changed));changed[i]+=1;
+        CHECK(witness.ProjectionMismatch(changed,inverse)==(1u<<i));
+        changed[i]=INFINITY;CHECK(witness.ProjectionMismatch(changed,inverse)==(1u<<i));
+        changed[i]=NAN;CHECK(witness.ProjectionMismatch(changed,inverse)==(1u<<i));
+    }
     witness.Begin(10,1,2,3,inverse);
     CHECK(!witness.CanCover(11,1,2,3));
     CHECK(!witness.Observe(9,true,inverse) && !witness.Observe(10,false,inverse));

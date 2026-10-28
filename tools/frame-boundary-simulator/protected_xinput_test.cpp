@@ -39,6 +39,15 @@ int main() {
     Check(grips.Update(.1f,.5f)==XINPUT_GAMEPAD_RIGHT_SHOULDER);
     Check(grips.Update(.1f,.1f)==0);
     grips.Update(.9f,.9f);grips={};Check(grips.Update(.5f,.5f)==0);
+    Check(grips.Update(.9f,.9f)==(XINPUT_GAMEPAD_LEFT_SHOULDER|XINPUT_GAMEPAD_RIGHT_SHOULDER));
+    Check(grips.Update(.9f,.9f,false,true)==XINPUT_GAMEPAD_RIGHT_SHOULDER);
+    Check(grips.Update(.9f,.9f,true,true)==XINPUT_GAMEPAD_RIGHT_SHOULDER);
+    Check(grips.Update(.1f,.9f)==XINPUT_GAMEPAD_RIGHT_SHOULDER);
+    Check(grips.Update(.9f,.9f)==(XINPUT_GAMEPAD_LEFT_SHOULDER|XINPUT_GAMEPAD_RIGHT_SHOULDER));
+    Check(grips.Update(.9f,.9f,true,false)==XINPUT_GAMEPAD_LEFT_SHOULDER);
+    Check(grips.Update(.9f,.9f)==XINPUT_GAMEPAD_LEFT_SHOULDER);
+    Check(grips.Update(.9f,.1f)==XINPUT_GAMEPAD_LEFT_SHOULDER);
+    Check(grips.Update(.9f,.9f)==(XINPUT_GAMEPAD_LEFT_SHOULDER|XINPUT_GAMEPAD_RIGHT_SHOULDER));
     auto main=GetModuleHandleW(nullptr);auto image=reinterpret_cast<const BYTE*>(main);
     const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS*>(image+reinterpret_cast<const IMAGE_DOS_HEADER*>(image)->e_lfanew);
     d2vr_native_image::Guard guard{true,reinterpret_cast<uintptr_t>(main),pe->OptionalHeader.SizeOfImage};

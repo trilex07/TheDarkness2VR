@@ -16,9 +16,20 @@ inline bool Requested(bool imageObserver,bool guard,bool input,bool enabled) {
 // not supply controller-aligned native targeting, aim, or throws.
 struct Grips {
     bool held[2]{};
-    WORD Update(float left,float right) {
+    bool armed[2]{true,true};
+    WORD Update(float left,float right,bool leftValid=true,bool rightValid=true) {
         const float values[2]={left,right};
-        for(unsigned h=0;h<2;++h) held[h]=values[h]>(held[h] ? .35f:.65f);
+        const bool valid[2]={leftValid,rightValid};
+        for(unsigned h=0;h<2;++h) {
+            if(!valid[h] || !(values[h]>=0 && values[h]<=1)) {
+                held[h]=armed[h]=false;
+                continue;
+            }
+            // Reacquiring one controller with its grip held must not issue a
+            // fresh grab/slash. The other controller retains its own state.
+            if(values[h]<.35f)armed[h]=true;
+            held[h]=armed[h] && values[h]>(held[h] ? .35f:.65f);
+        }
         return WORD((held[0] ? XINPUT_GAMEPAD_LEFT_SHOULDER:0) |
                     (held[1] ? XINPUT_GAMEPAD_RIGHT_SHOULDER:0));
     }

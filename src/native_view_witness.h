@@ -14,11 +14,17 @@ struct ProjectionWitness {
     uint64_t uploadedFrame=0;
     bool uploaded=false;
     bool active=false,verified=false;
-    static bool SameProjection(const float* a,const float* b) {
-        if(!a || !b)return false;
+    // Bits identify rejected components, using exactly the acceptance tolerance.
+    // Diagnostics must not establish a second, weaker matching contract.
+    static unsigned ProjectionMismatch(const float* a,const float* b) {
+        if(!a || !b)return 0xffff;
+        unsigned mask=0;
         for(unsigned i=0;i<16;++i)if(!std::isfinite(a[i]) || !std::isfinite(b[i]) ||
-            std::fabs(a[i]-b[i])>2e-4f*(1+std::fabs(b[i])))return false;
-        return true;
+            std::fabs(a[i]-b[i])>2e-4f*(1+std::fabs(b[i])))mask|=1u<<i;
+        return mask;
+    }
+    static bool SameProjection(const float* a,const float* b) {
+        return ProjectionMismatch(a,b)==0;
     }
     void Begin(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c,const float* p) {
         frame=f;view=v;renderer=r;camera=c;active=p && v && r && c;

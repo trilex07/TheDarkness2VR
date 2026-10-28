@@ -1455,3 +1455,38 @@ callbacks, rejected owner reads clear the receipt; both builds PASS. Offline
 only, installed9106f53 unchanged. Read-only static check of the two native
 method spans finds no direct absolute-memory overlap with the three observed
 DR0/1/2 addresses; indirect accesses/protection compatibility remain unproven.
+
+## 2026-10-28: diagnose rejected projection corroboration after user side test
+
+User reports side objects still disappear. The retained runtime log (last write
+15:53:05 local, 200843 bytes) shows candidate9106f53 published the private view
+and reached98618E, but every sampled application reports corroborated=0 and
+cullingApplied=0. During gameplay the previous-frame upload and native inverse
+have matching X/Y; the log contains no other matrix components and no successful
+corroboration. This establishes an activation failure, not the precise mismatch
+or effectiveness of the conservative frustum once applied.
+
+Keep the complete finite16-component tolerance and camera/frame ownership gates.
+Add bounded full native/upload inverse pairs, per-component rejection bits,
+near/far/aspect, verified-frame identity and upload-phase eligibility. Rejected
+uploads log at most once per frame, first3 then every600th rejected frame;
+boundary pairs use the existing first3/every600 callback cadence. No new GPU
+queries, profiler, native writes, transpose assumption or relaxed clip checks.
+Add x86 regression coverage for all16 individual mismatch bits including NaN/Inf;
+external API/ABI and actual dispatch routing fixtures PASS. Both builds PASS.
+This diagnostic change does not itself repair side visibility or prove90FPS.
+
+## 2026-10-28: isolate raw grip tracking loss per controller
+
+Protected analog grips now consume each controller's own validity. Losing one
+controller releases and disarms only its shoulder action. Reacquisition with
+grip still held cannot create a fresh grab/slash; release below0.35 rearms that
+hand. The other hand retains its hysteresis and active action. Nonfinite and
+out-of-range squeeze samples also disarm their own hand. No native targeting,
+physics, pose or EXE hook is enabled. Controller-directed throws remain separate
+unimplemented integration work in the protected path.
+
+x86 system-XInput forwarding/preservation fixture PASS20041 checks. Actual-source
+protected gestures PASS231 checks, including up/down right-hand strokes while
+left tracking is absent. Existing pause/focus/rearm and lateral-stroke checks
+remain passing. These are offline input checks, not physical headset acceptance.

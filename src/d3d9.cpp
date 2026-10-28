@@ -3984,7 +3984,8 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if (g_recenterChord.suppress) gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
     LocateTrackedHands();
 #ifdef D2VR_MATCHED_CAPTURE
-    if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze);
+    if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
+        g_hands[0].valid,g_hands[1].valid);
     if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
 #endif
     gp.wButtons |= GestureButtons(gp);

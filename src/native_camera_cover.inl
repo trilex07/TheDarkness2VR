@@ -131,10 +131,36 @@ D2VR_SELECTED_CAMERA_SHIM(SelectedRenderCameraNear,CoverSelectedRenderCamera,g_n
 
 static d2vr_native_view::ProjectionWitness g_nativeViewWitness;
 static uint64_t g_nativeCullingAppliedFrame=0;
+static void LogNativeProjectionPair(const char* phase,const float* native,const float* upload) {
+    Log("[NativeProjectionPair] phase=%s frame=%llu boundaryFrame=%llu uploadFrame=%llu verifiedFrame=%llu mismatch=%04X native=[%.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g] upload=[%.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g]",
+        phase,g_trackedFrame.id,g_nativeViewWitness.frame,g_nativeViewWitness.uploadedFrame,g_nativeViewWitness.verifiedFrame,
+        d2vr_native_view::ProjectionWitness::ProjectionMismatch(upload,native),
+        native[0],native[1],native[2],native[3],native[4],native[5],native[6],native[7],
+        native[8],native[9],native[10],native[11],native[12],native[13],native[14],native[15],
+        upload[0],upload[1],upload[2],upload[3],upload[4],upload[5],upload[6],upload[7],
+        upload[8],upload[9],upload[10],upload[11],upload[12],upload[13],upload[14],upload[15]);
+}
 static void NativeViewProjectionObserved(const float* inverse) {
     if((!g_nativeViewBoundary.Installed() && !g_nativeFrustumBoundary.Installed()) ||
        GetCurrentThreadId()!=g_renderThreadId)return;
-    if(g_nativeViewWitness.Observe(g_trackedFrame.id,g_had3DCameraThisFrame,inverse)) {
+    const bool verified=g_nativeViewWitness.Observe(g_trackedFrame.id,g_had3DCameraThisFrame,inverse);
+    // At most one eligible failure per frame, first three then every 600th.
+    // Preserve the exact uploaded matrix; no transpose/clip-range guesses.
+    if(!verified && inverse && g_had3DCameraThisFrame) {
+        static uint64_t lastFrame=~uint64_t(0);
+        static unsigned rejectedFrames=0;
+        if(lastFrame!=g_trackedFrame.id) {
+            lastFrame=g_trackedFrame.id;
+            if(++rejectedFrames<=3 || rejectedFrames%600==0) {
+                Log("[NativeProjectionReject] active=%d sameFrame=%d world=%d view=%p renderer=%p camera=%p",
+                    int(g_nativeViewWitness.active),int(g_nativeViewWitness.frame==g_trackedFrame.id),int(g_had3DCameraThisFrame),
+                    reinterpret_cast<void*>(g_nativeViewWitness.view),reinterpret_cast<void*>(g_nativeViewWitness.renderer),
+                    reinterpret_cast<void*>(g_nativeViewWitness.camera));
+                LogNativeProjectionPair("upload",g_nativeViewWitness.inverse,inverse);
+            }
+        }
+    }
+    if(verified) {
         static unsigned reports=0;
         if(++reports<=3 || reports%600==0)
             Log("[NativeViewBoundary] projection corroborated frame=%llu view=%p renderer=%p camera=%p",
@@ -244,10 +270,15 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
     }
     g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
     static unsigned reports=0;
-    if(++reports<=3 || reports%600==0)
+    if(++reports<=3 || reports%600==0) {
         Log("[NativeViewBoundary] beforeCopy=%d frame=%llu context=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d stereoVPUnion=%d cullingApplied=%d uploadFrame=%llu inverseXY=%.6g,%.6g uploadXY=%.6g,%.6g; EXE/IAT unchanged",
             int(beforeCopy),g_trackedFrame.id,view,renderer,camera,fields.fov,ready,cullingReady,int(cullingInput.stereoUnion),cullingApplied,
             g_nativeViewWitness.uploadedFrame,inverse[0],inverse[5],g_nativeViewWitness.uploadedInverse[0],g_nativeViewWitness.uploadedInverse[5]);
+        Log("[NativeProjectionContract] near=%.9g far=%.9g aspect=%.9g verifiedFrame=%llu identityMatch=%d shaderKnown=%d",
+            fields.nearZ,fields.farZ,fields.aspect,g_nativeViewWitness.verifiedFrame,
+            int(g_nativeViewWitness.CanCover(g_trackedFrame.id,v,r,c)),int(d2vr_replay::g_cameraProjectionKnown));
+        LogNativeProjectionPair("boundary",inverse,g_nativeViewWitness.uploadedInverse);
+    }
 }
 static void ObserveNativeCameraBoundary(void* view,bool) {
     if(GetCurrentThreadId()!=g_renderThreadId)return;

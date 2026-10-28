@@ -61,6 +61,14 @@ int main(){
     g_hands[1].squeeze=0;Step();g_hands[1].squeeze=.9f;Step();Step();gp=Step();
     Check(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER);
     g_hands[1].valid=false;gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));
+    // Left tracking loss does not disable a right vertical gesture. Test both
+    // directions through the actual production gesture-to-stick mapping.
+    for(float direction : {-1.f,1.f}) {
+        Reset();g_hands[0].valid=false;Step();
+        g_hands[1].squeeze=.9f;g_hands[1].motion.velocity={0,3*direction,0};
+        Step();Step();gp=Step();Check(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER);
+        gp=Step(.04);Check(gp.sThumbRX==0 && gp.sThumbRY*direction>32000);
+    }
     // Pause is latched until the next Start edge; no stroke leaks through.
     Reset();Step();gp=Step(.01,XINPUT_GAMEPAD_START);Check(g_protectedRightTentacle.paused);
     g_hands[1].squeeze=.9f;g_hands[1].motion.velocity={4,0,0};
