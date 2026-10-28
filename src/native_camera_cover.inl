@@ -140,29 +140,48 @@ static void NativeViewProjectionObserved(const float* inverse) {
                 reinterpret_cast<void*>(g_nativeViewWitness.renderer),reinterpret_cast<void*>(g_nativeViewWitness.camera));
     }
 }
-static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeCameraFields& fields) {
+struct NativeViewReadStatus {
+    unsigned stage=0;
+    uintptr_t viewTable=0,cameraTable=0;
+};
+static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeCameraFields& fields,
+                               NativeViewReadStatus& status) {
     __try {
         const auto root=static_cast<unsigned char*>(view);
         if(!root)return false;
-        const auto table=*reinterpret_cast<uintptr_t*>(root);
+        status.stage=1;
+        const auto table=status.viewTable=*reinterpret_cast<uintptr_t*>(root);
         if(table!=0xFC8930 && table!=0xFC6800)return false;
+        status.stage=2;
         auto reference=*reinterpret_cast<void***>(root+0xa8);
         if(!reference || !(renderer=*reference))return false;
+        status.stage=3;
         auto selected=*reinterpret_cast<void***>(static_cast<unsigned char*>(renderer)+0x3f4);
         if(!selected || !(camera=*selected))return false;
-        return ReadSelectedRenderCamera(camera,renderer,fields);
+        status.stage=4;status.cameraTable=*reinterpret_cast<uintptr_t*>(camera);
+        const bool valid=ReadSelectedRenderCamera(camera,renderer,fields);
+        if(valid)status.stage=5;
+        return valid;
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 static void ObserveNativeViewBoundary(void* view) {
     if(GetCurrentThreadId()!=g_renderThreadId)return;
     static unsigned entries=0;
-    if(++entries<=3)
-        Log("[NativeViewBoundary] ESI captured=%p thread=%lu frame=%llu open=%d world=%d; observation only",
-            view,GetCurrentThreadId(),g_trackedFrame.id,int(g_trackedFrame.open),int(g_in3DGameplayMode));
+    const bool report=++entries<=3 || entries%600==0;
+    if(report)
+        Log("[NativeViewBoundary] ESI captured=%p thread=%lu frame=%llu open=%d world=%d views=%d had3D=%d; observation only",
+            view,GetCurrentThreadId(),g_trackedFrame.id,int(g_trackedFrame.open),int(g_in3DGameplayMode),int(g_haveViews),int(g_had3DCameraThisFrame));
     if(GetCurrentThreadId()!=g_renderThreadId || !g_trackedFrame.open || !g_haveViews ||
        !g_in3DGameplayMode || g_submitMode!=4 || g_stereoMode!=1 || g_had3DCameraThisFrame)return;
     void* renderer=nullptr;void* camera=nullptr;NativeCameraFields fields{};
-    if(!ReadOwnedViewCamera(view,renderer,camera,fields))return;
+    NativeViewReadStatus status;
+    if(!ReadOwnedViewCamera(view,renderer,camera,fields,status)) {
+        static unsigned rejected=0;
+        if(++rejected<=3 || rejected%600==0)
+            Log("[NativeViewBoundary] rejected stage=%u viewTable=%08X renderer=%p camera=%p cameraTable=%08X; 1=view table 2=renderer ref 3=camera ref 4=camera contract; observation only",
+                status.stage,unsigned(status.viewTable),renderer,camera,unsigned(status.cameraTable));
+        return;
+    }
     const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
     const bool ready=g_nativeViewWitness.CanCover(g_trackedFrame.id,v,r,c);
     float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;

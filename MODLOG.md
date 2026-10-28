@@ -660,6 +660,27 @@ witness tests reject wrong frames, non-world uploads and changed identities.
 All new pins match the installed D46 EXE. Production and diagnostic builds PASS.
 Physical headset acceptance and real native-boundary corroboration remain pending.
 
+## 2026-10-28: native camera lifetime and boundary rejection evidence
+
+935f889 real startup confirms external QPC installation and ESI=000E3A60 on
+render thread23616. Present forwarding returns D3D_OK; output/depth2676x2728.
+It does not yet corroborate the camera inverse in a gameplay frame. Subsequent
+offline code reports bounded rejection stages (view table, renderer reference,
+camera reference, camera contract), plus periodic boundary state, instead of
+silently dropping every failed ownership traversal. Diagnostic build PASS;
+this follow-up has not replaced the running DLL.
+
+Further SHA-pinned Ghidra analysis changes the lifetime assumption: 84BBA0
+increments reference-cell+4 and releases the old cell; 402550 puts the unused
+cell on a free list. Neither function retains/destroys the camera object.
+Consequently these calls do NOT prove a strong camera lease across native
+rendering. Do not enable a restore-after-render implementation by merely
+incrementing this counter. Current observation dereferences only synchronously
+inside the native callback and retains numeric identities, not object pointers.
+71F070 dispatches global010E1388 virtual+28; 706250 is an empty thunk. This
+narrows the update-order inspection but does not prove the entire render order.
+Private disassembly remains outside Git. Peripheral fix remains incomplete.
+
 ## 2026-10-28: contiguous constant-window flush
 
 Track whether each window bank's written union is provably contiguous. Empty,
