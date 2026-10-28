@@ -3274,10 +3274,11 @@ struct EyeColorHistory {
 };
 static EyeColorHistory g_rightColorHistory;
 static bool SeedRightEyeBackground(IDirect3DDevice9* dev, IDirect3DSurface9* output,
-                                   bool has3DCamera) {
-    // A segment without a 3D camera cannot regenerate the opposite-eye world.
-    // Only carry history into those segments; world renders start from current pixels.
-    return has3DCamera || g_rightColorHistory.Restore(dev, output);
+                                   bool hasWorldDraw) {
+    // Camera constants alone do not regenerate opposite-eye world pixels.
+    // Carry right-eye history when no live world draw was issued; actual
+    // world renders still start from current pixels and regenerate the eye.
+    return hasWorldDraw || g_rightColorHistory.Restore(dev, output);
 }
 static IDirect3DSurface9* g_liveColorBackup = nullptr;
 static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
@@ -3479,7 +3480,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         warnEarly("BackupLiveColor failed");
         liveEnd.Release(); g_blitPass = 0; g_eyePairReady = false; return;
     }
-    const bool historyOk = SeedRightEyeBackground(dev, liveEnd.targets[0], g_had3DCameraThisFrame);
+    const bool historyOk = SeedRightEyeBackground(dev, liveEnd.targets[0], g_hadWorldDrawThisFrame);
     d2vr_replay::g_frameStart.Apply(dev);
     g_gpuTiming.MarkLiveEnd();
     d2vr_replay::InvalidateShadowAtlasPass();

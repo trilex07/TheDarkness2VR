@@ -914,3 +914,26 @@ Headset side-pop, right-eye flicker, actual native plane execution and FPS
 acceptance remain NOT RUN for this candidate. Prepare it for the user's
 requested test without launching the game. Preserve the prior DLL/profiles
 and native2676x2728 source resolution for rollback and comparison.
+
+## 2026-10-28: camera-only segments retain the right-eye background
+
+The right-eye color-history seed used g_had3DCameraThisFrame to decide whether
+to regenerate world pixels. That flag records a camera constant upload, not
+a world draw. A camera-only/UI segment could therefore skip restoring the
+existing right-eye history and keep the live left-eye background. Gate on
+the separately tracked g_hadWorldDrawThisFrame instead. That flag is set at
+the four live world draw forwarding paths, after diagnostic skips, and reset
+at the existing XR frame boundary. No new frame/camera inference is added.
+World draws still bypass the copy and regenerate their right-eye pixels;
+camera-only segments restore only history for the same owned render target.
+
+An x86 fixture compiles the actual EyeColorHistory/seed implementation and
+its actual call-site expression. The committed1cea63a source reproduces an
+expected FAIL: camera constants but no world draw leaves left pixels instead
+of the saved right background. The correction passes1000 world/camera-only/UI
+cycles, no extra copy for world draws, creation/copy failure and target change
+ownership tests. Pixels/API results are simulated; this does not establish
+that the user's street flicker follows that path or prove a physical fix.
+Production and diagnostic x86 builds PASS. No game launch or runtime test.
+Keep the installed1cea63a side-culling candidate stable while preparing this
+additional correction offline; do not silently replace its test baseline.
