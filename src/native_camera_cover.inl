@@ -135,6 +135,23 @@ D2VR_SELECTED_CAMERA_SHIM(SelectedRenderCameraNear,CoverSelectedRenderCamera,g_n
 
 static d2vr_native_view::ProjectionWitness g_nativeViewWitness;
 static uint64_t g_nativeCullingAppliedFrame=0;
+#include "native_culling_status.h"
+static NativeCullingReason g_nativeCullingReason=NativeCullingReason::NoBoundary;
+static void ReportNativeCullingStatus() {
+    if(!g_submissionStatus || g_nativeViewBoundaryMode<2 || !g_trackedFrame.open ||
+       !g_in3DGameplayMode || !g_trackedFrame.id)return;
+    const bool applied=g_nativeCullingAppliedFrame==g_trackedFrame.id;
+    const auto reason=applied?NativeCullingReason::Applied:g_nativeCullingReason;
+    static unsigned seen=0;
+    static uint64_t lastFrame=0;
+    const unsigned bit=1u<<static_cast<unsigned>(reason);
+    if(!(seen&bit) || (g_trackedFrame.id>lastFrame && g_trackedFrame.id-lastFrame>=600)) {
+        seen|=bit;lastFrame=g_trackedFrame.id;
+        Log("[NativeCullingStatus] frame=%llu applied=%d reason=%u:%s mode=%d prepared=%d; OFF digit is a failure stage, not a toggle",
+            g_trackedFrame.id,int(applied),unsigned(reason),NativeCullingReasonName(reason),
+            g_nativeViewBoundaryMode,int(g_nativeTranslatedViewPrepared));
+    }
+}
 static void LogNativeProjectionPair(const char* phase,const float* native,const float* upload) {
     Log("[NativeProjectionPair] phase=%s frame=%llu boundaryFrame=%llu uploadFrame=%llu verifiedFrame=%llu mismatch=%04X native=[%.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g] upload=[%.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g; %.9g %.9g %.9g %.9g]",
         phase,g_trackedFrame.id,g_nativeViewWitness.frame,g_nativeViewWitness.uploadedFrame,g_nativeViewWitness.verifiedFrame,
@@ -249,6 +266,7 @@ static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeC
 static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
                                         const NativeCameraFields& fields,bool beforeCopy) {
     g_nativeCullingAppliedFrame=0;
+    g_nativeCullingReason=NativeCullingReason::Projection;
     const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
     if(beforeCopy && v==0x98618E && g_nativeViewBoundaryMode==3 && g_nativeTranslatedViewPrepared)
         ObserveSelectedPlayerCamera(renderer);
@@ -265,13 +283,20 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
     const bool boundaryReady=(g_nativeViewBoundaryMode==2 && g_nativeFrustumBoundary.Installed()) ||
         (g_nativeViewBoundaryMode==3 && g_nativeTranslatedViewPrepared);
     const bool canApply=beforeCopy && v==0x98618E && boundaryReady && ready;
+    g_nativeCullingReason=!beforeCopy || v!=0x98618E || !boundaryReady?NativeCullingReason::Context:
+        !witnessReady?NativeCullingReason::PreviousProjection:
+        !ready?NativeCullingReason::ShaderProjection:NativeCullingReason::Geometry;
     const bool cullingReady=canApply && PrepareOwnedCullingInput(camera,fields,cullingInput);
     bool cullingApplied=false;
     // The exact98618E instruction follows native camera rebuilding and precedes
     // the getter/copy. Neither QPC nor an earlier view-entry phase may write.
     if(cullingReady) {
+        g_nativeCullingReason=NativeCullingReason::Rebuild;
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
-        if(cullingApplied)g_nativeCullingAppliedFrame=g_trackedFrame.id;
+        if(cullingApplied) {
+            g_nativeCullingAppliedFrame=g_trackedFrame.id;
+            g_nativeCullingReason=NativeCullingReason::Applied;
+        }
         static unsigned appliedReports=0;
         if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
             Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d route=%d planes=native+binocular bounds=native+binocular renderProjection=unchanged",
@@ -322,7 +347,10 @@ static void ObserveNativeCameraBoundary(void* view,bool) {
 }
 static void __fastcall ObserveTranslatedFrustum(void* camera,void* renderer) {
     const DWORD error=GetLastError();
-    if(g_nativeViewBoundaryMode==3 && GetCurrentThreadId()==g_renderThreadId)g_nativeCullingAppliedFrame=0;
+    if(g_nativeViewBoundaryMode==3 && GetCurrentThreadId()==g_renderThreadId) {
+        g_nativeCullingAppliedFrame=0;
+        g_nativeCullingReason=NativeCullingReason::Context;
+    }
     if(g_nativeViewBoundaryMode==3 && g_nativeTranslatedViewPrepared &&
        GetCurrentThreadId()==g_renderThreadId && g_trackedFrame.open &&
        g_haveViews && g_in3DGameplayMode && g_submitMode==4 && g_stereoMode==1) {
@@ -330,6 +358,7 @@ static void __fastcall ObserveTranslatedFrustum(void* camera,void* renderer) {
         if(ReadSelectedRenderCamera(camera,renderer,fields))
             ObserveNativeSelectedCamera(reinterpret_cast<void*>(0x98618E),renderer,camera,fields,true);
         else {
+            g_nativeCullingReason=NativeCullingReason::Camera;
             static unsigned rejected=0;
             if(++rejected<=3 || rejected%600==0)
                 Log("[NativeCullingRefusal] frame=%llu route=3 camera=%p renderer=%p cameraContract=0; no frustum write",
@@ -374,6 +403,7 @@ static void ObserveNativeFrustumCopy(const CONTEXT& context) {
     auto renderer=reinterpret_cast<void*>(context.Edi-0x3f4);
     auto camera=reinterpret_cast<void*>(context.Ecx);
     NativeCameraFields fields{};
+    g_nativeCullingReason=NativeCullingReason::Camera;
     if(!ReadSelectedRenderCamera(camera,renderer,fields))return;
     ObserveNativeSelectedCamera(reinterpret_cast<void*>(0x98618E),renderer,camera,fields,true);
 }

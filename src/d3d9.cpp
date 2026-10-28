@@ -2513,10 +2513,14 @@ static StereoCBData PrepareStereoEyeConstants(
     memset(cb->aimCfg,0,sizeof(cb->aimCfg));
     cb->statusCfg[0]=g_submissionStatus ? ((g_replayConstantBatch && g_replayConstantWindow)?2.0f:1.0f):0.0f;
     cb->statusCfg[1]=0;
+    cb->statusCfg[2]=0;
 #ifdef D2VR_MATCHED_CAPTURE
-    if(g_submissionStatus && g_nativeViewBoundaryMode>=2)
+    if(g_submissionStatus && g_nativeViewBoundaryMode>=2) {
         cb->statusCfg[1]=g_trackedFrame.open && g_in3DGameplayMode && g_trackedFrame.id &&
             g_nativeCullingAppliedFrame==g_trackedFrame.id ? 2.f:1.f;
+        cb->statusCfg[2]=float(static_cast<unsigned>(g_nativeCullingReason));
+        if(g_blitPass && eyeIdx==0)ReportNativeCullingStatus();
+    }
 #endif
     if(g_blitPass && g_tentacleBridge && g_tentacleAimMarker && g_tentacleAimVisible && g_in3DGameplayMode)
         ComputeBaseAimMarker(eyeIdx,cb->posCfg[2],cb->posCfg[3],cb->aimCfg);
@@ -5376,6 +5380,7 @@ static void BeginTrackedFrame() {
     ++g_trackedFrame.id;
 #ifdef D2VR_MATCHED_CAPTURE
     g_nativeCullingAppliedFrame=0;
+    g_nativeCullingReason=NativeCullingReason::NoBoundary;
     d2vr_cpu_sync::timing.MarkFrame(g_trackedFrame.id);
 #endif
     g_trackedFrame.startedMs = GetTickCount64();

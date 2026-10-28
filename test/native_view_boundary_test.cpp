@@ -11,6 +11,7 @@
 #include "../src/native_view_witness.h"
 #include "../src/native_projection_upload.h"
 #include "../src/native_culling_cover.h"
+#include "../src/native_culling_status.h"
 #define CHECK(x) do{if(!(x)){printf("FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 // Exercise the actual selected-camera admission callback. Native object writes
 // and geometry rebuilding are stubbed here; the builder ABI and binocular
@@ -18,6 +19,7 @@
 struct NativeCameraFields {float aspect,fov,nearZ,farZ,projection[16];};
 static d2vr_native_view::ProjectionWitness g_nativeViewWitness;
 static uint64_t g_nativeCullingAppliedFrame=0;
+static NativeCullingReason g_nativeCullingReason=NativeCullingReason::NoBoundary;
 static struct Frame {uint64_t id=0;} g_trackedFrame;
 static DWORD g_renderThreadId=0;
 static int g_nativeViewBoundaryMode=3;
@@ -151,21 +153,27 @@ int main(int argc,char** argv) {
         ObserveNativeSelectedCamera(reinterpret_cast<void*>(0x98618E),reinterpret_cast<void*>(2),camera,fields,true);
     };
     call();CHECK(rebuildCalls==0 && !g_nativeCullingAppliedFrame);
+    CHECK(g_nativeCullingReason==NativeCullingReason::PreviousProjection);
     CHECK(g_nativeViewWitness.Observe(100,true,capturedUpload));
     g_trackedFrame.id=101;call();CHECK(rebuildCalls==1 && g_nativeCullingAppliedFrame==101);
+    CHECK(g_nativeCullingReason==NativeCullingReason::Applied);
     CHECK(g_nativeViewWitness.Observe(101,true,capturedUpload));
     call();CHECK(rebuildCalls==2 && g_nativeCullingAppliedFrame==101);
     // Current upload may also precede the first selected-camera callback.
     g_trackedFrame.id=102;CHECK(!g_nativeViewWitness.Observe(102,true,capturedUpload));
     call();call();CHECK(rebuildCalls==4 && g_nativeCullingAppliedFrame==102);
     d2vr_replay::g_cameraProjectionKnown=false;call();CHECK(rebuildCalls==4 && !g_nativeCullingAppliedFrame);
+    CHECK(g_nativeCullingReason==NativeCullingReason::ShaderProjection);
     d2vr_replay::g_cameraProjectionKnown=true;
     d2vr_replay::g_cameraInverseProjection[11]+=1;call();CHECK(rebuildCalls==4 && !g_nativeCullingAppliedFrame);
     memcpy(d2vr_replay::g_cameraInverseProjection,capturedUpload,sizeof(capturedUpload));
     call(reinterpret_cast<void*>(4));CHECK(rebuildCalls==4 && !g_nativeCullingAppliedFrame);
+    CHECK(g_nativeCullingReason==NativeCullingReason::PreviousProjection);
     call();CHECK(rebuildCalls==5 && g_nativeCullingAppliedFrame==102);
     prepareOK=false;call();CHECK(rebuildCalls==5 && !g_nativeCullingAppliedFrame);prepareOK=true;
+    CHECK(g_nativeCullingReason==NativeCullingReason::Geometry);
     rebuildOK=false;call();CHECK(rebuildCalls==6 && !g_nativeCullingAppliedFrame);rebuildOK=true;
+    CHECK(g_nativeCullingReason==NativeCullingReason::Rebuild);
     g_trackedFrame.id=104;call();CHECK(rebuildCalls==6 && !g_nativeCullingAppliedFrame);
     puts("PASS actual selected-camera admission: repeated/early uploads, camera identity, full projection, freshness, prepare/rebuild failure");
     CHECK(argc==2);auto fixture=LoadLibraryA(argv[1]);CHECK(fixture);

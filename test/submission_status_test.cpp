@@ -37,8 +37,18 @@ int main(){
  ctx->OMSetRenderTargets(1,&view,nullptr);ctx->VSSetShader(shader,nullptr,0);
  ctx->PSSetShader(ps,nullptr,0);ctx->PSSetConstantBuffers(0,1,&cb);
  ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
- for(unsigned mode=0;mode<3;++mode)for(unsigned cull=0;cull<3;++cull){
-  float constants[28]{};constants[24]=float(mode);constants[25]=float(cull);
+ const char* digits[8][5]={
+  {"00100","01100","00100","00100","01110"},
+  {"11110","00001","00110","01000","11111"},
+  {"11110","00001","00110","00001","11110"},
+  {"10010","10010","11111","00010","00010"},
+  {"11111","10000","11110","00001","11110"},
+  {"01111","10000","11110","10001","01110"},
+  {"11111","00001","00010","00100","00100"},
+  {"01110","10001","01110","10001","01110"}};
+ for(unsigned mode=0;mode<3;++mode)for(unsigned cull=0;cull<3;++cull)
+ for(unsigned reason=1;reason<=(mode==2 && cull==1?8u:1u);++reason){
+  float constants[28]{};constants[24]=float(mode);constants[25]=float(cull);constants[26]=float(reason);
   ctx->UpdateSubresource(cb,0,nullptr,constants,0,0);
   float black[4]{};ctx->ClearRenderTargetView(view,black);ctx->Draw(3,0);
   ctx->CopyResource(read,rt);D3D11_MAPPED_SUBRESOURCE map{};
@@ -48,6 +58,12 @@ int main(){
    auto* p=(unsigned char*)map.pData+y*map.RowPitch+x*4;
    if(p[1]>220 && p[0]<100){if(y>=150)++cullGreen;else ++green;}
    if(p[0]>220 && p[1]>100 && p[1]<180){if(y>=150)++cullOrange;else ++orange;}
+  }
+  if(mode==2 && cull==1)for(unsigned row=0;row<5;++row)for(unsigned col=0;col<5;++col) {
+   const unsigned x=unsigned((.37f+(54+col+.5f)*.006f)*512);
+   const unsigned y=unsigned((.23f+(8+row+.5f)*.008f)*512);
+   auto* p=(unsigned char*)map.pData+y*map.RowPitch+x*4;
+   CHECK((p[0]>220 && p[1]>100 && p[1]<180)==(digits[reason-1][row][col]=='1'));
   }
   ctx->Unmap(read,0);
   CHECK(mode==0?(green==0 && orange==0):mode==1?(orange>100 && green==0):(green>100 && orange==0));

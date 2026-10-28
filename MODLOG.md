@@ -1883,3 +1883,24 @@ Actual-source protected throw/context fixture171 checks PASS; existing XInput
 bridge production97/diagnostic151 checks PASS, including latched action/menu
 ownership and input/time loss. Both x86 builds PASS. Native-owner activation
 and physical opponent execution still require runtime evidence; no FPS claim.
+
+## 2026-10-28: identify the CULL OFF admission failure
+
+User reports CULL OFF with peripheral disappearance. Current installed INI
+already requests NativeViewBoundary=3; the retained log ends18:29:38 and
+predates the installed2805abf candidate. It cannot identify the reported run's
+failed admission. No culling acceptance, geometry fix or FPS gain is inferred.
+
+The existing current-frame status now appends the actual refusal stage:
+1 boundary not reached,2 frame/gameplay context,3 selected camera contract,
+4 native projection,5 preceding-frame projection proof,6 live shader match,
+7 binocular geometry preparation,8 frustum rebuild. A successful rebuild is
+still the only source of CULL ON. Each newly encountered reason is logged once,
+with bounded600-frame refreshes, in NativeCullingStatus. Counters reset at the
+XR frame boundary; no preceding-frame success is displayed as current success.
+Native admission and all memory-write conditions remain unchanged.
+
+Actual selected-camera x86 admission/ABI regression PASS. Actual final pixel
+shader WARP regression PASS for CPU/CULL combinations and all200 pixels of
+the eight refusal digits. Production and diagnostic x86 builds PASS. Game
+not launched; the cause of this user's OFF state still requires a fresh run.

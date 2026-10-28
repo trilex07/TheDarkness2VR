@@ -6,11 +6,11 @@ float4 SubmissionStatus(float2 uv) {
     if(statusCfg.x<0.5) return 0;
     int2 p=int2(floor((uv-float2(0.37,0.23))/float2(0.006,0.008)));
     bool culling=p.y>=8;
-    if(p.x < -2 || p.x >= (culling?50:44) || p.y < -2 || p.y >= 15) return 0;
+    if(p.x < -2 || p.x >= (culling?62:44) || p.y < -2 || p.y >= 15) return 0;
     if(p.y>=7 && statusCfg.y<0.5) return 0;
     if(culling)p.y-=8;
     bool on=(culling?statusCfg.y:statusCfg.x)>1.5;
-    if(p.x<0 || p.x>=(culling?48:42) || p.y<0 || p.y>=5) return float4(0.015,0.015,0.015,1);
+    if(p.x<0 || p.x>=(culling?60:42) || p.y<0 || p.y>=5) return float4(0.015,0.015,0.015,1);
     uint letter=uint(p.x)/6u, x=uint(p.x)%6u;
     uint glyph=0;
     if(culling) {
@@ -20,6 +20,18 @@ float4 SubmissionStatus(float2 uv) {
         if(letter==5) glyph=33080895; // O
         if(letter==6) glyph=on?18470705:17332767; // N/F
         if(letter==7 && !on) glyph=17332767; // F
+        // A single stage digit identifies the actual failed admission check.
+        if(letter==9 && !on) {
+            uint digit=uint(statusCfg.z);
+            if(digit==1)glyph=14815620;
+            if(digit==2)glyph=32774206;
+            if(digit==3)glyph=31496254;
+            if(digit==4)glyph=2195026;
+            if(digit==5)glyph=31521311;
+            if(digit==6)glyph=15268367;
+            if(digit==7)glyph=4327487;
+            if(digit==8)glyph=15252014;
+        }
     } else {
     if(letter==0) glyph=33047071; // C
     if(letter==1) glyph=17332798; // P
