@@ -19,7 +19,7 @@ struct ReaderOps {
     uint32_t Thread() const {return GetCurrentThreadId();}
     void Flush(){context->Flush();}
     d2vr_shared_reader::Poll GetData(){
-        const auto hr=context->GetData(query,nullptr,0,0);
+        const auto hr=context->GetData(query,nullptr,0,D3D11_ASYNC_GETDATA_DONOTFLUSH);
         return hr==S_OK?d2vr_shared_reader::Poll::Ready:
             hr==S_FALSE?d2vr_shared_reader::Poll::Pending:d2vr_shared_reader::Poll::Failed;
     }

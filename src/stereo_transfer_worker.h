@@ -86,7 +86,9 @@ struct Job {
         drawDone=Clock();
         if(deferReader) {result=S_OK;end=Clock();return;}
         const ULONGLONG readerStart=GetTickCount64();
-        while((result=context->GetData(reader.Get(),nullptr,0,0))==S_FALSE) {
+        // End+Flush above submitted this exact reader event. Polling must not
+        // repeatedly ask the driver to flush unrelated later commands.
+        while((result=context->GetData(reader.Get(),nullptr,0,D3D11_ASYNC_GETDATA_DONOTFLUSH))==S_FALSE) {
             if(GetTickCount64()-readerStart>2000) { result=HRESULT_FROM_WIN32(ERROR_TIMEOUT); end=Clock(); return; }
             SwitchToThread();
         }

@@ -1347,3 +1347,29 @@ timestamp values are not NVIDIA hardware/game performance evidence. Both
 builds PASS. No shader/pixel/resolution changes, no new general profiler and
 no launch. Installed9106f53 remains unchanged for the user's side-visibility
 test; this instrumentation is not in that candidate.
+
+## 2026-10-28: forbid implicit flush while polling already submitted readers
+
+Both D3D11 reader-event polling paths used GetData flags0 despite an explicit
+Flush immediately before their loops: transfer Job::Run and shared-reader
+Fence::PollIssued via SharedReaderFenceOps. Set DONOTFLUSH in these two calls.
+The exact query has already been Ended/submitted; keep the explicit Flush,
+same pending dependency, S_OK requirement, error/timeout handling, worker join
+and resource retirement. This forbids driver-initiated implicit flush during
+polling; it does not eliminate the necessary GPU completion wait or prove that
+flags0 actually flushed on this driver. Native D3D9 producer polling unchanged.
+
+Actual isolated x86 D3D9Ex/D3D11 regression PASS1000 transfers,400 at2676x2728,
+sampled pixels, concurrent D3D9 work, immediate/deferred readers, failure latch,
+RAII join and Reset/recreation. Test reader Ops uses the same DONOTFLUSH flag.
+Shared-reader unit regressions PASS including later unrelated commands,
+wrong owner, reuse, timeout/error and Reset. Production/diagnostic builds PASS.
+No game/Steam/OpenXR launch, no measured game saving. Installed9106f53 is
+unchanged; reserve this change for the next candidate.
+
+Side-visibility follow-up: retained935A70 evidence confirms deep copy of the
+owning plane/type vectors plus bounds from camera+620. A777C0 separately reads
+camera+7C0; it is not a proved removable visibility filter. Do not change that
+reference or disable occlusion without its consumer contract/runtime evidence.
+Current gameplay log remains the14:00 pre-9106f53 run, so it cannot establish
+activation or rejection of the new owned-method side correction.
