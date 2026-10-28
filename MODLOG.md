@@ -1795,3 +1795,23 @@ Some GPUFrame batches report D3D9 live+replay11.787/13.993ms, excluding D3D11/XR
 already over the11.111ms90Hz budget. These mixed/toggled scene batches are not
 a matched A/B and do not identify the expensive pass or prove a CPU saving.
 Current high-resolution90FPS acceptance remains open.
+
+## 2026-10-28: identify current-frame CULL refusals and missing player route
+
+User reports CULL OFF again. The available log still ends18:29:38 and cannot
+identify this new refusal. Existing bounded boundary reports now expose the
+pre-Begin witness decision, shader-upload agreement, boundary readiness and
+prepare/rebuild outcome; route3 camera-contract rejection is also bounded.
+No culling admission, geometry, indicator semantics or performance path changes.
+
+Read-only renderer rejection metadata additionally records the pinned+3F8
+context reference, its native virtual+CC getter, selected render camera and
+optional+460 override. Ghidra985D80/D05F20 confirms these fields are consumed
+by the native selected-view path. Unknown getters are never called. The missing
+current-view player owner remains unresolved; native left aim/throw is not
+claimed active. Private decompilation remains outside the repository.
+
+Read-only owner regression4162 checks PASS. Actual-source selected-camera
+admission and x86 boundary ABI regressions PASS; production and diagnostic x86
+builds PASS (diagnostic rebuilt after CULL logging). No game launch or runtime
+performance/visibility fix is claimed by this diagnostic candidate.

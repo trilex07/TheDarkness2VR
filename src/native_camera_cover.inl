@@ -252,7 +252,8 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
     float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
     float expectedUpload[16];
     if(!d2vr_native_projection::ExpectedInverseUpload(fields.projection,expectedUpload))return;
-    const bool ready=g_nativeViewWitness.CanCoverProjection(g_trackedFrame.id,v,r,c,inverse) &&
+    const bool witnessReady=g_nativeViewWitness.CanCoverProjection(g_trackedFrame.id,v,r,c,inverse);
+    const bool ready=witnessReady &&
         d2vr_replay::g_cameraProjectionKnown &&
         d2vr_native_view::ProjectionWitness::SameProjection(expectedUpload,d2vr_replay::g_cameraInverseProjection);
     d2vr_culling_cover::Input cullingInput;
@@ -285,6 +286,13 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
         Log("[NativeProjectionContract] near=%.9g far=%.9g aspect=%.9g verifiedFrame=%llu identityMatch=%d shaderKnown=%d",
             fields.nearZ,fields.farZ,fields.aspect,g_nativeViewWitness.verifiedFrame,
             int(g_nativeViewWitness.CanCover(g_trackedFrame.id,v,r,c)),int(d2vr_replay::g_cameraProjectionKnown));
+        if(beforeCopy && !cullingApplied)
+            Log("[NativeCullingRefusal] frame=%llu boundaryReady=%d witnessReady=%d shaderKnown=%d uploadMatch=%d prepare=%d rebuild=%d; current-frame OFF, admission unchanged",
+                g_trackedFrame.id,int(boundaryReady),
+                int(witnessReady),
+                int(d2vr_replay::g_cameraProjectionKnown),
+                int(d2vr_native_view::ProjectionWitness::SameProjection(expectedUpload,d2vr_replay::g_cameraInverseProjection)),
+                int(cullingReady),int(cullingApplied));
         LogNativeProjectionPair("boundary",inverse,g_nativeViewWitness.uploadedInverse);
         LogNativeProjectionPair("boundary-expected-upload",expectedUpload,g_nativeViewWitness.uploadedInverse);
     }
@@ -318,6 +326,12 @@ static void __fastcall ObserveTranslatedFrustum(void* camera,void* renderer) {
         NativeCameraFields fields{};
         if(ReadSelectedRenderCamera(camera,renderer,fields))
             ObserveNativeSelectedCamera(reinterpret_cast<void*>(0x98618E),renderer,camera,fields,true);
+        else {
+            static unsigned rejected=0;
+            if(++rejected<=3 || rejected%600==0)
+                Log("[NativeCullingRefusal] frame=%llu route=3 camera=%p renderer=%p cameraContract=0; no frustum write",
+                    g_trackedFrame.id,camera,renderer);
+        }
     }
     SetLastError(error);
 }

@@ -230,9 +230,16 @@ static void ObserveSelectedPlayerCamera(void* renderer) {
         ReleaseSRWLockExclusive(&g_nativeGameplayLock);
     }
     static unsigned reports=0;
-    if(++reports<=3 || reports%600==0)
+    if(++reports<=3 || reports%600==0) {
         Log("[ProtectedPlayerOwner] status=%u renderer=%p avatar=%08X camera=%08X inventory=%08X; read-only ownership observation, native aim/throw/pose hooks unchanged",
             unsigned(status),renderer,owner.avatar,owner.camera,owner.inventory);
+        if(status!=d2vr_player_camera::Status::Matched) {
+            const auto trace=d2vr_player_camera::TraceRenderer(uint32_t(reinterpret_cast<uintptr_t>(renderer)),read);
+            Log("[ProtectedPlayerOwnerRoute] rendererTable=%08X renderCamera=%08X contextRef=%08X context=%08X contextTable=%08X getterCC=%08X fovOverrideRef=%08X fovOverride=%08X sceneRef=%08X; pinned-renderer fields only, no getter calls or admission change",
+                trace.rendererTable,trace.camera,trace.contextReference,trace.context,trace.contextTable,
+                trace.contextGetter,trace.overrideReference,trace.overrideAvatar,trace.sceneReference);
+        }
+    }
 #else
     (void)renderer;
 #endif

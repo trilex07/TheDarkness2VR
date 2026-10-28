@@ -53,5 +53,27 @@ int main(){
     memory[0x5020]=0x9000;
     Check(Inspect(0x1000,read,result,0x77770000)==Status::CameraOwner);
     Check(!result.avatar&&!result.camera&&!result.inventory);
+    // Rejection evidence reads only the known renderer reference fields and
+    // one native vtable slot; it cannot invoke that getter or admit an owner.
+    memory=valid;memory[0x1000]=0xfdd100;memory[0x13f4]=0x5100;memory[0x5100]=0x7000;
+    memory[0x13f8]=0x5200;memory[0x5200]=0x8000;memory[0x8000]=0xfca000;
+    memory[0xfca0cc]=0xabcdef;memory[0x14a8]=0x5300;
+    const auto before=memory;
+    auto trace=TraceRenderer(0x1000,read);
+    Check(trace.rendererTable==0xfdd100 && trace.camera==0x7000);
+    Check(trace.contextReference==0x5200 && trace.context==0x8000);
+    Check(trace.contextTable==0xfca000 && trace.contextGetter==0xabcdef);
+    Check(trace.overrideReference==0x5000 && trace.overrideAvatar==0x2000 && trace.sceneReference==0x5300);
+    Check(memory==before);Check(Inspect(0x1000,read,result)==Status::Matched);
+    for(uint32_t invalid:{0u,3u,0x1000u,0x11ebf34u,0xfffffffcu}) {
+        memory[0x8000]=invalid;trace=TraceRenderer(0x1000,read);Check(!trace.contextGetter);
+    }
+    memory=before;memory[0x5000]=0;trace=TraceRenderer(0x1000,read);
+    Check(trace.contextGetter==0xabcdef && !trace.overrideAvatar);
+    Check(Inspect(0x1000,read,result)==Status::RendererReference);
+    for(uint32_t invalid:{0u,1u,0xfffffffcu}) {
+        trace=TraceRenderer(invalid,read);
+        Check(!trace.camera&&!trace.context&&!trace.contextGetter&&!trace.overrideAvatar&&!trace.sceneReference);
+    }
     std::printf("Native selected player owner read-only graph: %u checks PASS\n",checks);
 }
