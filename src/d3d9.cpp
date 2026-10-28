@@ -61,6 +61,8 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_view_instance.h"
 #include "native_throw_clone_plan.h"
 #include "native_throw_compare.h"
+#include "native_weapon_bridge.h"
+#include "native_weapon_prefix_plan.h"
 static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe, 2 HW boundary, 3 experimental owned method copies
 static d2vr_native_view::Boundary g_nativeViewBoundary;
 static d2vr_native_execution::Boundary g_nativeFrustumBoundary;
@@ -3692,6 +3694,7 @@ static void ResetPoseInput() {
 #include "native_weapon.inl"
 #include "native_hands.inl"
 #include "protected_hands.inl"
+#include "protected_weapon.inl"
 #include "native_recenter.inl"
 #ifdef D2VR_MATCHED_CAPTURE
 #include "native_hands_witness.inl"

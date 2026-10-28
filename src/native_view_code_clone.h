@@ -18,6 +18,11 @@ struct Override {unsigned block;size_t offset;const void* target;};
 // A caller-audited whole-instruction span inside a digest-pinned copy only.
 // Its adapter must replay the displaced ABI/instructions, including flags.
 struct CallSpan {unsigned block;size_t offset;const unsigned char* expected;size_t bytes;const void* target;};
+// Audited single-block prefix. The complete original function is still pinned.
+// Near conditional exits and fallthrough resume inside that ORIGINAL function,
+// keeping its downstream gameplay/physics call sites and return addresses native.
+struct PrefixExit {size_t offset;uintptr_t originalTarget;};
+struct Prefix {size_t copiedBytes;const PrefixExit* exits;size_t exitCount;};
 
 inline bool Digest(const void* data,size_t bytes,unsigned char out[32]) {
     if(!data || !bytes || bytes>MAXDWORD)return false;
@@ -73,11 +78,14 @@ public:
     // This class never publishes Entry. A host which publishes it must retain
     // this object for the entire callable lifetime. Fixtures destroy at quiescence.
     bool Prepare(const Block* blocks,unsigned count,const Call* calls,size_t callCount,
-                 const Override* replacement,const d2vr_native_image::Guard& guard,const CallSpan* span=nullptr) {
+                 const Override* replacement,const d2vr_native_image::Guard& guard,const CallSpan* span=nullptr,
+                 const Prefix* prefix=nullptr) {
         static_assert(sizeof(void*)==4,"x86 only");
         if(memory_)return Fail("already-prepared");
         if(!blocks || !count || count>8 || (!calls && callCount) || callCount>4096)
             return Fail("plan-size");
+        if(prefix && (count!=1 || span || prefix->copiedBytes<6 || prefix->copiedBytes>=blocks[0].bytes ||
+            prefix->exitCount>64 || (prefix->exitCount && !prefix->exits)))return Fail("prefix-size");
         std::vector<unsigned char> snapshots[8];
         size_t offsets[8]{},total=0;
         try {
@@ -93,7 +101,7 @@ public:
                 if(!ReadProcessMemory(GetCurrentProcess(),blocks[i].source,snapshots[i].data(),blocks[i].bytes,&read) ||
                    read!=blocks[i].bytes)return Fail("source-read");
                 if(!MatchesDigest(snapshots[i].data(),blocks[i].bytes,blocks[i].sha256))return Fail("source-digest");
-                offsets[i]=total;total=(total+blocks[i].bytes+15u)&~size_t(15u);
+                offsets[i]=total;total=(total+(prefix?prefix->copiedBytes+5:blocks[i].bytes)+15u)&~size_t(15u);
             }
         } catch(...) {return Fail("snapshot-allocation");}
         if(!total || total>65536)return Fail("code-size");
@@ -102,6 +110,7 @@ public:
             const auto& call=calls[i];
             if(call.block>=count || blocks[call.block].bytes<5 || call.offset>blocks[call.block].bytes-5)
                 return Fail("call-range");
+            if(prefix && call.offset>prefix->copiedBytes-5)return Fail("prefix-call-range");
             for(size_t j=0;j<i;++j)if(calls[j].block==call.block &&
                 call.offset<calls[j].offset+5 && calls[j].offset<call.offset+5)return Fail("call-overlap");
             const auto* instruction=snapshots[call.block].data()+call.offset;
@@ -111,6 +120,22 @@ public:
             if(replacement && replacement->block==call.block && replacement->offset==call.offset)++replacements;
         }
         if(replacement && (!replacement->target || replacements!=1))return Fail("override-contract");
+        if(prefix) {
+            const auto source=reinterpret_cast<uintptr_t>(blocks[0].source);
+            for(size_t i=0;i<prefix->exitCount;++i) {
+                const auto& exit=prefix->exits[i];
+                if(exit.offset>prefix->copiedBytes-6 || exit.originalTarget<source+prefix->copiedBytes ||
+                   exit.originalTarget-source>=blocks[0].bytes)return Fail("prefix-exit-range");
+                const auto* site=snapshots[0].data()+exit.offset;
+                uint32_t relative=0;std::memcpy(&relative,site+2,4);
+                if(site[0]!=0x0f || (site[1]&0xf0)!=0x80 ||
+                   uint32_t(source+exit.offset+6)+relative!=exit.originalTarget)return Fail("prefix-exit-contract");
+                for(size_t j=0;j<i;++j)if(exit.offset<prefix->exits[j].offset+6 &&
+                    prefix->exits[j].offset<exit.offset+6)return Fail("prefix-exit-overlap");
+                for(size_t j=0;j<callCount;++j)if(exit.offset<calls[j].offset+5 &&
+                    calls[j].offset<exit.offset+6)return Fail("prefix-exit-call-overlap");
+            }
+        }
         if(span) {
             if(span->block>=count || !span->expected || !span->target || span->bytes<5 || span->bytes>16 ||
                blocks[span->block].bytes<span->bytes || span->offset>blocks[span->block].bytes-span->bytes)
@@ -124,12 +149,12 @@ public:
         std::unique_ptr<void,Free> code(VirtualAlloc(nullptr,total,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));
         if(!code || !guard.Allows(reinterpret_cast<uintptr_t>(code.get()),total))return Fail("owned-allocation");
         auto* output=static_cast<unsigned char*>(code.get());
-        for(unsigned i=0;i<count;++i)std::memcpy(output+offsets[i],snapshots[i].data(),blocks[i].bytes);
+        for(unsigned i=0;i<count;++i)std::memcpy(output+offsets[i],snapshots[i].data(),prefix?prefix->copiedBytes:blocks[i].bytes);
         for(size_t i=0;i<callCount;++i) {
             const auto& call=calls[i];uintptr_t target=call.originalTarget;
             for(unsigned j=0;j<count;++j) {
                 const auto original=reinterpret_cast<uintptr_t>(blocks[j].source);
-                if(target>=original && target-original<blocks[j].bytes) {
+                if(target>=original && target-original<(prefix?prefix->copiedBytes:blocks[j].bytes)) {
                     target=reinterpret_cast<uintptr_t>(output)+offsets[j]+target-original;break;
                 }
             }
@@ -140,6 +165,17 @@ public:
             std::memcpy(site+1,&relative,4);
         }
         DWORD previous=0;
+        if(prefix) {
+            for(size_t i=0;i<prefix->exitCount;++i) {
+                auto* site=output+prefix->exits[i].offset;
+                const uint32_t relative=uint32_t(prefix->exits[i].originalTarget)-uint32_t(reinterpret_cast<uintptr_t>(site)+6);
+                std::memcpy(site+2,&relative,4);
+            }
+            auto* continuation=output+prefix->copiedBytes;continuation[0]=0xe9;
+            const uint32_t relative=uint32_t(reinterpret_cast<uintptr_t>(blocks[0].source)+prefix->copiedBytes)-
+                uint32_t(reinterpret_cast<uintptr_t>(continuation)+5);
+            std::memcpy(continuation+1,&relative,4);
+        }
         if(span) {
             auto* site=output+offsets[span->block]+span->offset;
             std::memset(site,0x90,span->bytes);site[0]=0xe8;

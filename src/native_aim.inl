@@ -12,6 +12,8 @@ static void ResetProtectedLeftThrow();
 static bool ProtectedHandsResourceOwned(void* resource);
 static void PrepareProtectedHandsForCamera(void* camera);
 static void ResetProtectedHandPoses();
+static bool ProtectedWeaponModelOwned(void* model);
+static void PrepareProtectedWeaponForCamera(void* camera);
 // Pinned stock EXE, x86. C62F50 builds inventory aim; C6300F calls the camera
 // matrix getter (thiscall, no stack args, EAX pointer), then reads forward row2
 // and origin row3. Replacing ONLY that getter leaves native query filters,
@@ -180,7 +182,7 @@ static bool CaptureNativeGameplay(void* self) {
             auto gun=**(BYTE***)(inventory+0xB0+12*hand);
             if(!gun || *(DWORD*)gun!=0x1010E30 || **(BYTE***)(gun+0x980)!=avatar) continue;
             auto entity=**(BYTE***)(gun+0xE0+0x4C); // native A1DA90(0,0)
-            if(entity && *(DWORD*)entity==0xFD6BC0) s.entities[hand]=(DWORD)(uintptr_t)entity;
+            if(entity && (*(DWORD*)entity==0xFD6BC0 || ProtectedWeaponModelOwned(entity))) s.entities[hand]=(DWORD)(uintptr_t)entity;
         }
 #ifdef D2VR_MATCHED_CAPTURE
         __try {
@@ -260,6 +262,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
             PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
             PrepareProtectedThrowForCamera(reinterpret_cast<void*>(owner.camera));
             PrepareProtectedHandsForCamera(reinterpret_cast<void*>(owner.camera));
+            PrepareProtectedWeaponForCamera(reinterpret_cast<void*>(owner.camera));
             g_nativePlayerViewFrame=g_trackedFrame.id;g_nativePlayerViewRenderer=r;
             g_nativePlayerViewCamera=owner.camera;
         }
@@ -297,6 +300,7 @@ static void ObserveSelectedPlayerCamera(void* renderer) {
         PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
         PrepareProtectedThrowForCamera(reinterpret_cast<void*>(owner.camera));
         PrepareProtectedHandsForCamera(reinterpret_cast<void*>(owner.camera));
+        PrepareProtectedWeaponForCamera(reinterpret_cast<void*>(owner.camera));
     }
     else if(TryAcquireSRWLockExclusive(&g_nativeGameplayLock)) {
         g_nativeGameplay={};
