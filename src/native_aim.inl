@@ -4,6 +4,11 @@ static bool ProtectedAimCameraOwned(void* camera);
 static DWORD ProtectedAimCameraTable();
 static bool PrepareProtectedAimCamera(void* camera);
 static void ResetProtectedLeftAim();
+static bool ProtectedThrowFireOwned(void* fire);
+static bool ProtectedThrowAvailable();
+static bool ProtectedLeftAimHeld();
+static void PrepareProtectedThrowForCamera(void* camera);
+static void ResetProtectedLeftThrow();
 // Pinned stock EXE, x86. C62F50 builds inventory aim; C6300F calls the camera
 // matrix getter (thiscall, no stack args, EAX pointer), then reads forward row2
 // and origin row3. Replacing ONLY that getter leaves native query filters,
@@ -47,6 +52,7 @@ static d2vr_input::GrabFeedback ReadNativeGrabFeedback() {
 
 static void ResetNativeAim() {
     ResetProtectedLeftAim();
+    ResetProtectedLeftThrow();
     ResetNativeThrow();
     AcquireSRWLockExclusive(&g_nativeAimLock);
     g_nativeAim={};
@@ -142,7 +148,7 @@ static bool CaptureNativeGameplay(void* self) {
             if(mode<4) {
                 auto parts=*(BYTE**)(weapon+0xA64);
                 auto fire=**(BYTE***)(parts+48*mode+0xC);
-                if(fire && *(DWORD*)fire==0x1004FE8 && *(DWORD*)(fire+4)==0x11126F0 &&
+                if(fire && (*(DWORD*)fire==0x1004FE8 || ProtectedThrowFireOwned(fire)) && *(DWORD*)(fire+4)==0x11126F0 &&
                    **(BYTE***)(fire+0x4C)==weapon) {
                     const bool busy=**(DWORD**)(fire+0x558) || **(DWORD**)(fire+0x580) || **(DWORD**)(fire+0x590);
                     s.grab=busy ? d2vr_input::GrabFeedback::Busy:d2vr_input::GrabFeedback::Empty;
@@ -216,6 +222,7 @@ static void ObserveSelectedPlayerCamera(void* renderer) {
     if(status==d2vr_player_camera::Status::Matched && NativeAimOwnerMatches(reinterpret_cast<void*>(owner.camera))) {
         CaptureNativeGameplay(reinterpret_cast<void*>(owner.camera));
         PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
+        PrepareProtectedThrowForCamera(reinterpret_cast<void*>(owner.camera));
     }
     else if(TryAcquireSRWLockExclusive(&g_nativeGameplayLock)) {
         g_nativeGameplay={};

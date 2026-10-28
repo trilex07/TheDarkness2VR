@@ -24,3 +24,15 @@ Rollback with the game closed: restore the prior DLL and diagnostic INI from
 the deployment bundle's `backup` directory. Setting ProtectedLeftAim=0 requires
 a game restart; it prevents private-table publication in that new process.
 No hashed EXE or native static table is modified.
+
+Optional swing-directed release: merge `throw-on.diagnostic.overrides.ini` and
+restart. This adds a private copy of the validated fire-event/release methods.
+Squeeze to acquire; after a powered stroke release the left grip to issue the
+stock second LB pulse. The chosen stroke velocity and controller aim determine
+direction (existing ThrowAimAssist, default0.20); native speed/spin and physics
+remain. The right hand is independent. Characters/retained targets keep the
+native release path. `throw-off.diagnostic.overrides.ini` disables this addition
+on restart. Runtime receipts are `[ProtectedLeftThrow] owned fire event
+published`, an armed `[NativeThrow] request`, then `[NativeThrow] APPLIED`.
+This candidate is offline-tested; copied-call compatibility and HMD trajectory
+remain unverified. No measured FPS improvement is associated with this option.

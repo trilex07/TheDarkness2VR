@@ -51,7 +51,7 @@ static bool ResolveProtectedLeftAim(void* self,const float* base,float* output) 
     }
     static unsigned reports=0;
     if(applied && (++reports<=3 || reports%600==0))
-        Log("[ProtectedLeftAim] controller ray applied camera=%p; exact native getter consumer, ordinary target branch; throw velocity unchanged",self);
+        Log("[ProtectedLeftAim] controller ray applied camera=%p; exact native getter consumer, ordinary target branch; release physics handled separately",self);
     return applied;
 }
 static void PublishProtectedLeftAim(const XINPUT_GAMEPAD& gp) {
@@ -62,7 +62,7 @@ static void PublishProtectedLeftAim(const XINPUT_GAMEPAD& gp) {
        g_nativeImageGuard.enabled && g_haveViews && g_in3DGameplayMode &&
        (g_trackedFrame.flags&tracked)==tracked && !g_protectedRightTentacle.paused &&
        g_headGeometry && g_headGeometryReferenceValid && g_hands[0].valid &&
-       (gp.wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER) && gp.bLeftTrigger<30 && gp.bRightTrigger<30 &&
+       ((gp.wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER) || ProtectedLeftAimHeld()) && gp.bLeftTrigger<30 && gp.bRightTrigger<30 &&
        CopyNativeGameplay(owner) && owner.grabFire && !owner.alternateHeldTarget &&
        ProtectedAimCameraOwned(reinterpret_cast<void*>(owner.camera))) {
         const auto& ref=g_headGeometryReference;
@@ -99,7 +99,7 @@ static bool PrepareProtectedAimCamera(void* camera) {
         g_protectedAimPrivateReady=true;
     }
     const bool published=g_protectedAimTable.Publish(camera,g_nativeImageGuard);
-    if(published)Log("[ProtectedLeftAim] private camera getter published camera=%p exactCaller=00C63011; native target/query lifetime retained, throw velocity unchanged",camera);
+    if(published)Log("[ProtectedLeftAim] private camera getter published camera=%p exactCaller=00C63011; native target/query lifetime retained, release physics handled separately",camera);
     return published;
 }
 #else

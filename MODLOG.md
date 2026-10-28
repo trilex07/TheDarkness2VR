@@ -1670,3 +1670,49 @@ computed jump, FS/GS operand or immediate self-code address. The fire table has
 private release-method copy using the existing owned-code relocator; it is not
 yet an installed throw override or proof of full runtime compatibility.
 Private evidence: d2vr-protected-throw-event-ghidra.txt. No game launch.
+
+## 2026-10-28: protected left swing/aim release implementation
+
+Diagnostics.ProtectedLeftThrow defaults OFF and requires ProtectedLeftAim and
+its full protected-input/mode3/head-geometry admission. The active owner route
+now admits only a live camera -> avatar -> inventory -> left demon weapon ->
+current-mode fire -> weapon reciprocal. It publishes a private35-method fire
+table at heap-instance slot74 after pinning the entire source table/header and
+both audited native methods by SHA256. Existing owned-code relocation copies
+D23220/878930 and relocates all180 E8 calls, linking the copied event to copied
+release. Only the copied879C88 comparison call is redirected. Native EXE,
+static tables, imports, syscall path and debug registers are never edited.
+
+The comparison adapter preserves GPRs/EFLAGS and x87/SSE/MXCSR, invokes a
+guarded velocity resolver, restores state, then tail-calls original6DA050 once
+with its original stack arguments. The existing one-shot650ms native throw
+token now supports this independent private route. Live owner, weapon mode,
+fire, exact attached entity and ordinary-prop branch are revalidated before
+changing XYZ; magnitude and W remain native. Character/retained-target paths,
+spin and downstream physics calls are unchanged. Source functions retain a
+strict default legacy path; the protected feature never enables their EXE
+installers.
+
+A separate left-hand recognizer uses the existing powered-stroke selection and
+ThrowDirection blending. It supplies stock acquisition/release LB pulses with
+a neutral gap. Sustained held-grip aiming remains active between pulses. The
+right recognizer/stick are independent. Trigger ownership, tracking/reference
+loss, pause, invalid frame context and a changed camera/inventory/fire owner
+cancel or rearm the gesture; a new owner cannot inherit its predecessor's
+stroke. Release direction uses the stroke's left-controller velocity/aim in
+the recenter reference basis, never current head gaze.
+
+Offline evidence: pinned full CFG/metadata audit PASS (2 blocks,180 calls,35
+table methods/header; no escaping/indirect jumps, local SEH or code pointers).
+Adapter own-DLL x86 fixture compares2000 native-vs-adapter invocations, including
+EDI fire receiver, argument/return/stack, GPR/EFLAGS, x87/SSE/MXCSR, LastError and
+the native comparison's immediate vector read. Actual-source throw fixture162
+checks PASS: live owner/entity/alternate rejection, token expiry/one-shot use,
+native magnitude/W, powered stroke plus controller aim, neutral LB gap,
+right-pad loss/unchanged right inputs, pause and owner-change cancellation.
+World direction is normalized after the camera-basis transform, preserving
+native speed even for an admitted slightly imperfect orthonormal basis.
+Actual-source left aiming461 and right gesture674 checks PASS. These are
+offline contracts, not game/HMD/FPS acceptance. Native callees see relocated
+return addresses; runtime compatibility and final physical trajectory remain
+unverified. Peripheral visibility and sustained90FPS are still unproven.

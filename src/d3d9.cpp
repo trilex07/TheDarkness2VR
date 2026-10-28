@@ -59,6 +59,8 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_culling_cover.h"
 #include "native_view_clone_plan.h"
 #include "native_view_instance.h"
+#include "native_throw_clone_plan.h"
+#include "native_throw_compare.h"
 static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe, 2 HW boundary, 3 experimental owned method copies
 static d2vr_native_view::Boundary g_nativeViewBoundary;
 static d2vr_native_execution::Boundary g_nativeFrustumBoundary;
@@ -80,6 +82,7 @@ static bool g_imagePreservingPresent=false;
 static bool g_imagePreservingInput=false;
 static bool g_protectedGestureActions=false;
 static bool g_protectedLeftAim=false;
+static bool g_protectedLeftThrow=false;
 static d2vr_input::Tentacles g_protectedRightTentacle;
 static volatile LONG g_protectedRecenterRequested=0;
 static d2vr_protected_input::ExternalXInput g_protectedXInput;
@@ -607,7 +610,8 @@ void LoadConfig() {
     g_imagePreservingInput=GetPrivateProfileIntA("Diagnostics","ImagePreservingInput",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_protectedGestureActions=GetPrivateProfileIntA("Diagnostics","ProtectedGestureActions",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_protectedLeftAim=GetPrivateProfileIntA("Diagnostics","ProtectedLeftAim",0,".\\Darkness2VR-diagnostic.ini")!=0;
-    Log("[ProtectedLeftAim] requested=%d; private instance getter only, legacy NativeLeftAim stays OFF; throw velocity unchanged",int(g_protectedLeftAim));
+    g_protectedLeftThrow=GetPrivateProfileIntA("Diagnostics","ProtectedLeftThrow",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    Log("[ProtectedLeftAim] requested=%d; private getter, legacy NativeLeftAim stays OFF; separate ProtectedLeftThrow=%d",int(g_protectedLeftAim),int(g_protectedLeftThrow));
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
         const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
         const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
@@ -3678,6 +3682,7 @@ static void ResetPoseInput() {
 #include "native_aim.inl"
 #include "protected_left_aim.inl"
 #include "native_throw.inl"
+#include "protected_left_throw.inl"
 #include "native_weapon.inl"
 #include "native_hands.inl"
 #include "native_recenter.inl"
@@ -3997,6 +4002,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
         g_hands[0].gripValid,g_hands[1].gripValid);
     if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
+    ApplyProtectedLeftThrow(gp);
     PublishProtectedLeftAim(gp);
 #endif
     gp.wButtons |= GestureButtons(gp);
@@ -6602,14 +6608,17 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
              d2vr_protected_input::Requested(imageProfile,g_nativeImageGuard.enabled,g_imagePreservingInput,g_enableVRGamepad));
         const bool protectedGestureRequested=g_protectedGestureActions;
         const bool protectedLeftAimRequested=g_protectedLeftAim;
+        const bool protectedLeftThrowAllowed=!g_protectedLeftThrow || (g_protectedLeftAim && protectedLeftAimAllowed);
+        const bool protectedLeftThrowRequested=g_protectedLeftThrow;
         const bool inputFeatureAllowed=!g_enableVRGamepad || g_imagePreservingInput;
 #else
         const bool protectedInputAllowed=true,inputFeatureAllowed=!g_enableVRGamepad;
         const bool protectedGestureAllowed=true,protectedGestureRequested=false;
         const bool protectedLeftAimAllowed=true;
         const bool protectedLeftAimRequested=false;
+        const bool protectedLeftThrowAllowed=true,protectedLeftThrowRequested=false;
 #endif
-        const bool protectedFeatures=protectedInputAllowed && protectedGestureAllowed && protectedLeftAimAllowed && (!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
+        const bool protectedFeatures=protectedInputAllowed && protectedGestureAllowed && protectedLeftAimAllowed && protectedLeftThrowAllowed && (!imageProfile || (g_submitMode==4 && g_frameBoundaryPolicy==0 &&
             !g_nativeLeftAim && !g_nativeWeaponPose && !g_nativeHandsEnabled && !g_gestureBridge && !g_tentacleBridge &&
             inputFeatureAllowed && g_headLookMode==0 &&
             (!g_protectedHeadTracking || ProtectedHeadConfigurationAllowed()) &&
@@ -6619,7 +6628,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
             !GetPrivateProfileIntA("Diagnostics","NativeHandsPackHook",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","NativeCameraCover",0,".\\Darkness2VR-diagnostic.ini") &&
             !GetPrivateProfileIntA("Diagnostics","ProductionResolution",0,".\\Darkness2VR-diagnostic.ini")));
-        if ((g_nativeImageGuard.enabled || protectedGestureRequested || protectedLeftAimRequested) && (!protectedConfig || !protectedFeatures)) {
+        if ((g_nativeImageGuard.enabled || protectedGestureRequested || protectedLeftAimRequested || protectedLeftThrowRequested) && (!protectedConfig || !protectedFeatures)) {
             Log("[NativeImageGuard] REFUSED configuration: mono isolation OR protected SubmitMode4/Stereo1/PresentPrimary; input requires ImagePreservingInput; native hands/aim/FOV/EXE Present/sizing must stay disabled");
             if (g_vehHandle) {RemoveVectoredExceptionHandler(g_vehHandle);g_vehHandle=nullptr;}
             EnterCriticalSection(&g_logLock);

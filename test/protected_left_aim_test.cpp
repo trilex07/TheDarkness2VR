@@ -24,7 +24,9 @@ static DWORD g_renderThreadId=GetCurrentThreadId();
 struct NativeGameplaySample {DWORD camera=0x1000,inventory=0x2000,grabFire=0x3000;bool alternateHeldTarget=false;};
 static NativeGameplaySample gameplay;
 static bool owned=true,ownerMatches=true,copyOK=true,captureOK=true,alternateAtCapture=false;
+static bool protectedHeld=false;
 static bool ProtectedAimCameraOwned(void* c){return g_protectedAimPrivateReady&&owned&&c==reinterpret_cast<void*>(0x1000);}
+static bool ProtectedLeftAimHeld(){return protectedHeld;}
 static bool NativeAimOwnerMatches(void*){return ownerMatches;}
 static bool CopyNativeGameplay(NativeGameplaySample& out){out=gameplay;return copyOK;}
 static bool CaptureNativeGameplay(void*){++captures;gameplay.alternateHeldTarget=alternateAtCapture;return captureOK;}
@@ -40,7 +42,7 @@ static void Reset(){
     g_nativeImageGuard.enabled=true;g_protectedRightTentacle.paused=false;
     g_trackedFrame.open=true;g_trackedFrame.flags=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     for(auto& h:g_hands)h={};g_headGeometryReference={{0,0,0,1},{0,1.6f,0}};
-    owned=ownerMatches=copyOK=captureOK=true;alternateAtCapture=false;gameplay={};
+    owned=ownerMatches=copyOK=captureOK=true;alternateAtCapture=protectedHeld=false;gameplay={};
     captures=0;clockMs=1000;g_renderThreadId=GetCurrentThreadId();
     grip={};grip.wButtons=XINPUT_GAMEPAD_LEFT_SHOULDER;ResetProtectedLeftAim();
 }
@@ -53,6 +55,8 @@ int main(){
     Check(output[8]==0&&output[9]==0&&output[10]==1);
     for(unsigned i=0;i<16;++i)if(i<8||i==11||i==15)Check(output[i]==base[i]);
     g_hands[1].valid=false;PublishProtectedLeftAim(grip);Check(g_protectedAimRay.ray.valid);
+    Reset();grip.wButtons=0;protectedHeld=true;PublishProtectedLeftAim(grip);Check(g_protectedAimRay.ray.valid);
+    Check(ResolveProtectedLeftAim(reinterpret_cast<void*>(0x1000),base,output));
     const auto rejectPublish=[&](auto change){Reset();PublishProtectedLeftAim(grip);Check(g_protectedAimRay.ray.valid);
         change();PublishProtectedLeftAim(grip);Check(!g_protectedAimRay.ray.valid&&!g_protectedAimRay.camera);};
     rejectPublish([]{g_protectedLeftAim=false;});rejectPublish([]{g_imagePreservingInput=false;});

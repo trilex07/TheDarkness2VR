@@ -23,7 +23,24 @@ static void ResetNativeThrow() {
     g_nativeThrowToken={};
     ReleaseSRWLockExclusive(&g_nativeThrowLock);
 }
-static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_input::Vec3 velocity,d2vr_input::Vec3 aim={}) {
+static bool NativeThrowFireOwnerMatches(void* camera,DWORD inventoryAddress,void* self,DWORD cameraVT=0xFFC7C0,bool protectedPath=false) {
+    __try {
+        if(!NativeAimOwnerMatches(camera,cameraVT))return false;
+        auto avatar=**(BYTE***)((BYTE*)camera+0x30);
+        auto inventory=(BYTE*)(uintptr_t)inventoryAddress;
+        if(**(BYTE***)(avatar+0x630)!=inventory)return false;
+        auto weapon=**(BYTE***)(inventory+0x20C+6*4);
+        if(!weapon || *(DWORD*)weapon!=0xFD6E00 || **(BYTE***)(weapon+0x980)!=avatar)return false;
+        const DWORD mode=*(DWORD*)(weapon+0xA78);
+        if(mode>=4)return false;
+        auto parts=*(BYTE**)(weapon+0xA64);
+        if(!parts || **(void***)(parts+48*mode+0xC)!=self)return false;
+        auto fire=(BYTE*)self;
+        return fire && (*(DWORD*)fire==0x1004FE8 || (protectedPath && ProtectedThrowFireOwned(fire))) &&
+            *(DWORD*)(fire+4)==0x11126F0 && **(BYTE***)(fire+0x4C)==weapon;
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+}
+static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_input::Vec3 velocity,d2vr_input::Vec3 aim={},bool protectedPath=false) {
     if(!context || newGrab || !g_hands[0].valid || !g_headGeometry || !g_headGeometryReferenceValid) {
         ResetNativeThrow(); return;
     }
@@ -31,7 +48,8 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
     NativeThrowToken token;
     NativeGameplaySample sample;
     d2vr_input::Vec3 direction{};
-    if(g_nativeLeftAim && g_nativeThrowInstalled && d2vr_input::ThrowDirection(velocity,aim,g_throwAimAssist,direction) &&
+    const bool enabled=protectedPath ? ProtectedThrowAvailable() : (g_nativeLeftAim && g_nativeThrowInstalled);
+    if(enabled && d2vr_input::ThrowDirection(velocity,aim,g_throwAimAssist,direction) &&
        CopyNativeGameplay(sample) && !sample.alternateHeldTarget &&
        sample.grabFire && sample.grabEntity) {
         const auto& q=g_headGeometryReference.orientation;
@@ -48,8 +66,8 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
     Log("[NativeThrow] request=%llu armed=%d chosenDirection=(%.3f,%.3f,%.3f) peak=(%.3f,%.3f,%.3f) controllerAim=(%.3f,%.3f,%.3f) assist=%.2f fire=%p entity=%p lifetime=650ms",
         token.sequence,(int)(token.until!=0),token.direction[0],token.direction[1],token.direction[2],velocity.x,velocity.y,velocity.z,aim.x,aim.y,aim.z,g_throwAimAssist,(void*)token.fire,(void*)token.entity);
 }
-static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0xFFC7C0) {
-    if(!g_nativeLeftAim || !g_nativeThrowInstalled) return false;
+static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0xFFC7C0,bool protectedPath=false) {
+    if(protectedPath ? !ProtectedThrowAvailable() : (!g_nativeLeftAim || !g_nativeThrowInstalled)) return false;
     NativeThrowToken token;
     if(!TryAcquireSRWLockShared(&g_nativeThrowLock)) return false;
     token=g_nativeThrowToken; ReleaseSRWLockShared(&g_nativeThrowLock);
@@ -59,23 +77,16 @@ static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0
     __declspec(align(16)) float ray[16];
     float original[4],speed=0;
     __try {
-        if(!NativeAimOwnerMatches((void*)token.camera,cameraVT)) return false;
-        auto avatar=**(BYTE***)((BYTE*)token.camera+0x30);
-        auto inventory=(BYTE*)token.inventory;
-        auto weapon=**(BYTE***)(inventory+0x20C+6*4);
-        if(!weapon || *(DWORD*)weapon!=0xFD6E00 || **(BYTE***)(weapon+0x980)!=avatar) return false;
-        const DWORD mode=*(DWORD*)(weapon+0xA78);
-        if(mode>=4) return false;
-        auto parts=*(BYTE**)(weapon+0xA64);
-        if(!parts || **(void***)(parts+48*mode+0xC)!=self) return false;
+        if(!NativeThrowFireOwnerMatches((void*)token.camera,token.inventory,self,cameraVT,protectedPath))return false;
         auto fire=(BYTE*)self;
-        if(*(DWORD*)fire!=0x1004FE8 || *(DWORD*)(fire+4)!=0x11126F0 ||
-           **(BYTE***)(fire+0x4C)!=weapon || **(DWORD**)(fire+0x580)!=token.entity) return false;
+        if(**(DWORD**)(fire+0x580)!=token.entity)return false;
         // The alternate held character/weapon branches have different native
         // physics semantics and are deliberately left to the engine.
         if(**(DWORD**)(fire+0x584) || **(DWORD**)(fire+0x590) || *((BYTE*)token.entity+0x24)) return false;
         const float zero[3]{};
         if(!d2vr_aim::BuildRayMatrix((float*)((BYTE*)token.camera+0x80),zero,token.direction,ray)) return false;
+        const float directionLength=std::sqrt(ray[8]*ray[8]+ray[9]*ray[9]+ray[10]*ray[10]);
+        if(!std::isfinite(directionLength) || directionLength<.5f || directionLength>2.f)return false;
         memcpy(original,velocity,sizeof(original));
         for(int c=0;c<4;++c) if(!std::isfinite(original[c])) return false;
         for(int c=0;c<3;++c) speed+=original[c]*original[c];
@@ -87,7 +98,7 @@ static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0
         if(consume) g_nativeThrowToken={}; // one gesture cannot steer a later object
         ReleaseSRWLockExclusive(&g_nativeThrowLock);
         if(!consume) return false;
-        for(int c=0;c<3;++c) velocity[c]=ray[8+c]*speed;
+        for(int c=0;c<3;++c) velocity[c]=ray[8+c]/directionLength*speed;
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
     Log("[NativeThrow] APPLIED request=%llu entity=%p stockVelocity=(%.3f,%.3f,%.3f) swingVelocity=(%.3f,%.3f,%.3f) nativeSpeed=%.3f",
         token.sequence,(void*)token.entity,original[0],original[1],original[2],velocity[0],velocity[1],velocity[2],speed);
