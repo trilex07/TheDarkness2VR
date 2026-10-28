@@ -13,6 +13,8 @@ struct alignas(16) Input {
     bool stereoUnion=false;
     float lower[3]{},upper[3]{};
     bool haveBounds=false;
+    double corners[16][3]{};
+    bool haveCorners=false;
 };
 // Keep camera-local inversions in double precision. Inverting a rounded world
 // VP loses far-corner accuracy when the native camera has a large translation.
@@ -52,6 +54,7 @@ inline bool PrepareStereoBounds(const float* view,const float eyeProjection[2][1
             if(!std::isfinite(world[3]) || world[3]<1e-8)return false;
             for(unsigned axis=0;axis<3;++axis) {
                 const double value=world[axis]/world[3];if(!std::isfinite(value))return false;
+                candidate.corners[eye*8+corner][axis]=value;
                 lower[axis]=(std::min)(lower[axis],value);upper[axis]=(std::max)(upper[axis],value);
             }
         }
@@ -62,7 +65,7 @@ inline bool PrepareStereoBounds(const float* view,const float eyeProjection[2][1
         candidate.upper[axis]=std::nextafter(float(upper[axis]),std::numeric_limits<float>::infinity());
         if(!std::isfinite(candidate.lower[axis]) || !std::isfinite(candidate.upper[axis]))return false;
     }
-    candidate.haveBounds=true;return true;
+    candidate.haveBounds=candidate.haveCorners=true;return true;
 }
 inline bool ValidStereoBounds(const Input& input) {
     if(!input.haveBounds)return false;
@@ -81,6 +84,41 @@ inline bool ExpandOwnedBounds(const Input& input,float bounds[8]) {
         bounds[axis]=(std::min)(bounds[axis],input.lower[axis]);
         bounds[4+axis]=(std::max)(bounds[4+axis],input.upper[axis]);
     }
+    return true;
+}
+inline bool ValidStereoFrustum(const Input& input) {
+    if(!ValidStereoBounds(input) || !input.haveCorners)return false;
+    for(const auto& corner:input.corners)for(unsigned axis=0;axis<3;++axis)
+        if(!std::isfinite(corner[axis]) || corner[axis]<input.lower[axis] || corner[axis]>input.upper[axis])return false;
+    return true;
+}
+inline bool ExpandOwnedFrustum(const Input& input,float planes[24],float bounds[8]) {
+    if(!ValidStereoFrustum(input))return false;
+    float expandedBounds[8];std::memcpy(expandedBounds,bounds,sizeof(expandedBounds));
+    if(!ExpandOwnedBounds(input,expandedBounds))return false;
+    float offsets[6];
+    for(unsigned plane=0;plane<6;++plane) {
+        const float* p=planes+plane*4;
+        double length=0;
+        for(unsigned axis=0;axis<4;++axis)if(!std::isfinite(p[axis]))return false;
+        for(unsigned axis=0;axis<3;++axis)length+=double(p[axis])*p[axis];
+        if(length<1e-20 || !std::isfinite(length))return false;
+        double support=std::numeric_limits<double>::infinity();
+        for(const auto& corner:input.corners) {
+            double dot=0;for(unsigned axis=0;axis<3;++axis)dot+=corner[axis]*p[axis];
+            support=(std::min)(support,dot);
+        }
+        const float outward=std::nextafter(float(support),-std::numeric_limits<float>::infinity());
+        if(!std::isfinite(outward))return false;
+        // Native plane convention is dot(normal, world)-offset >= 0 inside.
+        // Keep its exact normal and only move offset outward to contain both
+        // actual eye volumes. Never tighten a plane that already contains them.
+        offsets[plane]=(std::min)(p[3],outward);
+    }
+    // Commit only after every field is validated. Normals, type vectors, flags
+    // and the bounds' W fields keep their original values.
+    for(unsigned plane=0;plane<6;++plane)planes[plane*4+3]=offsets[plane];
+    std::memcpy(bounds,expandedBounds,sizeof(expandedBounds));
     return true;
 }
 inline bool Prepare(const float* view,const float* projection,const float* nativeViewProjection,

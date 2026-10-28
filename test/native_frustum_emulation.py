@@ -20,6 +20,7 @@ parser.add_argument("--cases", required=True, type=Path)
 parser.add_argument("--dependency-root", type=Path)
 parser.add_argument("--report", type=Path)
 parser.add_argument("--bounds-helper", type=Path, help="Built native_stereo_culling_test.exe for actual C++ correction")
+parser.add_argument("--frustum-helper", type=Path, help="Built native_stereo_culling_test.exe for planes+bounds correction")
 args = parser.parse_args()
 if args.dependency_root:
     sys.path.insert(0, str(args.dependency_root))
@@ -90,11 +91,15 @@ def call(target, matrix):
 
 
 data = args.cases.read_bytes()
-require(data[:8] in (b"D2FRC001", b"D2FRC002", b"D2FRC003"), "Wrong generated-case format")
-reference_eyes = data[:8] in (b"D2FRC002", b"D2FRC003")
-have_bounds = data[:8] == b"D2FRC003"
-require(not args.bounds_helper or have_bounds, "Bounds helper requires D2FRC003")
-correction_inputs = bytearray(b"D2BND001" + data[8:12])
+require(data[:8] in (b"D2FRC001", b"D2FRC002", b"D2FRC003", b"D2FRC004"), "Wrong generated-case format")
+reference_eyes = data[:8] != b"D2FRC001"
+have_bounds = data[:8] in (b"D2FRC003", b"D2FRC004")
+have_corners = data[:8] == b"D2FRC004"
+require(not (args.bounds_helper and args.frustum_helper), "Select only one correction helper")
+helper = args.frustum_helper or args.bounds_helper
+require(not helper or have_bounds, "Bounds helper requires D2FRC003/004")
+require(not args.frustum_helper or have_corners, "Frustum helper requires D2FRC004")
+correction_inputs = bytearray((b"D2BND002" if args.frustum_helper else b"D2BND001") + data[8:12])
 correction_references = []
 count = struct.unpack_from("<I", data, 8)[0]
 require(count == 240, "Incomplete generated cases")
@@ -103,6 +108,7 @@ max_coeff = max_bounds = max_plane_outside = max_box_outside = 0.
 reference_plane_max = np.full(6, -np.inf)
 reference_box_max = -np.inf
 reference_plane_cases = reference_box_cases = 0
+legacy_geometry_failed_cases = 0
 clip_corners = np.array([[x, y, z, 1] for x in [-1, 1] for y in [-1, 1] for z in [0, 1]])
 for case in range(count):
     if reference_eyes:
@@ -113,6 +119,10 @@ for case in range(count):
         input_bounds = data[offset:offset+24]
         require(len(input_bounds) == 24, "Truncated candidate bounds")
         offset += 24
+    if have_corners:
+        input_corners = data[offset:offset+384]
+        require(len(input_corners) == 384, "Truncated candidate corners")
+        offset += 384
     vp, ivp = data[offset:offset+64], data[offset+64:offset+128]
     offset += 128
     n = struct.unpack_from("<I", data, offset)[0]
@@ -163,16 +173,24 @@ for case in range(count):
         reference_box_max = max(reference_box_max, float(np.max(box_outside_reference)))
         reference_plane_cases += int(np.any(outside > 1e-4))
         reference_box_cases += int(np.any(box_outside_reference > 1e-4))
-        if args.bounds_helper:
-            correction_inputs += input_bounds + struct.pack("<8f", *bounds.flatten())
-            correction_references.append((bounds.copy(), world.copy()))
+        if helper:
+            correction_inputs += input_bounds
+            if args.frustum_helper:
+                correction_inputs += input_corners + struct.pack("<24f", *planes.flatten())
+            correction_inputs += struct.pack("<8f", *bounds.flatten())
+            correction_references.append((planes.copy(), bounds.copy(), world.copy()))
     plane_outside = np.max(-distances, axis=1)
     box_outside = np.max(np.maximum(bounds[0, :3]-points, points-bounds[1, :3]), axis=1)
     # Same loose edge/depth tolerance as the existing geometry fixture. This
     # check is not exact containment; report the raw worst excursions too.
     tolerance = .003*(1+np.max(np.abs(points), axis=1))
-    require(np.all(plane_outside <= tolerance) and np.all(box_outside <= tolerance),
-            f"Native output exceeds geometry-fixture tolerance case={case}")
+    legacy_contained = bool(np.all(plane_outside <= tolerance) and np.all(box_outside <= tolerance))
+    legacy_geometry_failed_cases += int(not legacy_contained)
+    # The full correction must repair the original native output even when it
+    # already fails the loose legacy gate. Keep that failure visible; require
+    # strict independent-corner containment AFTER the actual C++ correction.
+    if not args.frustum_helper:
+        require(legacy_contained, f"Native output exceeds geometry-fixture tolerance case={case}")
     max_coeff, max_bounds = max(max_coeff, coeff_error), max(max_bounds, bounds_error)
     max_plane_outside = max(max_plane_outside, float(np.max(plane_outside)))
     max_box_outside = max(max_box_outside, float(np.max(box_outside)))
@@ -183,6 +201,8 @@ report = dict(status="PASS", executable_sha256=sha, cases=count, binocular_point
               bounds_oracle_max_relative_error=max_bounds,
               raw_max_plane_excursion_world_units=max_plane_outside,
               raw_max_aabb_excursion_world_units=max_box_outside,
+              original_legacy_geometry_failed_cases=legacy_geometry_failed_cases,
+              validation_scope="corrected strict corners" if args.frustum_helper else "legacy geometry tolerance",
               runtime_acceptance="NOT_RUN", game_launched=False,
               scope="Original x86 functions in emulator; preallocated vectors; not runtime ownership or HMD proof")
 if reference_eyes:
@@ -192,19 +212,30 @@ if reference_eyes:
         plane_cases_outside_1e_4=reference_plane_cases,
         aabb_cases_outside_1e_4=reference_box_cases,
         strict_corner_containment=bool(np.max(reference_plane_max) <= 0 and reference_box_max <= 0),
-        interpretation="Diagnostic reference, not covered by legacy PASS; includes far/depth boundary errors",
+        interpretation="Original output, reported separately from corrected checks; includes far/depth errors",
         corners_per_pose=16)
-if args.bounds_helper:
+if helper:
     with tempfile.TemporaryDirectory(prefix="d2vr-bounds-correction-") as directory:
         source, target = Path(directory)/"input.bin", Path(directory)/"output.bin"
         source.write_bytes(correction_inputs)
-        subprocess.run([str(args.bounds_helper), "--expand-native-bounds", str(source), str(target)],
+        operation = "--expand-native-frustum" if args.frustum_helper else "--expand-native-bounds"
+        subprocess.run([str(helper), operation, str(source), str(target)],
                        check=True, timeout=30)
         corrected = target.read_bytes()
-    require(corrected[:12] == correction_inputs[:12] and len(corrected) == 12+count*32,
+    stride = 128 if args.frustum_helper else 32
+    require(corrected[:12] == correction_inputs[:12] and len(corrected) == 12+count*stride,
             "Correction output format mismatch")
-    for case, (original, world) in enumerate(correction_references):
-        expanded = np.frombuffer(corrected, dtype="<f4", count=8, offset=12+case*32).reshape(2, 4)
+    for case, (original_planes, original, world) in enumerate(correction_references):
+        position = 12+case*stride
+        if args.frustum_helper:
+            expanded_planes = np.frombuffer(corrected, dtype="<f4", count=24, offset=position).reshape(6, 4)
+            position += 96
+            require(np.all(np.isfinite(expanded_planes)), "Nonfinite corrected planes")
+            require(np.array_equal(expanded_planes[:, :3], original_planes[:, :3]), "Plane normals changed")
+            require(np.all(expanded_planes[:, 3] <= original_planes[:, 3]), "Correction tightened native planes")
+            require(np.all(world @ expanded_planes[:, :3].T - expanded_planes[:, 3] >= 0),
+                    f"Corrected planes exclude double reference corners case={case}")
+        expanded = np.frombuffer(corrected, dtype="<f4", count=8, offset=position).reshape(2, 4)
         require(np.all(np.isfinite(expanded)), "Nonfinite corrected bounds")
         require(np.all(expanded[0, :3] <= original[0, :3]) and
                 np.all(expanded[1, :3] >= original[1, :3]), "Correction shrank native bounds")
@@ -214,8 +245,12 @@ if args.bounds_helper:
                 f"Corrected bounds do not strictly contain reference corners case={case}")
     report["corrected_aabb"] = dict(cases=count, strict_double_reference_corner_containment=True,
                                     native_bounds_never_shrunk=True, w_fields_unchanged=True,
-                                    implementation="Actual C++ ExpandOwnedBounds helper",
-                                    planes="Unchanged; far-plane errors remain outside this correction")
+                                    implementation="Actual C++ ExpandOwnedFrustum" if args.frustum_helper else "Actual C++ ExpandOwnedBounds",
+                                    planes="Corrected too" if args.frustum_helper else "Unchanged; far-plane errors remain")
+    if args.frustum_helper:
+        report["corrected_planes"] = dict(cases=count, strict_double_reference_corner_containment=True,
+                                          native_normals_unchanged=True, native_planes_never_tightened=True,
+                                          implementation="Actual C++ ExpandOwnedFrustum helper")
 if args.report:
     args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
 print(json.dumps(report))

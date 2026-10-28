@@ -148,7 +148,7 @@ struct NativeViewReadStatus {
 // Native frustum plane/type vectors already contain six entries. Reusing their
 // existing capacity mirrors 4BE0C0 without shallow-copying an owning structure.
 static bool RebuildOwnedCullingFrustum(void* camera,const d2vr_culling_cover::Input& input) {
-    if(input.stereoUnion && !d2vr_culling_cover::ValidStereoBounds(input))return false;
+    if(input.stereoUnion && !d2vr_culling_cover::ValidStereoFrustum(input))return false;
     __try {
         auto frustum=static_cast<unsigned char*>(camera)+0x620;
         const auto planes=*reinterpret_cast<float**>(frustum+0x30);
@@ -172,10 +172,10 @@ static bool RebuildOwnedCullingFrustum(void* camera,const d2vr_culling_cover::In
     reinterpret_cast<Build>(0x607CD0)(frustum,input.viewProjection);
     reinterpret_cast<Build>(0x685050)(frustum,input.inverseViewProjection);
     // The native inverse of the rounded world VP can undershoot the actual
-    // binocular corners. Only widen its owned XYZ bounds, retaining W/flags,
-    // vectors and the native plane equations. No render-camera field changes.
-    return !input.stereoUnion || d2vr_culling_cover::ExpandOwnedBounds(input,
-        reinterpret_cast<float*>(frustum+0x10));
+    // binocular corners. Only widen owned bounds and plane offsets; retain
+    // native normals, W/flags and vectors. No render-camera field changes.
+    return !input.stereoUnion || d2vr_culling_cover::ExpandOwnedFrustum(input,
+        *reinterpret_cast<float**>(frustum+0x30),reinterpret_cast<float*>(frustum+0x10));
 }
 static bool PrepareOwnedCullingInput(void* camera,const NativeCameraFields& fields,d2vr_culling_cover::Input& input) {
     float view[16],vp[16];
@@ -235,7 +235,7 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
         static unsigned appliedReports=0;
         if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
-            Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d planes=native bounds=native+binocular renderProjection=unchanged",
+            Log("[NativeCullingCover] beforeFrustumCopy=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d planes=native+binocular bounds=native+binocular renderProjection=unchanged",
                 g_trackedFrame.id,camera,fields.fov,int(cullingInput.stereoUnion));
     }
     g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);

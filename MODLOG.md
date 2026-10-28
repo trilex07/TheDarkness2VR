@@ -1174,3 +1174,38 @@ render/reference/W preservation, invalid-input-before-call rejection and
 malformed-vector rejection. Phase routing10000 PASS; geometry64800+249600
 points PASS; production and diagnostic builds PASS. No game launch, headset
 or performance claim. Keep NIS80 and native2676x2728 in the combined candidate.
+
+## 2026-10-28: include actual binocular corners in native plane half-spaces
+
+Retain the16 already-computed double world corners in the prepared input.
+For each of the six native planes, keep its exact XYZ normal and reduce its
+offset only if needed to contain those corners, rounding the support value
+outward to float. Native convention is dot(normal,world)-offset >=0 inside;
+the emulator's independent D3D plane oracle verifies this representation.
+Thus every correction preserves or widens a native half-space, without a
+guessed far-distance constant, altered normal, render projection or FOV.
+Expand bounds and offsets together only after validating all values. Reject
+nonfinite/out-of-bounds corners before native calls. Keep types, vector
+ownership, flags, bounds W and other camera fields unchanged. No EXE writes.
+
+Extend generated reference format to D2FRC004 with our generated double
+corners; older formats and bounds-only helper remain supported. Original
+native builder output goes through actual C++ ExpandOwnedFrustum in a single
+bounded batch. Both AABB and all six planes strictly contain independent
+NumPy original-eye double corners in240 normal-range poses and240 additional
+full-rotation poses (yaw/roll ±pi,pitch ±1.5). Normals are bit-identical and
+no plane/bound shrinks. Geometry fixture still checks249600 points per corpus.
+The widened-angle original output FAILS its loose legacy tolerance at one
+pose (case12); report that baseline failure explicitly rather than labeling
+the original output PASS. Full-correction mode instead requires strict
+independent-reference containment after actual C++ correction, which passes.
+Full-rotation original raw reference errors reach3.09294 plane/5.36730 AABB
+world units. These are synthetic data and do not prove runtime popup causality.
+
+Additional tests cover nonfinite last-plane data, zero normal, malformed bounds,
+nonfinite/out-of-bounds corners: every failure leaves all helper output bytes
+unchanged. Already-wider native planes remain wider. Actual-source ABI fixture
+PASS1000 legacy+1000 corrected rebuilds, normals/W/render/reference preservation
+and malformed-input rejection. Production and diagnostic builds PASS. No
+headset/FPS claim or game launch. Combined candidate retains NIS80,2676x2728
+and rollback. Other engine visibility/occlusion filters remain unproven.
