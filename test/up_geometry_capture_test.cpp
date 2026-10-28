@@ -23,6 +23,7 @@ static std::atomic<bool> g_wideRecordCopy{true};
 static uint64_t g_recCounts[40]{};
 static d2vr_replay::FrameResourceRefs<IUnknown> g_recordRefs;
 static bool SmallRecordCopyIsEnabled(){return true;}
+static void NoteRecordedWorldDraw(){} // classification covered by projection fixture
 @CORE@
 struct UiClipState {};
 static UiClipState BeginScaledUiClip(IDirect3DDevice9*){return {};}

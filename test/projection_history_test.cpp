@@ -37,6 +37,9 @@ static unsigned lockDepth=0;
 static d2vr_shader_registers::History g_vsConstantHistory;
 struct RecLockGuard {RecLockGuard(){CHECK(!lockDepth++);}~RecLockGuard(){CHECK(!--lockDepth);}};
 #include "actual_shader_identity.inl"
+static bool g_hadWorldDrawThisFrame=false,g_had3DCameraThisFrame=true;
+static bool g_skipObjectDraws=false,g_skipShadowAtlasDraws=false;
+#include "actual_world_draw_activity.inl"
 static void Perspective(float (&m)[16],float offset) {
     memset(m,0,sizeof(m));m[0]=1.3f;m[5]=1.7f;m[10]=1.01f;m[11]=1;m[12]=offset;m[14]=-.1f;
 }
@@ -60,6 +63,33 @@ int main(int argc,char** argv) {
     StereoParams sp;sp.transX=.0315f;sp.transY=.01f;sp.fovScaleX=.82f;sp.fovScaleY=.91f;
     float a[16],b[16],stp[16],live[16],replay[16],ignored[16];
     Perspective(a,.2f);Perspective(b,4);Screen(a,stp);Seed(vi,a,sp);
+    {
+        float ui[16]{};ui[0]=ui[5]=.01f;ui[10]=ui[15]=1;
+        bool perspective=true;g_scale2DContent=true;
+        CHECK(ApplyShiftToUpload(ignored,ui,0,4,&vi,sp,nullptr,&perspective));
+        CHECK(!perspective); // adjusted UI is NOT a 3D-camera witness
+        g_scale2DContent=false;
+        CHECK(ApplyShiftToUpload(ignored,a,0,4,&vi,sp,nullptr,&perspective));CHECK(perspective);
+        CHECK(ApplyShiftToUpload(ignored,stp,4,4,&vi,sp,nullptr,&perspective));CHECK(!perspective);
+        g_activeVs=&vi;
+        for(unsigned segment=0;segment<1000;++segment) {
+            g_hadWorldDrawThisFrame=false;
+            CHECK(g_vsConstantHistory.live.Write(0,4,ui,sizeof(ui)));
+            {RecLockGuard lock;NoteRecordedWorldDraw();}CHECK(!g_hadWorldDrawThisFrame);
+            CHECK(g_vsConstantHistory.live.Write(0,4,a,sizeof(a)));
+            {RecLockGuard lock;NoteRecordedWorldDraw();}CHECK(g_hadWorldDrawThisFrame);
+        }
+        g_hadWorldDrawThisFrame=false;g_vsConstantHistory.live.Invalidate(0,1);
+        {RecLockGuard lock;NoteRecordedWorldDraw();}CHECK(!g_hadWorldDrawThisFrame);
+        CHECK(g_vsConstantHistory.live.Write(0,4,a,sizeof(a)));
+        for(unsigned refusal=0;refusal<5;++refusal) {
+            g_had3DCameraThisFrame=refusal!=0;vi.depthOnly=refusal==1;
+            g_replayEye=refusal==2?1:-1;g_skipObjectDraws=refusal==3;g_skipShadowAtlasDraws=refusal==4;
+            {RecLockGuard lock;NoteRecordedWorldDraw();}CHECK(!g_hadWorldDrawThisFrame);
+        }
+        g_had3DCameraThisFrame=true;vi.depthOnly=false;g_replayEye=-1;
+        g_skipObjectDraws=g_skipShadowAtlasDraws=false;g_activeVs=nullptr;
+    }
     Frame();CHECK(ApplyShiftToUpload(live,stp,4,4,&vi,sp));
     CHECK(ApplyShiftToUpload(ignored,b,0,4,&vi,sp)); // Later object in SAME live frame.
     g_recActive=false;g_replayEye=1;

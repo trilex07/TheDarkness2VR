@@ -1957,12 +1957,15 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
         static thread_local float s_tmpConst[68 * 4];
         d2vr_replay::StereoParams sp = MakeEyeParams(0);
         if (g_stereoMode == 2) sp.separation = 0.0f;
+        bool perspectiveUpload=false;
         if (d2vr_replay::ApplyShiftToUpload(s_tmpConst, pConstantData, StartRegister,
                                             Vector4fCount, d2vr_replay::g_activeVs, sp,
-                                            &rawReference)) {
+                                            &rawReference,&perspectiveUpload)) {
             pConstantData = s_tmpConst;
-            g_had3DCameraThisFrame = true;
-            ++g_3dCamCallsThisFrame;
+            if(perspectiveUpload) {
+                g_had3DCameraThisFrame = true;
+                ++g_3dCamCallsThisFrame;
+            }
         }
     }
     const HRESULT result=g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);

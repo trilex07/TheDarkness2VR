@@ -48,6 +48,7 @@ static std::vector<Rec> g_rec;
 static bool g_recActive=true,g_recOverflow=false;
 static uint64_t g_recCounts[40]{};
 static d2vr_replay::FrameResourceRefs<IUnknown> g_recordRefs;
+static void NoteRecordedWorldDraw(){} // draw classification tested by actual projection fixture
 #include "actual_rec_push.inl"
 
 static void PushRecord(const void* source,size_t bytes,const std::vector<uint8_t>& expected) {

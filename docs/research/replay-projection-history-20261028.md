@@ -80,3 +80,31 @@ as the user's side disappearance or flicker cause. CULL OFF 5 in menus and ON
 in gameplay is acknowledged; culling admission remains unchanged. MAIN should
 use the cumulative candidate with its existing native-resolution profile and
 backup/rollback, then verify both eyes and side visibility in one headset run.
+
+## UI versus world activity correction, 2026-10-29
+
+The live caller treated every true ApplyShiftToUpload result as a 3D-camera
+upload, including orthographic sprite scaling. Draw wrappers then certified
+world regeneration from this flag and shader c0 identity without checking the
+current matrix. An identified UI shader could thus suppress right-background
+restoration while drawing only an overlay. Recording restarts could also retain
+the old world flag if SubmitXR had not reached its tail.
+
+A separate perspective-WVP witness now excludes UI and STP-only writes.
+Recorded draws check the current shared raw WVP under the existing recorder
+lock: all four rows must be known and its perspective column finite/nonzero.
+The world flag resets at recording start and latches on the first qualifying
+draw. No new lock, external read, driver query or unconditional copy is added.
+Diagnostic hidden-object/shadow modes conservatively retain history restoration.
+
+PASS: 32616 actual-source projection/activity checks, including 1000 UI/world
+transitions; right-eye history1000 world/UI plus1000 rejected segments;
+recorder6103; UP geometry4344; production and diagnostic x86 builds. Recorder/UP
+fixtures stub only the activity notification; projection tests execute its
+actual implementation. These are CPU regressions, not physical headset proof.
+
+Five retained complete captures passed hash/Present validation (104/122/145/154/
+242 paired draws). They do not prove dynamic-buffer overwrites and predate
+this candidate. No broad buffer snapshotting was added. Permanent flicker
+resolution, partial redraw history, dynamic GPU contents, partial/inherited
+stereo injection and native 90 FPS remain unverified or incomplete.

@@ -511,6 +511,7 @@ static void ReleaseRecording(bool keepSnapshot=false) {
 
 static void RecBeginFrame(IDirect3DDevice9* dev) {
     RecLockGuard lock;
+    g_hadWorldDrawThisFrame=false;
     ReleaseRecording(g_reuseStateSnapshots);
     g_recordRefs.Begin(g_uniqueReplayRefs);
     if (!g_frameStart.Capture(dev,g_reuseStateSnapshots)) {
@@ -587,6 +588,7 @@ static void CollectLightReadbackTarget(IDirect3DSurface9* s) {
 }
 
 // Caller holds g_recLock, including any payload append belonging to this record.
+static void NoteRecordedWorldDraw(); // caller holds g_recLock
 static inline void RecEmitLocked(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
                            uint32_t a2 = 0, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
     if (!g_recActive || g_recOverflow) return;
@@ -617,6 +619,7 @@ static inline void RecEmitLocked(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t
         }
     }
     g_rec.push_back(r);
+    if(op>=OP_DrawPrimitive && op<=OP_DrawIndexedPrimitiveUP)NoteRecordedWorldDraw();
     if (op < 40) g_recCounts[op]++;
 }
 static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
@@ -1063,7 +1066,9 @@ static int ActiveWvpRegister(const VsInfo* vi) {
 }
 static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT count,
                                VsInfo* vi, const StereoParams& sp,
-                               const d2vr_shader_registers::Reference* registers=nullptr) {
+                               const d2vr_shader_registers::Reference* registers=nullptr,
+                               bool* perspectiveUpload=nullptr) {
+    if(perspectiveUpload)*perspectiveUpload=false;
     if (vi && g_diagnosticSkipVs && vi->hash == g_diagnosticSkipVs) return false;
 
     int wvpBase = -1, stpBase = -1;
@@ -1206,6 +1211,10 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
             matrixParams.transX = matrixParams.transY = matrixParams.separation = 0.0f;
         }
         ApplyEyeShiftToMatrix(matrix, 4, matrixParams, identifiedWvp && k == 0);
+        if(perspectiveUpload && k==0) {
+            const float perspective=orig[3]*orig[3]+orig[7]*orig[7]+orig[11]*orig[11];
+            *perspectiveUpload=std::isfinite(perspective) && perspective>=1e-8f;
+        }
         if (screenProjection) d2vr_math::RebiasScreenTextureProjection(matrix);
         ++g_shiftCount;
     }
@@ -1406,11 +1415,18 @@ static bool SkipObjectDrawForTest(D3DPRIMITIVETYPE type,UINT primitives) {
     }
     return true;
 }
+static void NoteRecordedWorldDraw() {
+    if(g_hadWorldDrawThisFrame || g_replayEye>=0 || !g_had3DCameraThisFrame ||
+       !g_activeVs || g_activeVs->depthOnly || ActiveWvpRegister(g_activeVs)!=0 ||
+       g_skipObjectDraws || g_skipShadowAtlasDraws)return;
+    float matrix[16];
+    if(!g_vsConstantHistory.live.Matrix(0,matrix))return;
+    const float perspective=matrix[3]*matrix[3]+matrix[7]*matrix[7]+matrix[11]*matrix[11];
+    if(std::isfinite(perspective) && perspective>=1e-8f)g_hadWorldDrawThisFrame=true;
+}
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
-    if(g_replayEye<0 && g_had3DCameraThisFrame && g_activeVs && g_activeVs->wvpBase==0 && !g_activeVs->depthOnly)
-        g_hadWorldDrawThisFrame=true;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1420,8 +1436,6 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
-    if(g_replayEye<0 && g_had3DCameraThisFrame && g_activeVs && g_activeVs->wvpBase==0 && !g_activeVs->depthOnly)
-        g_hadWorldDrawThisFrame=true;
     const WorldDiffuseScope diffuse(dev);
     const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -1432,8 +1446,6 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
 static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT pc, const void* vb, UINT stride) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
-    if(g_replayEye<0 && g_had3DCameraThisFrame && g_activeVs && g_activeVs->wvpBase==0 && !g_activeVs->depthOnly)
-        g_hadWorldDrawThisFrame=true;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1443,8 +1455,6 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
 static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
-    if(g_replayEye<0 && g_had3DCameraThisFrame && g_activeVs && g_activeVs->wvpBase==0 && !g_activeVs->depthOnly)
-        g_hadWorldDrawThisFrame=true;
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);

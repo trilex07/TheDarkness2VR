@@ -23,6 +23,12 @@ $parts=@((Extract 'struct VsInfo {' $true),(Extract 'struct StereoParams {' $tru
     (Extract 'static bool VertexShaderAnalysisKnown(')+"`r`n"+
     (Extract 'static bool RememberVertexShader(')+"`r`n"+(Extract 'static void ResetProjectionHistories(')+"`r`n"+
     (Extract 'static void SetActiveVertexShaderMetadata('))
+[IO.File]::WriteAllText((Join-Path $out 'actual_world_draw_activity.inl'),(Extract 'static void NoteRecordedWorldDraw() {'))
+$sourceText=Get-Content (Join-Path $repo 'src/stereo_replay.inl') -Raw
+if($sourceText -notmatch 'RecLockGuard lock;\s*g_hadWorldDrawThisFrame=false;' -or
+   $sourceText -notmatch 'if\(op>=OP_DrawPrimitive && op<=OP_DrawIndexedPrimitiveUP\)NoteRecordedWorldDraw\(\);') {
+    throw 'Recording boundary or locked draw activity publication missing'
+}
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 $source=Join-Path $PSScriptRoot 'projection_history_test.cpp'
