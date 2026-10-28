@@ -29,8 +29,13 @@ if($helperBegin -lt 0 -or $helperEnd -lt 0){throw 'Actual binding classifier mis
 $enumBegin=$src.IndexOf('enum RecOp : uint16_t {',[StringComparison]::Ordinal)
 $enumEnd=$src.IndexOf('};',$enumBegin,[StringComparison]::Ordinal)+2
 [IO.File]::WriteAllText((Join-Path $out 'actual_record_ops.inl'),$src.Substring($enumBegin,$enumEnd-$enumBegin))
+$extraCases=foreach($name in @('SetStreamSource','SetStreamSourceFreq','SetIndices','SetVertexDeclaration','SetViewport','SetScissorRect','SetVSConstI','SetVSConstB','SetPSConstI','SetPSConstB')) {
+        $case=[regex]::Match($src.Substring($cases),"(?s)        case OP_${name}:.*?(?=        case |        default:)")
+        if(!$case.Success){throw "Missing actual binding case $name"};$case.Value
+    }
 $actual=$src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
     $src.Substring($bindVS,$vsEnd-$bindVS) + $src.Substring($bindPS,$psEnd-$bindPS) +
+    ($extraCases -join "`n") +
     "        default: if(!IsConstantMaterialBinding(r.op)) CheckBanks(); break;`n        }`n" + $src.Substring($footer,$end-$footer)
 [IO.File]::WriteAllText((Join-Path $out 'actual_replay_float_loop.inl'),$actual)
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"

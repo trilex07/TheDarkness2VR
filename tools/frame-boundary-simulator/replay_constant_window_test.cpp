@@ -39,13 +39,39 @@ static struct Vs {uint32_t hash=0;} vertexMetadata;
 static Vs* g_activeVs=&vertexMetadata;
 static bool bindingTransforms=false,collectReference=false,checkBindingSnapshots=false;
 static std::vector<std::array<const void*,2>> expectedBindings;
+static std::array<uint32_t,10> otherState{};
+static std::vector<std::array<uint32_t,10>> expectedState;
+static std::vector<std::vector<uint32_t>> stateOrder;
+static unsigned stateCalls=0,stateFailAt=0;
+static bool checkOtherState=false;
+static HRESULT State(unsigned slot,std::initializer_list<uint32_t> args,const void* payload=nullptr,unsigned bytes=0){
+    std::vector<uint32_t> call{slot};call.insert(call.end(),args.begin(),args.end());
+    const auto* p=static_cast<const unsigned char*>(payload);
+    uint32_t hash=2166136261u;
+    for(auto word:call){hash^=word;hash*=16777619u;}
+    for(unsigned i=0;i<bytes;++i){call.push_back(p[i]);hash^=p[i];hash*=16777619u;}
+    stateOrder.push_back(call);
+    if(++stateCalls==stateFailAt)return D3DERR_INVALIDCALL;
+    otherState[slot]=hash;return S_OK;
+}
+static HRESULT Stream(void*,UINT s,IDirect3DVertexBuffer9* p,UINT off,UINT stride){return State(0,{s,uint32_t(uintptr_t(p)),off,stride});}
+static HRESULT Frequency(void*,UINT s,UINT f){return State(1,{s,f});}
+static HRESULT Indices(void*,IDirect3DIndexBuffer9* p){return State(2,{uint32_t(uintptr_t(p))});}
+static HRESULT Declaration(void*,IDirect3DVertexDeclaration9* p){return State(3,{uint32_t(uintptr_t(p))});}
+static HRESULT Viewport(void*,const D3DVIEWPORT9* p){return State(4,{},p,sizeof(*p));}
+static HRESULT Scissor(void*,const RECT* p){return State(5,{p?1u:0u},p,p?sizeof(*p):0);}
+static HRESULT VSI(void*,UINT first,const int* p,UINT n){return State(6,{first,n},p,n*16);}
+static HRESULT VSB(void*,UINT first,const BOOL* p,UINT n){return State(7,{first,n},p,n*4);}
+static HRESULT PSI(void*,UINT first,const int* p,UINT n){return State(8,{first,n},p,n*16);}
+static HRESULT PSB(void*,UINT first,const BOOL* p,UINT n){return State(9,{first,n},p,n*4);}
+static void InvalidateShadowAtlasPass(){}
 static int ActiveWvpRegister(Vs*){return 0;}
 static bool IsShadowAtlasPass(void*){return false;}
 static bool ApplyShiftToUpload(float* dst,const float* src,UINT,UINT n,Vs* vi,const Params&,
                               const d2vr_shader_registers::Reference* =nullptr){
     if(!n || n>68)return false;
     memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);
-    bits^=0x10000;if(bindingTransforms)bits^=vi?vi->hash:0x1234;
+    bits^=0x10000;if(bindingTransforms){bits^=vi?vi->hash:0x1234;bits^=otherState[4];}
     memcpy(dst,&bits,4);return true;
 }
 static int g_activePsInverse=-1,g_activePsViewExtents=-1;
@@ -84,11 +110,17 @@ static HRESULT Submit(bool vertex,UINT first,const float* values,UINT count){
 static HRESULT VS(void*,UINT first,const float* data,UINT n){return Submit(true,first,data,n);}
 static HRESULT PS(void*,UINT first,const float* data,UINT n){return Submit(false,first,data,n);}
 static struct {decltype(&VS) SetVertexShaderConstantF=VS;decltype(&PS) SetPixelShaderConstantF=PS;
-    decltype(&Bind) SetVertexShader=Bind;decltype(&Bind) SetPixelShader=Bind;} g_orig;
+    decltype(&Bind) SetVertexShader=Bind;decltype(&Bind) SetPixelShader=Bind;
+    decltype(&Stream) SetStreamSource=Stream;decltype(&Frequency) SetStreamSourceFreq=Frequency;
+    decltype(&Indices) SetIndices=Indices;decltype(&Declaration) SetVertexDeclaration=Declaration;
+    decltype(&Viewport) SetViewport=Viewport;decltype(&Scissor) SetScissorRect=Scissor;
+    decltype(&VSI) SetVertexShaderConstantI=VSI;decltype(&VSB) SetVertexShaderConstantB=VSB;
+    decltype(&PSI) SetPixelShaderConstantI=PSI;decltype(&PSB) SetPixelShaderConstantB=PSB;} g_orig;
 static void CheckBanks(){
-    if(collectReference){expected.push_back(driver);expectedBindings.push_back({g_replayVs,g_replayPs});++checkAt;++checks;return;}
+    if(collectReference){expected.push_back(driver);expectedBindings.push_back({g_replayVs,g_replayPs});expectedState.push_back(otherState);++checkAt;++checks;return;}
     assert(checkAt<expected.size());
     if(checkBindingSnapshots)assert((expectedBindings[checkAt]==std::array<const void*,2>{g_replayVs,g_replayPs}));
+    if(checkOtherState)assert(otherState==expectedState[checkAt]);
     assert(driver.vs==expected[checkAt].vs && driver.ps==expected[checkAt].ps);++checkAt;++checks;
 }
 static bool Actual(){
@@ -179,7 +211,10 @@ static void BindingReduction(){
     // remains a barrier. Values are observed at all these boundaries.
     for(unsigned op=0;op<80;++op) {
         assert(IsConstantMaterialBinding(op)==(op==OP_SetTexture || op==OP_SetTextureStageState ||
-            op==OP_SetSamplerState || op==OP_SetVertexShader || op==OP_SetPixelShader));++checks;
+            op==OP_SetSamplerState || op==OP_SetVertexShader || op==OP_SetPixelShader ||
+            op==OP_SetStreamSource || op==OP_SetStreamSourceFreq || op==OP_SetIndices ||
+            op==OP_SetVertexDeclaration || op==OP_SetViewport || op==OP_SetScissorRect ||
+            op==OP_SetVSConstI || op==OP_SetVSConstB || op==OP_SetPSConstI || op==OP_SetPSConstB));++checks;
     }
     unsigned counts[2]{};
     for(unsigned extended=0;extended<2;++extended) {
@@ -233,8 +268,55 @@ static void ShaderBindingReduction(){
     compensate=false;g_activeVs=&vertexMetadata;vertexMetadata.hash=0;
     g_activePsInverse=-1;g_replayVs=g_replayPs=nullptr;
 }
+static void IndependentBindingReduction(){
+    capture=false;compensate=bindingTransforms=checkOtherState=true;
+    g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
+    const unsigned ops[]={OP_SetStreamSource,OP_SetStreamSourceFreq,OP_SetIndices,
+        OP_SetVertexDeclaration,OP_SetViewport,OP_SetScissorRect,
+        OP_SetVSConstI,OP_SetVSConstB,OP_SetPSConstI,OP_SetPSConstB};
+    g_rec.clear();arena.assign(2048,0);
+    for(unsigned i=0;i<2048;++i)arena[i]=uint8_t(i*13+31);
+    for(unsigned segment=0;segment<2;++segment){
+        const D3DVIEWPORT9 viewport{segment*4,segment*8,640,480,0.f,1.f};
+        memcpy(arena.data()+512+segment*32,&viewport,sizeof(viewport));
+        const RECT rect{4,8,320,240};memcpy(arena.data()+640+segment*32,&rect,sizeof(rect));
+        for(unsigned i=0;i<10;++i){
+            Rec upload;upload.op=i%2?OP_SetPSConstF:OP_SetVSConstF;
+            upload.a[0]=i/2;upload.a[1]=1;upload.a[4]=(segment*10+i)*16;
+            g_rec.push_back(upload);
+            Rec state;state.op=ops[i];state.n=segment==0?1:0;
+            state.a[0]=i==4?512+segment*32:i==5?640+segment*32:i;
+            state.a[1]=i>=6?1:0x1000+segment*16+i;
+            state.a[2]=segment*32;state.a[3]=16+i;state.a[4]=768+i*16;
+            if(segment==1 && (i==2 || i==3))state.a[0]=0;
+            if(segment==1 && i==0)state.a[1]=0;
+            g_rec.push_back(state);
+        }
+        Rec draw;draw.op=OP_DrawIndexedPrimitive;g_rec.push_back(draw);
+    }
+    const auto owned=arena;
+    for(stateFailAt=0;stateFailAt<=20;++stateFailAt){
+        expected.clear();expectedBindings.clear();expectedState.clear();
+        std::vector<std::vector<uint32_t>> referenceOrder;
+        unsigned calls[4]{};
+        for(unsigned mode=0;mode<4;++mode){
+            driver={};otherState={};stateOrder.clear();stateCalls=apiCalls=apiFail=checkAt=0;
+            g_vsConstantHistory.Clear();g_activeVs=&vertexMetadata;vertexMetadata.hash=0;
+            g_replayVs=g_replayPs=nullptr;g_activePsInverse=-1;
+            g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
+            collectReference=mode==0;
+            // Preserve existing replay's HRESULT contract for these setters.
+            assert(Actual());assert(checkAt==2 && stateCalls==20 && !apiFail && arena==owned);
+            if(mode==0)referenceOrder=stateOrder;else assert(stateOrder==referenceOrder);
+            calls[mode]=apiCalls;++checks;
+        }
+        assert(calls[0]==20 && calls[1]==20 && calls[2]==20 && calls[3]==4);++checks;
+    }
+    stateFailAt=0;bindingTransforms=collectReference=checkOtherState=compensate=false;
+    otherState={};g_replayConstantBindWindow=false;
+}
 int main(){
-    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();unsigned streams=0,records=0;
+    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();unsigned streams=0,records=0;
     for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
     for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
@@ -266,5 +348,5 @@ int main(){
 #ifdef D2VR_MATCHED_CAPTURE
     assert(g_constantUploadWindow.counts.exceptions==1 && g_constantUploadWindow.counts.calls[0]==1);
 #endif
-    printf("PASS actual replay float loop: %u streams / %u records / %u barrier snapshots; OFF/adjacent/window/material+shader-bind/capture, binding-dependent transformed bits, 8->4 setters, exact bind order, failed/null binds, caps, failures, forwarding receipts, SEH no retry\n",streams,records,checks);
+    printf("PASS actual replay float loop: %u streams / %u records / %u checks; OFF/adjacent/window/independent-bind/capture, shader+viewport-dependent transformed bits, shader 8->4 and independent 20->4 setters, exact setter args/order/state at draws, failed/null binds, caps, failures, forwarding receipts, SEH no retry\n",streams,records,checks);
 }

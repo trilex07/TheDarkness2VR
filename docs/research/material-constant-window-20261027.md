@@ -8,7 +8,7 @@ VS/PS banks. SetTexture, SetTextureStageState, SetSamplerState and (since the
 2026-10-29 extension below) SetVertexShader/SetPixelShader may intervene between
 these uploads. These setters do not consume global float registers;
 their order and arguments remain unchanged. No pointer or resource content is
-cached. All draws, render targets, viewports, state blocks,
+cached. All draws, render targets, state blocks,
 resource operations and unknown commands remain barriers. SetRenderState stays
 a barrier because vendor FourCC values can initiate operations.
 
@@ -63,3 +63,31 @@ after existing batching. It does not record the adjacency needed to predict
 this extension's additional savings. The 8-to-4 result is a constructed CPU
 regression, not a real-game frame-time or graphics-driver measurement. No
 1 ms saving, flicker resolution or stable 90 FPS is claimed.
+
+## Independent setter extension, 2026-10-29
+
+The same opt-in grouping now spans SetStreamSource, SetStreamSourceFreq,
+SetIndices, SetVertexDeclaration, SetViewport, SetScissorRect and the four
+VS/PS integer/boolean constant setters. These operations do not observe or
+modify float constant banks. All ten setters still execute in original order
+with original arguments; float transforms execute at the original upload,
+including viewport-sensitive shadow classification. Integer and boolean banks
+are separate; no source pointers survive an upload. No setting or new cache,
+allocation, lock, device query or worker thread is added.
+
+Draws, RT/depth changes, resource-content operations, FVF/transform changes,
+state blocks, render states (including vendor FourCC actions) and unknown
+operations remain barriers. Existing HRESULT handling is unchanged for the
+ten admitted setters; this change does not make failed state setters sticky.
+Shader/float failures and SEH retain their existing incomplete/abort behavior.
+
+Actual-source CPU x86 regressions pass in production and diagnostic flavors:
+96 generated streams, 576096 records and 56809 checks each. A dedicated
+two-draw sequence executes each new setter twice, covers null resources and
+scissor, valid viewport payloads, exact setter arguments/order, all 20 possible
+setter failures, and VS transforms dependent on viewport state. OFF,
+adjacent-only and float-window-only modes make 20 float calls; extended mode
+makes four, with identical float banks and independent state at both draws.
+This is a constructed regression, not measured graphics-driver or game savings.
+Both x86 DLL builds pass. Existing runtime has not been rerun, so no additional
+ms/frame saving, 90 FPS result or side-visibility/flicker fix is claimed.
