@@ -1397,3 +1397,23 @@ concurrent owner D3D9 commands, sampled pixels, deferred/immediate readers,
 RAII join, error/fault handling and Reset/recreate. Production/diagnostic builds
 PASS. No game/Steam/OpenXR launch or installed profile change. Native culling
 and resolution are unchanged; installed9106f53 stays available for the user.
+
+## 2026-10-28: bound the D3D9 MT constant-setter hypothesis
+
+Add a narrow isolated x86 API-cost probe for flags0x50 vs0x54, using the system
+D3D9Ex DLL, hidden window, exact creation-flag checks and no draw/Present.
+Eight measured alternating-order batches after one warmup:200000 calls/batch,
+changing eight VS vectors and two PS vectors, QPC wall plus thread cycles.
+No game/OpenXR/Steam calls or attachment, no general profiler. Script refuses
+while DarknessII runs and retains raw output in TEMP/d2vr-d3d9-flag-cost.txt.
+
+First local result: median4.629000ms native flags vs7.981250ms MT per200000
+setters, delta0.016761ms/1000 calls;87.423 vs151.052 thread cycles/call.
+Across85 retained ReplayUploads rows, maximum live-recorded+replayed float
+setter count is7376.775/pair. Applying only the synthetic setter delta to
+that maximum gives0.123642ms, not a measured game saving. Rows include different
+scenes/menu; do not present their median as an outdoor result. Counts exclude
+scope setters and this experiment excludes nonconstant APIs/draws/driver-worker
+contention. Thus this is not a complete upper bound on MT cost. It does refute
+claiming multi-ms savings from these constant setters based on the MT flag
+alone. Keep mode3 as an A/B option; do not promote it as the main90FPS fix.
