@@ -6,7 +6,15 @@
 static void Transform(const float* p,const float* m,float* out) {
     for(unsigned c=0;c<4;++c) {out[c]=0;for(unsigned r=0;r<4;++r)out[c]+=p[r]*m[r*4+c];}
 }
-int main() {
+int main(int argc,char** argv) {
+    // Optional generated inputs for the separate, private native-code emulator.
+    // Only our matrices/points are exported; no executable bytes or game assets.
+    FILE* exported=nullptr;
+    if(argc==2) {
+        if(fopen_s(&exported,argv[1],"wb") || !exported)return 2;
+        const unsigned cases=240;
+        if(fwrite("D2FRC001",1,8,exported)!=8 || fwrite(&cases,4,1,exported)!=1)return 2;
+    }
     d2vr_stereo::Rng rng(0x581031u);
     unsigned points=0,outsideOld=0;
     for(unsigned step=0;step<240;++step) {
@@ -44,6 +52,12 @@ int main() {
         d2vr_culling_cover::Input out;
         CHECK(d2vr_culling_cover::PrepareStereo(view,projection,vp,eyeP,fov,aspect,nearZ,farZ,out));
         CHECK(out.stereoUnion && !std::memcmp(savedEye,eyeP,sizeof(eyeP)));
+        if(exported) {
+            const unsigned samples=1040;
+            CHECK(fwrite(out.viewProjection,sizeof(float),16,exported)==16);
+            CHECK(fwrite(out.inverseViewProjection,sizeof(float),16,exported)==16);
+            CHECK(fwrite(&samples,4,1,exported)==1);
+        }
         float referenceVP[16];d2vr_math::Multiply(view,eyeP[0],referenceVP);
         // Only clip X/Y change during the fit. The rotated/transformed depth
         // interval is shared by both eyes and remains unchanged by union fitting.
@@ -56,6 +70,7 @@ int main() {
                     sample<8?(sample&2?1.f:-1.f):rng.Range(-1,1),sample<8?(sample&4?1.f:0.f):rng.Range(0,1),1};
                 float local[4],world[4],covered[4],old[4];
                 Transform(clip,inverseEye,local);Transform(local,inverseView,world);
+                if(exported)CHECK(fwrite(world,sizeof(float),4,exported)==4);
                 Transform(world,out.viewProjection,covered);Transform(world,vp,old);
                 CHECK(covered[3]>0);
                 const float tolerance=.003f*(1+std::fabs(covered[3]));
@@ -87,5 +102,6 @@ int main() {
         float vp[16];d2vr_math::Multiply(nonAffine,p,vp);
         CHECK(!d2vr_culling_cover::PrepareStereo(nonAffine,p,vp,eyes,90,1,.1f,1e7f,out));
     }
+    if(exported && fclose(exported))return 2;
     std::printf("PASS stereo culling union: %u tracked poses, %u binocular points, %u outside native cone, unchanged depth, mismatch/singular/NaN rejection\n",240u,points,outsideOld);
 }

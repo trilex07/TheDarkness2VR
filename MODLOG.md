@@ -937,3 +937,40 @@ that the user's street flicker follows that path or prove a physical fix.
 Production and diagnostic x86 builds PASS. No game launch or runtime test.
 Keep the installed1cea63a side-culling candidate stable while preparing this
 additional correction offline; do not silently replace its test baseline.
+
+## 2026-10-28: original native frustum builders verified under x86 emulation
+
+Close part of the previous native-algorithm coverage gap without launching the
+game: test/native_frustum_emulation.py reads only the SHA-pinned installed EXE
+and emulates607CD0 followed by685050. No entrypoint, OS API, allocator stub,
+instruction skip, EXE write or runtime attach. Preallocate exactly six plane/
+type entries as required by the producer contract. Reject any emulated write
+outside the owned frustum/vectors/private stack, including all image writes.
+Check original thiscall stack cleanup, input matrix preservation, unchanged
+vector pointers/capacities/types and both native bounds flags.
+
+native_stereo_culling_test.exe optionally exports only our generated VP,
+inverseVP and binocular homogeneous points to a private binary input.240 poses,
+249600 points,480 original function calls PASS. Independently compare actual
+native outputs to D3D clip planes and inverse-corner bounds in double precision:
+worst coefficient error/(1+abs(expected))1.683e-7 (limit2e-6), bounds error1.466e-6
+(limit1e-5). This confirms the native plane sign/order, matrix convention and
+AABB construction for the generated stereo inputs. No production algorithm
+replacement is justified by these results.
+
+The old geometry test's loose0.003*(1+worldMagnitude) boundary tolerance also
+passes, but is not exact containment: raw far-edge excursions reach3.006 world
+units against planes and3.448 against bounds. Report these rather than hiding
+them behind PASS. Floating projection/inverse/world transformations can move
+far corners slightly; this does not prove their relevance to visible street
+pop-in or justify changing clip planes speculatively.
+
+Reproduce after build_native_culling_geometry.ps1 by running its generated
+native_stereo_culling_test.exe with one output-path argument, then Python
+native_frustum_emulation.py --exe <installed-D46-EXE> --cases <that-output>.
+Dependencies: pefile, numpy, unicorn2.1.4; optional --dependency-root points to
+an isolated dependency directory, --report writes a private JSON result.
+No dependency binaries, EXE bytes or decompilation are included in Git.
+Unicorn API reference: https://www.unicorn-engine.org/docs/tutorial.html
+Native scene ownership/activation and HMD side-pop/right-eye/FPS acceptance
+remain NOT RUN. Installed1cea63a and prepared8c2d6e1 remain unchanged.
