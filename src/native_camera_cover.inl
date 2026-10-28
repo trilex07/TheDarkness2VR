@@ -256,10 +256,14 @@ static void* g_nativeViewRenderNext=reinterpret_cast<void*>(0x99F1B0);
 D2VR_SELECTED_CAMERA_SHIM(NativeViewRenderEntry,BeforeNativeViewRender,g_nativeViewRenderNext)
 static void ObserveNativeViewBoundary(void* view) {
     if(GetCurrentThreadId()!=g_renderThreadId)return;
-    if(g_nativeViewBoundaryMode==2 && PrepareNativeRenderViewTable() &&
-       g_nativeRenderViewTable.Publish(view,g_nativeImageGuard)) {
+    if(g_nativeViewBoundaryMode==2 && (g_nativeRenderViewTable.Owns(view) ||
+       (PrepareNativeRenderViewTable() && g_nativeRenderViewTable.Publish(view,g_nativeImageGuard)))) {
         static unsigned reports=0;
         if(++reports<=3)Log("[NativeRenderEntry] instance=%p private read-only table; +A8 -> original99F1B0; EXE/static tables unchanged",view);
+        // The render entry now owns the witness too. A later QPC must not
+        // replace its candidate with a camera updated after that render pass.
+        // An unchanged vptr needs neither VirtualQuery nor another atomic write.
+        return;
     }
     ObserveNativeCameraBoundary(view,false);
 }

@@ -815,3 +815,21 @@ including both upload orders; actual-source culling1000 ABI/alignment checks
 PASS. Production and diagnostic builds PASS. Runtime activation, persistence
 through native camera updates, side coverage and headset/FPS acceptance remain
 unproven until the new candidate runs in the scene.
+
+## 2026-10-28: keep the pre-render witness isolated from QPC discovery
+
+5af8536 runtime confirms the private instance dispatch and D3D_OK Present;
+the current observed scene still has no live inverse-projection upload, so no
+culling write or visual fix is proven. Keep this distinction explicit.
+
+Once the private table owns the instance, QPC now returns after discovery.
+It cannot replace the pre-render candidate with a camera state updated later
+in the render pass. An already-owned immutable vptr bypasses VirtualQuery and
+atomic republishing too. Actual-source x86 dispatch regression PASS10000 owned
+callbacks without prepare/publish/late observation; failed admission, observe
+mode and foreign-thread cases PASS. The external ABI/witness regression and
+diagnostic build PASS. This follow-up is offline; the running DLL is5af8536.
+
+The initial dispatch fixture executable name triggered Windows elevation
+heuristics and did not run. No UAC was invoked. Rebuilt as view-phase.exe;
+explicit exit-code reset now rejects a missing launch, and that run prints PASS.
