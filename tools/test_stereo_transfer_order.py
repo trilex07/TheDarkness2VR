@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def pair_body():
     source = (ROOT / 'src/d3d9.cpp').read_text(encoding='utf-8')
     start = source.index('static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {')
-    return source[start:source.index('    d2vr_replay::DeviceSnapshot liveEnd;', start)]
+    return source[start:source.index('    d2vr_replay::DeviceSnapshot localLiveEnd;', start)]
 
 
 def delayed_left_read(sealed_before_capture):

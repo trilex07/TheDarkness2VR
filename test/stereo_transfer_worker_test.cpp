@@ -18,12 +18,13 @@ static Ref<ID3DBlob> Compile(const char* source,const char* target) {
     if(errors) {std::printf("%s\n",static_cast<const char*>(errors->GetBufferPointer()));errors->Release();}
     HR(hr);return Adopt(code);
 }
-static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceContext* ctx) {
+static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceContext* ctx,
+                     bool deferred=false,UINT width=64,UINT height=64) {
     IDirect3DSurface9* rtRaw=nullptr;
-    HR(dev9->CreateRenderTarget(64,64,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rtRaw,nullptr));
+    HR(dev9->CreateRenderTarget(width,height,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rtRaw,nullptr));
     auto rt=Adopt(rtRaw); HR(dev9->SetRenderTarget(0,rt.Get()));
     HANDLE sharedHandle=nullptr; IDirect3DTexture9* texRaw=nullptr;
-    HR(dev9->CreateTexture(64,64,1,D3DUSAGE_RENDERTARGET,D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT,&texRaw,&sharedHandle));
+    HR(dev9->CreateTexture(width,height,1,D3DUSAGE_RENDERTARGET,D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT,&texRaw,&sharedHandle));
     auto shared9=Adopt(texRaw); IDirect3DSurface9* surfRaw=nullptr;
     HR(shared9->GetSurfaceLevel(0,&surfRaw));auto surf=Adopt(surfRaw);
     IDirect3DQuery9* q9Raw=nullptr;HR(dev9->CreateQuery(D3DQUERYTYPE_EVENT,&q9Raw));auto q9=Adopt(q9Raw);
@@ -60,8 +61,18 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         j->producer=q9;j->reader=q11;j->context=Ref<ID3D11DeviceContext>(ctx);
         j->target=targets[eye];j->constants=buffer;j->vs=vs;j->ps=ps;
         j->sampler=sampler;j->raster=raster;j->source=srv;
-        j->size=112;j->width=j->height=64;
+        j->size=112;j->width=width;j->height=height;j->deferReader=deferred;
         float tint[4]={1,1,1,1};memcpy(j->bytes.data(),tint,sizeof(tint));return j;
+    };
+    auto retire=[&](const std::shared_ptr<d2vr_transfer::Job>& job) {
+        CHECK(job->readerSubmitted && job->result==S_OK);
+        if(!deferred) {CHECK(job->readerComplete);return;}
+        CHECK(!job->readerComplete);
+        const auto begin=GetTickCount64();HRESULT result;
+        while((result=ctx->GetData(job->reader.Get(),nullptr,0,0))==S_FALSE) {
+            CHECK(GetTickCount64()-begin<2000);SwitchToThread();
+        }
+        CHECK(result==S_OK);
     };
     auto issue=[&] {
         HR(dev9->StretchRect(rt.Get(),nullptr,surf.Get(),nullptr,D3DTEXF_NONE));
@@ -88,16 +99,19 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,right));
             if(frame%2) CHECK(pending.Finish()); // other half tests destructor join
         }
-        CHECK(!fault && l->readerComplete && l->thread!=GetCurrentThreadId());
-        l.reset();verify(0,left);
+        CHECK(!fault && l->thread!=GetCurrentThreadId());
+        // Same-context eye copies may be queued before reader completion.
+        // Map is a test readback gate; production must still fence shared reuse.
+        if(frame%2) {verify(0,left);retire(l);}
+        else {retire(l);verify(0,left);}
+        l.reset();
         issue();auto r=packet(1);
         {
             d2vr_transfer::Pending pending;CHECK(pending.Start(queue,r,fault));
             HR(dev9->ColorFill(rt.Get(),nullptr,left)); // restore live image in parallel
             CHECK(pending.Finish());
         }
-        CHECK(!fault && r->readerComplete);r.reset();
-        verify(1,right);verify(0,left);
+        CHECK(!fault);verify(1,right);verify(0,left);retire(r);r.reset();
     }
     // Invalid work must latch the overwrite fault, including on an early return.
     {
@@ -106,9 +120,16 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     }
     CHECK(fault);
     d2vr_transfer::Pending refused;CHECK(!refused.Start(queue,packet(0),fault));
+    bool deferredFault=false;
+    {
+        auto invalid=std::make_shared<d2vr_transfer::Job>();invalid->deferReader=true;
+        d2vr_transfer::Pending pending;CHECK(pending.Start(queue,invalid,deferredFault));
+    }
+    CHECK(deferredFault); // submitted flag alone must never turn failure into success
     queue.Stop();ctx->ClearState();ctx->Flush();
     IDirect3DSurface9* bb=nullptr;HR(dev9->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&bb));
     HR(dev9->SetRenderTarget(0,bb));bb->Release();
+    printf("PASS interop scenario deferred=%d size=%ux%u: 200 eye transfers, pixels and explicit reader retirement\n",int(deferred),width,height);
 }
 int main() {
     static_assert(sizeof(void*)==4,"x86 required");
@@ -134,9 +155,12 @@ int main() {
     HR(D3D11CreateDevice(adapter.Get(),D3D_DRIVER_TYPE_UNKNOWN,nullptr,D3D11_CREATE_DEVICE_BGRA_SUPPORT,
         nullptr,0,D3D11_SDK_VERSION,&d11Raw,nullptr,&ctxRaw));auto d11=Adopt(d11Raw);auto ctx=Adopt(ctxRaw);
     Scenario(d9.Get(),d11.Get(),ctx.Get());
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728);
     HR(d9->ResetEx(&pp,nullptr)); // all worker/shared-resource references have been released
     Scenario(d9.Get(),d11.Get(),ctx.Get());
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728);
     ctx={};d11={};d9={};api={};DestroyWindow(window);FreeLibrary(module);
-    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 400 eye transfers, pixel equality, concurrent D3D9 work, RAII join, failure latch, Reset/recreate");
+    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 1000 eye transfers (400 at 2676x2728), sampled pixel equality, concurrent D3D9 work, RAII join, failure latch, Reset/recreate");
     std::puts("No game/OpenXR/Steam calls; this does not prove frame-time improvement or headset acceptance.");
 }

@@ -40,6 +40,10 @@ struct Job {
     // Written by worker; read only after the queue completion barrier.
     HRESULT result=E_PENDING;
     bool readerSubmitted=false, readerComplete=false;
+    // Prototype only: caller must retain this job and wait for this exact
+    // reader query before overwriting the shared input or tearing it down.
+    // Finish then returns the immediate-context lease, not GPU completion.
+    bool deferReader=false;
     DWORD thread=0;
     LONGLONG start=0, producerDone=0, drawDone=0, end=0;
 
@@ -80,6 +84,7 @@ struct Job {
         context->OMSetRenderTargets(1,&nullTarget,nullptr);
         context->End(reader.Get()); context->Flush();
         drawDone=Clock();
+        if(deferReader) {result=S_OK;end=Clock();return;}
         const ULONGLONG readerStart=GetTickCount64();
         while((result=context->GetData(reader.Get(),nullptr,0,0))==S_FALSE) {
             if(GetTickCount64()-readerStart>2000) { result=HRESULT_FROM_WIN32(ERROR_TIMEOUT); end=Clock(); return; }
@@ -117,7 +122,8 @@ public:
         if(!queue_) return true;
         const auto completed=queue_->Wait(ticket_);
         const bool ok=completed.complete && !completed.firstFailure &&
-            job_->result==S_OK && job_->readerComplete;
+            job_->result==S_OK && (job_->readerComplete ||
+                (job_->deferReader && job_->readerSubmitted));
         if(!ok) *fault_=true; // retain overwrite prohibition until resource teardown
         queue_=nullptr; job_.reset(); fault_=nullptr; return ok;
     }
