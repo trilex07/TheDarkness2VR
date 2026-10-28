@@ -581,3 +581,13 @@ Actual-source tests now alternate independent start/end constant values across
 viewport, reference cleanup and Reset tests still PASS on x86 REF/HAL. Both
 builds PASS. Combined mode avoids two repeated ALL block creations per pair;
 it does not skip fresh capture or claim a measured runtime/FPS saving.
+
+## 2026-10-28: integrated replay-window regression refreshed
+
+Audited MoreFloatBeforeBarrier: invoked only after float records, so intervening
+material commands are scanned once, not quadratically. No algorithm change
+justified. Updated actual-source regression extraction boundary to the current
+atomic release-store unlock. Production and diagnostic tests each PASS96 streams,
+576096 records and70090 barrier snapshots, including batching/capture bypass,
+transformed bits, caps, failures and SEH no-retry behavior. Runtime DLL unchanged
+from2331082; this test-only commit is not a new performance candidate.

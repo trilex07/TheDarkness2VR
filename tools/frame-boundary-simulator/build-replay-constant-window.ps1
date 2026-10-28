@@ -16,7 +16,7 @@ $vsEnd=$src.IndexOf('        case OP_SetVSConstI:', $vs,[StringComparison]::Ordi
 $ps=$src.IndexOf('        case OP_SetPSConstF: {',$vsEnd,[StringComparison]::Ordinal)
 $psEnd=$src.IndexOf('        case OP_SetPSConstI:', $ps,[StringComparison]::Ordinal)
 $footer=$src.IndexOf('        // Finish the packet at its LAST original constant command,',$psEnd,[StringComparison]::Ordinal)
-$end=$src.IndexOf('    InterlockedExchange(&g_recLock, 0);',$footer,[StringComparison]::Ordinal)
+$end=$src.IndexOf('    g_recLock.store(0,std::memory_order_release);',$footer,[StringComparison]::Ordinal)
 if(@($begin,$cases,$vs,$vsEnd,$ps,$psEnd,$footer,$end) | Where-Object {$_ -lt 0}){throw 'Actual replay source boundaries missing'}
 # Compile actual admission, forwarding lambda, float cases, look-ahead, SEH and
 # receipt aggregation. Non-float commands become observers of the driver banks.
