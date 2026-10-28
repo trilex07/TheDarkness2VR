@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include "../../src/small_record_copy.h"
 #include "../../src/native_constant_source.h"
+#include "../../src/shader_register_history.h"
 #include <cassert>
 #include <cstdio>
 #include <vector>
@@ -37,6 +38,7 @@ static void Filled(const uint8_t* p, size_t n, uint8_t value) {
 // Bind the extracted production RecPush and lock to this owned record arena.
 #include "../../src/record_payload_storage.h"
 static d2vr_record_payload::Storage g_recData;
+static d2vr_shader_registers::History g_vsConstantHistory;
 static std::atomic<LONG> g_recLock{0};
 static bool g_smallRecordCopyAdmitted=false;
 static std::atomic<bool> g_wideRecordCopy{false};
@@ -146,6 +148,32 @@ static void TestAtomicPayloadRecords() {
         assert(!memcmp(g_recData.data()+g_rec[i].a[slots[i]],data,sizes[i]));
     }
     g_rec.clear();g_recData.clear();cases+=9;
+    // Actual production append publishes the shared raw register bank and its
+    // reference receipt from the OWNED captured bytes under this same lock.
+    g_vsConstantHistory.Clear();g_recActive=true;
+    uint32_t matrix[16];for(unsigned i=0;i<16;++i)matrix[i]=i+101;
+    d2vr_shader_registers::Reference reference;
+    RecEmitData(OP_SetVSConstF,matrix,sizeof(matrix),0,4,0,0,{},4,UINT32_MAX,0,&reference);
+    assert(reference.valid && !memcmp(reference.values,matrix,sizeof(matrix)));++cases;
+    g_vsConstantHistory.BeginRecord();
+    for(unsigned i=0;i<16;++i)matrix[i]+=20;
+    RecEmitData(OP_SetVSConstF,matrix,sizeof(matrix),0,4,0,0,{},4,UINT32_MAX,0,&reference);
+    assert(reference.valid && !memcmp(reference.values,matrix,sizeof(matrix)));++cases;
+    g_vsConstantHistory.BeginReplay();float observed[16];
+    assert(g_vsConstantHistory.replay.Matrix(0,observed));
+    assert(memcmp(observed,matrix,sizeof(matrix))!=0);++cases;
+    for(unsigned row=0;row<4;++row)RecEmitData(OP_SetVSConstF,matrix+row*4,16,row,1,0,0,{},4,UINT32_MAX,0,&reference);
+    assert(reference.valid && !memcmp(reference.values,matrix,sizeof(matrix)));++cases;
+    g_vsConstantHistory.live.Invalidate(0,1);
+    RecEmitData(OP_SetVSConstF,matrix+4,16,1,1,0,0,{},4,UINT32_MAX,0,&reference);
+    assert(!reference.valid);++cases;
+    RecEmitData(OP_SetVSConstF,matrix,sizeof(matrix),0,4,0,0,{},4,UINT32_MAX,0,&reference);
+    assert(reference.valid);++cases;
+    g_recOverflow=true;
+    RecEmitData(OP_SetVSConstF,matrix,16,0,1,0,0,{},4,UINT32_MAX,0,&reference);
+    assert(!reference.valid && !g_vsConstantHistory.live.Matrix(0,observed));++cases;
+    g_recOverflow=false;
+    g_rec.clear();g_recData.clear();
 }
 int main(int argc, char** argv) {
     assert(argc == 2);

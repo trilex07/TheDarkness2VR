@@ -14,6 +14,7 @@
 #include "../src/stereo_math.h"
 #include "../src/stereo_geometry.h"
 #include "../src/projection_history.h"
+#include "../src/shader_register_history.h"
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL %u line %d: %s\n",checks,__LINE__,#x);exit(1);}}while(0)
 static int g_projectionFix=1,g_lightingPreset=0;
@@ -33,6 +34,7 @@ static d2vr_shader_metadata::Vertices<VsInfo> g_vsInfo;
 static std::shared_ptr<VsInfo> g_activeVsOwner;
 static VsInfo* g_activeVs=nullptr;
 static unsigned lockDepth=0;
+static d2vr_shader_registers::History g_vsConstantHistory;
 struct RecLockGuard {RecLockGuard(){CHECK(!lockDepth++);}~RecLockGuard(){CHECK(!--lockDepth);}};
 #include "actual_shader_identity.inl"
 static void Perspective(float (&m)[16],float offset) {
@@ -47,6 +49,11 @@ static void Seed(VsInfo& vi,const float* matrix,const StereoParams& sp) {
     CHECK(ApplyShiftToUpload(ignored,matrix,0,4,&vi,sp));
 }
 static void Frame(){++g_wvpHistoryGeneration;g_recActive=true;g_replayEye=-1;}
+static bool ApplyWithRegisters(float* dst,const float* src,UINT first,UINT count,VsInfo* vi,
+                               const StereoParams& sp,const d2vr_shader_registers::Bank* bank) {
+    const d2vr_shader_registers::Reference reference(*bank,ActiveWvpRegister(vi));
+    return ApplyShiftToUpload(dst,src,first,count,vi,sp,&reference);
+}
 int main(int argc,char** argv) {
     const bool legacy=argc==2 && !strcmp(argv[1],"--expect-legacy-mismatch");
     VsInfo vi;vi.analyzed=true;vi.wvpBase=0;vi.stpBase=4;
@@ -59,6 +66,62 @@ int main(int argc,char** argv) {
     CHECK(ApplyShiftToUpload(replay,stp,4,4,&vi,sp));
     if(legacy){CHECK(memcmp(live,replay,sizeof(live))!=0);puts("REPRODUCED actual-source right-eye mismatch: replay's first STP uses the final live object's WVP; identical eye parameters/data");return 0;}
     CHECK(!memcmp(live,replay,sizeof(live)));
+    {
+        VsInfo first;first.analyzed=true;first.wvpBase=0;first.stpBase=4;
+        VsInfo second=first,reference=first;
+        float firstMatrix[16],secondMatrix[16],screen[16],actual[16],expected[16],discard[16];
+        d2vr_shader_registers::History registers;
+        Perspective(firstMatrix,.1f);Perspective(secondMatrix,7.f);Screen(secondMatrix,screen);
+        g_replayEye=-1;g_recActive=false;
+        CHECK(registers.live.Write(0,4,firstMatrix,sizeof(firstMatrix)));
+        CHECK(ApplyWithRegisters(discard,firstMatrix,0,4,&first,sp,&registers.live));
+        CHECK(registers.live.Write(0,4,secondMatrix,sizeof(secondMatrix)));
+        CHECK(ApplyWithRegisters(discard,secondMatrix,0,4,&second,sp,&registers.live));
+        CHECK(ApplyShiftToUpload(discard,secondMatrix,0,4,&reference,sp));
+        CHECK(ApplyShiftToUpload(expected,screen,4,4,&reference,sp));
+        CHECK(registers.live.Write(4,4,screen,sizeof(screen)));
+        CHECK(ApplyWithRegisters(actual,screen,4,4,&first,sp,&registers.live));
+        CHECK(!memcmp(actual,expected,sizeof(actual)));
+        registers.BeginRecord();
+        CHECK(registers.live.Write(0,4,firstMatrix,sizeof(firstMatrix))); // future live data
+        for(unsigned pass=0;pass<3;++pass) {
+            registers.BeginReplay();
+            g_replayEye=1;
+            CHECK(ApplyWithRegisters(actual,screen,4,4,&first,sp,&registers.replay));
+            CHECK(!memcmp(actual,expected,sizeof(actual)));
+            registers.replay.Invalidate(0,4);
+        }
+        g_replayEye=-1;
+        // Partial writes by another shader update the DEVICE's WVP reference,
+        // including boundaries between validity bit-mask words.
+        for(unsigned base:{0u,61u,125u,189u,252u}) {
+            d2vr_shader_registers::Bank bank;
+            for(unsigned row=0;row<4;++row)CHECK(bank.Write(base+row,1,secondMatrix+row*4,16));
+            float observed[16];CHECK(bank.Matrix(int(base),observed));
+            CHECK(!memcmp(observed,secondMatrix,sizeof(observed)));
+            for(unsigned row=0;row<4;++row) {
+                bank.Invalidate(base+row,1);CHECK(!bank.Matrix(int(base),observed));
+                CHECK(bank.Write(base+row,1,secondMatrix+row*4,16));
+            }
+            bank.Clear();CHECK(!bank.Matrix(int(base),observed));
+        }
+        registers.live.Clear();CHECK(!registers.live.Matrix(0,actual));
+        CHECK(!registers.live.Write(255,2,secondMatrix,32));
+        CHECK(!registers.live.Write(0,4,secondMatrix,63));
+        CHECK(!registers.live.Write(UINT32_MAX,1,secondMatrix,16));
+        // A different shader's WVP at c8 must NOT replace the active c0 bank.
+        CHECK(registers.live.Write(0,4,firstMatrix,sizeof(firstMatrix)));
+        CHECK(registers.live.Write(8,4,secondMatrix,sizeof(secondMatrix)));
+        Screen(firstMatrix,screen);
+        CHECK(ApplyShiftToUpload(discard,firstMatrix,0,4,&reference,sp));
+        CHECK(ApplyShiftToUpload(expected,screen,4,4,&reference,sp));
+        CHECK(ApplyWithRegisters(actual,screen,4,4,&first,sp,&registers.live));
+        CHECK(!memcmp(actual,expected,sizeof(actual)));
+        VsInfo reflected=first;reflected.reflected=true;reflected.reflectedWvp=8;
+        CHECK(ActiveWvpRegister(&reflected)==8 && ActiveWvpRegister(nullptr)==-1);
+        const auto oldFix=g_projectionFix;g_projectionFix=0;
+        CHECK(ActiveWvpRegister(&reflected)==0);g_projectionFix=oldFix;
+    }
     CHECK(ApplyShiftToUpload(ignored,b,0,4,&vi,sp));
     // Rotating projections, two shaders, repeated replay and frame inheritance.
     VsInfo peer=vi;peer.stpBase=8;

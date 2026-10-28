@@ -32,6 +32,7 @@
 #include "pixel_shader_metadata.h"
 #include "vertex_shader_metadata.h"
 #include "up_geometry_capture.h"
+#include "shader_register_history.h"
 
 namespace d2vr_replay {
 
@@ -498,6 +499,7 @@ struct DeviceSnapshot {
 };
 static DeviceSnapshot g_frameStart;
 static uint64_t g_wvpHistoryGeneration=0;
+static d2vr_shader_registers::History g_vsConstantHistory;
 static FrameResourceRefs<IUnknown> g_recordRefs;
 static void ReleaseRecording(bool keepSnapshot=false) {
     g_recActive = false;
@@ -519,6 +521,7 @@ static void RecBeginFrame(IDirect3DDevice9* dev) {
     if (g_rec.capacity() < 200000) g_rec.reserve(200000);
     if (g_recData.capacity() < (4u << 20)) g_recData.reserve(4u << 20);
     ++g_wvpHistoryGeneration;
+    g_vsConstantHistory.BeginRecord();
     g_recOverflow = false;
     g_recActive = true;
 }
@@ -625,12 +628,24 @@ static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 
 static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
                                uint32_t a0 = 0, uint32_t a1 = 0, uint32_t a2 = 0, uint32_t a3 = 0,
                                const d2vr_native_constants::Proof& proof = {},
-                               unsigned payloadSlot = 4, uint32_t recordCount = UINT32_MAX) {
-    if (!g_recActive || g_recOverflow) return;
+                               unsigned payloadSlot = 4, uint32_t recordCount = UINT32_MAX,
+                               int referenceBase=-1,d2vr_shader_registers::Reference* reference=nullptr) {
+    if(reference)reference->valid=false;
+    if (!g_recActive) return;
     RecLockGuard lock;
-    if (!g_recActive || g_recOverflow) return;
-    if (g_rec.size() >= 400000) { g_recOverflow = true; return; }
+    if (!g_recActive) return;
+    if (g_rec.size() >= 400000) g_recOverflow = true;
+    if(g_recOverflow) {
+        if(op==OP_SetVSConstF)g_vsConstantHistory.live.Invalidate(a0,a1);
+        return;
+    }
     uint32_t off = RecPushLocked(data, bytes, proof);
+    if(op==OP_SetVSConstF) {
+        const bool complete=uint64_t(off)+bytes<=g_recData.size();
+        if(complete)g_vsConstantHistory.live.Write(a0,a1,g_recData.data()+off,bytes);
+        else g_vsConstantHistory.live.Invalidate(a0,a1);
+        if(reference)*reference=d2vr_shader_registers::Reference(g_vsConstantHistory.live,referenceBase);
+    }
     uint32_t args[5]={a0,a1,a2,a3,0};
     args[payloadSlot]=off; // internal callers use slots 0, 1 or 4
     RecEmitLocked(op, recordCount==UINT32_MAX ? (uint32_t)(bytes / 4) : recordCount,
@@ -692,6 +707,7 @@ static bool RememberVertexShader(IDirect3DVertexShader9* shader,VsInfo& analyzed
 }
 static void ResetProjectionHistories() {
     RecLockGuard lock;
+    g_vsConstantHistory.Clear();
     g_vsInfo.ForEach([](VsInfo& info){info.wvpHistory={};});
 }
 static std::shared_ptr<VsInfo> g_activeVsOwner;
@@ -1041,8 +1057,13 @@ static bool IsShadowAtlasPass(IDirect3DDevice9* dev) {
 //   3. A matrix block that merely writes a non-oPos output is only a ScreenTexture
 //      Projection when it satisfies STP = WVP * S. Bare viewport-bias/flip matrices are
 //      constants and must stay untouched.
+static int ActiveWvpRegister(const VsInfo* vi) {
+    return (g_projectionFix&1) && vi && vi->reflected?vi->reflectedWvp:
+        vi && vi->analyzed?vi->wvpBase:-1;
+}
 static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT count,
-                               VsInfo* vi, const StereoParams& sp) {
+                               VsInfo* vi, const StereoParams& sp,
+                               const d2vr_shader_registers::Reference* registers=nullptr) {
     if (vi && g_diagnosticSkipVs && vi->hash == g_diagnosticSkipVs) return false;
 
     int wvpBase = -1, stpBase = -1;
@@ -1107,7 +1128,7 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
     // WVP reference values for the ScreenTextureProjection identity check.
     float wvpRef[16];
     bool haveWvpRef = false;
-    auto* history=vi?&vi->wvpHistory.ForUpload(g_replayEye>=0,g_recActive,g_wvpHistoryGeneration):nullptr;
+    auto* history=vi && !registers?&vi->wvpHistory.ForUpload(g_replayEye>=0,g_recActive,g_wvpHistoryGeneration):nullptr;
     if (wvpBase >= 0 && (int)start <= wvpBase && (int)(start + count) >= wvpBase + 4) {
         memcpy(wvpRef, src + (wvpBase - (int)start) * 4, sizeof(wvpRef));
         haveWvpRef = true;
@@ -1115,6 +1136,12 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
             memcpy(history->values,wvpRef,sizeof(history->values));
             history->valid=true;
         }
+    } else if(registers) {
+        // Rebinding a shader does not restore its former constants. The shared
+        // raw bank includes ALL recorded writes, including other shaders,
+        // partial updates and passes for which stereo injection was skipped.
+        haveWvpRef=registers->valid;
+        if(haveWvpRef)std::memcpy(wvpRef,registers->values,sizeof(wvpRef));
     } else if (history && history->valid) {
         memcpy(wvpRef,history->values,sizeof(wvpRef));
         haveWvpRef = true;
@@ -1766,6 +1793,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         expectedLock=0;Sleep(0);
     }
     const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)
+    g_vsConstantHistory.BeginReplay();
     if (g_replayTestClear) {
         // diagnostic: flood the current render target magenta before replaying; if the eye1
         // capture does not turn magenta, the replay never reaches the captured surface.
@@ -1922,6 +1950,8 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (auditUploads) uploadCounts.Record(d2vr_replay_batch::Stage::Vertex);
 #endif
             const float* src = (const float*)(dataBase + r.a[4]);
+            g_vsConstantHistory.replay.Write(r.a[0],r.a[1],src,size_t(r.a[1])*16);
+            const d2vr_shader_registers::Reference rawReference(g_vsConstantHistory.replay,ActiveWvpRegister(g_activeVs));
             StereoParams uploadParams = sp;
             uploadParams.projectionSnapshot = true;
             memcpy(&uploadParams.projectionPx,&r.a[2],sizeof(float));
@@ -1933,7 +1963,8 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (g_skipLightVsShift && g_activeVs && g_activeVs->hash == 0x68EEE79Cu)
                 lightVs = true;   // candidate fix (Shift+F2): light volume in engine/world space
             if (eye >= 0 && r.a[1] <= 68 && !lightVs && !IsShadowAtlasPass(dev)) {
-                if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, uploadParams)) src = tmp;
+                if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, uploadParams,
+                                       &rawReference)) src = tmp;
             }
             if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Vertex,
                 r.a[0],src,r.a[1],sendConstants);
@@ -2036,6 +2067,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             // call the ORIGINAL Apply: the vtable points at our hook which would try to
             // record while the record lock is held here -> deadlock
             if (sb && g_origSBApply) g_origSBApply(sb);
+            g_vsConstantHistory.replay.Clear();
             SyncActiveShader(dev);
             HOOK_MARK(1900 + r.op);
             break;
@@ -2098,6 +2130,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 // ------------------------------------------------------------- state block hooks
 static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
     InvalidateShadowAtlasPass();
+    {RecLockGuard lock;g_vsConstantHistory.live.Clear();}
     if (g_recActive) RecEmit(OP_ApplyStateBlock, 0, (uint32_t)(uintptr_t)sb);
     return g_origSBApply ? g_origSBApply(sb) : D3D_OK;
 }

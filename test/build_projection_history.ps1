@@ -16,7 +16,8 @@ function Extract([string]$signature,[bool]$structure=$false) {
     return $text.Substring($start,$end-$start+1)+$(if($structure){';'}else{''})
 }
 $parts=@((Extract 'struct VsInfo {' $true),(Extract 'struct StereoParams {' $true),
-    (Extract 'static void ApplyEyeShiftToMatrix('),(Extract 'static bool ApplyShiftToUpload('))
+    (Extract 'static void ApplyEyeShiftToMatrix('),(Extract 'static int ActiveWvpRegister('),
+    (Extract 'static bool ApplyShiftToUpload('))
 [IO.File]::WriteAllText((Join-Path $out 'actual_projection_history.inl'),($parts -join "`r`n"))
 [IO.File]::WriteAllText((Join-Path $out 'actual_shader_identity.inl'),
     (Extract 'static bool VertexShaderAnalysisKnown(')+"`r`n"+

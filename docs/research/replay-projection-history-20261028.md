@@ -43,3 +43,40 @@ MAIN integration: use the diagnostic DLL built from this branch together with
 `b17208d` (selected local player and independent arms). Keep the current native
 2676x2728 profile. No INI changes are required. MAIN alone deploys with backup
 and rollback while the game is closed; this work does not launch the game.
+
+## Shared register correction, 2026-10-29
+
+The per-shader history above was insufficient: binding shader A does not
+restore the values A last uploaded. The actual-source regression writes WVP A
+to c0 through c3, binds B and writes WVP B to those same registers, then rebinds
+A and uploads STP(B) separately. The previous implementation fails check 13
+(`memcmp(actual, expected)`); it classifies using stale WVP A.
+
+Production now obtains its reference from a shared raw VS register bank,
+updated from already owned recorder bytes under the existing recorder lock.
+The frame-start snapshot and each replay start have independent banks. All
+recorded float writes contribute, including other shaders and skipped passes.
+Partial writes update only their rows; all four rows must be known before a
+matrix is used. Unrecorded writes, recording overflow, failed native uploads,
+Reset and externally applied state blocks invalidate affected knowledge.
+Rejected native uploads also prevent publishing a complete replay eye.
+
+There are no new device queries, native-pointer reads, per-upload allocations
+or extra locks on the normal recorded upload path. This adds a 4 KiB raw-bank
+snapshot at recording/replay start and copies recorded float rows into the
+corresponding bank. No performance saving is claimed.
+
+Validation: actual-source projection history 24,591 checks PASS; recorder
+6,103 checks PASS including overflow invalidation; pixel shader metadata
+100,000 concurrent publications PASS; replay packet equivalence 80,190 checks
+over 360,000 operations PASS; projection estimator 100 transitions PASS.
+Production and diagnostic x86 builds PASS. Other candidate features retain
+their earlier validation; these numbers are CPU regressions, not HMD evidence.
+
+Unknown inherited registers deliberately have no per-shader fallback. This
+corrects the STP reference, not stereo injection for arbitrary partial WVP
+uploads or dynamic VB/IB content versioning. It does not establish this defect
+as the user's side disappearance or flicker cause. CULL OFF 5 in menus and ON
+in gameplay is acknowledged; culling admission remains unchanged. MAIN should
+use the cumulative candidate with its existing native-resolution profile and
+backup/rollback, then verify both eyes and side visibility in one headset run.

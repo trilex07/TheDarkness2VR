@@ -1872,6 +1872,11 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
     const float* pConstantData,
     UINT Vector4fCount,const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner)
 {
+    d2vr_shader_registers::Reference rawReference;
+    if(!(g_hookMask&8) || !d2vr_replay::g_recActive) {
+        d2vr_replay::RecLockGuard lock;
+        d2vr_replay::g_vsConstantHistory.live.Invalidate(StartRegister,Vector4fCount);
+    }
 #ifdef D2VR_MATCHED_CAPTURE
     CameraUploadWitness cameraSample;
     const bool witness=BeginCameraUploadWitness(cameraSample,pConstantData,StartRegister,Vector4fCount,reinterpret_cast<void*>(nativeSlot[0]));
@@ -1921,7 +1926,8 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
             memcpy(&camera[1],&d2vr_replay::g_cameraPy,sizeof(float));
         }
         d2vr_replay::RecEmitData(d2vr_replay::OP_SetVSConstF, pConstantData,
-                                 sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount,camera[0],camera[1],proof);
+                                 sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount,camera[0],camera[1],proof,
+                                 4,UINT32_MAX,d2vr_replay::ActiveWvpRegister(d2vr_replay::g_activeVs),&rawReference);
     }
 
     // ---- True stereo: live pass renders eye 0 (eye 1 comes from the replay pass) ----
@@ -1952,13 +1958,19 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
         d2vr_replay::StereoParams sp = MakeEyeParams(0);
         if (g_stereoMode == 2) sp.separation = 0.0f;
         if (d2vr_replay::ApplyShiftToUpload(s_tmpConst, pConstantData, StartRegister,
-                                            Vector4fCount, d2vr_replay::g_activeVs, sp)) {
+                                            Vector4fCount, d2vr_replay::g_activeVs, sp,
+                                            &rawReference)) {
             pConstantData = s_tmpConst;
             g_had3DCameraThisFrame = true;
             ++g_3dCamCallsThisFrame;
         }
     }
     const HRESULT result=g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    if(FAILED(result)) {
+        d2vr_replay::RecLockGuard lock;
+        d2vr_replay::g_vsConstantHistory.live.Invalidate(StartRegister,Vector4fCount);
+        if(d2vr_replay::g_recActive)d2vr_replay::g_recOverflow=true;
+    }
 #ifdef D2VR_MATCHED_CAPTURE
     if(witness) EndCameraUploadWitness(cameraSample,result);
     EndMatchedSkinUpload(skinUpload,pConstantData,result);
