@@ -1716,3 +1716,22 @@ Actual-source left aiming461 and right gesture674 checks PASS. These are
 offline contracts, not game/HMD/FPS acceptance. Native callees see relocated
 return addresses; runtime compatibility and final physical trajectory remain
 unverified. Peripheral visibility and sustained90FPS are still unproven.
+
+## 2026-10-28: independent protected objective/reload input
+
+The protected gesture path previously cancelled the shared objective/reload
+pulse when either controller lost tracking, and required an aiming pose for
+grip-position dwell. The actual-source fixture reproduced this at check634
+before the fix. Protected reload pulses now retain their emitting hand in
+separate deadlines. Each hand cancels only its own pulse when its grip/context
+becomes invalid; objective belongs to the left grip. Aim-only tracking loss
+does not invalidate grip dwell. Existing pause/focus/rearm and legacy routing
+remain covered. Actual-source x86 fixture:734 checks PASS. Production and
+diagnostic x86 builds PASS. No HMD or performance improvement is claimed.
+
+A private test of the existing stereo-frustum fixture using the native .95
+depth reconstruction before building headClip passed240 tracked poses and
+249600 binocular points. This did not reproduce peripheral clipping and does
+not justify another projection change. Latest available runtime log remains
+the16:14 run preceding the installed shader-depth comparison correction;
+current CULL activation and peripheral visibility remain NOT VERIFIED.

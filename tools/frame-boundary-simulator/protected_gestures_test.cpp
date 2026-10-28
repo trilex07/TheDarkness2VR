@@ -15,7 +15,7 @@ static XrPosef g_eyePose[2]{},g_headGeometryReference{};
 struct Frame {struct State {XrTime predictedDisplayTime=0;} state;XrViewStateFlags flags=0;} g_trackedFrame;
 struct Hand {XrPosef grip{};bool valid=true,gripValid=true;float squeeze=0;d2vr_input::Motion motion;} g_hands[2];
 struct Gestures {d2vr_input::DwellZone objective,reload[2];d2vr_input::Slash slash;
-    ULONGLONG objectiveUntil=0,reloadUntil=0,slashUntil=0;bool grabbed=false;} g_gestures;
+    ULONGLONG objectiveUntil=0,reloadUntil=0,slashUntil=0,reloadUntilByHand[2]{};bool grabbed=false;} g_gestures;
 static d2vr_input::Tentacles g_protectedRightTentacle;
 static ULONGLONG clockMs=1000;
 static ULONGLONG Clock(){return clockMs;}
@@ -120,6 +120,31 @@ int main(){
     Reset();Step();g_hands[1].grip.position={.23f,.85f,0};bool reload=false;
     for(unsigned i=0;i<25;++i)reload|=(Step().wButtons&XINPUT_GAMEPAD_X)!=0;
     Check(reload);
+    // Objective/reload belong to one controller; loss of the other must not
+    // cancel either recognition or its already-issued pulse.
+    Reset();g_hands[1].valid=g_hands[1].gripValid=false;Step();
+    g_hands[0].grip.position={-.18f,1.58f,-.08f};objective=false;
+    for(unsigned i=0;i<30;++i)objective|=(Step().wButtons&XINPUT_GAMEPAD_BACK)!=0;
+    Check(objective);
+    for(unsigned hand=0;hand<2;++hand) {
+        Reset();g_hands[1-hand].valid=g_hands[1-hand].gripValid=false;Step();
+        g_hands[hand].grip.position={hand?.23f:-.23f,.85f,0};reload=false;
+        for(unsigned i=0;i<25;++i)reload|=(Step().wButtons&XINPUT_GAMEPAD_X)!=0;
+        Check(reload);Check(Step().wButtons&XINPUT_GAMEPAD_X);
+        g_hands[hand].valid=g_hands[hand].gripValid=false;Check(!(Step().wButtons&XINPUT_GAMEPAD_X));
+        g_hands[hand].gripValid=true;
+        for(unsigned i=0;i<25;++i)Check(!(Step().wButtons&XINPUT_GAMEPAD_X));
+    }
+    Reset();g_hands[0].valid=g_hands[1].valid=false;Step();
+    g_hands[1].grip.position={.23f,.85f,0};reload=false;
+    for(unsigned i=0;i<25;++i)reload|=(Step().wButtons&XINPUT_GAMEPAD_X)!=0;
+    Check(reload); // missing aiming pose cannot cancel tracked grip/hip dwell
+    Reset();Step();g_hands[0].grip.position={-.23f,.85f,0};g_hands[1].grip.position={.23f,.85f,0};
+    for(unsigned i=0;i<25;++i)Step();
+    g_hands[0].gripValid=false;Check(Step().wButtons&XINPUT_GAMEPAD_X);
+    g_hands[1].gripValid=false;Check(!(Step().wButtons&XINPUT_GAMEPAD_X));
+    Reset();Step();g_hands[1].grip.position={.23f,.85f,0};
+    for(unsigned i=0;i<25;++i)Step();
     Step(.01,XINPUT_GAMEPAD_START);
     for(unsigned i=0;i<40;++i)Check(!(Step().wButtons&(XINPUT_GAMEPAD_X|XINPUT_GAMEPAD_BACK|XINPUT_GAMEPAD_RIGHT_SHOULDER)));
     // OFF mode leaves raw input intact; no native hook function exists here.

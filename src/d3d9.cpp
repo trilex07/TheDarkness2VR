@@ -3665,6 +3665,7 @@ struct GestureState {
     d2vr_input::DwellZone objective,reload[2];
     d2vr_input::Slash slash;
     ULONGLONG objectiveUntil=0,reloadUntil=0,slashUntil=0;
+    ULONGLONG reloadUntilByHand[2]{};
     bool grabbed=false;
 };
 static GestureState g_gestures;
@@ -4049,8 +4050,12 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
         const auto& p=hand.grip.position;
         const XrVector3f delta=RotVec({-head.orientation.x,-head.orientation.y,-head.orientation.z,head.orientation.w},
             p.x-head.position.x,p.y-head.position.y,p.z-head.position.z);
-        const bool safe=enabled && hand.valid && hand.squeeze<.25f &&
+        const bool safe=enabled && (protectedActions ? hand.gripValid:hand.valid) && hand.squeeze<.25f &&
             (h ? gp.bRightTrigger : gp.bLeftTrigger)<30;
+        if(protectedActions && !safe) {
+            g_gestures.reloadUntilByHand[h]=0;
+            if(!h)objectiveUntil=0;
+        }
         if (!h) {
             const float distance=d2vr_input::Length({delta.x+.18f,delta.y+.02f,delta.z+.08f});
             if (objective.Update(safe,distance,time,.16f,.24f,.25)) {
@@ -4066,17 +4071,20 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
         const float distance=d2vr_input::Length({hipDelta.x-(h ? .23f:-.23f),hipDelta.y+.75f,hipDelta.z});
         if(reload[h].Update(safe,distance,time,.20f,.30f,.20)) {
             Log("[Gesture] Reload%s detected; bridge=%d (gamepad reload is shared)",h ? "Right":"Left",(int)gestureBridge);
-            if(gestureBridge) reloadUntil=now+120;
+            if(gestureBridge) {
+                if(protectedActions)g_gestures.reloadUntilByHand[h]=now+120;
+                else reloadUntil=now+120;
+            }
         }
     }
     if(protectedActions) {
         // Only the stock objective/reload buttons are shared with this path.
-        // Left pickup remains the basic grip/LB action, not a native ray hook.
+        // Left pickup/release and right strokes have separate routing.
         slash={}; slashUntil=0; g_gestures.grabbed=false;
-        if(!enabled || !g_hands[0].valid || !g_hands[1].valid) objectiveUntil=reloadUntil=0;
+        reloadUntil=0; // protected pulses retain the emitting hand's identity
         WORD buttons=0;
         if(now<objectiveUntil) buttons|=XINPUT_GAMEPAD_BACK;
-        if(now<reloadUntil) buttons|=XINPUT_GAMEPAD_X;
+        if(now<g_gestures.reloadUntilByHand[0] || now<g_gestures.reloadUntilByHand[1]) buttons|=XINPUT_GAMEPAD_X;
         return buttons;
     }
     if(slash.Update(enabled && g_hands[1].valid,g_hands[1].squeeze>.65f,
