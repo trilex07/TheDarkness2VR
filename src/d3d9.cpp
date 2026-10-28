@@ -5578,6 +5578,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         g_sysmem = nullptr;
     }
     d2vr_replay::ReleaseRecording();
+    d2vr_replay::ResetProjectionHistories();
     if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
     if(!ReleaseSharedCapture()) return D3DERR_DEVICELOST;
@@ -5635,6 +5636,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
         g_sysmem = nullptr;
     }
     d2vr_replay::ReleaseRecording();
+    d2vr_replay::ResetProjectionHistories();
     if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
     if(!ReleaseSharedCapture()) return D3DERR_DEVICELOST;

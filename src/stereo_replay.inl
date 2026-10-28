@@ -28,6 +28,7 @@
 #include "replay_constant_batch.h"
 #include "replay_constant_window.h"
 #include "record_payload_storage.h"
+#include "projection_history.h"
 
 namespace d2vr_replay {
 
@@ -49,6 +50,7 @@ enum : uint32_t {
 
 struct VsInfo {
     uint32_t hash = 0;
+    std::vector<DWORD> bytecode; // exact identity when a released COM address is reused
     int wvpBase = -1;      // const base of the 4x4 that writes o0 (clip pos)
     int stpBase = -1;      // const base of a 4x4 that writes another output (screen texture proj)
     bool depthOnly = false;
@@ -60,8 +62,7 @@ struct VsInfo {
     int reflectedPreviousWvp = -1;
     // Last uploaded WorldViewProjection: the ScreenTextureProjection identity check needs
     // the matching WVP even when the two matrices arrive in separate records.
-    float lastWvp[16] = {};
-    bool hasLastWvp = false;
+    d2vr_projection_history::History wvpHistory;
 };
 
 // D3DX CTAB offsets are relative to the header following the CTAB FourCC.
@@ -493,6 +494,7 @@ struct DeviceSnapshot {
     }
 };
 static DeviceSnapshot g_frameStart;
+static uint64_t g_wvpHistoryGeneration=0;
 static FrameResourceRefs<IUnknown> g_recordRefs;
 static void ReleaseRecording(bool keepSnapshot=false) {
     g_recActive = false;
@@ -513,6 +515,7 @@ static void RecBeginFrame(IDirect3DDevice9* dev) {
     }
     if (g_rec.capacity() < 200000) g_rec.reserve(200000);
     if (g_recData.capacity() < (4u << 20)) g_recData.reserve(4u << 20);
+    ++g_wvpHistoryGeneration;
     g_recOverflow = false;
     g_recActive = true;
 }
@@ -678,6 +681,27 @@ static StereoParams g_stereo;          // current eye params (live pass = eye 0)
 static int g_replayEye = -1;           // -1 = live/mono, 0/1 = eye during replay
 static int g_stereoMode = 1;           // 0 = mono, 1 = same-frame dual eye, 2 = validation replay (shift 0)
 static std::unordered_map<IDirect3DVertexShader9*, VsInfo> g_vsInfo;
+static bool VertexShaderAnalysisKnown(IDirect3DVertexShader9* shader,const DWORD* code,size_t words) {
+    if(!shader || !code || !words || words>8192)return false;
+    RecLockGuard lock;
+    const auto entry=g_vsInfo.find(shader);
+    return entry!=g_vsInfo.end() && entry->second.bytecode.size()==words &&
+        !memcmp(entry->second.bytecode.data(),code,words*sizeof(DWORD));
+}
+static bool RememberVertexShader(IDirect3DVertexShader9* shader,VsInfo& analyzed) {
+    RecLockGuard lock;
+    const auto previous=g_vsInfo.find(shader);
+    // D3D may deduplicate a still-live identical shader. Preserve its ordered
+    // projection history. A different shader at a recycled address must replace
+    // ALL metadata/history; a pointer or 32-bit hash alone cannot establish this.
+    if(previous!=g_vsInfo.end() && previous->second.bytecode==analyzed.bytecode)return false;
+    g_vsInfo[shader]=std::move(analyzed);
+    return true;
+}
+static void ResetProjectionHistories() {
+    RecLockGuard lock;
+    for(auto& entry:g_vsInfo)entry.second.wvpHistory={};
+}
 static VsInfo* g_activeVs = nullptr;
 static std::unordered_map<IDirect3DPixelShader9*, int> g_psInverse;
 static int g_activePsInverse = -1;
@@ -890,10 +914,18 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
     HRESULT hr = d2vr_shader_preload::Create(dev,fn,out,g_orig.CreateVertexShader);
     if (SUCCEEDED(hr) && out && *out && fn) {
         size_t n = SafeShaderTokenCount(fn);
-        if (n == 0) return hr;
+        if (n == 0) {
+            RecLockGuard lock;g_vsInfo[*out]=VsInfo{};
+            return hr;
+        }
+        // The original synchronous native creation already returned an owned
+        // COM reference. Reuse only immutable analysis of its EXACT bytecode;
+        // this never substitutes, caches or asynchronously creates a shader.
+        if(VertexShaderAnalysisKnown(*out,fn,n+1))return hr;
         uint32_t h = HashBytes(fn, (n + 1) * 4);
         VsInfo vi;
         vi.hash = h;
+        vi.bytecode.assign(fn,fn+n+1);
         AnalyzeVsTokenStream(fn, vi);
         bool hasTable = false;
         int namedWvp = FindNamedMatrix(fn, n + 1, "WorldViewProjection", &hasTable);
@@ -914,12 +946,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
             vi.reflected=true;
             Log("[HeadAttachedTentacles] verified VS=%08X WVP=c0 (nested Instance)",h);
         }
-        bool isNew = false;
-        {
-            RecLockGuard lock;   // shader map is shared - the engine creates shaders off-thread
-            isNew = (g_vsInfo.find(*out) == g_vsInfo.end());
-            if (isNew) g_vsInfo[*out] = vi;
-        }
+        const bool isNew=RememberVertexShader(*out,vi);
         // Diagnostic: dump raw shader bytecode for offline pattern analysis
         {
             static int s_dumpedShaders = 0;
@@ -1075,15 +1102,16 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
     // WVP reference values for the ScreenTextureProjection identity check.
     float wvpRef[16];
     bool haveWvpRef = false;
+    auto* history=vi?&vi->wvpHistory.ForUpload(g_replayEye>=0,g_recActive,g_wvpHistoryGeneration):nullptr;
     if (wvpBase >= 0 && (int)start <= wvpBase && (int)(start + count) >= wvpBase + 4) {
         memcpy(wvpRef, src + (wvpBase - (int)start) * 4, sizeof(wvpRef));
         haveWvpRef = true;
-        if (vi) {
-            memcpy(vi->lastWvp, wvpRef, sizeof(vi->lastWvp));
-            vi->hasLastWvp = true;
+        if (history) {
+            memcpy(history->values,wvpRef,sizeof(history->values));
+            history->valid=true;
         }
-    } else if (vi && vi->hasLastWvp) {
-        memcpy(wvpRef, vi->lastWvp, sizeof(wvpRef));
+    } else if (history && history->valid) {
+        memcpy(wvpRef,history->values,sizeof(wvpRef));
         haveWvpRef = true;
     }
 
