@@ -44,6 +44,9 @@ struct Job {
     // reader query before overwriting the shared input or tearing it down.
     // Finish then returns the immediate-context lease, not GPU completion.
     bool deferReader=false;
+    // Owner completed the exact D3D9 event before queue publication. This job
+    // then holds no D3D9 interface and performs D3D11 work only.
+    bool producerComplete=false;
     DWORD thread=0;
     LONGLONG start=0, producerDone=0, drawDone=0, end=0;
 
@@ -51,15 +54,17 @@ struct Job {
     void Run() {
         thread=GetCurrentThreadId(); start=Clock();
         result=E_INVALIDARG;
-        if(!producer.Get() || !context.Get() || !reader.Get() || !target.Get() ||
+        if((producerComplete ? producer.Get()!=nullptr : producer.Get()==nullptr) || !context.Get() || !reader.Get() || !target.Get() ||
            !constants.Get() || !vs.Get() || !ps.Get() || !source.Get() ||
            !size || size>bytes.size() || !width || !height) { end=Clock(); return; }
         // Main has issued and FLUSHed this exact producer query before handoff.
         // Poll without FLUSH so unrelated right-eye replay is not forced out.
         const ULONGLONG producerStart=GetTickCount64();
-        while((result=producer->GetData(nullptr,0,0))==S_FALSE) {
+        result=producerComplete ? S_OK : producer->GetData(nullptr,0,0);
+        while(result==S_FALSE) {
             if(GetTickCount64()-producerStart>2000) { result=HRESULT_FROM_WIN32(ERROR_TIMEOUT); end=Clock(); return; }
             SwitchToThread();
+            result=producer->GetData(nullptr,0,0);
         }
         producerDone=Clock();
         if(result!=S_OK) { end=Clock(); return; }

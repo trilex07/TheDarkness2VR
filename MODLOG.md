@@ -1373,3 +1373,27 @@ camera+7C0; it is not a proved removable visibility filter. Do not change that
 reference or disable occlusion without its consumer contract/runtime evidence.
 Current gameplay log remains the14:00 pre-9106f53 run, so it cannot establish
 activation or rejection of the new owned-method side correction.
+
+## 2026-10-28: opt-in D3D11-only transfer worker with native D3D9 flags
+
+Add startup StereoTransferWorker=3, leaving default/profile values unchanged.
+Mode1 needs D3DCREATE_MULTITHREADED because its worker polls a D3D9 query in
+parallel with replay. Mode3 completes that exact producer event on the owner
+before queue publication; its packet retains no D3D9 interface and the worker
+only calls D3D11. Factory hooks preserve incoming native flags instead of adding
+MULTITHREADED. Never clear a flag requested by the game itself. Mode1 and
+serial-MT mode2 retain their old flag policy. Same context lease, reader fence,
+same-frame pixels, timeout/failure latch and Reset/teardown gates are retained.
+Contradictory producer receipts (complete+query or uncompleted+no query) refuse.
+
+Owner producer wait submits once with D3DGETDATA_FLUSH, then polls flags0;
+it still requires S_OK before any D3D11 read. This can reduce global D3D9 lock
+overhead at the cost of losing producer-wait overlap with replay. Existing logs
+do not quantify that tradeoff; mode3 is an A/B candidate, not a measured saving.
+
+Actual isolated x86 D3D9Ex/D3D11 tests now cover1600 transfers (800 native
+2676x2728), both native0x50/D3D11-only and0x54/D3D9-query-worker devices,
+concurrent owner D3D9 commands, sampled pixels, deferred/immediate readers,
+RAII join, error/fault handling and Reset/recreate. Production/diagnostic builds
+PASS. No game/Steam/OpenXR launch or installed profile change. Native culling
+and resolution are unchanged; installed9106f53 stays available for the user.

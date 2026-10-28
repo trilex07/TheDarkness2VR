@@ -570,7 +570,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 static bool g_deferStereoTransferReader = false; // startup-only; exact reader fence before shared reuse
-static int g_stereoTransferMode = 0; // 0 baseline, 1 worker, 2 serial control with same D3D9 MT flag
+static int g_stereoTransferMode = 0; // 0 baseline,1 D3D9/11 worker,2 serial MT control,3 D3D11-only worker
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
 // tracked profile must choose the matching configured reconstruction explicitly;
@@ -700,8 +700,8 @@ void LoadConfig() {
     g_stereoTransferMode = GetPrivateProfileIntA("Render", "StereoTransferWorker", 0, chosenIni);
     g_deferStereoTransferReader = GetPrivateProfileIntA("Render", "DeferStereoTransferReader", 0, chosenIni)!=0;
     Log("[StereoTransferWorker] deferReader=%d requires worker mode=1 and LastConsumerReaderFence=1",int(g_deferStereoTransferReader));
-    if(g_stereoTransferMode<0 || g_stereoTransferMode>2) g_stereoTransferMode=0;
-    Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control)",g_stereoTransferMode);
+    if(g_stereoTransferMode<0 || g_stereoTransferMode>3) g_stereoTransferMode=0;
+    Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control; 3=D3D11-only worker/native D3D9 flags)",g_stereoTransferMode);
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
@@ -3159,20 +3159,22 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
         return hr==S_OK || hr==S_FALSE;
     }
     const ULONGLONG start = GetTickCount64();
-    while ((hr = g_sharedFence9->GetData(nullptr, 0, D3DGETDATA_FLUSH)) == S_FALSE) {
+    hr=g_sharedFence9->GetData(nullptr,0,D3DGETDATA_FLUSH);
+    while (hr == S_FALSE) {
         if (GetTickCount64() - start > 2000) return false;
         SwitchToThread();
+        hr=g_sharedFence9->GetData(nullptr,0,0);
     }
     g_srcW = g_sharedW; g_srcH = g_sharedH;
     return hr == S_OK;
 }
 
 static bool StereoTransferAvailable(IDirect3DDevice9* dev) {
-    if(g_stereoTransferMode!=1 || g_stereoTransferFault) return false;
+    if((g_stereoTransferMode!=1 && g_stereoTransferMode!=3) || g_stereoTransferFault) return false;
     if(g_stereoTransferQueue) return g_stereoTransferOwner==GetCurrentThreadId() && g_stereoTransferDevice==dev;
     D3DDEVICE_CREATION_PARAMETERS parameters{};
     if(FAILED(dev->GetCreationParameters(&parameters)) ||
-       !(parameters.BehaviorFlags&D3DCREATE_MULTITHREADED)) return false;
+       (g_stereoTransferMode==1 && !(parameters.BehaviorFlags&D3DCREATE_MULTITHREADED))) return false;
     // Worker stays idle between frame-local leases. Pin code for its process
     // lifetime; never join a C++ thread from the DLL loader-lock destructor.
     HMODULE pinned=nullptr;
@@ -3182,8 +3184,8 @@ static bool StereoTransferAvailable(IDirect3DDevice9* dev) {
     catch(...) { return false; }
     g_stereoTransferOwner=GetCurrentThreadId();
     g_stereoTransferDevice=dev;
-    Log("[StereoTransferWorker] admitted ownerTid=%lu flags=0x%lX; same-frame interop only",
-        g_stereoTransferOwner,parameters.BehaviorFlags);
+    Log("[StereoTransferWorker] admitted mode=%d ownerTid=%lu flags=0x%lX; same-frame interop only",
+        g_stereoTransferMode,g_stereoTransferOwner,parameters.BehaviorFlags);
     return true;
 }
 
@@ -3197,7 +3199,7 @@ static bool StartStereoTransfer(IDirect3DDevice9* dev,int eye,d2vr_transfer::Pen
     g_uploadSRV=saved;
     try { job=std::make_shared<d2vr_transfer::Job>(); } catch(...) { return false; }
     using namespace d2vr_transfer;
-    job->producer=Ref<IDirect3DQuery9>(g_sharedFence9);
+    if(g_stereoTransferMode!=3)job->producer=Ref<IDirect3DQuery9>(g_sharedFence9);
     job->context=Ref<ID3D11DeviceContext>(g_ctx11);
     job->reader=Ref<ID3D11Query>(g_sharedFence11);
     job->target=Ref<ID3D11RenderTargetView>(g_eyeRTV[eye]);
@@ -3212,7 +3214,8 @@ static bool StartStereoTransfer(IDirect3DDevice9* dev,int eye,d2vr_transfer::Pen
     memcpy(job->bytes.data(),&constants,sizeof(constants)); job->size=sizeof(constants);
     job->width=g_eyeCacheW; job->height=g_eyeCacheH;
     job->deferReader=g_deferStereoTransferReader && g_lastConsumerReaderFence;
-    if(!CaptureBackbufferToShared(dev,true)) { job.reset(); return false; }
+    if(!CaptureBackbufferToShared(dev,g_stereoTransferMode!=3)) { job.reset(); return false; }
+    job->producerComplete=g_stereoTransferMode==3;
     if(!pending.Start(*g_stereoTransferQueue,job,g_stereoTransferFault)) {
         g_stereoTransferFault=true; return false;
     }
@@ -6413,7 +6416,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT ad, D3DDEVTYP
                                             DWORD flags, D3DPRESENT_PARAMETERS* pp,
                                             IDirect3DDevice9** out) {
     g_renderSizeHwnd = pp && pp->hDeviceWindow ? pp->hDeviceWindow : hwnd;
-    if(g_stereoTransferMode) flags|=D3DCREATE_MULTITHREADED;
+    if(g_stereoTransferMode==1 || g_stereoTransferMode==2) flags|=D3DCREATE_MULTITHREADED;
     Log("Hook_CreateDevice adapter=%u flags=0x%lX", ad, flags);
     TweakPresentParams(pp);
     HRESULT hr = g_origCreateDevice(self, ad, type, hwnd, flags, pp, out);
@@ -6427,7 +6430,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDeviceEx(IDirect3D9Ex* self, UINT ad, D3DDE
                                               D3DDISPLAYMODEEX* fullMode, IDirect3DDevice9Ex** out) {
     if (hwnd) g_gameHwnd = hwnd;
     g_renderSizeHwnd = pp && pp->hDeviceWindow ? pp->hDeviceWindow : hwnd;
-    if(g_stereoTransferMode) flags|=D3DCREATE_MULTITHREADED;
+    if(g_stereoTransferMode==1 || g_stereoTransferMode==2) flags|=D3DCREATE_MULTITHREADED;
     Log("Hook_CreateDeviceEx adapter=%u flags=0x%lX windowed=%d hwnd=%p", ad, flags,
         pp ? (int)pp->Windowed : -1, hwnd);
     TweakPresentParams(pp);

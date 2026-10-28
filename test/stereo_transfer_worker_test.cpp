@@ -37,7 +37,7 @@ static Ref<ID3DBlob> Compile(const char* source,const char* target) {
     HR(hr);return Adopt(code);
 }
 static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceContext* ctx,
-                     bool deferred=false,UINT width=64,UINT height=64) {
+                     bool deferred=false,UINT width=64,UINT height=64,bool ownerProducer=false) {
     IDirect3DSurface9* rtRaw=nullptr;
     HR(dev9->CreateRenderTarget(width,height,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rtRaw,nullptr));
     auto rt=Adopt(rtRaw); HR(dev9->SetRenderTarget(0,rt.Get()));
@@ -83,7 +83,8 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     };
     auto packet=[&](int eye) {
         auto j=std::make_shared<d2vr_transfer::Job>();
-        j->producer=q9;j->reader=q11;j->context=Ref<ID3D11DeviceContext>(ctx);
+        if(!ownerProducer)j->producer=q9;
+        j->producerComplete=ownerProducer;j->reader=q11;j->context=Ref<ID3D11DeviceContext>(ctx);
         j->target=targets[eye];j->constants=buffer;j->vs=vs;j->ps=ps;
         j->sampler=sampler;j->raster=raster;j->source=srv;
         j->size=112;j->width=width;j->height=height;j->deferReader=deferred;
@@ -101,8 +102,16 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         CHECK(!retained && !fence.pending); // native overwrite cannot bypass retirement
         HR(dev9->StretchRect(rt.Get(),nullptr,surf.Get(),nullptr,D3DTEXF_NONE));
         HR(q9->Issue(D3DISSUE_END));
-        const HRESULT flushed=q9->GetData(nullptr,0,D3DGETDATA_FLUSH);
+        HRESULT flushed=q9->GetData(nullptr,0,D3DGETDATA_FLUSH);
         CHECK(flushed==S_OK || flushed==S_FALSE);
+        if(ownerProducer) {
+            const auto start=GetTickCount64();
+            while(flushed==S_FALSE) {
+                CHECK(GetTickCount64()-start<2000);SwitchToThread();
+                flushed=q9->GetData(nullptr,0,0);
+            }
+            CHECK(flushed==S_OK);
+        }
     };
     auto verify=[&](int eye,DWORD expected) {
         ctx->CopyResource(stage.Get(),eyes[eye].Get());D3D11_MAPPED_SUBRESOURCE map{};
@@ -136,6 +145,12 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             CHECK(pending.Finish());
         }
         CHECK(!fault);verify(1,right);verify(0,left);retire(r);r.reset();
+    }
+    // A completed receipt must carry no D3D9 interface; an uncompleted one
+    // must carry its exact query. Reject both contradictory packets.
+    {
+        auto invalid=packet(0);invalid->producerComplete=!ownerProducer;
+        invalid->Run();CHECK(invalid->result==E_INVALIDARG && !invalid->readerSubmitted);
     }
     // Invalid work must latch the overwrite fault, including on an early return.
     {
@@ -181,10 +196,17 @@ int main() {
     Scenario(d9.Get(),d11.Get(),ctx.Get());
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true);
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728);
-    HR(d9->ResetEx(&pp,nullptr)); // all worker/shared-resource references have been released
+    HR(d9->ResetEx(&pp,nullptr));
     Scenario(d9.Get(),d11.Get(),ctx.Get());
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728);
+    d9={};d9Raw=nullptr;
+    HR(api->CreateDeviceEx(0,D3DDEVTYPE_HAL,window,D3DCREATE_HARDWARE_VERTEXPROCESSING|D3DCREATE_PUREDEVICE,&pp,nullptr,&d9Raw));
+    d9=Adopt(d9Raw);HR(d9->GetCreationParameters(&created));CHECK(created.BehaviorFlags==0x50);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),false,64,64,true);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true);
+    HR(d9->ResetEx(&pp,nullptr));
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true);
     ctx={};d11={};d9={};api={};DestroyWindow(window);FreeLibrary(module);
-    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 1000 eye transfers (400 at 2676x2728), sampled pixel equality, concurrent D3D9 work, RAII join, failure latch, Reset/recreate");
+    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 1600 eye transfers (800 at 2676x2728), native0x50+D3D11-only and MT0x54 workers, sampled pixel equality, concurrent D3D9 work, RAII join, failure latch, Reset/recreate");
     std::puts("No game/OpenXR/Steam calls; this does not prove frame-time improvement or headset acceptance.");
 }
