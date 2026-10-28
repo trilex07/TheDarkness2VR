@@ -715,6 +715,30 @@ This identifies a culling-only implementation route that avoids retaining or
 restoring a temporarily widened camera FOV across render. Native frustum writes
 are not connected yet; matrix preparation alone does not fix pop-in.
 
+## 2026-10-28: opt-in native culling-only candidate
+
+Render/NativeViewBoundary=2 now connects the separate widened VP to the native
+607CD0 plane rebuild and685050 bounds rebuild, exactly the two thiscall calls
+issued by4BE0C0. It requires a fresh preceding primary-world inverse witness,
+the current view/renderer/camera identity, matching current native VP, and no
+3D camera uploads yet in this frame. Mode1 observes;0 disables at startup.
+No FOV setter, render projection/VP change, camera retention or EXE write.
+An absent callback or failed gate leaves baseline native culling for that frame.
+
+The existing plane and classification vectors must have six entries, sufficient
+capacity, finite planes, alignment16 and native near/side/far tags1/0/2. Native
+rebuild reuses those buffers; never shallow-copy their owning headers. Aligned
+scratch VP/inverse use the separately tested math. BBE8F0 confirms inverse
+output is sixteen floats; D37570 projects eight clip-box corners with that
+matrix when685050 rebuilds bounds. Native algorithms themselves are not tested
+by the offline doubles.
+
+Actual-source x86 fixture PASS1000 calls: native ABI/order/alignment, original
+plane-buffer identities, unchanged camera bytes outside frustum, rejection of
+bad capacity, tags, counts and NaN. Pure covering math PASS100 cameras; both DLL
+builds PASS. Runtime application must be witnessed by NativeCullingCover lines;
+physical side-pop-in, lighting, right-eye stability and FPS remain NOT RUN.
+
 ## 2026-10-28: contiguous constant-window flush
 
 Track whether each window bank's written union is provably contiguous. Empty,

@@ -46,6 +46,6 @@ static void InstallNativeViewBoundary() {
     // to 985D80 is present in the retained real-game ETW stacks. +F0's
     // 6DBE80 is a separate test-render path, not the captured gameplay path.
     const bool installed=g_nativeViewBoundary.Start(target,0xA6677B,ObserveNativeViewBoundary,g_nativeImageGuard);
-    Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A6677B; ESI view +A8 -> renderer +3F4 -> camera; observation only; EXE/IAT unchanged",
+    Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A6677B; ESI view +A8 -> renderer +3F4 -> camera; mode2=culling-only after corroboration; EXE/IAT unchanged",
         installed,g_nativeViewBoundaryMode);
 }

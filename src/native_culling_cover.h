@@ -6,7 +6,7 @@ namespace d2vr_culling_cover {
 // Prepare separate culling input; never edit the render camera's projection,
 // FOV or view-projection. The native frustum contains owning vector pointers:
 // copying the camera/frustum object is not a valid way to construct a scratch one.
-struct Input {
+struct alignas(16) Input {
     float viewProjection[16]{},inverseViewProjection[16]{};
     float fov=0;
 };

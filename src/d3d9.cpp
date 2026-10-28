@@ -55,7 +55,7 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 #include "native_view_boundary.h"
 #include "native_view_witness.h"
 #include "native_culling_cover.h"
-static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe; native mutation not accepted yet
+static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe, 2 corroborated culling only
 static d2vr_native_view::Boundary g_nativeViewBoundary;
 #include "exception_record_witness.h"
 #include "image_present_observer.h"
@@ -730,7 +730,7 @@ void LoadConfig() {
     g_autoFovWiden = GetPrivateProfileIntA("Render", "AutoFovWiden", 1, chosenIni) ? 1 : 0;
 #ifdef D2VR_MATCHED_CAPTURE
     g_nativeViewBoundaryMode=GetPrivateProfileIntA("Render","NativeViewBoundary",0,chosenIni);
-    if(g_nativeViewBoundaryMode!=1)g_nativeViewBoundaryMode=0;
+    if(g_nativeViewBoundaryMode<0 || g_nativeViewBoundaryMode>2)g_nativeViewBoundaryMode=0;
 #endif
     {
         g_startupMode = GetPrivateProfileIntA("Render", "StartupMode", 0, chosenIni);
