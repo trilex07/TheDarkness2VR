@@ -49,6 +49,14 @@ struct NisRuntime {
     // Lifetime counters: any of these moving per frame means a recreation bug.
     unsigned numShaderInits = 0;       // successful shader pairs created (expect 1)
     unsigned numOutputCreates = 0;     // output texture pair (re)creations
+    // This buffer is exclusively owned/written by NisDispatchEye. GPU reads
+    // cannot invalidate it, and rebinding another pipeline does not edit it.
+    // Cache actual bytes, not source identity: both independent eyes normally
+    // use the same config. Sharpness/shape changes compare unequal; shutdown
+    // destroys the buffer and clears this receipt with the rest of the runtime.
+    NISConfig uploadedConfig{};
+    bool configUploaded = false;
+    unsigned numConfigUploads = 0;
     // GPU timing (timestamp + disjoint, optional - null when unsupported)
     ID3D11Query* disjoint = nullptr;
     ID3D11Query* tsStart = nullptr;
@@ -291,7 +299,10 @@ static bool NisDispatchEye(NisRuntime* nis, ID3D11DeviceContext* ctx,
                            float sharpness, bool sharpenOnly) {
     if (!nis->ready || !srcSrv || eye < 0 || eye > 1) return false;
     const bool useSharpen = sharpenOnly && inputW == eyeOutW && inputH == eyeOutH;
-    NISConfig cfg = {};
+    NISConfig cfg;
+    // NISConfig is 256-byte aligned and includes tail padding. Initialize/copy
+    // every byte so the receipt also compares padding deterministically.
+    memset(&cfg, 0, sizeof(cfg));
     bool ok;
     if (useSharpen) {
         ok = NVSharpenUpdateConfig(cfg, nis_upscale::ClampSharpness(sharpness),
@@ -302,10 +313,18 @@ static bool NisDispatchEye(NisRuntime* nis, ID3D11DeviceContext* ctx,
             0, 0, eyeOutW, eyeOutH, eyeOutW, eyeOutH);
     }
     if (!ok) return false;
-    D3D11_MAPPED_SUBRESOURCE ms = {};
-    if (FAILED(ctx->Map(nis->cb, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) return false;
-    memcpy(ms.pData, &cfg, sizeof(cfg));
-    ctx->Unmap(nis->cb, 0);
+    if (!nis->configUploaded || memcmp(&cfg, &nis->uploadedConfig, sizeof(cfg))) {
+        // Publish only after successful upload. Keep normal binding/dispatch
+        // every time; only redundant CPU writes to our own buffer are removed.
+        nis->configUploaded = false;
+        D3D11_MAPPED_SUBRESOURCE ms = {};
+        if (FAILED(ctx->Map(nis->cb, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) return false;
+        memcpy(ms.pData, &cfg, sizeof(cfg));
+        ctx->Unmap(nis->cb, 0);
+        memcpy(&nis->uploadedConfig, &cfg, sizeof(cfg));
+        nis->configUploaded = true;
+        ++nis->numConfigUploads;
+    }
 
     ID3D11Buffer* cbs[1] = { nis->cb };
     ID3D11SamplerState* samps[1] = { nis->sampler };

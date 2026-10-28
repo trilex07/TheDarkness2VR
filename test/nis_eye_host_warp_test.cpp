@@ -47,6 +47,7 @@ int main() {
     for(unsigned frame=0;frame<10;++frame)CHECK(NisEyeProcess(left,right,output));
     CHECK(output[0]==persistent && g_nisEyeSource[0]==srv);
     CHECK(g_nisEye.numOutputCreates==1 && g_nisEye.numShaderInits==1);
+    CHECK(g_nisEye.configUploaded && g_nisEye.numConfigUploads==1); // 22 dispatches, one actual upload
     std::vector<unsigned> pattern(66*35);
     for(unsigned y=0;y<35;++y)for(unsigned x=0;x<66;++x) {
         const unsigned v=unsigned(128+60*std::sin(x*.7)*std::sin(y*.6));
@@ -55,9 +56,41 @@ int main() {
     g_ctx11->UpdateSubresource(left,0,nullptr,pattern.data(),66*4,0);
     g_nisSharpness=.2f;CHECK(NisEyeProcess(left,right,output));auto low=Read(output[0]);
     g_nisSharpness=.8f;CHECK(NisEyeProcess(left,right,output));auto high=Read(output[0]);
+    CHECK(g_nisEye.numConfigUploads==3); // each changed config uploads once for both eyes
     unsigned changed=0;for(unsigned i=0;i<low.size();++i)changed+=low[i]!=high[i];CHECK(changed>100);
     Constant(output[1],0xffb09070); // changing strength/source in eye0 cannot contaminate eye1
+    for(unsigned mode=2;mode<=3;++mode) {
+        g_nisMode=mode;g_scW=132;g_scH=70;
+        for(unsigned sample=0;sample<8;++sample) {
+            g_nisSharpness=sample*.15f; // includes clamped >1 strength
+            CHECK(NisEyeProcess(left,right,output));
+            auto cachedLeft=Read(output[0]),cachedRight=Read(output[1]);
+            const auto uploads=g_nisEye.numConfigUploads;
+            CHECK(NisEyeProcess(left,right,output) && uploads==g_nisEye.numConfigUploads);
+            // Force a fresh real driver upload as the reference. Every output
+            // pixel, including borders of non-tile-aligned eyes, must match.
+            g_nisEye.configUploaded=false;
+            CHECK(NisEyeProcess(left,right,output));
+            CHECK(g_nisEye.numConfigUploads==uploads+1);
+            CHECK(Read(output[0])==cachedLeft && Read(output[1])==cachedRight);
+        }
+    }
+    g_nisMode=2;g_nisSharpness=.8f;CHECK(NisEyeProcess(left,right,output));
+    // Use a real non-mappable replacement only inside this fixture to exercise
+    // Map failure. Production never exposes/writes this privately owned buffer.
+    auto originalBuffer=g_nisEye.cb;
+    D3D11_BUFFER_DESC badDesc{};badDesc.ByteWidth=sizeof(NISConfig);
+    badDesc.BindFlags=D3D11_BIND_CONSTANT_BUFFER;badDesc.Usage=D3D11_USAGE_DEFAULT;
+    ID3D11Buffer* badBuffer=nullptr;CHECK(SUCCEEDED(g_dev11->CreateBuffer(&badDesc,nullptr,&badBuffer)));
+    g_nisEye.cb=badBuffer;g_nisEye.configUploaded=false;
+    const auto uploadedBeforeFailure=g_nisEye.numConfigUploads;
+    CHECK(!NisDispatchEye(&g_nisEye,g_ctx11,g_nisEyeSource[0],66,35,0,66,35,.8f,true));
+    CHECK(!g_nisEye.configUploaded && g_nisEye.numConfigUploads==uploadedBeforeFailure);
+    g_nisEye.cb=originalBuffer;badBuffer->Release();
+    CHECK(NisEyeProcess(left,right,output) && g_nisEye.numConfigUploads==uploadedBeforeFailure+1);
+    CHECK(Read(output[0])==high);
     NisEyeShutdown();CHECK(!g_nisEyeSource[0] && !g_nisEyeSourceOwner[1]);
+    CHECK(!g_nisEye.configUploaded && !g_nisEye.numConfigUploads);
     D3D11_TEXTURE2D_DESC invalidDesc{};left->GetDesc(&invalidDesc);invalidDesc.BindFlags=0;
     ID3D11Texture2D* invalid=nullptr;CHECK(SUCCEEDED(g_dev11->CreateTexture2D(&invalidDesc,nullptr,&invalid)));
     CHECK(!NisEyeProcess(invalid,right,output) && !output[0] && !output[1]);
@@ -70,5 +103,5 @@ int main() {
     CHECK(NisEyeProcess(left,right,output));Constant(output[0],0xff406080);Constant(output[1],0xffb09070);
     CHECK(g_nisEye.outW==2676 && g_nisEye.outH==2728);NisEyeShutdown();
     left->Release();right->Release();g_ctx11->ClearState();g_ctx11->Release();g_dev11->Release();
-    printf("PASS actual NIS eye host WARP: independent eyes/full borders,20%% vs80%% changed %u pixels, persistent resources, failure latch1000 attempts, shutdown recovery, native2676x2728; not game/FPS evidence\n",changed);
+    printf("PASS actual NIS eye host WARP: independent eyes/full borders,20%% vs80%% changed %u pixels, persistent resources,22 dispatches/one config upload,16 cached-vs-forced-upload pixel comparisons across sharpness/mode/resize,real Map failure/recovery, failure latch1000 attempts, shutdown recovery, native2676x2728; not game/FPS evidence\n",changed);
 }

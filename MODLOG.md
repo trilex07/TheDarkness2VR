@@ -1237,3 +1237,32 @@ unchanged text bytes. Actual-source final-copy routing10000 PASS. Production
 and diagnostic builds PASS. Preserve2676x2728 per-eye native rendering and
 NIS80 in the reversible candidate. Game activation, side visibility and FPS
 still require the user's next runtime test; no90FPS or popup-fix claim.
+
+## 2026-10-28: reuse the privately owned NIS configuration buffer contents
+
+Remove Map(WRITE_DISCARD)/Unmap when the complete NIS configuration bytes
+already match the last successful upload. Both zero-origin independent eyes
+use the same config at matching dimensions/sharpness. Only NisDispatchEye
+writes this private buffer; shader reads and pipeline rebinding cannot edit it.
+Keep all bindings/dispatches, both eye images and official shader bytecode.
+Zero the full256-byte aligned config (including padding) and publish the
+receipt only after successful upload. Changed config uploads once; failed
+Map invalidates the receipt; shutdown destroys the buffer and resets it.
+
+Actual x86 WARP host PASS:22 dispatches use one successful config upload;
+16 full-image comparisons against forced fresh driver uploads are identical
+across strength changes/clamping, sharpen/scaler and output resizing. Real
+Map failure with a non-mappable fixture buffer leaves no receipt, then the
+restored private buffer uploads successfully and matches prior pixels. Reset
+and failure-latch tests retain the original coverage, including full native
+2676x2728 readback. Production/diagnostic builds PASS. This removes two stable
+per-frame Map/Unmap pairs; no measured game CPU/GPU saving or90FPS claim.
+Leave installed7ef2726 unchanged for its user test.
+
+New log written14:00 local identifies the actual culling refusal:
+occupied-debug-state, protect00000020, DR0=0112263C DR1=011223F0
+DR2=01122878 DR3=01838534 DR7=FFFF0015. Thus writable-page compatibility
+was not this run's blocker; no NativeCullingCover callback ran. Do not take
+the foreign debug state or claim side correction active. Same log confirms
+embedded official NIS mode2 strength0.80 dispatched at2676x2728 per eye.
+It does not establish visual/HMD or90FPS acceptance.
