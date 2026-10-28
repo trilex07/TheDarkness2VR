@@ -985,6 +985,8 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDirect3DVertexShader9* sh) {
+    const HRESULT result=g_orig.SetVertexShader(dev,sh);
+    if(FAILED(result))return result;
     if (g_recActive) RecEmit(OP_SetVertexShader, 0, (uint32_t)(uintptr_t)sh);
     if (sh) {
         RecLockGuard lock;
@@ -996,7 +998,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDi
     } else {
         SetActiveVertexShaderMetadata(nullptr);
     }
-    return g_orig.SetVertexShader(dev, sh);
+    return result;
 }
 
 // ------------------------------------------------------------- constant injection
@@ -1580,9 +1582,11 @@ static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3
     return g_orig.SetIndices(dev, ib);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* ps) {
+    const HRESULT result=g_orig.SetPixelShader(dev,ps);
+    if(FAILED(result))return result;
     if (g_recActive) RecEmit(OP_SetPixelShader, 0, (uint32_t)(uintptr_t)ps);
     SetActivePixelShaderMetadata(ps);
-    return g_orig.SetPixelShader(dev, ps);
+    return result;
 }
 #pragma optimize("y", off)
 __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n,
@@ -1909,9 +1913,10 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         case OP_SetVertexShader: {
             IDirect3DVertexShader9* sh = (IDirect3DVertexShader9*)(uintptr_t)r.a[0];
-            SetActiveVertexShaderMetadata(sh);
-            g_replayVs = (const void*)sh;
-            g_orig.SetVertexShader(dev, sh);
+            if(SUCCEEDED(g_orig.SetVertexShader(dev,sh))) {
+                SetActiveVertexShaderMetadata(sh);
+                g_replayVs = (const void*)sh;
+            } else replayComplete=false;
             break;
         }
         case OP_SetVSConstF: {
@@ -1956,10 +1961,12 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         case OP_SetPixelShader:
             {
-            g_replayPs = (const void*)(uintptr_t)r.a[0];
+            const auto shader=(IDirect3DPixelShader9*)(uintptr_t)r.a[0];
+            if(SUCCEEDED(g_orig.SetPixelShader(dev,shader))) {
+                g_replayPs = shader;
                 SetActivePixelShaderMetadata(g_replayPs);
+            } else replayComplete=false;
             }
-            g_orig.SetPixelShader(dev, (IDirect3DPixelShader9*)(uintptr_t)r.a[0]);
             break;
         case OP_SetPSConstF: {
 #ifdef D2VR_MATCHED_CAPTURE

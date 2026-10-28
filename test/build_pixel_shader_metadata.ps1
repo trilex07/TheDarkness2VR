@@ -21,6 +21,13 @@ $parts=@((Extract 'static int FindNamedRegister('),(Extract 'static int FindName
 if(-not $ExpectLegacyStale){
     $parts+=(Extract 'static void SetActivePixelShaderMetadata(')
     $parts+=(Extract 'static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(')
+    $parts+=(Extract 'static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(')
+    $replay=$text.Substring($text.IndexOf('static bool ReplayStream('))
+    $cases=foreach($op in 'SetVertexShader','SetPixelShader') {
+        $case=[regex]::Match($replay,"(?s)        case OP_${op}:.*?(?=        case |        default:)")
+        if(-not $case.Success){throw "Missing replay shader case $op"};$case.Value
+    }
+    [IO.File]::WriteAllText((Join-Path $out 'actual_shader_replay.inl'),($cases -join "`r`n"))
     [IO.File]::WriteAllText((Join-Path $out 'actual_pixel_sync.inl'),
         (Extract 'static void SyncActiveShader(IDirect3DDevice9* dev) {').Replace('IDirect3DDevice9* dev','FixtureDevice* dev'))
     [IO.File]::WriteAllText((Join-Path $out 'actual_pixel_light.inl'),

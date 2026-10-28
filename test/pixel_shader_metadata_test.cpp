@@ -10,19 +10,25 @@
 #include "../src/pixel_shader_metadata.h"
 #include "../src/composite_shader_patch.h"
 #define CHECK(x) do{if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
-enum {SI_END=0xffff,SI_COMMENT=0xfffe,OP_SetPixelShader=1};
+enum {SI_END=0xffff,SI_COMMENT=0xfffe,OP_SetPixelShader=1,OP_SetVertexShader=2};
 static bool g_shadowScreenDepth=false,g_disableDepthOfField=false,g_disableCompositeHeightFog=false;
 static bool g_disableFxaa=false,g_shaderDebugDump=false,g_recActive=false;
 static int g_submitMode=4,g_activePsInverse=-1,g_activePsViewExtents=-1;
 static uint32_t g_activePsHash=0;
 template<class... T> static void Log(const char*,T...){}
-static void RecEmit(unsigned,unsigned,uint32_t){}
+static unsigned records=0;
+static void RecEmit(unsigned,unsigned,uint32_t){++records;}
 static d2vr_shader_metadata::Pixels g_pixelShaders;
 #ifdef D2VR_EXPECT_LEGACY_STALE
 static std::unordered_map<const void*,uint32_t> g_psHashByPtr;
 static std::unordered_map<IDirect3DPixelShader9*,int> g_psInverse,g_psViewExtents;
-struct RecLockGuard {};
 #endif
+struct RecLockGuard {};
+static unsigned vertexSyncs=0;
+static const void* activeVertex=nullptr;
+static struct {uint32_t hash=7;} vertexInfo;
+static decltype(&vertexInfo) g_activeVs=nullptr;
+static void SetActiveVertexShaderMetadata(const void* shader){++vertexSyncs;activeVertex=shader;g_activeVs=shader?&vertexInfo:nullptr;}
 static unsigned creates=0,binds=0,reads=0;
 static HRESULT createResult=S_OK,bindResult=S_OK;
 static IDirect3DDevice9* const expectedDevice=reinterpret_cast<IDirect3DDevice9*>(0x1234);
@@ -51,19 +57,29 @@ static HRESULT STDMETHODCALLTYPE Create(IDirect3DDevice9* dev,const DWORD*,IDire
 static HRESULT STDMETHODCALLTYPE Bind(IDirect3DDevice9* dev,IDirect3DPixelShader9* ps) {
     CHECK(dev==expectedDevice && (!ps || ps==&shader));++binds;return bindResult;
 }
+static HRESULT STDMETHODCALLTYPE BindVertex(IDirect3DDevice9* dev,IDirect3DVertexShader9*) {CHECK(dev==expectedDevice);++binds;return bindResult;}
 static struct {
     decltype(&Create) CreatePixelShader=&Create;
     decltype(&Bind) SetPixelShader=&Bind;
+    decltype(&BindVertex) SetVertexShader=&BindVertex;
 } g_orig;
 namespace d2vr_shader_preload {
 template<class F> static HRESULT Create(IDirect3DDevice9* dev,const DWORD* code,IDirect3DPixelShader9** out,F f){return f(dev,code,out);}
 }
 #include "actual_pixel_metadata.inl"
 #ifndef D2VR_EXPECT_LEGACY_STALE
+static const void *g_replayVs=nullptr,*g_replayPs=nullptr;
+static bool ReplayBind(unsigned op,uintptr_t pointer) {
+    bool replayComplete=true;auto dev=expectedDevice;
+    struct {uint32_t a[1];} r{{uint32_t(pointer)}};
+    switch(op) {
+#include "actual_shader_replay.inl"
+    default:CHECK(false);
+    }
+    return replayComplete;
+}
 static const uint32_t kShadowLightPsHash=0xC4D1FB10;
 static bool g_lightPosShift=true;
-static unsigned vertexSyncs=0;
-static void SetActiveVertexShaderMetadata(const void*){++vertexSyncs;}
 struct FixtureDevice {
     HRESULT result=S_OK;
     HRESULT GetVertexShader(IDirect3DVertexShader9** out){*out=nullptr;return S_OK;}
@@ -153,9 +169,42 @@ int main() {
         bindResult=result;const auto before=binds;
         CHECK(Hook_SetPixelShader(expectedDevice,&shader)==result && binds==before+1);
     }
+    g_recActive=true;records=0;
+    const auto retained=g_activePsHash;
     CHECK(Hook_SetPixelShader(expectedDevice,nullptr)==bindResult);
+    CHECK(g_activePsHash==retained && records==0); // rejected null bind leaves old shader active
+    SetActivePixelShaderMetadata(nullptr);
+    CHECK(Hook_SetPixelShader(expectedDevice,&shader)==bindResult);
+    CHECK(!g_activePsHash && records==0); // rejected nonnull bind must not install its metadata
+    bindResult=S_FALSE;
+    CHECK(Hook_SetPixelShader(expectedDevice,&shader)==S_FALSE && records==1);
+    bindResult=S_OK;
+    CHECK(Hook_SetPixelShader(expectedDevice,nullptr)==S_OK && records==2);
     CHECK(g_activePsInverse==-1 && g_activePsViewExtents==-1 && !g_activePsHash);
     CHECK(g_pixelShaders.Lookup(reinterpret_cast<void*>(0x8765)).inverse==-1);
+    auto vs=reinterpret_cast<IDirect3DVertexShader9*>(0x8888);
+    records=0;SetActiveVertexShaderMetadata(vs);
+    bindResult=D3DERR_INVALIDCALL;
+    CHECK(Hook_SetVertexShader(expectedDevice,nullptr)==bindResult && activeVertex==vs && records==0);
+    SetActiveVertexShaderMetadata(nullptr);
+    CHECK(Hook_SetVertexShader(expectedDevice,vs)==bindResult && !activeVertex && records==0);
+    bindResult=S_FALSE;CHECK(Hook_SetVertexShader(expectedDevice,vs)==S_FALSE && activeVertex==vs && records==1);
+    bindResult=S_OK;CHECK(Hook_SetVertexShader(expectedDevice,nullptr)==S_OK && !activeVertex && records==2);
+    g_recActive=false;vertexSyncs=0;
+    for(unsigned op:{unsigned(OP_SetVertexShader),unsigned(OP_SetPixelShader)}) {
+        const auto identity=op==OP_SetVertexShader?uintptr_t(vs):uintptr_t(&shader);
+        bindResult=S_OK;CHECK(ReplayBind(op,identity));
+        const auto pixelHash=g_activePsHash;
+        bindResult=D3DERR_INVALIDCALL;CHECK(!ReplayBind(op,0));
+        CHECK(op==OP_SetVertexShader?activeVertex==vs:g_activePsHash==pixelHash);
+        CHECK(op==OP_SetVertexShader?g_replayVs==vs:g_replayPs==&shader);
+        bindResult=S_FALSE;CHECK(ReplayBind(op,0));
+        CHECK(op==OP_SetVertexShader?!activeVertex:!g_activePsHash);
+        CHECK(op==OP_SetVertexShader?!g_replayVs:!g_replayPs);
+        bindResult=E_FAIL;CHECK(!ReplayBind(op,identity));
+        CHECK(op==OP_SetVertexShader?!activeVertex:!g_activePsHash);
+    }
+    vertexSyncs=0;
     // Snapshot restoration can inherit a PS before any OP_SetPixelShader in
     // this replay. Its light upload must use the restored binding's hash.
     g_pixelShaders.Publish(&shader,{kShadowLightPsHash,44,55});

@@ -78,3 +78,14 @@ Use the existing native 2676x2728-per-eye profile. Only MAIN deploys to Steam,
 after backing up the installed DLL and confirming the actual deployed SHA.
 Consolidate validation of image correctness, CULL status, right-eye artifacts,
 controller ownership and frame times in one later headset run.
+# Rejected binding correction
+
+The actual-hook fixture reproduced a rejected null pixel-shader bind clearing
+the active metadata and recording an unsuccessful command. Live VS/PS hooks
+now forward once and commit metadata/recording only on success (including
+S_FALSE). Replay VS/PS cases likewise retain prior metadata on failure and
+mark the eye incomplete. Actual extracted live and replay cases cover failed
+null/non-null binds and successful transitions. The 100,000-publication and
+24,486 projection-history regressions and both x86 builds pass. This repairs
+a proven error path; its contribution to observed HMD flicker is unmeasured.
+
