@@ -35,6 +35,9 @@ int main(int argc,char** argv) {
     CHECK(!witness.Observe(10,true,wrong));
     CHECK(witness.Observe(10,true,inverse));
     CHECK(witness.CanCover(11,1,2,3));
+    CHECK(witness.CanCoverProjection(11,1,2,3,inverse));
+    CHECK(!witness.CanCoverProjection(11,1,2,3,wrong));
+    CHECK(!witness.CanCoverProjection(11,1,2,3,nullptr));
     CHECK(!witness.CanCover(10,1,2,3) && !witness.CanCover(12,1,2,3));
     CHECK(!witness.CanCover(11,4,2,3) && !witness.CanCover(11,1,4,3) && !witness.CanCover(11,1,2,4));
     witness.Begin(11,1,2,3,inverse);CHECK(witness.Observe(11,true,inverse));

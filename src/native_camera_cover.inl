@@ -179,13 +179,17 @@ static bool PrepareOwnedCullingInput(void* camera,const NativeCameraFields& fiel
         std::memcpy(view,static_cast<unsigned char*>(camera)+0x480,sizeof(view));
         std::memcpy(vp,static_cast<unsigned char*>(camera)+0x500,sizeof(vp));
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
-    float eyes[2][4];
+    if(!g_frameEyeParamsValid)return false;
+    float eyeProjection[2][16];
     for(int e=0;e<2;++e) {
-        const auto& f=g_eyeFov[e];
-        eyes[e][0]=f.angleLeft;eyes[e][1]=f.angleRight;eyes[e][2]=f.angleUp;eyes[e][3]=f.angleDown;
+        auto sp=MakeEyeParams(e);
+        sp.projectionSnapshot=true;
+        sp.projectionPx=fields.projection[0];sp.projectionPy=fields.projection[5];
+        std::memcpy(eyeProjection[e],fields.projection,sizeof(eyeProjection[e]));
+        d2vr_replay::ApplyEyeShiftToMatrix(eyeProjection[e],4,sp,false);
     }
-    return d2vr_culling_cover::Prepare(view,fields.projection,vp,fields.fov,fields.aspect,
-        fields.nearZ,fields.farZ,eyes,g_autoFovCoverage,1+g_edgeCrop,input);
+    return d2vr_culling_cover::PrepareStereo(view,fields.projection,vp,eyeProjection,
+        fields.fov,fields.aspect,fields.nearZ,fields.farZ,input);
 }
 static bool ReadOwnedViewCamera(void* view,void*& renderer,void*& camera,NativeCameraFields& fields,
                                NativeViewReadStatus& status) {
@@ -226,7 +230,10 @@ static void ObserveNativeCameraBoundary(void* view,bool beforeRender) {
         return;
     }
     const auto v=reinterpret_cast<uintptr_t>(view),r=reinterpret_cast<uintptr_t>(renderer),c=reinterpret_cast<uintptr_t>(camera);
-    const bool ready=g_nativeViewWitness.CanCover(g_trackedFrame.id,v,r,c);
+    float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
+    const bool ready=g_nativeViewWitness.CanCoverProjection(g_trackedFrame.id,v,r,c,inverse) &&
+        d2vr_replay::g_cameraProjectionKnown &&
+        d2vr_native_view::ProjectionWitness::SameProjection(inverse,d2vr_replay::g_cameraInverseProjection);
     d2vr_culling_cover::Input cullingInput;
     const bool cullingReady=PrepareOwnedCullingInput(camera,fields,cullingInput);
     bool cullingApplied=false;
@@ -236,15 +243,14 @@ static void ObserveNativeCameraBoundary(void* view,bool beforeRender) {
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
         static unsigned appliedReports=0;
         if(cullingApplied && (++appliedReports<=3 || appliedReports%600==0))
-            Log("[NativeCullingCover] beforeNativeRender=1 frame=%llu camera=%p FOV=%.5g cullingFOV=%.5g planes+bounds=native-rebuilt renderProjection=unchanged",
-                g_trackedFrame.id,camera,fields.fov,cullingInput.fov);
+            Log("[NativeCullingCover] beforeNativeRender=1 frame=%llu camera=%p FOV=%.5g stereoVPUnion=%d planes+bounds=native-rebuilt renderProjection=unchanged",
+                g_trackedFrame.id,camera,fields.fov,int(cullingInput.stereoUnion));
     }
-    float inverse[16];if(!d2vr_math::Invert(fields.projection,inverse))return;
     g_nativeViewWitness.Begin(g_trackedFrame.id,v,r,c,inverse);
     static unsigned reports=0;
     if(++reports<=3 || reports%600==0)
-        Log("[NativeViewBoundary] beforeRender=%d frame=%llu ESI=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d cullingFOV=%.5g cullingApplied=%d uploadFrame=%llu inverseXY=%.6g,%.6g uploadXY=%.6g,%.6g; EXE/IAT unchanged",
-            int(beforeRender),g_trackedFrame.id,view,renderer,camera,fields.fov,ready,cullingReady,cullingInput.fov,cullingApplied,
+        Log("[NativeViewBoundary] beforeRender=%d frame=%llu ESI=%p renderer=%p camera=%p FOV=%.5g corroborated=%d cullingInput=%d stereoVPUnion=%d cullingApplied=%d uploadFrame=%llu inverseXY=%.6g,%.6g uploadXY=%.6g,%.6g; EXE/IAT unchanged",
+            int(beforeRender),g_trackedFrame.id,view,renderer,camera,fields.fov,ready,cullingReady,int(cullingInput.stereoUnion),cullingApplied,
             g_nativeViewWitness.uploadedFrame,inverse[0],inverse[5],g_nativeViewWitness.uploadedInverse[0],g_nativeViewWitness.uploadedInverse[5]);
 }
 static void __fastcall BeforeNativeViewRender(void* view,void*) {

@@ -833,3 +833,39 @@ diagnostic build PASS. This follow-up is offline; the running DLL is5af8536.
 The initial dispatch fixture executable name triggered Windows elevation
 heuristics and did not run. No UAC was invoked. Rebuilt as view-phase.exe;
 explicit exit-code reset now rejects a missing launch, and that run prints PASS.
+
+## 2026-10-28: fit culling to the actual tracked stereo matrices
+
+The installed profile has NativeStereoHeadGeometry=1 and HeadGeometry=1.
+The prior angular union ignored that active head rotation/translation and the
+eye baseline. PrepareStereo now uses the same eye-matrix compensation as live
+geometry, fits both eye volumes in camera space, and composes an off-axis clip
+X/Y fit with the reference eye projection. It preserves the shared depth/horizon
+planes and rejects mismatched depth, non-affine native views, singular/NaN
+matrices and unbounded inverse corners. The reference eye is included with its
+exact [-1,1] bounds, avoiding an unnecessary inverse/multiply. No render P/V/VP,
+camera FOV or lighting-reference point is modified by preparing these inputs.
+
+The write gate now also compares the current full inverse projection against
+both the freshly verified native candidate and the latest live projection.
+A changed FOV/clip interval therefore cannot reuse an earlier projection proof.
+x86 geometry PASS240 tracked poses,249600 binocular points,201581 outside the
+original cone; rotations/translations, asymmetric scales, eye baseline and
+translation/shear modes included. Existing64800 angular points, actual-source
+culling1000 ABI/order calls, external boundary/witness and phase-isolation
+regressions PASS. Production and diagnostic builds PASS (final header follow-up
+rebuilt diagnostic). Native plane algorithms and physical HMD behavior are not
+emulated by these tests.
+
+Offline Ghidra checks establish another integration risk: within985D80, the
+conditional98602E call to745E20 unconditionally rebuilds P and frustum via
+BA9150/4BE0C0 before98618E/98619A copy that frustum. Thus a pre888720 change can
+be overwritten when that branch executes. Whether it executes in the user's
+worst scene is not established by this static evidence. Do not claim that the
+new union alone fixes this phase problem. A777C0 reads camera+7C0 into the
+render context before the copy; that lighting/reference position remains native.
+Private decompilation stays outside Git.
+
+User steering: no game launch until explicitly requested; continue offline
+implementation without waiting for headset tests. No deployment/launch is made
+for this change. Current installed candidate remains5af8536.

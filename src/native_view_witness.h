@@ -9,10 +9,17 @@ struct ProjectionWitness {
     uint64_t frame=0,verifiedFrame=0;
     uintptr_t view=0,renderer=0,camera=0,verifiedView=0,verifiedRenderer=0,verifiedCamera=0;
     float inverse[16]{};
+    float verifiedInverse[16]{};
     float uploadedInverse[16]{};
     uint64_t uploadedFrame=0;
     bool uploaded=false;
     bool active=false,verified=false;
+    static bool SameProjection(const float* a,const float* b) {
+        if(!a || !b)return false;
+        for(unsigned i=0;i<16;++i)if(!std::isfinite(a[i]) || !std::isfinite(b[i]) ||
+            std::fabs(a[i]-b[i])>2e-4f*(1+std::fabs(b[i])))return false;
+        return true;
+    }
     void Begin(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c,const float* p) {
         frame=f;view=v;renderer=r;camera=c;active=p && v && r && c;
         if(active)std::memcpy(inverse,p,sizeof(inverse));
@@ -28,14 +35,17 @@ struct ProjectionWitness {
     }
     bool Verify(uint64_t f,const float* p) {
         if(!active || f!=frame || !p)return false;
-        for(unsigned i=0;i<16;++i)if(!std::isfinite(p[i]) || !std::isfinite(inverse[i]) ||
-            std::fabs(p[i]-inverse[i])>2e-4f*(1+std::fabs(inverse[i])))return false;
+        if(!SameProjection(p,inverse))return false;
         verified=true;verifiedFrame=f;verifiedView=view;verifiedRenderer=renderer;verifiedCamera=camera;
+        std::memcpy(verifiedInverse,inverse,sizeof(verifiedInverse));
         return true;
     }
     bool CanCover(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c)const {
         return verified && f>verifiedFrame && f-verifiedFrame==1 &&
             v==verifiedView && r==verifiedRenderer && c==verifiedCamera;
+    }
+    bool CanCoverProjection(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c,const float* p)const {
+        return CanCover(f,v,r,c) && SameProjection(p,verifiedInverse);
     }
 };
 }
