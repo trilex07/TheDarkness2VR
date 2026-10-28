@@ -31,3 +31,33 @@ Next physical test, if authorized, should first verify enemy lift/release with
 this fallback and record the alternate-branch transition; stop on a repeat
 exception. Hands remain visually frozen in the completed trial and are a
 separate defect. No hand-palette changes are included in this candidate.
+
+## Protected gesture release correction, 2026-10-29
+
+The protected gesture path unnecessarily used `!owner.alternateHeldTarget` as
+an admission condition for the entire left-hand input recognizer. Entering
+the held-enemy/weapon branch therefore erased the grip/stroke and cleared LB
+before a deliberate release gesture could issue the stock action. This was
+separate from the intentional ordinary-prop aim/velocity ownership gates.
+
+Actual-source regression first failed at `Step(260,0,.34f,0)` (line145):
+grab pulse, enemy acquisition, powered stroke and grip release produced no LB.
+The recognizer now retains the same owned camera/inventory/fire context for
+this native branch. The stock LB pulse reaches the engine; its native branch
+decides the action, physics and lifecycle. Ordinary-prop ray/velocity overrides
+still reject alternate targets both at publication and at native consumption.
+No native target, animation, velocity, code or static table is rewritten by
+this input correction. The existing protected private release adapter remains
+unchanged. Physical face buttons and the right-hand inputs remain available.
+
+Validation: 218 actual-source protected throw checks PASS, including acquisition
+transition, one deliberate release pulse, no prop steering token, delayed Busy
+acknowledgement without repeated throws, stationary grip release without a
+throw, owner changes, invalid context, preserved right stick/RB and A/B/X/Y.
+Protected aim 461 checks PASS (including fresh alternate-branch refusal).
+Production and diagnostic x86 builds PASS. These are input/adapter regressions;
+they do not run the native held-enemy lifecycle or prove a crash fix. Physical
+enemy attacks, executions, release/throw animations and trajectories remain
+to be accepted together in MAIN's consolidated headset test. Controller-based
+velocity steering for the alternate enemy/weapon physics branches remains
+unimplemented; this change removes the blocked native action, not that limit.

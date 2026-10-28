@@ -74,9 +74,10 @@ template<class F> static void Reject(F change) {
 static XINPUT_GAMEPAD Step(unsigned ms,float grip,float x,float velocity) {
     clockMs=1000+ms;g_trackedFrame.state.predictedDisplayTime=clockMs*1000000;
     g_hands[0].squeeze=grip;g_hands[0].grip.position.x=x;g_hands[0].motion.velocity={velocity,0,0};
-    XINPUT_GAMEPAD gp{};gp.wButtons=XINPUT_GAMEPAD_RIGHT_SHOULDER|XINPUT_GAMEPAD_A;
+    const WORD untouched=XINPUT_GAMEPAD_RIGHT_SHOULDER|XINPUT_GAMEPAD_A|XINPUT_GAMEPAD_B|XINPUT_GAMEPAD_X|XINPUT_GAMEPAD_Y;
+    XINPUT_GAMEPAD gp{};gp.wButtons=untouched;
     gp.sThumbRX=12345;gp.sThumbRY=-5432;ApplyProtectedLeftThrow(gp);
-    CHECK((gp.wButtons&(XINPUT_GAMEPAD_RIGHT_SHOULDER|XINPUT_GAMEPAD_A))==(XINPUT_GAMEPAD_RIGHT_SHOULDER|XINPUT_GAMEPAD_A));
+    CHECK((gp.wButtons&untouched)==untouched);
     CHECK(gp.sThumbRX==12345&&gp.sThumbRY==-5432);return gp;
 }
 int main() {
@@ -134,5 +135,27 @@ int main() {
     CHECK(!(Step(100,0,.28f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
     Reset();Step(0,0,0,0);Step(20,1,0,0);g_protectedRightTentacle.paused=true;
     CHECK(!(Step(40,1,.2f,2).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));CHECK(!g_nativeThrowToken.until);
-    printf("PASS protected throw actual bodies: %u checks; live owner/entity/branch gates,one-shot token,native speed/W preserved,left stroke+aim,neutral LB gap,right inputs independent\n",checks);
+    // Acquisition can enter the native enemy/weapon branch after the grab
+    // pulse. Its stock LB release must remain reachable from a left stroke;
+    // the ordinary-prop velocity override must NEVER be armed for this branch.
+    Reset();gameplay.grab=d2vr_input::GrabFeedback::Empty;
+    Step(0,0,0,0);CHECK(Step(20,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);
+    gameplay.alternateHeldTarget=true;gameplay.grab=d2vr_input::GrabFeedback::Busy;
+    CHECK(!(Step(160,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    Step(180,1,.18f,2);Step(200,1,.22f,2);Step(220,1,.26f,2);Step(240,1,.30f,2);
+    CHECK(Step(260,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);
+    CHECK(!g_nativeThrowToken.until);
+    CHECK(!(Step(400,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!(Step(520,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!(Step(620,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!(Step(720,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!(Step(820,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    // Attaching to an already held enemy still requires a deliberate stroke;
+    // gripping alone is not a second native press or a throw.
+    Reset();gameplay.alternateHeldTarget=true;gameplay.grab=d2vr_input::GrabFeedback::Busy;
+    Step(0,0,0,0);CHECK(!(Step(20,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!(Step(160,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!(Step(180,0,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!g_nativeThrowToken.until);
+    printf("PASS protected throw actual bodies: %u checks; live owner/entity/branch gates,one-shot token,native speed/W preserved,left stroke+aim,enemy stock release reachable,neutral LB gap,right inputs independent\n",checks);
 }

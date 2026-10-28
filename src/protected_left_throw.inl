@@ -64,9 +64,13 @@ static void ApplyProtectedLeftThrow(XINPUT_GAMEPAD& gp) {
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     const bool context=g_haveViews && g_in3DGameplayMode && !g_protectedRightTentacle.paused && (g_trackedFrame.flags&tracked)==tracked &&
         g_headGeometry && g_headGeometryReferenceValid && gp.bLeftTrigger<30 && gp.bRightTrigger<30 &&
-        CopyNativeGameplay(owner) && !owner.alternateHeldTarget &&
+        CopyNativeGameplay(owner) &&
         ProtectedAimCameraOwned(reinterpret_cast<void*>(owner.camera)) &&
         ProtectedThrowFireOwned(reinterpret_cast<void*>(owner.grabFire));
+    // The stock LB action handles both props and the native enemy/weapon
+    // branches. Entering one must not erase the held grip/stroke or suppress
+    // its release pulse. Aim and physics steering have separate branch gates
+    // in PublishProtectedLeftAim/PublishNativeThrow/TryNativeThrowVelocity.
     if(context && (g_protectedThrowInputOwner[0]!=owner.camera ||
        g_protectedThrowInputOwner[1]!=owner.inventory || g_protectedThrowInputOwner[2]!=owner.grabFire)) {
         // A different native owner cannot inherit a held grip or powered stroke.
