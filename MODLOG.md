@@ -681,6 +681,22 @@ inside the native callback and retains numeric identities, not object pointers.
 narrows the update-order inspection but does not prove the entire render order.
 Private disassembly remains outside Git. Peripheral fix remains incomplete.
 
+## 2026-10-28: camera destructor boundary follow-up
+
+Installed D46 camera vtable FF2800 slot0 resolves to709270. Its deleting
+destructor releases +7D4, calls CBA920 and A672B0, then optionally frees the
+object. A672B0 ends in934E50 ->6BBEF0. 934E50 distinguishes cell+8 ownership
+from cell+4 handles: on the last owning reference it clears the cell object
+pointer before calling its destructor. 6BBEF0 instead clears object+4/+8 and
+releases the cell at object+C; it does not itself write *cell=0. Thus observing
+934E50's owning-container path alone is insufficient to assume every direct
+camera destruction/reconstruction invalidates a retained weak cell. The camera
+also has a previously traced in-place reconstruction path BB5900. A weak-cell
+identity is not yet an adequate generation guard for scoped FOV restoration.
+No extra native reference operations or camera mutations were installed.
+Game was closed at this turn's authoritative process check. This is further
+offline evidence, not a peripheral-pop-in fix or runtime validation.
+
 ## 2026-10-28: contiguous constant-window flush
 
 Track whether each window bank's written union is provably contiguous. Empty,
