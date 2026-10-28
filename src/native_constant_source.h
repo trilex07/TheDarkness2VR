@@ -18,13 +18,16 @@ struct Sites {
     uintptr_t builderFirst[2],builderEnd[2];
     uintptr_t parentReturn[2][3];
     uintptr_t fieldReturn[2][10] = {};
+    uintptr_t nestedReturn[2][4] = {};
 };
 inline constexpr Sites nativeSites{
     {0x00b74740,0x0096e3d0},
     {0x00571670,0x00ad3380},{0x00573750,0x00ad5460},
     {{0x0071f6db,0x0071f71f,0x008f8180},{0x0071f702,0x0071f736,0}},
     {{0x571730,0x57176a,0x571787,0x5717ab,0x5717d0,0x571d6f,0x571e44,0x571e8d,0x572e2e,0x571e68},
-     {0xad3440,0xad347a,0xad3497,0xad34bb,0xad34e0,0xad3a7f,0xad3b54,0xad3b9d,0xad4b3e,0xad3b78}}
+     {0xad3440,0xad347a,0xad3497,0xad34bb,0xad34e0,0xad3a7f,0xad3b54,0xad3b9d,0xad4b3e,0xad3b78}},
+    {{0x571db2,0x571dea,0x571e1f,0x5723a1},
+     {0xad3ac2,0xad3afa,0xad3b2f,0xad40b1}}
 };
 inline std::atomic<bool> enabled{false},admitted{false},faulted{false};
 inline std::atomic<bool> materialEnabled{false};
@@ -34,7 +37,9 @@ inline std::atomic<bool> materialEnabled{false};
 inline constexpr size_t fieldOffset[]={0x10,0xd0,0xd0,0x110,0x220,0x4f0,0x470,0x260,0x580,0x330};
 inline constexpr size_t fieldVectors[]={12,4,1,17,4,6,4,4,1,4};
 inline constexpr size_t fieldCount=sizeof(fieldOffset)/sizeof(fieldOffset[0]);
-struct Counts {uint64_t attempts=0,proved=0,copies=0,bytes=0,faults=0,materialProved=0,materialCopies=0,activeStackProved=0,activeStackCopies=0;};
+inline constexpr size_t nestedOffset[]={0xe0,0x70,0,0xc0};
+inline constexpr size_t nestedVectors[]={6,1,9,4};
+struct Counts {uint64_t attempts=0,proved=0,copies=0,bytes=0,faults=0,materialProved=0,materialCopies=0,activeStackProved=0,activeStackCopies=0,nestedProved=0,nestedCopies=0;};
 inline thread_local Counts counts;
 
 class Proof {
@@ -42,8 +47,9 @@ class Proof {
     size_t bytes_=0;
     bool material_=false;
     bool activeStack_=false;
-    Proof(const void* p,size_t n,bool material=false,bool activeStack=false)
-        :source_(p),bytes_(n),material_(material),activeStack_(activeStack){}
+    bool nested_=false;
+    Proof(const void* p,size_t n,bool material=false,bool activeStack=false,bool nested=false)
+        :source_(p),bytes_(n),material_(material),activeStack_(activeStack),nested_(nested){}
 public:
     Proof()=default;
     bool Matches(const void* p,size_t n)const {
@@ -87,7 +93,8 @@ public:
             // EBX is assigned the current material owner once at builder entry,
             // preserved by both native forwarders, and never reassigned before
             // the epilogue. Admit only exact immediate-field submission sites.
-            // No dynamic array, nested owner, page cache or cross-call pointer.
+            // No dynamic array, page cache or cross-call pointer. The separate
+            // nested-field sites below require their own exact producer path.
             if(materialEnabled.load(std::memory_order_relaxed) && owner && owner%4==0 &&
                owner<=UINTPTR_MAX-0x20) {
                 for(unsigned i=0;i<fieldCount;++i) {
@@ -98,12 +105,35 @@ public:
                         ++counts.proved;++counts.materialProved;return Proof(source,bytes,true);
                     }
                 }
+                for(unsigned i=0;i<4;++i) {
+                    if(!sites.nestedReturn[bank][i] || slot[5]!=sites.nestedReturn[bank][i] ||
+                       bytes!=nestedVectors[i]*16)continue;
+                    // These pinned producer branches submit an immediate field
+                    // of the CURRENT context's model/camera synchronously. Walk
+                    // the exact native chain anew; neither an array nor a
+                    // returned helper pointer grants ownership here.
+                    const uintptr_t block=*reinterpret_cast<const uintptr_t*>(owner+0x1c);
+                    if(!block || block%4 || block>UINTPTR_MAX-0x5dc)return {};
+                    uintptr_t object=*reinterpret_cast<const uintptr_t*>(block+(i==3?0x5d8:0x5d4));
+                    if(!object || object%4)return {};
+                    if(i!=3) {
+                        if(object>UINTPTR_MAX-0x158)return {};
+                        const uintptr_t ref=*reinterpret_cast<const uintptr_t*>(object+0x154);
+                        if(!ref || ref%4 || ref>UINTPTR_MAX-sizeof(uintptr_t))return {};
+                        object=*reinterpret_cast<const uintptr_t*>(ref);
+                    }
+                    if(!object || object%4 || object>UINTPTR_MAX-nestedOffset[i]-bytes ||
+                       p!=object+nestedOffset[i])return {};
+                    ++counts.proved;++counts.materialProved;++counts.nestedProved;
+                    return Proof(source,bytes,true,false,true);
+                }
             }
         } __except(EXCEPTION_EXECUTE_HANDLER) {return {};}
         return {};
     }
     bool Material()const{return material_;}
     bool ActiveStack()const{return activeStack_;}
+    bool Nested()const{return nested_;}
     // The pinned forwarders duplicate all three arguments without moving the
     // payload. Any source wholly ABOVE the current native call stack and BELOW
     // this thread's current StackBase is live until this synchronous call
@@ -146,7 +176,8 @@ inline bool Copy(const Proof& proof,void* destination,const void* source,size_t 
         admitted.store(false,std::memory_order_relaxed);return false;
     }
     ++counts.copies;counts.bytes+=bytes;if(proof.Material())++counts.materialCopies;
-    if(proof.ActiveStack())++counts.activeStackCopies;return true;
+    if(proof.ActiveStack())++counts.activeStackCopies;
+    if(proof.Nested())++counts.nestedCopies;return true;
 }
 
 inline Proof InspectCurrent(const uintptr_t* slot,uintptr_t frame,const void* source,size_t bytes,Stage stage,

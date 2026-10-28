@@ -423,11 +423,11 @@ struct ConstantUploadWindow {
             counts.records[0],counts.calls[0],counts.vectors[0],counts.failures[0],
             counts.records[1],counts.calls[1],counts.vectors[1],counts.failures[1],counts.exceptions);
         const auto& native=d2vr_native_constants::counts;
-        Log("[NativeOwnedConstantCopy] tid=%lu enabled=%d admitted=%d attempts=%llu proved=%llu copies=%llu bytes=%llu faults=%llu materialEnabled=%d materialProved=%llu materialCopies=%llu activeStackProved=%llu activeStackCopies=%llu; cumulative on reporting thread",
+        Log("[NativeOwnedConstantCopy] tid=%lu enabled=%d admitted=%d attempts=%llu proved=%llu copies=%llu bytes=%llu faults=%llu materialEnabled=%d materialProved=%llu materialCopies=%llu activeStackProved=%llu activeStackCopies=%llu nestedProved=%llu nestedCopies=%llu; cumulative on reporting thread",
             GetCurrentThreadId(),int(d2vr_native_constants::enabled.load()),int(d2vr_native_constants::admitted.load()),
             native.attempts,native.proved,native.copies,native.bytes,native.faults,
             int(d2vr_native_constants::materialEnabled.load()),native.materialProved,native.materialCopies,
-            native.activeStackProved,native.activeStackCopies);
+            native.activeStackProved,native.activeStackCopies,native.nestedProved,native.nestedCopies);
         *this = {};
     }
 };

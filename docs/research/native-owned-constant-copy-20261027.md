@@ -115,3 +115,59 @@ runtime receipt adds activeStackProved/activeStackCopies so its incremental
 coverage can be measured separately. Current-game coverage and savings are
 unknown: the earlier 2.22 ms inclusive exposure is not a prediction for this
 extension. Native resolution, draws, uploads, hands and culling are unchanged.
+
+## 2026-10-28: synchronous nested-field capture
+
+The remaining RPM path still includes heap payloads. The retained trace does
+not resolve how much of its historical 2.22 ms/present recorder exposure remains
+after the earlier extensions, or what fraction belongs to the following fields.
+Consequently this change has no defensible 1 ms/frame saving estimate and does
+not identify a new principal outdoor bottleneck. It is a bounded extension of
+the already established producer contract, rather than another subsystem audit.
+
+Fresh read-only Ghidra export in `%TEMP%/d2vr-nested-constant-contracts.txt`
+has the D46B executable SHA and final EVIDENCE COMPLETE marker. Complete builder
+fingerprints are unchanged. Four branches in EACH builder synchronously submit:
+
+- Return 571DB2 / AD3AC2: context+5D4 -> object+154 -> reference target+E0,
+  exactly 6 vectors.
+- Return 571DEA / AD3AFA: same current target+70, exactly 1 vector.
+- Return 571E1F / AD3B2F: same current target+0, exactly 9 vectors.
+- Return 5723A1 / AD40B1: context+5D8 -> current camera+C0, exactly 4 vectors.
+
+Context is freshly read from captured native EBX+1C. These are fixed immediate
+fields used by the pinned producer's synchronous call, not arbitrary bone
+arrays. Its existing exact frame/parent/forwarder/duplicated arguments and
+hardware register limits remain required. Every link, source address and byte
+extent is checked for the current call; null, unaligned, overflowing or changed
+links refuse the new path. No getter is re-executed, resource retained, pointer
+cached, command skipped, EXE changed or D3D9 creation moved to another thread.
+The owner must maintain these native readable fields through the synchronous
+API call, just as for the earlier fixed material fields. Manually protecting a
+live native payload violates that contract; the existing sticky copy-fault
+disable/fallback remains in force. Unknown payloads still use the baseline.
+
+The existing NativeOwnedMaterialCopy option controls these fields too. No
+profile change is needed for the candidate that already enables it. Nested
+copies are included in material totals and additionally exposed as nestedProved
+and nestedCopies in the existing periodic receipt. Do not add these counters
+to material totals when calculating coverage.
+
+Validation: actual x86 gate/hook test 9239 checks PASS, including 1000 new
+native-shaped producer calls with heap payloads, byte-for-byte equality with
+the forwarded original, both-stage classifier cases, fresh chain replacements,
+null/overflow/extent/site refusal and option OFF. Existing recorder regression
+6096 checks PASS, including guard preservation/fallback. The independent
+`test/native_nested_constant_contracts.py --exe <installed EXE>` audit verifies
+the full image identity, both complete builder fingerprints and all eight
+instruction-level pointer/count/call contracts. Production and DiagnosticCapture
+x86 builds PASS. Existing ABI benchmarks remain synthetic (roughly 0.7 us RPM
+versus 0.05 us direct on this run), not measurements of the new fields or game.
+
+MAIN integration: consume the latest render-candidate package after this
+commit, keeping the live native 2676x2728-per-eye profile. Only MAIN deploys,
+after closing the game and preserving verified rollback. In the consolidated
+run require nonzero nestedCopies, zero runtime faults, unchanged stereo/side
+visibility and both controller weapon poses; compare matched outdoor timings
+before crediting a performance improvement. HMD behavior, hitch elimination
+and stable 90 FPS remain NOT VERIFIED. No game installation was changed here.

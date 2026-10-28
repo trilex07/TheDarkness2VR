@@ -14,6 +14,7 @@ static uintptr_t apiReturn,callbackReturn,parentReturn;
 static const float* overrideSource;
 static uintptr_t fixtureOwner=0;
 static bool fixtureMaterial=false;
+static bool fixtureNested=false;
 static unsigned fixtureField=7;
 static unsigned firstRegister=0,vectorCount=4;
 static float recorded[80],forwarded[80];
@@ -108,8 +109,49 @@ static Proof InspectFixture(const uintptr_t* slot,uintptr_t frame,const void* p,
         sites.apiReturn[b]=apiReturn;sites.builderFirst[b]=callbackReturn;
         sites.builderEnd[b]=callbackReturn+1;sites.parentReturn[b][0]=parentReturn;
         if(fixtureMaterial)sites.fieldReturn[b][fixtureField]=callbackReturn;
+        if(fixtureNested)sites.nestedReturn[b][fixtureField]=callbackReturn;
     }
     return InspectCurrent(slot,frame,p,n,stage,owner,sites);
+}
+static void NestedFields() {
+    auto* page=static_cast<unsigned char*>(VirtualAlloc(nullptr,8192,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
+    Check(page!=nullptr,"nested classifier frame allocation");
+    const uintptr_t low=reinterpret_cast<uintptr_t>(page),high=low+8192,frame=low+0x900;
+    auto* slot=reinterpret_cast<uintptr_t*>(frame-0x794-48);
+    alignas(16) unsigned char owner[0x20]{},context[0x600]{},model[0x160]{},reference[4]{},payload[0x200]{};
+    for(unsigned i=0;i<sizeof(payload);++i)payload[i]=static_cast<unsigned char>(i*31+7);
+    *reinterpret_cast<uintptr_t*>(owner+0x1c)=reinterpret_cast<uintptr_t>(context);
+    *reinterpret_cast<uintptr_t*>(context+0x5d4)=reinterpret_cast<uintptr_t>(model);
+    *reinterpret_cast<uintptr_t*>(context+0x5d8)=reinterpret_cast<uintptr_t>(payload);
+    *reinterpret_cast<uintptr_t*>(model+0x154)=reinterpret_cast<uintptr_t>(reference);
+    *reinterpret_cast<uintptr_t*>(reference)=reinterpret_cast<uintptr_t>(payload);
+    Sites sites{{11,12},{21,22},{31,32},{{41,0,0},{42,0,0}}};
+    materialEnabled=true;
+    for(unsigned bank=0;bank<2;++bank)for(unsigned field=0;field<4;++field) {
+        const auto stage=bank?Stage::Pixel:Stage::Vertex;
+        sites.nestedReturn[bank][field]=23+field;
+        auto* source=payload+nestedOffset[field];const size_t bytes=nestedVectors[field]*16;
+        slot[0]=sites.apiReturn[bank];slot[2]=slot[6]=0;
+        slot[3]=slot[7]=reinterpret_cast<uintptr_t>(source);slot[4]=slot[8]=bytes/16;
+        slot[5]=23+field;reinterpret_cast<uintptr_t*>(frame)[1]=sites.parentReturn[bank][0];
+        auto inspect=[&]{return Proof::Inspect(slot,frame,source,bytes,stage,low,high,sites,reinterpret_cast<uintptr_t>(owner));};
+        auto proof=inspect();Check(proof.Matches(source,bytes)&&proof.Nested()&&proof.Material(),"both stages exact nested field receipt");
+        float result[40]{};Check(Copy(proof,result,source,bytes)&&!memcmp(result,source,bytes),"nested exact copy bits");
+        for(auto* link: {owner+0x1c,context+(field==3?0x5d8:0x5d4),model+0x154,reference}) {
+            if(field==3 && (link==model+0x154 || link==reference))continue;
+            auto& value=*reinterpret_cast<uintptr_t*>(link);const auto saved=value;
+            value=0;Check(!inspect().Matches(source,bytes),"null nested link rejects");
+            value=saved+4;Check(!inspect().Matches(source,bytes),"replacement nested link cannot reuse ownership");
+            value=UINTPTR_MAX-1;Check(!inspect().Matches(source,bytes),"overflow or unaligned nested link rejects");
+            value=saved;
+        }
+        slot[3]=slot[7]=reinterpret_cast<uintptr_t>(source)+4;
+        Check(!inspect().Matches(source,bytes),"nested shifted submitted pointer rejects");slot[3]=slot[7]=reinterpret_cast<uintptr_t>(source);
+        slot[4]=slot[8]=bytes/16+1;Check(!inspect().Matches(source,bytes),"nested argument extent mismatch rejects");slot[4]=slot[8]=bytes/16;
+        ++slot[5];Check(!inspect().Matches(source,bytes),"nested foreign call site rejects");--slot[5];
+        materialEnabled=false;Check(!proof.Matches(source,bytes)&&!inspect().Matches(source,bytes),"nested material option off rejects");materialEnabled=true;
+    }
+    VirtualFree(page,0,MEM_RELEASE);
 }
 static bool g_recActive=true;
 static int g_replayEye=-1,g_activePsInverse=-1,g_activePsViewExtents=-1,g_submitMode=0;
@@ -293,6 +335,26 @@ int main() {
     overrideSource+=4;Parent();Check(!copied,"interior field pointer rejects");overrideSource-=4;
     fixtureMaterial=false;Parent();Check(!copied,"unknown field call site rejects");fixtureMaterial=true;
     fixtureOwner=0;Parent();Check(!copied,"absent EBX owner rejects");
+    fixtureOwner=reinterpret_cast<uintptr_t>(ownerObject);fixtureMaterial=false;fixtureNested=true;
+    alignas(16) unsigned char nestedModel[0x160]{};
+    auto* nestedPayload=static_cast<unsigned char*>(VirtualAlloc(nullptr,4096,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
+    Check(nestedPayload!=nullptr,"nested payload allocation outside current stack");
+    for(unsigned i=0;i<0x200;++i)nestedPayload[i]=static_cast<unsigned char>(i*13+29);
+    uintptr_t nestedReference=reinterpret_cast<uintptr_t>(nestedPayload);
+    *reinterpret_cast<uintptr_t*>(nestedModel+0x154)=reinterpret_cast<uintptr_t>(&nestedReference);
+    *reinterpret_cast<uintptr_t*>(materialBlock+0x5d4)=reinterpret_cast<uintptr_t>(nestedModel);
+    *reinterpret_cast<uintptr_t*>(materialBlock+0x5d8)=reinterpret_cast<uintptr_t>(nestedPayload);
+    const auto nestedBefore=counts.nestedCopies;
+    for(unsigned field=0;field<4;++field) {
+        fixtureField=field;vectorCount=static_cast<unsigned>(nestedVectors[field]);
+        overrideSource=reinterpret_cast<float*>(nestedPayload+nestedOffset[field]);
+        for(unsigned i=0;i<250;++i) {
+            Parent();Check(copied,"actual native-shaped producer admits current nested owner field");
+            Check(!memcmp(recorded,forwarded,vectorCount*16),"actual hook nested bytes match forwarded native payload");
+        }
+    }
+    Check(counts.nestedCopies==nestedBefore+1000,"separate nested copy coverage receipt");
+    VirtualFree(nestedPayload,0,MEM_RELEASE);fixtureNested=false;vectorCount=4;
     overrideSource=nullptr;fixtureMaterial=false;materialEnabled=false;
     firstRegister=223;Parent();Check(!copied,"invalid register extent rejects");firstRegister=0;
     enabled=false;Parent();Check(!copied,"disabled rejects");enabled=true;
@@ -301,6 +363,7 @@ int main() {
     Proof invalid;Check(!Copy(invalid,recorded,forwarded,sizeof(recorded)),"default proof rejects");
     ClassifierFailures();
     ActiveStackFailures();
+    NestedFields();
     Check(!AdmitImage("wrong",nullptr),"wrong image SHA rejects");
     VirtualFree(materialBlock,0,MEM_RELEASE);
     std::printf("PASS actual x86 gate/hook/native-shaped producer ABI: %u checks; copies=%llu materialCopies=%llu activeStackCopies=%llu injectedFaults=%llu\n",checks,counts.copies,counts.materialCopies,counts.activeStackCopies,counts.faults);
