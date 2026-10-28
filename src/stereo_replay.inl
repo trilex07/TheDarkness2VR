@@ -1787,10 +1787,10 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         switch ((RecOp)r.op) {
         case OP_SetRenderTarget:
             if(r.a[0]==0) InvalidateShadowAtlasPass();
-            g_orig.SetRenderTarget(dev, r.a[0], (IDirect3DSurface9*)(uintptr_t)r.a[1]);
+            if(FAILED(g_orig.SetRenderTarget(dev, r.a[0], (IDirect3DSurface9*)(uintptr_t)r.a[1])))replayComplete=false;
             break;
         case OP_SetDepthStencilSurface:
-            g_orig.SetDepthStencilSurface(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0]);
+            if(FAILED(g_orig.SetDepthStencilSurface(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0])))replayComplete=false;
             break;
         case OP_BeginScene:
             g_orig.BeginScene(dev);
@@ -1801,7 +1801,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_Clear: {
             const D3DRECT* rects = r.n ? (const D3DRECT*)(dataBase + r.a[4]) : nullptr;
             float z; *(uint32_t*)&z = r.a[2];
-            g_orig.Clear(dev, r.n, rects, r.a[0], (D3DCOLOR)r.a[1], z, r.a[3]);
+            if(FAILED(g_orig.Clear(dev, r.n, rects, r.a[0], (D3DCOLOR)r.a[1], z, r.a[3])))replayComplete=false;
             break;
         }
         case OP_SetTransform:
@@ -1980,15 +1980,15 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             g_orig.SetPixelShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[4]), r.a[1]);
             break;
         case OP_StretchRect:
-            g_orig.StretchRect(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0],
+            if(FAILED(g_orig.StretchRect(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0],
                               (r.n & 1) ? (const RECT*)(dataBase + r.a[3]) : nullptr,
                               (IDirect3DSurface9*)(uintptr_t)r.a[1],
                               (r.n & 2) ? (const RECT*)(dataBase + r.a[4]) : nullptr,
-                              (D3DTEXTUREFILTERTYPE)r.a[2]);
+                              (D3DTEXTUREFILTERTYPE)r.a[2])))replayComplete=false;
             break;
         case OP_ColorFill:
-            g_orig.ColorFill(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0],
-                            r.n ? (const RECT*)(dataBase + r.a[2]) : nullptr, (D3DCOLOR)r.a[1]);
+            if(FAILED(g_orig.ColorFill(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0],
+                            r.n ? (const RECT*)(dataBase + r.a[2]) : nullptr, (D3DCOLOR)r.a[1])))replayComplete=false;
             break;
         case OP_UpdateSurface:
             // Texture *content* updates are shared between both eyes and the replay runs

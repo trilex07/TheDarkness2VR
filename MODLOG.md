@@ -1010,3 +1010,27 @@ are OFF in the current profile, so their dormant metadata paths do not justify
 a visual/performance claim or enabling them. Do not introduce a raw constant
 cache without device-bank/state-block ownership and invalidation proof.
 No runtime/headset/FPS claim, no game launch, no installed-baseline replacement.
+
+## 2026-10-28: propagate replay surface-operation failures
+
+Extend the partial-replay rejection to recorded SetRenderTarget,
+SetDepthStencilSurface, Clear, StretchRect and ColorFill. Their HRESULTs were
+discarded: a failed target change/copy/clear could leave old or incorrectly
+targeted pixels while the caller still saved right history and published the
+pair. Each original operation still runs once, in its existing order; failure
+sets the same sticky replayComplete result used by history/publication gates.
+Later scene/cleanup commands continue. Successful nonzero HRESULTs remain valid.
+No retry, extra driver operation, cache, native-image write or scene bypass.
+This is a proven error-propagation defect, not evidence that these APIs failed
+in the user's scene. Other state setters and snapshot Apply remain outside the
+completion check; do not describe this as exhaustive replay validation.
+
+New actual-source x86 surface fixture PASS:96 streams/576 calls. Inject failure
+individually at each of five operations; require false through the final
+EndScene, exact arguments and ordering, no retries, null target/depth bindings,
+all source/destination rectangle masks, D3D_OK and S_FALSE. Removing only the
+five checks in the generated fixture reproduces the expected failure. Existing
+history1000 cycles and draw HRESULT checks PASS; production and diagnostic
+constant-loop576096 records each PASS; production and diagnostic DLL builds
+PASS. No game launch or runtime/FPS claim. Installed6e7d104 remains unchanged
+while this follow-up is packaged separately for offline review.
