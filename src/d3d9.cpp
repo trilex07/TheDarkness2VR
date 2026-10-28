@@ -5447,6 +5447,7 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
+    d2vr_replay::ReleaseLightReadbackTargets();
     d2vr_shader_preload::BeginReset(dev);
     QueryPreloadBeginReset(dev);
     d2vr_sampling::InvalidateSamplerCaps();
@@ -5506,6 +5507,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
+    d2vr_replay::ReleaseLightReadbackTargets();
     d2vr_shader_preload::BeginReset(dev);
     QueryPreloadBeginReset(dev);
     d2vr_sampling::InvalidateSamplerCaps();

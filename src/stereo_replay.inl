@@ -539,12 +539,39 @@ static inline uint32_t RecPush(const void* data, size_t bytes, const d2vr_native
 // Light-input readback state (diagnostic only, see LightInputReadback below).
 static const uint32_t kShadowLightPsHash = 0xC4D1FB10u;
 static std::unordered_map<const void*, uint32_t> g_psHashByPtr;       // PS pointer -> hash
-static std::unordered_map<const void*, const void*> g_surfToTex;      // RT surface -> texture (AddRef'd)
+static std::unordered_map<const void*, const void*> g_surfToTex;      // diagnostic-only, owns BOTH identities
 static const void* g_replayPs = nullptr;                              // PS currently bound in replay
 static const void* g_replayVs = nullptr;                              // VS currently bound in replay
 static std::unordered_map<const void*, uint32_t> g_lightEndHash;      // texture -> hash at window end
 static int g_lightRbFrames = -1;                                      // windows left (-1 = unread)
 static int g_lightRbBudget = 0;                                       // light draws left to read back
+
+static bool LightReadbackCollecting() {
+    if (g_lightRbFrames < 0) {
+        g_lightRbFrames = (int)GetPrivateProfileIntA("Diagnostics", "LightReadback", 0, ".\\Darkness2VR-diagnostic.ini");
+        if (g_lightRbFrames > 0) Log("[LightRB] enabled for %d windows", g_lightRbFrames);
+    }
+    return g_lightRbFrames > 0;
+}
+static void ReleaseLightReadbackTargets() {
+    for (const auto& entry : g_surfToTex) {
+        static_cast<IDirect3DSurface9*>(const_cast<void*>(entry.first))->Release();
+        static_cast<IDirect3DTexture9*>(const_cast<void*>(entry.second))->Release();
+    }
+    g_surfToTex.clear();
+    g_lightEndHash.clear();
+    g_lightRbBudget = 0;
+}
+static void CollectLightReadbackTarget(IDirect3DSurface9* s) {
+    if (!s || !LightReadbackCollecting() || g_surfToTex.size() >= 400 || g_surfToTex.count(s)) return;
+    IDirect3DTexture9* cont = nullptr;
+    static const GUID kIidTexture9 = { 0x85C31227, 0x3DE5, 0x4F00, { 0x9B, 0x3A, 0xF1, 0x1A, 0xC3, 0x8C, 0x18, 0xB5 } };
+    if (SUCCEEDED(s->GetContainer(kIidTexture9, reinterpret_cast<void**>(&cont))) && cont) {
+        Log("[RTCont] %p %p", (void*)s, (void*)cont);
+        s->AddRef();
+        g_surfToTex[s] = cont;
+    }
+}
 
 // Caller holds g_recLock, including any payload append belonging to this record.
 static inline void RecEmitLocked(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
@@ -1158,17 +1185,10 @@ static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWO
     }
     if (g_recActive) {
         RecEmit(OP_SetRenderTarget, 0, idx, (uint32_t)(uintptr_t)s);
-        // surface -> owning texture (D3D's own container link), once per surface
-        static std::unordered_map<const void*, int> s_rtContLogged;
-        if (s && s_rtContLogged.size() < 400 && s_rtContLogged.emplace(s, 1).second) {
-            IDirect3DTexture9* cont = nullptr;
-            static const GUID kIidTexture9 = { 0x85C31227, 0x3DE5, 0x4F00, { 0x9B, 0x3A, 0xF1, 0x1A, 0xC3, 0x8C, 0x18, 0xB5 } };
-            if (SUCCEEDED(s->GetContainer(kIidTexture9, reinterpret_cast<void**>(&cont))) && cont) {
-                Log("[RTCont] %p %p", (void*)s, (void*)cont);
-                // keep the reference (GetContainer AddRef'd): the readback needs a live texture
-                g_surfToTex[s] = cont;
-            }
-        }
+        // A disabled readback must not retain any native RT, including across
+        // resolution/level changes. Retain surface identity too while enabled;
+        // a released surface wrapper address must not alias a later RT.
+        CollectLightReadbackTarget(s);
     }
     return g_orig.SetRenderTarget(dev, idx, s);
 }
@@ -1652,11 +1672,11 @@ static void LightInputReadback(IDirect3DDevice9* dev, const void* ps, const void
 // Called once per window (before the next recording starts): snapshot the render targets'
 // content hashes, and arm the light readback for the next replay while frames remain.
 static void LightEndOfWindowSnapshot(IDirect3DDevice9* dev) {
-    if (g_lightRbFrames < 0) {
-        g_lightRbFrames = (int)GetPrivateProfileIntA("Diagnostics", "LightReadback", 0, ".\\Darkness2VR-diagnostic.ini");
-        if (g_lightRbFrames > 0) Log("[LightRB] enabled for %d windows", g_lightRbFrames);
+    if (!LightReadbackCollecting()) {
+        ReleaseLightReadbackTargets();
+        return;
     }
-    if (g_lightRbFrames <= 0 || g_surfToTex.empty()) return;   // count only 3D windows
+    if (g_surfToTex.empty()) return;   // count only windows with collected RTs
     --g_lightRbFrames;
     std::unordered_map<const void*, bool> seen;
     for (const auto& kv : g_surfToTex) {

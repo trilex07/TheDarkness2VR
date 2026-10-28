@@ -592,6 +592,34 @@ atomic release-store unlock. Production and diagnostic tests each PASS96 streams
 transformed bits, caps, failures and SEH no-retry behavior. Runtime DLL unchanged
 from2331082; this test-only commit is not a new performance candidate.
 
+## 2026-10-28: stop disabled readback retaining native render targets
+
+Hook_SetRenderTarget previously called GetContainer and retained up to 400
+textures even with LightReadback OFF, without releasing them on Reset. The
+retained bdab1cd runtime log contains 11 RTCont acquisitions and no enabled
+LightRB window. This establishes unnecessary lifetime extension, not its VRAM
+size or its contribution to the reported flicker/FPS.
+
+Collection now requires an active diagnostic budget. Enabled diagnostics own
+both surface and texture identities, and release them after the final armed
+window or before either Reset entry point. Holding the surface prevents wrapper
+address reuse from colliding with a stale diagnostic key. No diagnostic queries
+or resource references are added to the normal OFF path.
+
+Actual-source x86 tests cover OFF1000, duplicate and failed acquisition, the
+400-entry cap, expiration and Reset/recollection. Real x86 D3D9 REF tests pass
+20 OFF/ON cycles: a retained DEFAULT-pool RT prevents classic Reset; releasing
+the diagnostic references permits Reset. This does not establish equivalent
+ResetEx behavior. Both production and diagnostic DLL builds pass.
+
+Peripheral investigation also traced selected render-camera ownership through
+the view object's +A8 reference to the renderer's +3F4 camera reference. The
+view class constructor 6D3B10 calls CreateIoCompletionPort before returning,
+with ESI holding this, and its virtual +F0 method 6DBE80 calls 985D80. These are
+static leads for access without an EXE patch, not authorization to retain an
+unowned pointer or install a new native hook. Private SHA-pinned Ghidra exports
+remain outside Git. Native frustum coverage is still unresolved.
+
 ## 2026-10-28: exact live projection at right-eye replay
 
 VS float records now retain the live camera Px/Py in two previously unused record
