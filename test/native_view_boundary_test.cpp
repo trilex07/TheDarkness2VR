@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include <windows.h>
 #include <intrin.h>
 #include <xmmintrin.h>
@@ -9,7 +10,30 @@
 #include "../src/native_view_boundary.h"
 #include "../src/native_view_witness.h"
 #include "../src/native_projection_upload.h"
+#include "../src/native_culling_cover.h"
 #define CHECK(x) do{if(!(x)){printf("FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
+// Exercise the actual selected-camera admission callback. Native object writes
+// and geometry rebuilding are stubbed here; the builder ABI and binocular
+// geometry have separate fixtures. No game is loaded.
+struct NativeCameraFields {float aspect,fov,nearZ,farZ,projection[16];};
+static d2vr_native_view::ProjectionWitness g_nativeViewWitness;
+static uint64_t g_nativeCullingAppliedFrame=0;
+static struct Frame {uint64_t id=0;} g_trackedFrame;
+static DWORD g_renderThreadId=0;
+static int g_nativeViewBoundaryMode=3;
+static bool g_nativeTranslatedViewPrepared=true;
+static struct BoundaryStub {bool Installed()const{return false;}} g_nativeFrustumBoundary;
+namespace d2vr_replay {static bool g_cameraProjectionKnown=true;static float g_cameraInverseProjection[16]{};}
+static bool prepareOK=true,rebuildOK=true;
+static unsigned prepareCalls=0,rebuildCalls=0;
+static void ObserveSelectedPlayerCamera(void*){}
+static bool PrepareOwnedCullingInput(void*,const NativeCameraFields&,d2vr_culling_cover::Input& input) {
+    ++prepareCalls;input.stereoUnion=true;return prepareOK;
+}
+static bool RebuildOwnedCullingFrustum(void*,const d2vr_culling_cover::Input&){++rebuildCalls;return rebuildOK;}
+template<class... Args> static void Log(const char*,Args...){}
+static void LogNativeProjectionPair(const char*,const float*,const float*){}
+#include "selected_camera_under_test.inl"
 static volatile LONG callbacks=0;
 static void* expectedOwner=reinterpret_cast<void*>(0x12345678);
 static void Observe(void* owner) {
@@ -81,6 +105,30 @@ int main(int argc,char** argv) {
     CHECK(!converted.Observe(100,true,nativeInverse));
     CHECK(converted.Observe(100,true,capturedUpload));
     CHECK(converted.CanCoverProjection(101,1,2,3,nativeInverse));
+    // The selected renderer can rebuild/copy its frustum again within one XR
+    // frame. Begin can corroborate an already-observed current upload; that
+    // must not erase the independent preceding-frame proof needed by a later
+    // copy. No same-frame-only proof may authorize the first copy.
+    CHECK(!converted.Observe(101,true,capturedUpload));
+    converted.Begin(101,1,2,3,nativeInverse,shaderInverse);
+    CHECK(converted.CanCoverProjection(101,1,2,3,nativeInverse));
+    CHECK(converted.CanCoverProjection(102,1,2,3,nativeInverse));
+    CHECK(!converted.CanCoverProjection(101,1,2,4,nativeInverse));
+    CHECK(!converted.CanCoverProjection(101,1,2,3,shaderInverse));
+    CHECK(!converted.CanCoverProjection(103,1,2,3,nativeInverse));
+    // A camera change cannot inherit the prior camera's admission; once it
+    // has its own previous-frame upload it can be admitted normally.
+    converted.Begin(101,1,2,4,nativeInverse,shaderInverse);
+    CHECK(!converted.CanCoverProjection(101,1,2,4,nativeInverse));
+    CHECK(converted.CanCoverProjection(102,1,2,4,nativeInverse));
+    converted.Begin(102,1,2,4,nativeInverse,shaderInverse);
+    CHECK(converted.Observe(102,true,capturedUpload));
+    CHECK(converted.CanCoverProjection(102,1,2,4,nativeInverse));
+    CHECK(converted.CanCoverProjection(103,1,2,4,nativeInverse));
+    CHECK(!converted.CanCoverProjection(104,1,2,4,nativeInverse));
+    converted={};
+    converted.Begin(100,1,2,3,nativeInverse,shaderInverse);
+    CHECK(converted.Observe(100,true,capturedUpload));
     CHECK(!converted.CanCoverProjection(101,1,2,3,shaderInverse));
     CHECK(!converted.CanCoverProjection(101,1,2,4,nativeInverse));
     CHECK(!converted.CanCoverProjection(102,1,2,3,nativeInverse));
@@ -93,6 +141,33 @@ int main(int argc,char** argv) {
     }
     CHECK(!d2vr_native_projection::ExpectedInverseUpload(nullptr,shaderInverse));
     CHECK(!d2vr_native_projection::ExpectedInverseUpload(projection,nullptr));
+    // Reproduce the production boundary -> shader upload -> next boundary
+    // order, including a second native frustum copy in the same XR frame.
+    NativeCameraFields fields{};memcpy(fields.projection,projection,sizeof(projection));
+    fields.fov=60;fields.aspect=.980938435f;fields.nearZ=.1f;fields.farZ=1000;
+    g_renderThreadId=GetCurrentThreadId();g_trackedFrame.id=100;
+    memcpy(d2vr_replay::g_cameraInverseProjection,capturedUpload,sizeof(capturedUpload));
+    const auto call=[&](void* camera=reinterpret_cast<void*>(3)) {
+        ObserveNativeSelectedCamera(reinterpret_cast<void*>(0x98618E),reinterpret_cast<void*>(2),camera,fields,true);
+    };
+    call();CHECK(rebuildCalls==0 && !g_nativeCullingAppliedFrame);
+    CHECK(g_nativeViewWitness.Observe(100,true,capturedUpload));
+    g_trackedFrame.id=101;call();CHECK(rebuildCalls==1 && g_nativeCullingAppliedFrame==101);
+    CHECK(g_nativeViewWitness.Observe(101,true,capturedUpload));
+    call();CHECK(rebuildCalls==2 && g_nativeCullingAppliedFrame==101);
+    // Current upload may also precede the first selected-camera callback.
+    g_trackedFrame.id=102;CHECK(!g_nativeViewWitness.Observe(102,true,capturedUpload));
+    call();call();CHECK(rebuildCalls==4 && g_nativeCullingAppliedFrame==102);
+    d2vr_replay::g_cameraProjectionKnown=false;call();CHECK(rebuildCalls==4 && !g_nativeCullingAppliedFrame);
+    d2vr_replay::g_cameraProjectionKnown=true;
+    d2vr_replay::g_cameraInverseProjection[11]+=1;call();CHECK(rebuildCalls==4 && !g_nativeCullingAppliedFrame);
+    memcpy(d2vr_replay::g_cameraInverseProjection,capturedUpload,sizeof(capturedUpload));
+    call(reinterpret_cast<void*>(4));CHECK(rebuildCalls==4 && !g_nativeCullingAppliedFrame);
+    call();CHECK(rebuildCalls==5 && g_nativeCullingAppliedFrame==102);
+    prepareOK=false;call();CHECK(rebuildCalls==5 && !g_nativeCullingAppliedFrame);prepareOK=true;
+    rebuildOK=false;call();CHECK(rebuildCalls==6 && !g_nativeCullingAppliedFrame);rebuildOK=true;
+    g_trackedFrame.id=104;call();CHECK(rebuildCalls==6 && !g_nativeCullingAppliedFrame);
+    puts("PASS actual selected-camera admission: repeated/early uploads, camera identity, full projection, freshness, prepare/rebuild failure");
     CHECK(argc==2);auto fixture=LoadLibraryA(argv[1]);CHECK(fixture);
     using Invoke=BOOL(__cdecl*)(LARGE_INTEGER*,void*);
     auto known=reinterpret_cast<Invoke>(GetProcAddress(fixture,"InvokeKnown"));CHECK(known);

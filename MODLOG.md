@@ -1735,3 +1735,32 @@ depth reconstruction before building headClip passed240 tracked poses and
 not justify another projection change. Latest available runtime log remains
 the16:14 run preceding the installed shader-depth comparison correction;
 current CULL activation and peripheral visibility remain NOT VERIFIED.
+
+## 2026-10-28: retain preceding-frame CULL admission during current uploads
+
+The selected-camera callback requires the immediately preceding frame's fully
+corroborated camera/projection before it can widen the native frustum. A later
+matching upload in the current frame replaced that receipt. Another native
+copy in the same XR frame then failed admission even though the independent
+preceding-frame proof was still valid. Reproduced in the x86 boundary fixture:
+FAIL line90 CanCoverProjection(101, same view/renderer/camera/native inverse)
+when Begin corroborates an already-observed frame101 upload after frame100.
+
+ProjectionWitness now retains one preceding verified receipt when advancing
+the latest verified frame. Repeated current-frame uploads do not overwrite
+that receipt. Admission still requires a receipt exactly one frame old, exact
+view/renderer/camera identity and the complete native inverse; same-frame-only
+proof, projection changes and stale frames remain rejected. No render matrix,
+native image bytes, driver API or frustum construction algorithm changes.
+
+Offline PASS: existing x86 external-boundary ABI/concurrency fixture plus the
+extracted production ObserveNativeSelectedCamera body for repeated copies,
+early uploads, unknown shader projection, full-matrix mismatch, camera change,
+missed frames and prepare/rebuild failure. Geometry fixture PASS:240 tracked
+poses,249600 binocular points,201581 outside the original cone. Actual-source
+rebuild ABI fixture PASS:1000 native-route and1000 conservative-route calls;
+this fixture stubs native algorithms. Production and diagnostic x86 builds
+PASS. This is a reproduced admission bug, not proof that repeated callbacks
+caused the user's latest CULL OFF. The available runtime log still predates
+the installed depth fix. Current HMD visibility, gesture trajectory and90FPS
+remain NOT VERIFIED; no game was launched.

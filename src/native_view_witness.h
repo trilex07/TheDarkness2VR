@@ -11,6 +11,13 @@ struct ProjectionWitness {
     float inverse[16]{};
     float expectedUpload[16]{};
     float verifiedInverse[16]{};
+    // Keep the preceding frame's receipt while uploads corroborate this
+    // frame. Multiple selected-camera copies in one XR frame still require
+    // that preceding-frame receipt; current-frame proof alone is insufficient.
+    uint64_t precedingVerifiedFrame=0;
+    uintptr_t precedingVerifiedView=0,precedingVerifiedRenderer=0,precedingVerifiedCamera=0;
+    float precedingVerifiedInverse[16]{};
+    bool precedingVerified=false;
     float uploadedInverse[16]{};
     uint64_t uploadedFrame=0;
     bool uploaded=false;
@@ -46,16 +53,30 @@ struct ProjectionWitness {
     bool Verify(uint64_t f,const float* p) {
         if(!active || f!=frame || !p)return false;
         if(!SameProjection(p,expectedUpload))return false;
+        if(verified && f>verifiedFrame) {
+            precedingVerified=true;precedingVerifiedFrame=verifiedFrame;
+            precedingVerifiedView=verifiedView;precedingVerifiedRenderer=verifiedRenderer;
+            precedingVerifiedCamera=verifiedCamera;
+            std::memcpy(precedingVerifiedInverse,verifiedInverse,sizeof(precedingVerifiedInverse));
+        }
         verified=true;verifiedFrame=f;verifiedView=view;verifiedRenderer=renderer;verifiedCamera=camera;
         std::memcpy(verifiedInverse,inverse,sizeof(verifiedInverse));
         return true;
     }
+    const float* PreviousProjection(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c)const {
+        if(verified && f>verifiedFrame && f-verifiedFrame==1 &&
+            v==verifiedView && r==verifiedRenderer && c==verifiedCamera)return verifiedInverse;
+        if(precedingVerified && f>precedingVerifiedFrame && f-precedingVerifiedFrame==1 &&
+            v==precedingVerifiedView && r==precedingVerifiedRenderer && c==precedingVerifiedCamera)
+            return precedingVerifiedInverse;
+        return nullptr;
+    }
     bool CanCover(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c)const {
-        return verified && f>verifiedFrame && f-verifiedFrame==1 &&
-            v==verifiedView && r==verifiedRenderer && c==verifiedCamera;
+        return PreviousProjection(f,v,r,c)!=nullptr;
     }
     bool CanCoverProjection(uint64_t f,uintptr_t v,uintptr_t r,uintptr_t c,const float* p)const {
-        return CanCover(f,v,r,c) && SameProjection(p,verifiedInverse);
+        const auto previous=PreviousProjection(f,v,r,c);
+        return previous && SameProjection(p,previous);
     }
 };
 }
