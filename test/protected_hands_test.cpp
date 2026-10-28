@@ -20,6 +20,7 @@ static bool g_nativeHandsEnabled=false,g_nativeHandsDirtyBoth=false,g_nativeHand
 static bool g_restoredTrackedGameplay=false,g_protectedTrackedHands=true,g_nativePlayerOwnerAdmitted=true;
 static bool g_imagePreservingInput=true,g_protectedGestureActions=true,g_haveViews=true,g_in3DGameplayMode=true;
 static bool g_headGeometry=true,g_headGeometryReferenceValid=true;
+static float g_gameUnitsPerMeter=1;
 static DWORD g_renderThreadId=GetCurrentThreadId();
 static d2vr_native_image::Guard g_nativeImageGuard{true,0x400000,0x100000};
 static struct {uint64_t id=20;bool open=true;XrViewStateFlags flags=15;} g_trackedFrame;
@@ -54,7 +55,7 @@ static bool NativeImageWriteAllowed(uintptr_t,size_t){return false;}
 #undef GetTickCount64
 static void Matrix(float* m,float x=0,float y=0,float z=0){memset(m,0,64);m[0]=m[5]=m[10]=m[15]=1;m[12]=x;m[13]=y;m[14]=z;}
 static void Reset(){
-    clockMs=1000;nextRef=0;originalCalls=0;
+    clockMs=1000;nextRef=0;originalCalls=0;g_gameUnitsPerMeter=1;
     memset(camera,0,sizeof(camera));memset(avatar,0,sizeof(avatar));memset(inventory,0,sizeof(inventory));
     memset(parent,0,sizeof(parent));memset(actor,0,sizeof(actor));memset(renderer,0,sizeof(renderer));
     memset(resource,0,0x620);memset(skeleton,0,sizeof(skeleton));
@@ -147,6 +148,13 @@ int main(int argc,char** argv){
     g_protectedHandsPrivateReady=true;
     Reset();CHECK(Apply());CHECK(Near(palette[5][12],-.5f)&&Near(palette[27][12],.5f));
     CHECK(Near(palette[5][13],.2f)&&Near(palette[27][14],.1f));
+    Reset();g_gameUnitsPerMeter=.5f;CHECK(Apply());
+    CHECK(Near(palette[5][12],-.25f)&&Near(palette[27][12],.25f));
+    CHECK(Near(palette[5][13],.1f)&&Near(palette[27][14],.05f));
+    Untouched(0,2);Untouched(46,130);
+    Reject([]{g_gameUnitsPerMeter=0;});Reject([]{g_gameUnitsPerMeter=NAN;});
+    Reject([]{g_gameUnitsPerMeter=5001;});
+    Reset();CHECK(Apply());
     Untouched(0,2);Untouched(46,130);CHECK(renderer[0x580] && renderer[0x581]);
     CHECK(!g_nativeHandsEnabled && !g_nativeHandsInstalled && !g_nativeGameplay.entities[0]);
     Reset();g_hands[1].gripValid=false;CHECK(Apply());CHECK(Near(palette[5][12],-.5f));Untouched(24,130);

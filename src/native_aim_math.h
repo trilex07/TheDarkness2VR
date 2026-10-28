@@ -48,4 +48,19 @@ inline bool BuildWeaponMatrix(const float base[16],const float local[16],float o
         for(int k=0;k<4;++k) result[r*4+c]+=local[r*4+k]*base[k*4+c];
     std::memcpy(out,result,sizeof(result)); return true;
 }
+// Validate physical reach before converting metres to the native world's scale.
+// Keep output untouched on failure, including overflow of the composed origin.
+inline bool BuildScaledWeaponMatrix(const float base[16],const float local[16],float units,float out[16]) {
+    if(!std::isfinite(units) || units<.01f || units>5000.f)return false;
+    float result[16];
+    if(!BuildWeaponMatrix(base,local,result))return false;
+    if(units==1.f) {std::memcpy(out,result,sizeof(result));return true;}
+    for(unsigned c=0;c<3;++c) {
+        double position=base[12+c];
+        for(unsigned r=0;r<3;++r)position+=double(local[12+r])*units*base[r*4+c];
+        result[12+c]=float(position);
+        if(!std::isfinite(result[12+c]))return false;
+    }
+    std::memcpy(out,result,sizeof(result));return true;
+}
 }

@@ -61,3 +61,16 @@ interactions need one consolidated MAIN headset run. This is not evidence of
 90 FPS, corrected side visibility, or permanent right-eye artifact removal.
 The user confirmed CULL OFF 5 only in menus and CULL ON during gameplay; this
 change does not bypass that admission.
+
+## Shared hand/weapon world scale correction
+
+Protected grip IK previously composed metre translations directly into native
+world coordinates while pistol aim used `GameUnitsPerMeter`. Both now use
+`BuildScaledWeaponMatrix`: validate physical reach first, scale translation
+only, retain rotation and the native camera origin, and reject invalid scale
+without writing output. Scale 1 preserves the previous arithmetic exactly.
+Legacy IK passes scale 1. Actual protected-hand tests now cover scale 0.5 for
+both wrists, invalid-scale no-write behavior, and unchanged tentacle bones.
+58,246 hand checks and 74,467 weapon checks pass, including the existing exact
+native skin arithmetic fixture. This corrects a nondefault-scale pose mismatch;
+it is not an FPS improvement or a physical headset acceptance result.

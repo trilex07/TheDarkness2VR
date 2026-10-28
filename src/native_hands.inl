@@ -82,7 +82,8 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         auto resource=**(BYTE***)(renderer+0x5BC);
         if(!resource || (expectedResource && resource!=expectedResource) ||
            (*(DWORD*)resource!=0xFC2578 && !(protectedRoute && ProtectedHandsResourceOwned(resource)))) return false;
-        if(expectedResource && rightValid && !d2vr_aim::BuildWeaponMatrix((float*)(camera+0x80),right.local,gunWorld))
+        const float handUnits=protectedRoute ? g_gameUnitsPerMeter:1.f;
+        if(expectedResource && rightValid && !d2vr_aim::BuildScaledWeaponMatrix((float*)(camera+0x80),right.local,handUnits,gunWorld))
             rightValid=false;
         auto skeleton=**(BYTE***)(resource+0x5E0);
         if(!skeleton || *(DWORD*)skeleton!=0xFC2338) return false;
@@ -100,7 +101,7 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         if(rightValid)d2vr_math::Multiply(gunWorld,inverseParent,rightTarget);
         if(leftValid) {
             float lw[16];
-            if(!d2vr_aim::BuildWeaponMatrix((float*)(sample.camera+0x80),left.local,lw))leftValid=false;
+            if(!d2vr_aim::BuildScaledWeaponMatrix((float*)(sample.camera+0x80),left.local,handUnits,lw))leftValid=false;
             else d2vr_math::Multiply(lw,inverseParent,leftTarget);
         }
         if(!TryAcquireSRWLockExclusive(&g_nativeHandsLock)) return false;

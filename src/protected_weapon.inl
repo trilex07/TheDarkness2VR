@@ -84,15 +84,7 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
                !d2vr_math::TrackingPose(aq,ap,tracking))return false;
             d2vr_math::Multiply(tracking,inverse,local);
             const auto base=reinterpret_cast<const float*>(static_cast<BYTE*>(camera)+0x80);
-            if(!d2vr_aim::BuildWeaponMatrix(base,local,result))return false;
-            // Reach validation above is in physical metres. Only translation
-            // receives the same native scale used by head motion/stereo IPD.
-            for(unsigned c=0;c<3;++c) {
-                double position=base[12+c];
-                for(unsigned r=0;r<3;++r)position+=double(local[12+r])*g_gameUnitsPerMeter*base[r*4+c];
-                result[12+c]=float(position);
-                if(!std::isfinite(result[12+c]))return false;
-            }
+            if(!d2vr_aim::BuildScaledWeaponMatrix(base,local,g_gameUnitsPerMeter,result))return false;
             std::memcpy(world,result,sizeof(result));return true;
         }
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
