@@ -41,6 +41,25 @@ int main(int argc,char**) {
     }
     reusable.Release();end.Release();CHECK(!reusable.state && !reusable.owner && !end.state);
     CHECK(SUCCEEDED(d->Reset(&pp)));CHECK(reusable.Capture(d,true));reusable.Release();
+    // ABBA order limits warmup/order bias. This measures fixture CPU cost,
+    // not game frame time or GPU execution.
+    LARGE_INTEGER frequency;CHECK(QueryPerformanceFrequency(&frequency));
+    double elapsed[2]{};
+    constexpr unsigned iterations=10000;
+    for(unsigned round=0;round<8;++round) {
+        const bool reuse=(round%4==1 || round%4==2);
+        DeviceSnapshot measured;
+        CHECK(measured.Capture(d,reuse));measured.Release(reuse);
+        LARGE_INTEGER begin,finish;CHECK(QueryPerformanceCounter(&begin));
+        for(unsigned i=0;i<iterations;++i) {
+            CHECK(measured.Capture(d,reuse));measured.Release(reuse);
+        }
+        CHECK(QueryPerformanceCounter(&finish));
+        elapsed[reuse?1:0]+=double(finish.QuadPart-begin.QuadPart)/double(frequency.QuadPart);
+        measured.Release();
+    }
+    printf("BENCH CPU us/snapshot: recreate=%.3f reuse=%.3f; 40000 iterations each, ABBA; not game FPS\n",
+        elapsed[0]*1e6/(4*iterations),elapsed[1]*1e6/(4*iterations));
     d->Release();api->Release();DestroyWindow(w);FreeLibrary(dll);
     puts("PASS actual x86 DeviceSnapshot: 1000 fresh captures, state/constant/viewport equality, same object, released surfaces, Reset recreation");
 }
