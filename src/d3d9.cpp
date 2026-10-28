@@ -3647,7 +3647,7 @@ XrSpace g_handGripSpace[2]{}, g_handAimSpace[2]{};
 struct TrackedHand {
     XrPosef grip{}, aim{};
     XrSpaceLocationFlags flags=0;
-    bool valid=false;
+    bool valid=false,gripValid=false,aimValid=false;
     float squeeze=0;
     d2vr_input::Motion motion;
 };
@@ -3670,7 +3670,7 @@ static void ResetPoseInput() {
     g_gestures={}; g_recenterChord={}; g_triangleRecenter={}; g_tentacles={};
     g_tentacleAimVisible=false; g_aimMarkerValid[0]=g_aimMarkerValid[1]=false;
     ResetNativeAim();
-    for(auto& hand:g_hands) { hand.valid=false; hand.flags=0; hand.squeeze=0; hand.motion={}; }
+    for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.flags=0; hand.squeeze=0; hand.motion={}; }
 }
 #include "native_aim.inl"
 #include "native_throw.inl"
@@ -3882,7 +3882,7 @@ static void LocateTrackedHands() {
         XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
     for (int h=0; h<2; ++h) {
         TrackedHand& hand=g_hands[h];
-        hand.valid=false; hand.flags=0; hand.squeeze=0;
+        hand.valid=hand.gripValid=hand.aimValid=false; hand.flags=0; hand.squeeze=0;
         const XrPath path=h ? g_pathHandRight : g_pathHandLeft;
         ReadFloat(g_actSqueeze[h],path,&hand.squeeze);
         XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO}; gi.subactionPath=path;
@@ -3892,15 +3892,20 @@ static void LocateTrackedHands() {
         gi.action=g_actAimPose[h];
         const bool aimActive=XR_SUCCEEDED(xrGetActionStatePose(g_xrSession,&gi,&aimState)) && aimState.isActive;
         XrSpaceLocation grip{XR_TYPE_SPACE_LOCATION}, aim{XR_TYPE_SPACE_LOCATION};
-        if (gripActive && aimActive && g_haveViews &&
+        // Each action owns its tracking result. A right slash needs grip
+        // motion, not an aiming ray; native ray consumers still require both.
+        hand.gripValid=gripActive && g_haveViews &&
             XR_SUCCEEDED(xrLocateSpace(g_handGripSpace[h],g_xrSpace,g_trackedFrame.state.predictedDisplayTime,&grip)) &&
-            XR_SUCCEEDED(xrLocateSpace(g_handAimSpace[h],g_xrSpace,g_trackedFrame.state.predictedDisplayTime,&aim))) {
-            hand.flags=grip.locationFlags & aim.locationFlags;
-            hand.valid=(hand.flags & required)==required;
-            hand.grip=grip.pose; hand.aim=aim.pose;
-        }
+            (grip.locationFlags & required)==required;
+        hand.aimValid=aimActive && g_haveViews &&
+            XR_SUCCEEDED(xrLocateSpace(g_handAimSpace[h],g_xrSpace,g_trackedFrame.state.predictedDisplayTime,&aim)) &&
+            (aim.locationFlags & required)==required;
+        hand.flags=grip.locationFlags & aim.locationFlags;
+        hand.valid=hand.gripValid && hand.aimValid;
+        if(hand.gripValid)hand.grip=grip.pose;
+        if(hand.aimValid)hand.aim=aim.pose;
         const auto& p=hand.grip.position;
-        hand.motion.Update(hand.valid,{p.x,p.y,p.z},time);
+        hand.motion.Update(hand.gripValid,{p.x,p.y,p.z},time);
     }
     if ((g_trackedFrame.id%300)==0) {
         for (int h=0; h<2; ++h) {
@@ -3986,7 +3991,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     LocateTrackedHands();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
-        g_hands[0].valid,g_hands[1].valid);
+        g_hands[0].gripValid,g_hands[1].gripValid);
     if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
 #endif
     gp.wButtons |= GestureButtons(gp);
@@ -4105,7 +4110,7 @@ static void ApplyProtectedGestureActions(XINPUT_GAMEPAD& gp) {
     const auto& q=head.orientation;
     const auto local=RotVec({-q.x,-q.y,-q.z,q.w},velocity.x,velocity.y,velocity.z);
     const auto out=g_protectedRightTentacle.Update(context,(gp.wButtons & XINPUT_GAMEPAD_START)!=0,
-        false,g_hands[1].valid,0,g_hands[1].squeeze,{},{},{local.x,local.y,local.z},
+        false,g_hands[1].gripValid,0,g_hands[1].squeeze,{},{},{local.x,local.y,local.z},
         g_trackedFrame.state.predictedDisplayTime*1e-9);
     if(out.rightButton) gp.wButtons |= XINPUT_GAMEPAD_RIGHT_SHOULDER;
     if(out.ownsRightStick) {
@@ -4565,7 +4570,7 @@ void PumpXR() {
                 g_xrRunning = false;
                 g_trackedFrame.open=false;
                 PublishXrPad(nullptr);
-                for(auto& hand:g_hands) { hand.valid=false; hand.motion.valid=false; }
+                for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.motion.valid=false; }
             }
         } else if(ev.type==XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
             g_vrRefValid=false; g_anchorValid=false; g_lockedHeadValid=false;

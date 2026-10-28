@@ -13,7 +13,7 @@ static bool g_protectedGestureActions=true,g_gestureBridge=false,g_tentacleBridg
 static bool g_haveViews=true,g_in3DGameplayMode=true,g_headGeometryReferenceValid=false;
 static XrPosef g_eyePose[2]{},g_headGeometryReference{};
 struct Frame {struct State {XrTime predictedDisplayTime=0;} state;XrViewStateFlags flags=0;} g_trackedFrame;
-struct Hand {XrPosef grip{};bool valid=true;float squeeze=0;d2vr_input::Motion motion;} g_hands[2];
+struct Hand {XrPosef grip{};bool valid=true,gripValid=true;float squeeze=0;d2vr_input::Motion motion;} g_hands[2];
 struct Gestures {d2vr_input::DwellZone objective,reload[2];d2vr_input::Slash slash;
     ULONGLONG objectiveUntil=0,reloadUntil=0,slashUntil=0;bool grabbed=false;} g_gestures;
 static d2vr_input::Tentacles g_protectedRightTentacle;
@@ -61,7 +61,14 @@ int main(){
     for(unsigned i=0;i<40;++i){gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));}
     g_hands[1].squeeze=0;Step();g_hands[1].squeeze=.9f;Step();Step();gp=Step();
     Check(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER);
-    g_hands[1].valid=false;gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));
+    g_hands[1].valid=g_hands[1].gripValid=false;gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));
+    // A slash consumes grip motion, never the separate aiming pose. Losing
+    // aim tracking cannot disable a still tracked right grip or its stroke.
+    Reset();g_hands[1].valid=false;Step();g_hands[1].squeeze=.9f;
+    g_hands[1].motion.velocity={0,3,0};Step();Step();gp=Step();
+    Check(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER);
+    gp=Step(.04);Check(gp.sThumbRY>32000);
+    g_hands[1].gripValid=false;gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));
     // Left tracking loss does not disable a right vertical gesture. Test both
     // directions through the actual production gesture-to-stick mapping.
     for(float direction : {-1.f,1.f}) {

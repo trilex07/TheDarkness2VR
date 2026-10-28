@@ -1562,3 +1562,29 @@ pad/head-only motion and depth-only thrusts cannot slash. Existing focus/pause,
 release/rearm, objective and reload checks pass. Profile isolation tests and
 both builds PASS. Physical gesture acceptance and controller-directed left
 pickup/throws remain unverified/unimplemented in the protected runtime path.
+
+## 2026-10-28: separate grip motion from aiming-pose availability
+
+LocateTrackedHands required both XR poses before locating either one. Thus an
+inactive/failed/untracked aiming pose also discarded a tracked grip's velocity
+and disabled protected right slashes and squeeze input. Locate each action
+independently per controller, retain combined validity for existing native ray
+consumers, and feed only grip validity to protected squeezes/right strokes.
+Tracking/session resets clear all three validity states. No native writes.
+
+The actual protected gesture body failed the new aim-loss stroke case before
+the change and passes674 checks afterward. Actual LocateTrackedHands plus the
+production TrackedHand/Motion run against independent XR action failures:
+752 checks PASS across16 active-state combinations, both API failure kinds,
+each missing tracking/validity flag, reacquisition and lost head views. Other
+hand/actions remain live; grip reacquisition starts with zero velocity.
+Protected XInput20041 checks and profile isolation2 tests PASS. Runtime and HMD
+acceptance remain pending; this is input continuity, not a measured FPS gain.
+
+Bounded read-only native follow-up confirms C7C710 (avatar virtual+2F4) returns
+the camera smart-reference at avatar+62C; C66FF0 is a shared output-boolean
+leaf, not a camera update boundary. C80910/98BB90 obtain controller references
+through avatar+4E4 via6B0CD0, not a global singleton. These do not establish a
+live owner publication route for a protected left-ray getter; no guessed
+pointer scan, old EXE hook or private camera vptr is enabled. Private Ghidra
+output remains outside the repository.
