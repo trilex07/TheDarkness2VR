@@ -8,7 +8,7 @@ $body=$source.Substring($begin,$end-$begin)
 $call=[regex]::Match($source,'const bool historyOk = SeedRightEyeBackground\(dev, liveEnd.targets\[0\], [^;]+;')
 if(-not $call.Success){throw 'Actual history caller missing'}
 $body+="`nstatic bool SeedActualCaller(IDirect3DDevice9* dev, IDirect3DSurface9* output) { struct {IDirect3DSurface9* targets[1];} liveEnd{{output}}; "+$call.Value+" return historyOk; }`n"
-$save=[regex]::Match($source,'bool eye1Ok = [^;]*g_rightColorHistory.Save\(dev, liveEnd.targets\[0\]\);')
+$save=[regex]::Match($source,'bool eye1Ok = FinishRightEyeHistory\(dev, liveEnd.targets\[0\], replayOk, historyOk\);')
 if(-not $save.Success){throw 'Actual history publication missing'}
 $body+="`nstatic bool SaveActualCaller(IDirect3DDevice9* dev, IDirect3DSurface9* output, bool replayOk, bool historyOk) { struct {IDirect3DSurface9* targets[1];} liveEnd{{output}}; "+$save.Value+" return eye1Ok; }`n"
 $replay=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw

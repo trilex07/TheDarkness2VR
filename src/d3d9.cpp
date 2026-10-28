@@ -3247,28 +3247,36 @@ bool EnsureSwapchains(UINT w, UINT h);
 struct EyeColorHistory {
     IDirect3DSurface9* target = nullptr;
     IDirect3DSurface9* pixels = nullptr;
+    bool rejected = false;
     void Release() {
         if (pixels) pixels->Release();
         if (target) target->Release();
-        pixels = nullptr; target = nullptr;
+        pixels = nullptr; target = nullptr; rejected = false;
+    }
+    void Invalidate() {
+        Release(); rejected = true;
     }
     bool Restore(IDirect3DDevice9* dev, IDirect3DSurface9* output) {
+        // A failed segment may already have changed the live world's pixels.
+        // An older right image must not make the following UI segment valid.
+        if (rejected) return false;
         if (target != output) { Release(); return true; }
         return !pixels || SUCCEEDED(dev->StretchRect(pixels, nullptr, output, nullptr, D3DTEXF_NONE));
     }
     bool Save(IDirect3DDevice9* dev, IDirect3DSurface9* output) {
-        if (!output) { Release(); return false; }
+        if (!output) { Invalidate(); return false; }
         if (target != output) Release();
         if (!pixels) {
             D3DSURFACE_DESC d{};
             if (FAILED(output->GetDesc(&d)) || FAILED(dev->CreateRenderTarget(
                 d.Width, d.Height, d.Format, d.MultiSampleType, d.MultiSampleQuality,
-                FALSE, &pixels, nullptr))) return false;
+                FALSE, &pixels, nullptr))) { Invalidate(); return false; }
             target = output; target->AddRef();
         }
         if (FAILED(dev->StretchRect(output, nullptr, pixels, nullptr, D3DTEXF_NONE))) {
-            Release(); return false;
+            Invalidate(); return false;
         }
+        rejected = false;
         return true;
     }
 };
@@ -3279,6 +3287,14 @@ static bool SeedRightEyeBackground(IDirect3DDevice9* dev, IDirect3DSurface9* out
     // Carry right-eye history when no live world draw was issued; actual
     // world renders still start from current pixels and regenerate the eye.
     return hasWorldDraw || g_rightColorHistory.Restore(dev, output);
+}
+static bool FinishRightEyeHistory(IDirect3DDevice9* dev, IDirect3DSurface9* output,
+                                 bool replayOk, bool historyOk) {
+    if (!replayOk || !historyOk) {
+        g_rightColorHistory.Invalidate();
+        return false;
+    }
+    return g_rightColorHistory.Save(dev, output);
 }
 static IDirect3DSurface9* g_liveColorBackup = nullptr;
 static bool BackupLiveColor(IDirect3DDevice9* dev, IDirect3DSurface9* source) {
@@ -3500,7 +3516,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Source(dev,1);
 #endif
-    bool eye1Ok = replayOk && historyOk && g_rightColorHistory.Save(dev, liveEnd.targets[0]);
+    bool eye1Ok = FinishRightEyeHistory(dev, liveEnd.targets[0], replayOk, historyOk);
     if (eye1Ok) eye1Ok = transferWorker ? StartStereoTransfer(dev,1,rightTransfer,rightJob) :
         (zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev));
     if(!transferWorker) {

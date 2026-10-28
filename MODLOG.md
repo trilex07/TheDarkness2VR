@@ -1034,3 +1034,35 @@ history1000 cycles and draw HRESULT checks PASS; production and diagnostic
 constant-loop576096 records each PASS; production and diagnostic DLL builds
 PASS. No game launch or runtime/FPS claim. Installed6e7d104 remains unchanged
 while this follow-up is packaged separately for offline review.
+
+## 2026-10-28: invalidate obsolete right history across failed segments
+
+The previous rejection guards prevented saving a failed replay but retained
+the preceding right history. The live left world may already have advanced.
+A following camera-only/UI segment could restore that obsolete right world
+and publish it beside the newer left world after its own successful replay.
+This is a cross-segment error path in the guards, not a captured runtime cause.
+
+FinishRightEyeHistory now invalidates the history on failed replay or failed
+background seeding. Save also invalidates on allocation/description/copy failure.
+Restore refuses rejected history, including after a target switch. Rejection
+persists across UI segments; a successful fresh world replay/Save recovers it.
+Explicit Reset Release clears the rejection and preserves initial-menu behavior.
+No old-eye fallback, retry or additional successful-frame surface copy. A failure
+followed only by UI can suppress pairs until the next world render or Reset;
+this is intentional rather than publishing different generations of the world.
+Other snapshot/state errors and runtime HMD acceptance remain unproven.
+
+Actual-source x86 history PASS1000 normal segments +1000 rejected UI segments,
+world recovery, target changes, create/copy failure, Reset and all four draw
+results. Negative control removing only failure invalidation reproduces the
+obsolete-history failure. Production and diagnostic builds PASS.
+
+Bounded side-culling numeric check: original native builders in emulator across
+the existing240 poses/249600 points have maximum side-plane excursions below
+0.000159 world units (2.391e-7 relative to sampled point magnitude). The prior
+3.006-unit worst plane excursion is the far plane, not a lateral plane.
+This does not justify guessing a much wider lateral margin. Native AABB raw
+excursion remains3.448 units and the original loose fixture is not exact
+containment proof. No culling arithmetic changed on the strength of this check.
+No game launch or FPS claim. Follow-up packaged separately from installed6e7d104.

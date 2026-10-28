@@ -64,7 +64,15 @@ int main() {
     unsigned copies=dev.copies;output.pixel=777;
     CHECK(!SaveActualCaller(&dev,&output,false,true) && dev.copies==copies);
     CHECK(!SaveActualCaller(&dev,&output,true,false) && dev.copies==copies);
-    CHECK(SeedRightEyeBackground(&dev,&output,false) && output.pixel==8);
+    CHECK(!SeedRightEyeBackground(&dev,&output,false) && output.pixel==777);
+    CHECK(g_rightColorHistory.rejected && output.refs==1);
+    CHECK(!SeedRightEyeBackground(&dev,&other,false)); // target change cannot erase rejection
+    for(unsigned segment=0;segment<1000;++segment) {
+        CHECK(!SeedRightEyeBackground(&dev,&output,false));
+        CHECK(!SaveActualCaller(&dev,&output,true,false));
+        CHECK(output.pixel==777 && dev.copies==copies);
+    }
+    CHECK(SeedRightEyeBackground(&dev,&output,true)); // fresh world replay may recover
     output.pixel=9;CHECK(SaveActualCaller(&dev,&output,true,true));
     output.pixel=777;CHECK(SeedRightEyeBackground(&dev,&output,false) && output.pixel==9);
     other.pixel=99;CHECK(SeedRightEyeBackground(&dev,&other,false));
@@ -72,10 +80,24 @@ int main() {
     CHECK(g_rightColorHistory.Save(&dev,&other));CHECK(other.refs==2);
     g_rightColorHistory.Release();CHECK(other.refs==1);
     CHECK(!g_rightColorHistory.Save(&dev,nullptr));
+    CHECK(!SeedRightEyeBackground(&dev,&output,false));
+    // Save failure also prevents a later UI-only segment from seeding left pixels.
+    for(unsigned failure=0;failure<2;++failure) {
+        g_rightColorHistory.Release();
+        dev.failCreate=failure==0;dev.failCopy=failure==1;
+        CHECK(!g_rightColorHistory.Save(&dev,&output));
+        dev.failCreate=dev.failCopy=false;
+        CHECK(!SeedRightEyeBackground(&dev,&output,false));
+        CHECK(SeedRightEyeBackground(&dev,&output,true));
+        CHECK(SaveActualCaller(&dev,&output,true,true));
+        CHECK(SeedRightEyeBackground(&dev,&output,false));
+    }
+    g_rightColorHistory.Invalidate();g_rightColorHistory.Release();
+    CHECK(SeedRightEyeBackground(&dev,&output,false)); // Reset restores initial menu behavior
     for(unsigned op=13;op<=16;++op)for(unsigned failure=0;failure<2;++failure) {
         drawResult=failure?-1:0;CHECK(ActualDraw(&dev,op)==!failure);
     }
     CHECK(drawCalls==8 && clipRestores==8);
-    std::puts("PASS actual-source right-eye history:1000 world/camera-only/UI segments; failed replay never saved; four draw HRESULTs and clip restoration; copy/create failure, target ownership; simulated pixels, not HMD evidence");
+    std::puts("PASS actual-source right-eye history:1000 world/camera-only/UI segments +1000 rejected UI segments; failure invalidation, target switch, world recovery, Reset; four draw HRESULTs and clip restoration; simulated pixels, not HMD evidence");
     return 0;
 }
