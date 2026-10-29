@@ -10,15 +10,25 @@ using DWORD=unsigned;
 static DWORD lastError=0x12345678;
 static DWORD GetLastError(){return lastError;}
 static void SetLastError(DWORD value){lastError=value;}
-static struct {bool open=true;} g_trackedFrame;
+static struct {bool open=true;unsigned long long id=1;} g_trackedFrame;
+enum class NativeCullingReason {Context,Camera};
+static NativeCullingReason g_nativeCullingReason=NativeCullingReason::Context;
+static void Log(const char*,...) {}
 struct CONTEXT {unsigned Eip=0x98618E,Edi=0x200003f4,Ecx=0x30000000;};
 struct NativeCameraFields {};
 static unsigned GetCurrentThreadId(){return currentThread;}
 static void ObserveNativeCameraBoundary(void*,bool render){CHECK(!render);++observations;}
 static void PublishTranslatedNativeView(void*){++publications;}
+static bool requireCover=false,covered=false;
+static unsigned coverCalls=0;
+static void __fastcall CoverSelectedRenderCamera(void* camera,void* renderer) {
+    CHECK(camera==reinterpret_cast<void*>(0x30000000));
+    CHECK(renderer==reinterpret_cast<void*>(0x20000000));
+    covered=true;++coverCalls;SetLastError(456);
+}
 static bool ReadSelectedRenderCamera(void* camera,void* renderer,NativeCameraFields&) {
     CHECK(camera==reinterpret_cast<void*>(0x30000000));
-    CHECK(renderer==reinterpret_cast<void*>(0x20000000));++reads;return readOK;
+    CHECK(renderer==reinterpret_cast<void*>(0x20000000));++reads;if(requireCover)CHECK(covered);return readOK;
 }
 static void ObserveNativeSelectedCamera(void* id,void* renderer,void* camera,const NativeCameraFields&,bool before) {
     CHECK(id==reinterpret_cast<void*>(0x98618E) && before);
@@ -28,6 +38,7 @@ static void ObserveNativeSelectedCamera(void* id,void* renderer,void* camera,con
     SetLastError(123);
 }
 @TRANSLATED@
+@COVER@
 @IMPLEMENTATION@
 int main() {
     void* view=reinterpret_cast<void*>(0x1234);
@@ -72,5 +83,13 @@ int main() {
     readOK=false;ObserveTranslatedFrustum(camera,renderer);CHECK(copies==20000 && reads==20002 && !g_nativeCullingAppliedFrame);
     CHECK(GetLastError()==0x12345678);
     std::puts("PASS actual-source phase routing:10000 hardware+10000 translated final-copy callbacks,10000 mode3 QPC publications,ECX camera/owner,LastError,mode/thread/gameplay/owner-read rejection");
+    readOK=true;requireCover=true;
+    for(unsigned i=0;i<10000;++i) {
+        covered=false;const auto previous=copies;
+        CoverTranslatedRenderCamera(camera,renderer);
+        CHECK(covered && coverCalls==i+1 && copies==previous+1);
+        CHECK(GetLastError()==0x12345678);
+    }
+    std::puts("PASS 10000 camera covers before frustum callback, owner/camera and LastError preserved");
     return 0;
 }

@@ -2571,3 +2571,45 @@ state route without substituting render activity or a controller pause latch.
 Live concrete receiver, main-menu ownership and submitted menu surface remain
 unverified; no production virtual call/input injection or C++ change added.
 Detailed evidence and hashes: docs/research/native-menu-input-contract-20261029.md.
+
+## 2026-10-29: native camera coverage through the owned view boundary
+
+Mode3 previously widened only camera+620 frustum data while the native scalar
+FOV and projection remained narrow. Reuse the headset-tested camera coverage
+setter/ownership/eye/HUD logic at the original near-getter boundary986139 in
+the digest-pinned owned985D80 copy. The native EXE call/instructions are unchanged.
+The native setter rebuilds projection/VP/frustum before their copies to the view;
+existing binocular frustum refinement follows the setter.98618E remains the
+pre-copy witness identity token; the mode3 callback now executes at986139.
+No ZoneView flags or global visibility masks are changed. No new game pointers.
+
+Static CFG proves986139 dominates FOV getter986161, frustum getter98618E,
+projection getter9861B4 and VP getter9861C9 on paths reaching those consumers.
+This establishes ordering, not the semantics of the unresolved virtual+9C.
+Both x86 DLL builds PASS. Camera coverage7126, camera refresh48, actual-source
+routing/coverage10000, owned-code ABI10000, owner span1000, instance1000,
+binocular geometry249600 points and actual-source rebuild2000 calls PASS.
+The dispatch fixture was missing current status/id/log stubs; repaired here.
+MAIN still owns deployment and the consolidated Steam/PSVR2 check: peripheral
+room/yellow edge, both eyes, head motion, HUD, shadows, LOD, hands and frame pacing.
+Visual/FPS acceptance NOT RUN; right-eye flicker remains a separate defect.
+Use Render/NativeViewBoundary=3 with the existing image-preserving profile;
+Diagnostics/NativeCameraCover stays OFF. No deployment or game launch here.
+Additional regressions: actual projection history145248, protected hands2207,
+left aim461 and external-boundary/selected-camera fixture PASS. Boundary fixture
+initially failed its corrupted-upload assertion once; diagnostic and unchanged
+source reruns both passed. Cause not established; no acceptance check weakened.
+
+## 2026-10-29: MAIN peripheral integration on a84fa35a
+
+Integrated 8cde7ea8 without replacing the newer consecutive-L2 camera admission
+or the owned-framework menu receiver correction. Retained both MODLOG histories.
+Both x86 DLL builds PASS. Pinned installed-EXE CFG audit, camera cover7126,
+refresh48, dispatch10000, external boundary, clone, geometry/rebuild,
+projection history145248 and live stateblock296163 regressions PASS.
+Hands2207, weapon125256, left aim461, throw316, Present observer,
+XInput20041 and gestures774 PASS. These are offline checks, not headset proof.
+User reports haptics and L2 culling PASS for the prior a84fa35a candidate.
+NativeViewBoundary=3 and NativeCameraCover=0 already match the Steam profile.
+Consolidated peripheral/HUD/shadow/LOD/FPS validation remains NOT RUN.
+Right-eye flicker and native menu laser/cinematic-hand gating remain separate.

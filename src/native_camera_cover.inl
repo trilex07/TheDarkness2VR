@@ -1,5 +1,5 @@
 // Included only in the opt-in diagnostic build. No game addresses are touched
-// until the SHA/PE/site gate installs the single selected-view call site.
+// until SHA/PE/site admission selects the native call site or its owned copy.
 static bool g_nativeCameraCoverInstalled=false, g_nativeCameraCoverConfirmed=false;
 static float g_nativeCoveredPx=0, g_nativeCoveredPy=0;
 static float g_nativeUiReferencePx=0,g_nativeUiReferencePy=0;
@@ -295,8 +295,9 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
         !d2vr_replay::g_cameraProjectionKnown?NativeCullingReason::ShaderProjection:NativeCullingReason::Geometry;
     const bool cullingReady=canApply && PrepareOwnedCullingInput(camera,fields,cullingInput);
     bool cullingApplied=false;
-    // The exact98618E instruction follows native camera rebuilding and precedes
-    // the getter/copy. Neither QPC nor an earlier view-entry phase may write.
+    // Mode 2 enters at98618E; mode 3 enters after the native setter at
+    // the owned986139 call. Both precede the native frustum deep copy.
+    // QPC/view-entry observation never writes camera data.
     if(cullingReady) {
         g_nativeCullingReason=NativeCullingReason::Rebuild;
         cullingApplied=RebuildOwnedCullingFrustum(camera,cullingInput);
@@ -376,6 +377,18 @@ static void __fastcall ObserveTranslatedFrustum(void* camera,void* renderer) {
 }
 static void* g_nativeFrustumGetter=reinterpret_cast<void*>(0x9962D0);
 D2VR_SELECTED_CAMERA_SHIM(TranslatedFrustumGetter,ObserveTranslatedFrustum,g_nativeFrustumGetter)
+
+// Mode 3 uses the SAME selected-camera ABI and setter as the headset-tested
+// camera cover, but redirects only the owned, digest-pinned 985D80 copy.
+// 986139 precedes scalar FOV, frustum and projection copies. Keep the existing
+// binocular frustum refinement after the setter, before native visibility.
+static void __fastcall CoverTranslatedRenderCamera(void* camera,void* renderer) {
+    const DWORD error=GetLastError();
+    CoverSelectedRenderCamera(camera,renderer);
+    ObserveTranslatedFrustum(camera,renderer);
+    SetLastError(error);
+}
+D2VR_SELECTED_CAMERA_SHIM(TranslatedCameraCoverNear,CoverTranslatedRenderCamera,g_nativeNearGetter)
 
 static void PublishTranslatedNativeView(void* view) {
     if(!g_nativeTranslatedViewPrepared || !view || !g_trackedFrame.open || !g_haveViews ||
