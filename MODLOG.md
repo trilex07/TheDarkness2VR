@@ -2510,3 +2510,31 @@ Pinned EXE D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1
 verified; elevated CIM sees no game, only SteamVR/fpsVR utilities. Deployment
 receipt and immediate rollback are kept with the private candidate package.
 No game launch, profiler, extra A/B session or SteamVR configuration change.
+
+## 2026-10-29: resolve native client/input initializer ABI
+
+Supersedes the earlier unresolved C2C1A0 argument mapping. Global service
+constructor C5CC40 selects FBAC40; its +1C/74B5F0 getter returns this+50 with
+plain RET, consuming none of the three preceding pushes. C2C1A0 receives seven
+arguments and RET 1C. Actual push/frame/assignment instructions establish
+framework+A8 -> client reference -> client+374 -> input reference. Sound and
+graphics reference fields are +2C4 and +2D0 respectively. No live framework
+address, menu state, receiver lifetime or native menu plane is established.
+Details and next gate: docs/research/native-menu-input-contract-20261029.md.
+
+New read-only audit_input_service.py verifies the installed D46B image and
+decisive getter/initializer bytes, reports a static-only contract, and rejects
+an altered image. Both checks PASS. No C++ source change or new x86 DLL build;
+this evidence tool does not inject input. Private Ghidra exports all contain
+EVIDENCE COMPLETE. Vtable/getter/framework-init export SHA256 respectively:
+FCF8294610782EEC5F410AF443723A33226E96B3ACBEC30E09D31E4A703CDC7B,
+0C15E4C53AFDB2DB2E3BB4AFD934BEA4C4E3E7077625D2622131C39B6A3A1481,
+ABD4A924DD214FB7A3CCC8E09726F9BA5F12CFCFF775C68F8283059B8AE36312.
+
+P0: retained outdoor C6 material-dispatch inclusive exposure is approximately
+.252 nominal sampled ms/present, not a justified substantial optimization.
+No redundant submission or new safe direct-copy ownership proved here. The
+WOW64-only memset bucket remains unattributed to individual native callers;
+record arena initialization was already removed. Preserve the current accepted
+Steam DLL 28657E6A76964493FEDF6F6BB9C1C8E8976B0F94578147C1AB32F52537DE6784,
+DirectRecordCopy OFF, and the separately deployed cb2cd4c Polish repair.
