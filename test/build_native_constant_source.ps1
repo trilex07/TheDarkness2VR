@@ -5,7 +5,9 @@ New-Item -ItemType Directory -Path $output|Out-Null
 $replay=Get-Content (Join-Path $repo 'src/stereo_replay.inl') -Raw
 $hook=[regex]::Match($replay,'(?s)#pragma optimize\("y", off\)\r?\n__declspec\(noinline\) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF\(.*?D2VR_CONSTANT_GATE\(Hook_SetPSConstF,Native_SetPSConstF\)')
 if(-not $hook.Success){throw 'actual frame-preserving PS hook boundary missing'}
-$hook.Value.Replace('d2vr_native_constants::InspectCurrent(', 'InspectFixture(')|Set-Content (Join-Path $output 'actual_native_constant_hook.inl') -Encoding utf8
+$resultHook=[regex]::Match($replay,'(?s)static inline HRESULT RecordLiveResult\(.*?\r?\n\}')
+if(-not $resultHook.Success){throw 'actual live result hook missing'}
+($resultHook.Value+"`n"+$hook.Value.Replace('d2vr_native_constants::InspectCurrent(', 'InspectFixture('))|Set-Content (Join-Path $output 'actual_native_constant_hook.inl') -Encoding utf8
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vcvars=Join-Path $vsPath 'VC/Auxiliary/Build/vcvarsall.bat'

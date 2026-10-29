@@ -154,6 +154,10 @@ static void NestedFields() {
     VirtualFree(page,0,MEM_RELEASE);
 }
 static bool g_recActive=true;
+static bool g_recOverflow=false;
+static unsigned resultLocks=0,forwardCalls=0;
+static HRESULT forwardStatus=S_OK;
+struct RecLockGuard {RecLockGuard(){++resultLocks;}};
 static int g_replayEye=-1,g_activePsInverse=-1,g_activePsViewExtents=-1,g_submitMode=0;
 static int OP_SetPSConstF=1;
 static void ObserveInverseProjection(const float*,UINT,UINT,int){}
@@ -166,13 +170,29 @@ static void RecEmitData(int,const void* data,size_t bytes,UINT,UINT,int,int,cons
 static HRESULT STDMETHODCALLTYPE Forward(void*,UINT,const float* data,UINT count) {
     // The original API is a separate consumer, after recorder capture.
     if(data && count<=17)std::memcpy(forwarded,data,count*16);
-    return S_OK;
+    ++forwardCalls;return forwardStatus;
 }
 static struct {decltype(&Forward) SetPixelShaderConstantF=Forward;} g_orig;
 #define D3D_OK S_OK
 // Generated directly from the production PS hook. Only the policy-site lookup
 // is redirected to fixture addresses; EBP/return-slot capture is unchanged.
 #include "actual_native_constant_hook.inl"
+
+static void PixelSubmissionFailures() {
+    alignas(16) float values[16];
+    for(unsigned i=0;i<16;++i)values[i]=float(i+13);
+    for(bool active:{false,true})for(bool overflow:{false,true})
+    for(HRESULT status:{S_OK,S_FALSE,E_INVALIDARG,E_OUTOFMEMORY,HRESULT(0x88760868)}) {
+        g_recActive=active;g_recOverflow=overflow;forwardStatus=status;
+        const auto calls=forwardCalls,locks=resultLocks;
+        Check(Native_SetPSConstF(nullptr,0,values,4,nullptr,0,0)==status,"actual PS hook preserves native HRESULT");
+        Check(forwardCalls==calls+1,"actual PS hook forwards once");
+        Check(!memcmp(forwarded,values,sizeof(values)),"actual PS hook preserves upload bits");
+        Check(g_recOverflow==(overflow||(active&&FAILED(status))),"rejected live PS upload invalidates pair and success cannot repair it");
+        Check(resultLocks==locks+unsigned(active&&FAILED(status)),"successful PS upload adds no result lock");
+    }
+    g_recActive=true;g_recOverflow=false;forwardStatus=S_OK;
+}
 
 __declspec(naked) static void Wrapper() {
     __asm {
@@ -361,6 +381,7 @@ int main() {
     admitted=false;Parent();Check(!copied,"unadmitted image rejects");admitted=true;
     Check(!Proof::Inspect(nullptr,0,nullptr,64,Stage::Pixel,1,2).Matches(nullptr,64),"invalid bounds reject");
     Proof invalid;Check(!Copy(invalid,recorded,forwarded,sizeof(recorded)),"default proof rejects");
+    PixelSubmissionFailures();
     ClassifierFailures();
     ActiveStackFailures();
     NestedFields();

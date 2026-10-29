@@ -2262,3 +2262,17 @@ needs an explicit main return with its inline assembly. Bitdefender held its
 new EXE during scanning; the harness retries only sharing violation 32 on the
 same file for up to 40 seconds and never treats a failed start as a pass.
 No game, headset, runtime pacing or FPS improvement is claimed.
+
+## 2026-10-29: reject recorded pairs after failed live pixel constants
+
+Native_SetPSConstF now applies the same sticky live-submission failure rule as
+the other recorded setters and draws. Previously a failed native pixel-float
+upload could remain in an apparently complete recording and succeed only in
+the right eye. Preserve the exact driver HRESULT, one forward call and upload
+bits; successful calls add no result lock or driver calls. This closes a
+publication correctness gap, not a proven cause of the reported flicker.
+
+Validation: 9339 actual-source x86 ownership/ABI/failure checks pass, including
+20 combinations of recording state, existing invalidation and driver status.
+Both production and DiagnosticCapture x86 DLL builds pass. No runtime FPS or
+headset improvement is claimed; the installed candidate is unchanged.

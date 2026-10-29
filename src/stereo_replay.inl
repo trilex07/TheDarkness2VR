@@ -1715,13 +1715,11 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
     if (g_submitMode == 4 && g_replayEye < 0 && d &&
         CompensatePsConstants(adjusted, d, s, n, g_activePsInverse, g_activePsViewExtents,
                               MakeEyeParams(0))) d = adjusted;
+    const HRESULT result=RecordLiveResult(g_orig.SetPixelShaderConstantF(dev,s,d,n));
 #ifdef D2VR_MATCHED_CAPTURE
-    const HRESULT result=g_orig.SetPixelShaderConstantF(dev,s,d,n);
     MatchedProjectionObserved(native,d,s,n,g_activePsInverse,result);
-    return result;
-#else
-    return g_orig.SetPixelShaderConstantF(dev, s, d, n);
 #endif
+    return result;
 }
 #pragma optimize("y", on)
 D2VR_CONSTANT_GATE(Hook_SetPSConstF,Native_SetPSConstF)
