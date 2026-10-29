@@ -2510,3 +2510,32 @@ Pinned EXE D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1
 verified; elevated CIM sees no game, only SteamVR/fpsVR utilities. Deployment
 receipt and immediate rollback are kept with the private candidate package.
 No game launch, profiler, extra A/B session or SteamVR configuration change.
+
+
+## 2026-10-29: native camera coverage through the owned view boundary
+
+Mode3 previously widened only camera+620 frustum data while the native scalar
+FOV and projection remained narrow. Reuse the headset-tested camera coverage
+setter/ownership/eye/HUD logic at the original near-getter boundary986139 in
+the digest-pinned owned985D80 copy. The native EXE call/instructions are unchanged.
+The native setter rebuilds projection/VP/frustum before their copies to the view;
+existing binocular frustum refinement follows the setter.98618E remains the
+pre-copy witness identity token; the mode3 callback now executes at986139.
+No ZoneView flags or global visibility masks are changed. No new game pointers.
+
+Static CFG proves986139 dominates FOV getter986161, frustum getter98618E,
+projection getter9861B4 and VP getter9861C9 on paths reaching those consumers.
+This establishes ordering, not the semantics of the unresolved virtual+9C.
+Both x86 DLL builds PASS. Camera coverage7126, camera refresh48, actual-source
+routing/coverage10000, owned-code ABI10000, owner span1000, instance1000,
+binocular geometry249600 points and actual-source rebuild2000 calls PASS.
+The dispatch fixture was missing current status/id/log stubs; repaired here.
+MAIN still owns deployment and the consolidated Steam/PSVR2 check: peripheral
+room/yellow edge, both eyes, head motion, HUD, shadows, LOD, hands and frame pacing.
+Visual/FPS acceptance NOT RUN; right-eye flicker remains a separate defect.
+Use Render/NativeViewBoundary=3 with the existing image-preserving profile;
+Diagnostics/NativeCameraCover stays OFF. No deployment or game launch here.
+Additional regressions: actual projection history145248, protected hands2207,
+left aim461 and external-boundary/selected-camera fixture PASS. Boundary fixture
+initially failed its corrupted-upload assertion once; diagnostic and unchanged
+source reruns both passed. Cause not established; no acceptance check weakened.

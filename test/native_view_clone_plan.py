@@ -105,7 +105,11 @@ def audit(pe, start, size):
         # Getter interception must be unavoidable on every normal path to the
         # native deep copy. Also prove ordering of two later direct consumers;
         # their semantic role and indirect earlier callees remain unproven.
-        for boundary, target in ((0x98618E, 0x98619A),
+        for boundary, target in ((0x986139, 0x986161),
+                                 (0x986139, 0x98618E),
+                                 (0x986139, 0x9861B4),
+                                 (0x986139, 0x9861C9),
+                                 (0x98618E, 0x98619A),
                                  (0x98619A, 0x9863B1), (0x98619A, 0x9863C3)):
             assert target in instructions and dominates(edges, start, boundary, target), \
                 f"frustum ordering bypass: {boundary:x} -> {target:x}"

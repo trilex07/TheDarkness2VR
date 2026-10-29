@@ -72,8 +72,8 @@ static void InstallNativeViewBoundary() {
     }
     if(g_nativeViewBoundaryMode==3) {
         auto* code=g_nativeViewCode;
-        const d2vr_native_clone::Override replacement{1,0x98618E-0x985D80,
-            reinterpret_cast<void*>(&TranslatedFrustumGetter)};
+        const d2vr_native_clone::Override replacement{1,0x986139-0x985D80,
+            reinterpret_cast<void*>(&TranslatedCameraCoverNear)};
         static const unsigned char ownerSpanBytes[]={0xff,0xd0,0x8b,0x08,0x83,0x39,0};
         const d2vr_native_clone::CallSpan ownerSpan{1,0x985F75-0x985D80,ownerSpanBytes,sizeof(ownerSpanBytes),
             reinterpret_cast<void*>(&TranslatedViewOwner)};
@@ -116,7 +116,10 @@ static void InstallNativeViewBoundary() {
     const bool installed=g_nativeViewBoundary.Start(target,0xA66486,ObserveNativeViewBoundary,g_nativeImageGuard);
     if(g_nativeViewBoundaryMode==3) {
         g_nativeTranslatedViewPrepared=installed;
-        Log("[NativeTranslatedView] prepared=%d QPC=%d viewCopy=%p rendererCopy=%p point=0098618E; experimental, native calls/branch offsets retained; foreign debug state unchanged",
+        // Activate the existing coverage/eye/HUD contract only after admission.
+        // The replacement is in owned RX storage; the EXE call stays native.
+        g_nativeCameraCoverInstalled=installed;
+        Log("[NativeTranslatedView] prepared=%d QPC=%d viewCopy=%p rendererCopy=%p point=00986139; native-camera coverage; experimental, native calls/branch offsets retained; foreign debug state unchanged",
             int(g_nativeTranslatedViewPrepared),int(installed),g_nativeViewCode->Entry(0),g_nativeViewCode->Entry(1));
     }
     Log("[NativeViewBoundary] installed=%d mode=%d external QPC caller=00A66486; ESI view +A8 -> renderer +3F4 -> camera; %s; EXE/IAT/static tables unchanged",
