@@ -2207,3 +2207,20 @@ method; neither wrapper establishes a global receiver. The Flash MouseEvent
 string consumers 44BFF0/78D400 initialize ActionScript values, not a proven
 physical input delivery path. Do not use these references as menu-state or
 click-injection contracts. Private disassembly remains outside Git.
+
+## 2026-10-29: distinguish equipped-fire publication from shot consumption
+
+Headset feedback rejects the independent-left-shot fix: the left pistol still
+fires along the right pistol's aim. The retained runtime log does publish the
+secondary fire receiver, so optional-model admission alone was insufficient.
+Add at most two receipts per final-consumer outcome per thread, identifying
+context, sample, owner, equipped receiver, native gun argument, tracking,
+transform refusal, or accepted right/left ray. No admission rule, native
+reference lifetime, matrix selection or render setting is changed. This is a
+bounded diagnostic candidate, not a corrected-shot or FPS claim.
+
+Actual-source x86 regression: 122019 checks; 3200 copied native CFBBA0 executions
+and existing ABI/FP/LastError comparisons pass. New tests distinguish a closed
+XR frame, wrong gun argument and missing active-hand tracking from an accepted
+left/right ray, retaining no-write behavior on refusal. Physical validation
+remains failed for the prior candidate and pending for this diagnostic.

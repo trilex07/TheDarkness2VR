@@ -62,8 +62,10 @@ static bool ProtectedWeaponOwner(void* camera,unsigned slot,void*& gun,void*& mo
         return true;
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
-static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float* world) {
+static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float* world,unsigned* stage=nullptr) {
+    if(stage)*stage=1; // frame/tracking/thread context
     if(!world || (!model && !fire) || !ProtectedWeaponAvailable())return false;
+    if(stage)*stage=2; // fresh selected-player sample
     NativeGameplaySample owner;
     if(!CopyNativeGameplay(owner))return false;
     void* camera=reinterpret_cast<void*>(owner.camera);
@@ -71,16 +73,21 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
     // Revalidate that gun's live inventory/model/fire chain below; never steer
     // the demon's held entity or its throw/attachment/physics branch here.
     __try {
+        if(stage)*stage=3; // reciprocal camera owner
         if(!ProtectedAimCameraOwned(camera) || !NativeAimOwnerMatches(camera))return false;
+        if(stage)*stage=4; // selected fire/model must actually be equipped
         for(unsigned slot=0;slot<2;++slot) {
             void *gun=nullptr,*equippedModel=nullptr,*equippedFire=nullptr;
             if(!ProtectedWeaponOwner(camera,slot,gun,equippedModel,equippedFire) ||
                (model && model!=equippedModel) || (fire && fire!=equippedFire))continue;
+            if(stage)*stage=5+slot*16; // instance publication
             if(!ProtectedWeaponFireOwned(equippedFire) ||
                (model && !ProtectedWeaponModelOwned(equippedModel)))return false;
+            if(stage)*stage=6+slot*16; // native shot argument's gun reference
             if(fire && (!weaponRef || **static_cast<void***>(weaponRef)!=gun || !ProtectedWeaponFireOwned(fire)))return false;
             if(model && !ProtectedWeaponModelOwned(model))return false;
             const unsigned hand=1-slot;
+            if(stage)*stage=7+slot*16; // active controller tracking/scale
             if(!g_hands[hand].aimValid || !std::isfinite(g_gameUnitsPerMeter) ||
                g_gameUnitsPerMeter<.01f || g_gameUnitsPerMeter>5000.f)return false;
             const auto& ref=g_headGeometryReference;const auto& aim=g_hands[hand].aim;
@@ -89,14 +96,17 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
             const float aq[4]={aim.orientation.x,aim.orientation.y,aim.orientation.z,aim.orientation.w};
             const float ap[3]={aim.position.x,aim.position.y,aim.position.z};
             float reference[16],inverse[16],tracking[16],local[16],result[16];
+            if(stage)*stage=8+slot*16; // tracking transforms
             if(!d2vr_math::TrackingPose(rq,rp,reference) || !d2vr_math::Invert(reference,inverse) ||
                !d2vr_math::TrackingPose(aq,ap,tracking))return false;
             d2vr_math::Multiply(tracking,inverse,local);
             const auto base=reinterpret_cast<const float*>(static_cast<BYTE*>(camera)+0x80);
+            if(stage)*stage=9+slot*16; // native camera matrix contract
             if(!d2vr_aim::BuildScaledWeaponMatrix(base,local,g_gameUnitsPerMeter,result))return false;
+            if(stage)*stage=32+slot; // final consumer receives right/left ray
             std::memcpy(world,result,sizeof(result));return true;
         }
-    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+    } __except(EXCEPTION_EXECUTE_HANDLER){if(stage)*stage=10;return false;}
     return false;
 }
 static bool CopyProtectedWeaponHandPose(DWORD camera,unsigned hand,XrPosef& pose) {
@@ -114,7 +124,21 @@ static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {
     __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 static bool ResolveProtectedWeaponFire(void* fire,void* weaponRef,float* world) {
-    return ResolveProtectedWeapon(nullptr,fire,weaponRef,world);
+    unsigned stage=0;
+    const bool applied=ResolveProtectedWeapon(nullptr,fire,weaponRef,world,&stage);
+    // Publication alone is not proof that the firing virtual is consumed or
+    // that its context admits a controller ray. Bound receipts to two per
+    // outcome on this thread; no per-frame tracing or retained native pointers.
+    static thread_local BYTE reports[34]{};
+    if(stage<_countof(reports) && reports[stage]<2) {
+        ++reports[stage];
+        Log("[ProtectedWeaponShot] stage=%u applied=%d fire=%p ref=%p frame=%llu open=%d renderThread=%d gameplay=%d flags=%llu aimL=%d aimR=%d pauseL=%d pauseR=%d; stage32=right 33=left 1=context 2=sample 3=camera 4=equipped 5/21=publication 6/22=gunRef 7/23=tracking 8/24=pose 9/25=base 10=exception",
+            stage,int(applied),fire,weaponRef,g_trackedFrame.id,int(g_trackedFrame.open),
+            int(GetCurrentThreadId()==g_renderThreadId),int(g_in3DGameplayMode),
+            static_cast<unsigned long long>(g_trackedFrame.flags),int(g_hands[0].aimValid),int(g_hands[1].aimValid),
+            int(g_protectedLeftTentacle.paused),int(g_protectedRightTentacle.paused));
+    }
+    return applied;
 }
 static bool PrepareProtectedWeaponCode() {
     if(g_protectedWeaponReady)return true;

@@ -224,6 +224,21 @@ int main(int argc,char** argv) {
         Ref(fires[slot],0x4C,guns[1-slot]);
         CHECK(!ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*slot,shot));
     }
+    // Distinguish publication from the actual final-consumer admission.
+    // Receipts never relax the ownership/context contract or write on refusal.
+    for(unsigned slot=0;slot<2;++slot) {
+        Reset();unsigned stage=0;float ray[16],before[16];Matrix(ray,7,8,9);memcpy(before,ray,64);
+        CHECK(ResolveProtectedWeapon(nullptr,fires[slot],inventory+0xB0+12*slot,ray,&stage));
+        CHECK(stage==32+slot);
+        g_trackedFrame.open=false;memcpy(ray,before,64);
+        CHECK(!ResolveProtectedWeapon(nullptr,fires[slot],inventory+0xB0+12*slot,ray,&stage));
+        CHECK(stage==1 && !memcmp(ray,before,64));g_trackedFrame.open=true;
+        CHECK(!ResolveProtectedWeapon(nullptr,fires[slot],inventory+0xB0+12*(1-slot),ray,&stage));
+        CHECK(stage==6+16*slot && !memcmp(ray,before,64));
+        g_hands[1-slot].aimValid=false;
+        CHECK(!ResolveProtectedWeapon(nullptr,fires[slot],inventory+0xB0+12*slot,ray,&stage));
+        CHECK(stage==7+16*slot && !memcmp(ray,before,64));
+    }
     // Actual bridge: unchanged and tracked matrices, five arguments, native
     // receiver, stack cleanup, result registers/flags, FPU and LastError.
     alignas(16) BYTE nativeIncoming[512];State nativeState{},bridgeState{};
