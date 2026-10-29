@@ -128,6 +128,32 @@ int main(){
     g_adaptiveFPSMode=d2vr_adaptive::Mode::Half;
     CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
     CHECK(sink.calls==3&&checksum!=sink.checksum);
+    // The beam references the same released image without a new upload or XR
+    // image transaction. Runtime caps and frame identity remain authoritative.
+    for(uint32_t cap:{2u,3u}){
+        Reset();layers=cap;CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+        g_vrSettings.Submitted(true);
+        d2vr_menu::Aim a{};a.frame=1;a.time=1;a.space=(XrSpace)4;a.menu=a.tracked=true;
+        a.pose={{0,0,0,1},{.2f,1.5f,0}};g_vrSettings.Input(a,g_adaptiveFPSMode);
+        CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+        const unsigned uploads=sink.calls,acquires=acquiredCalls,releases=releasedCalls;
+        XrCompositionLayerQuad beam{};XrPosef head{{0,0,0,1},{0,1.6f,0}};
+        CHECK(g_vrSettingsRenderer.Laser(quad,1,head,beam)==(cap>=3));
+        if(cap>=3){
+            CHECK(beam.space==quad.space&&beam.subImage.swapchain==quad.subImage.swapchain);
+            CHECK(beam.eyeVisibility==XR_EYE_VISIBILITY_BOTH&&beam.layerFlags==quad.layerFlags);
+            CHECK(beam.subImage.imageRect.extent.width==1&&beam.subImage.imageRect.extent.height==1);
+            auto p=g_vrSettings.Pointer().hit;
+            CHECK(beam.subImage.imageRect.offset.x==p.x&&beam.subImage.imageRect.offset.y==p.y);
+            const auto pixel=static_cast<const uint32_t*>(g_vrSettingsRenderer.pixels)[p.y*640+p.x];
+            CHECK((pixel&0xffffff)==0x50f0ff);
+            CHECK(!g_vrSettingsRenderer.Laser(quad,2,head,beam));
+            auto other=quad;other.space=(XrSpace)9;CHECK(!g_vrSettingsRenderer.Laser(other,1,head,beam));
+            waitResult=XR_TIMEOUT_EXPIRED;CHECK(RenderVrSettings(quad)==VrSettingsRender::Pending);
+            CHECK(!g_vrSettingsRenderer.Laser(quad,1,head,beam));
+            waitResult=XR_SUCCESS;CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+        }else CHECK(sink.calls==uploads&&acquiredCalls==acquires&&releasedCalls==releases);
+    }
     // An image timeout stays acquired, never publishes, and is waited again.
     Reset();waitResult=XR_TIMEOUT_EXPIRED;
     CHECK(RenderVrSettings(quad)==VrSettingsRender::Pending);

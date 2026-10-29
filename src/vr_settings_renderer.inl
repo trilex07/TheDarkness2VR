@@ -5,7 +5,7 @@ struct VrSettingsRenderer {
     XrSession session=XR_NULL_HANDLE;
     XrSwapchain chain=XR_NULL_HANDLE;
     std::vector<XrSwapchainImageD3D11KHR> images;
-    uint32_t index=0;
+    uint32_t index=0,maxLayers=0;
     bool acquired=false,waited=false,publishable=false;
     bool pending=false;
     uint64_t revision=0;
@@ -20,7 +20,7 @@ struct VrSettingsRenderer {
     void* pixels=nullptr;
     void Reset() {
         if(chain && XR_FAILED(xrDestroySwapchain(chain)))return;
-        chain=XR_NULL_HANDLE;session=XR_NULL_HANDLE;images.clear();
+        chain=XR_NULL_HANDLE;session=XR_NULL_HANDLE;images.clear();maxLayers=0;
         acquired=waited=publishable=pending=false;
         revision=0;imageRevision.clear();drawnMode=-1;
         if(dc && oldFont && oldFont!=HGDI_ERROR)SelectObject(dc,oldFont);
@@ -37,6 +37,7 @@ struct VrSettingsRenderer {
         XrSystemProperties system{XR_TYPE_SYSTEM_PROPERTIES};
         if(xrGetSystemProperties(g_xrInstance,g_xrSystem,&system)!=XR_SUCCESS ||
            system.graphicsProperties.maxLayerCount<2)return false;
+        maxLayers=system.graphicsProperties.maxLayerCount;
         uint32_t count=0;
         if(xrEnumerateSwapchainFormats(g_xrSession,0,&count,nullptr)!=XR_SUCCESS || !count || count>1024)return false;
         std::vector<int64_t> formats(count);
@@ -110,6 +111,21 @@ struct VrSettingsRenderer {
         drawnMode=int(mode);drawnPointer=pointer.visible;drawnX=px;drawnY=py;
         drawnToggleKey=g_vrSettingsToggleKey;
         ++revision;return true;
+    }
+    bool Laser(const XrCompositionLayerQuad& panel,uint64_t frame,const XrPosef& head,
+               XrCompositionLayerQuad& beam) const {
+        const auto& s=g_vrSettings.Surface();const auto& p=g_vrSettings.Pointer();
+        if(maxLayers<3 || !g_vrSettings.Open() || !g_vrSettings.Presented() ||
+           !p.visible || s.frame!=frame || panel.subImage.swapchain!=chain ||
+           panel.space!=s.space || acquired)return false;
+        XrPosef pose{};XrExtent2Df size{};
+        if(!d2vr_settings::Laser(s,g_vrSettings.Aim(),head,pose,size))return false;
+        beam=panel;beam.pose=pose;beam.size=size;
+        // The cursor centre is solid cyan in the already released image. Reuse
+        // that texel; OpenXR permits multiple references to one released image.
+        beam.subImage.imageRect={{std::clamp(p.hit.x,0,d2vr_settings::Width-1),
+            std::clamp(p.hit.y,0,d2vr_settings::Height-1)},{1,1}};
+        return true;
     }
     bool Render(XrCompositionLayerQuad& quad) {
         pending=false;

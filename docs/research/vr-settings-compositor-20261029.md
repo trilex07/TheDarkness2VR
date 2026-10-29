@@ -80,10 +80,38 @@ evidence of correct compositor placement or readable size in PSVR2.
 
 ## Remaining
 
-This is the VR Settings surface only. There is a tracked hit marker, not yet a
-3D laser beam. Native main/pause/options still require a proven native menu state,
+This is the VR Settings surface only. The follow-up laser branch adds a thin
+3D beam from the tracked aim origin to the existing hit marker. Native main/pause/options still require a proven native menu state,
 real submitted surface and cursor/input bridge; no guessed native plane or
 SendInput imitation has been introduced. Main-menu sliders and scrolling have
 not been integrated. In-headset input/visual correctness and FPS impact are
 unmeasured. Keep the accepted Steam performance baseline until consolidated
 authorized deployment/PSVR2 validation with the right-eye candidate.
+
+## Tracked beam follow-up (offline)
+
+`codex/vr-settings-laser` reuses the current released settings swapchain image:
+a 1x1 sub-rectangle at the cyan hit marker supplies the beam colour. No new
+swapchain, upload, image acquisition, fence or XR frame call is introduced.
+OpenXR explicitly allows multiple layer references to the same released image
+with different rectangles: https://registry.khronos.org/OpenXR/specs/1.0-khr/html/xrspec.html
+
+The beam is a 2mm quad, trimmed 20mm from the aim origin and 2mm before the hit.
+Its long axis follows the actual controller ray; its front faces the current
+head. Degenerate collinear views retain only the hit marker. Invalid tracking,
+space, pose, stale frame, pending image ownership, or runtime layer caps below
+three omit the beam. Painter order is world, beam, panel. All layers use the
+same existing xrEndFrame; adaptive accounting still counts only world layers.
+
+Both x86 builds pass. Actual-source CPU regressions: geometry/input 4518 checks,
+renderer 863 (including cyan texel, shared released image, caps and ownership),
+host input 50, submission 7215 (beam enabled/disabled, view availability, panel
+status, XR result and layer order). Real GDI objects return to the warm baseline.
+Headset placement, per-eye appearance and runtime cost remain NOT RUN.
+
+No follow-up deployment: after the user's crash the deployed 8841def candidate
+was backed up and rolled back to af9cdd7, DirectRecordCopy OFF. The Polish pack
+was separately backed up and its twelve archive/TOC files restored from SIDE's
+original backups after finding unsafe numeric header rewriting in its injector.
+The specific crash cause is not established. Do not silently re-enable DirectCopy
+or reinstall that pack as part of this beam work.

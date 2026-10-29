@@ -5001,8 +5001,9 @@ void SubmitXR(IDirect3DDevice9* dev) {
         Log("[WorldActivity] active=%d (render heuristic; native gameplay/menu state unverified)",(int)g_in3DGameplayMode);
     }
 
-    const XrCompositionLayerBaseHeader* layers[2] = { nullptr,nullptr };
+    const XrCompositionLayerBaseHeader* layers[3] = { nullptr,nullptr,nullptr };
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
     uint32_t layerCount = 0;
     XrCompositionLayerQuad quad{ XR_TYPE_COMPOSITION_LAYER_QUAD };
     XrCompositionLayerProjection proj{ XR_TYPE_COMPOSITION_LAYER_PROJECTION };
@@ -5336,6 +5337,9 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const auto settingsResult=g_xrSessionState!=XR_SESSION_STATE_FOCUSED ? VrSettingsRender::Failed :
             !layerCount || !fs.shouldRender ? VrSettingsRender::Pending : RenderVrSettings(settingsQuad);
         if(settingsResult==VrSettingsRender::Ready) {
+            if(g_haveViews && g_vrSettingsRenderer.Laser(settingsQuad,g_trackedFrame.id,
+                HeadCenterPose(g_eyePose[0],g_eyePose[1]),settingsLaser))
+                layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&settingsLaser);
             layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&settingsQuad);
             settingsSubmitted=true;
         } else if(settingsResult==VrSettingsRender::Pending)g_vrSettings.SuspendSurface();

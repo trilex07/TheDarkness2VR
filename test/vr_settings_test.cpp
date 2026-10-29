@@ -80,5 +80,30 @@ int main(){
         CHECK(p.Pointer().visible);CHECK(p.Pointer().hit.x==x&&p.Pointer().hit.y==y);
         CHECK(std::fabs(p.Surface().pose.position.z+1.5f)<1e-6f);
     }
-    std::printf("PASS VR settings input %u checks\n",checks);
+    for(float yaw:{-3.f,-2.f,-1.f,0.f,1.f,2.f,3.f})for(int j=0;j<25;++j){
+        Panel p;auto h=head;h.orientation={0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)};
+        CHECK(p.Toggle(h,space));auto s=p.Surface();s.frame=1;
+        d2vr_menu::Aim a{};a.frame=1;a.space=space;a.menu=a.tracked=true;a.pose=h;
+        double q[4];CHECK(d2vr_menu::detail::Pose(h,q));
+        const auto offset=d2vr_menu::detail::Rotate(q,{.05+j*.018,-.22+j*.014,0});
+        a.pose.position.x+=float(offset.x);a.pose.position.y+=float(offset.y);a.pose.position.z+=float(offset.z);
+        XrPosef beam{};XrExtent2Df size{};CHECK(Laser(s,a,h,beam,size));
+        d2vr_menu::Hit hit;CHECK(d2vr_menu::Project(s,a,hit));
+        CHECK(d2vr_menu::detail::Pose(beam,q));
+        const auto y=d2vr_menu::detail::Rotate(q,{0,1,0});
+        const auto z=d2vr_menu::detail::Rotate(q,{0,0,1});
+        const double dx=hit.point.x-a.pose.position.x,dy=hit.point.y-a.pose.position.y,dz=hit.point.z-a.pose.position.z;
+        const double len=std::sqrt(dx*dx+dy*dy+dz*dz);
+        CHECK(std::fabs(size.height-(len-.022))<1e-5&&size.width==.002f);
+        CHECK(std::fabs(y.x-dx/len)<1e-5&&std::fabs(y.y-dy/len)<1e-5&&std::fabs(y.z-dz/len)<1e-5);
+        CHECK(z.x*(h.position.x-beam.position.x)+z.y*(h.position.y-beam.position.y)+
+              z.z*(h.position.z-beam.position.z)>0);
+        CHECK(std::fabs(beam.position.x+y.x*size.height*.5-(hit.point.x-dx/len*.002))<1e-5);
+        CHECK(std::fabs(beam.position.y+y.y*size.height*.5-(hit.point.y-dy/len*.002))<1e-5);
+        CHECK(std::fabs(beam.position.z+y.z*size.height*.5-(hit.point.z-dz/len*.002))<1e-5);
+        const auto saved=beam;const auto savedSize=size;
+        a.frame=2;CHECK(!Laser(s,a,h,beam,size));CHECK(beam.position.x==saved.position.x&&size.height==savedSize.height);
+        a.frame=1;a.tracked=false;CHECK(!Laser(s,a,h,beam,size));
+    }
+    std::printf("PASS VR settings input and laser %u checks\n",checks);
 }

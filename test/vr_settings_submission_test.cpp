@@ -11,40 +11,56 @@ enum class VrSettingsRender {Ready,Pending,Failed};
 static VrSettingsRender rendered=VrSettingsRender::Ready;
 static XrResult ended=XR_SUCCESS;
 static uint32_t actualLayers,adaptiveLayers;
+static bool beamEnabled=false,g_haveViews=true;
+static struct {uint64_t id=1;} g_trackedFrame;
+static XrPosef g_eyePose[2]{};
+static XrPosef HeadCenterPose(const XrPosef&,const XrPosef&){return {};}
+static struct {
+    bool Laser(const XrCompositionLayerQuad& panel,uint64_t,const XrPosef&,XrCompositionLayerQuad& beam){
+        beam=panel;beam.size={.002f,1};return beamEnabled;
+    }
+} g_vrSettingsRenderer;
 static VrSettingsRender RenderVrSettings(XrCompositionLayerQuad& quad){
     ++renderCalls;quad={XR_TYPE_COMPOSITION_LAYER_QUAD};quad.space=g_vrSettings.Surface().space;return rendered;
 }
 XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session,const XrFrameEndInfo* info){
     ++endCalls;CHECK(session==g_xrSession);CHECK(info->displayTime==123);
-    actualLayers=info->layerCount;CHECK(actualLayers<=2);
+    actualLayers=info->layerCount;CHECK(actualLayers<=3);
     CHECK((info->layers!=nullptr)==(actualLayers!=0));
     if(actualLayers==2)CHECK(info->layers[1]->type==XR_TYPE_COMPOSITION_LAYER_QUAD);
+    if(actualLayers==3){
+        CHECK(reinterpret_cast<const XrCompositionLayerQuad*>(info->layers[1])->size.width==.002f);
+        CHECK(reinterpret_cast<const XrCompositionLayerQuad*>(info->layers[2])->size.width==0);
+    }
     return ended;
 }
 static void AdaptiveStereoSubmitted(XrResult result,bool pixels,uint32_t count){
     ++adaptiveCalls;CHECK(result==ended);CHECK(pixels);adaptiveLayers=count;
 }
 static void Actual(uint32_t layerCount,bool shouldRender){
-    const XrCompositionLayerBaseHeader* layers[2]{};
+    const XrCompositionLayerBaseHeader* layers[3]{};
     XrCompositionLayerProjection world{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
     if(layerCount)layers[0]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&world);
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrFrameState fs{XR_TYPE_FRAME_STATE};fs.predictedDisplayTime=123;fs.shouldRender=shouldRender;
     const bool havePixels=true;
 #include "actual_vr_settings_submission.inl"
 }
 int main(){
+    for(bool beam:{false,true})for(bool views:{false,true})
     for(bool open:{false,true})for(bool focus:{false,true})for(bool visible:{false,true})
     for(uint32_t world:{0u,1u})for(auto render:{VrSettingsRender::Ready,VrSettingsRender::Pending,VrSettingsRender::Failed})
     for(auto end:{XR_SUCCESS,XR_SESSION_LOSS_PENDING,XR_ERROR_RUNTIME_FAILURE}){
         g_vrSettings.Close();if(open)CHECK(g_vrSettings.Toggle({{0,0,0,1},{0,1.6f,0}},(XrSpace)2));
         g_xrSessionState=focus?XR_SESSION_STATE_FOCUSED:XR_SESSION_STATE_VISIBLE;
+        beamEnabled=beam;g_haveViews=views;
         rendered=render;ended=end;renderCalls=endCalls=adaptiveCalls=0;
         Actual(world,visible);
         const bool renderAttempt=open&&focus&&visible&&world;
         const bool submitted=renderAttempt&&render==VrSettingsRender::Ready;
         CHECK(renderCalls==unsigned(renderAttempt));CHECK(endCalls==1&&adaptiveCalls==1);
-        CHECK(actualLayers==world+unsigned(submitted));CHECK(adaptiveLayers==world);
+        CHECK(actualLayers==world+unsigned(submitted)+unsigned(submitted&&beam&&views));CHECK(adaptiveLayers==world);
         CHECK(g_vrSettings.Presented()==(submitted&&end==XR_SUCCESS));
         const bool remains=open&&focus&&(!renderAttempt||render==VrSettingsRender::Pending||
             (render==VrSettingsRender::Ready&&end==XR_SUCCESS));
