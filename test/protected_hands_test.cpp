@@ -15,6 +15,8 @@ static unsigned checks=0,originalCalls=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line%d %s\n",__LINE__,#x);exit(1);}}while(0)
 static void Log(const char*,...){}
 static ULONGLONG clockMs=1000;
+static bool g_nativeCinematicAdmitted=true,g_nativeCinematicPlaying=false;
+static ULONGLONG g_nativeCinematicFrame=0;
 static ULONGLONG Clock(){return clockMs;}
 static bool g_nativeHandsEnabled=false,g_nativeHandsDirtyBoth=false,g_nativeHandsPackInstalled=false;
 static bool g_restoredTrackedGameplay=false,g_protectedTrackedHands=true,g_nativePlayerOwnerAdmitted=true;
@@ -24,6 +26,7 @@ static float g_gameUnitsPerMeter=1;
 static DWORD g_renderThreadId=GetCurrentThreadId();
 static d2vr_native_image::Guard g_nativeImageGuard{true,0x400000,0x100000};
 static struct {uint64_t id=20;bool open=true;XrViewStateFlags flags=15;} g_trackedFrame;
+#include "actual_cinematic_gate.inl"
 static XrPosef g_headGeometryReference{{0,0,0,1},{}};
 static d2vr_input::Tentacles g_protectedLeftTentacle,g_protectedRightTentacle;
 static struct {bool gripValid=true;XrPosef grip{{0,0,0,1},{}};} g_hands[2];
@@ -85,6 +88,7 @@ static void Reset(){
     memcpy(pristine,palette,sizeof(pristine));
     for(unsigned i=0;i<3;++i){Word(renderer,0x3F4+16*i,Ptr(palette));Word(renderer,0x3F8+16*i,Ptr(palette+130));}
     g_nativeHandCalibration={};for(auto& cache:g_nativeHandsCache)cache={};g_nativeHandsLastWrite={};
+    g_nativeCinematicAdmitted=true;g_nativeCinematicPlaying=false;g_nativeCinematicFrame=20;
     g_nativeHandsWriteSeq=0;g_trackedFrame.id=20;g_trackedFrame.open=true;g_trackedFrame.flags=15;
     g_protectedTrackedHands=g_haveViews=g_in3DGameplayMode=g_imagePreservingInput=g_protectedGestureActions=true;
     g_nativeImageGuard.enabled=g_headGeometry=g_headGeometryReferenceValid=true;
@@ -253,6 +257,23 @@ int main(int argc,char** argv){
     ProtectedHandsPackHook(resource,nullptr,argument);CHECK(originalCalls==2 && argument[1]==0 && !g_insideProtectedHandsPack);
     CHECK(g_nativeHandsWriteSeq==1);
     CHECK(sourceTable[0xEC/4]==reinterpret_cast<void*>(&Original));
+    // A cinematic retires our cached IK through the real pack hook. Preserve
+    // native animation that independently replaced one arm after our last edit.
+    Reset();CHECK(Apply());g_nativeCinematicPlaying=true;argument[1]=1;SetLastError(0x12345678);
+    ProtectedHandsPackHook(resource,nullptr,argument);
+    CHECK(!memcmp(palette,pristine,sizeof(pristine)) && originalCalls==1 && argument[1]==0);
+    CHECK(!g_nativeHandsCache[0].appliedValid[0] && !g_nativeHandsCache[0].appliedValid[1]);
+    CHECK(renderer[0x580] && renderer[0x581]);
+    Reset();CHECK(Apply());palette[5][12]=123.f;g_nativeCinematicPlaying=true;argument[1]=1;SetLastError(0x12345678);
+    ProtectedHandsPackHook(resource,nullptr,argument);
+    CHECK(palette[5][12]==123.f && !memcmp(palette+24,pristine+24,22*64));
+    // Gameplay resumes with a fresh solution, never the retired arm palette.
+    g_nativeCinematicPlaying=false;CHECK(Apply());CHECK(Near(palette[27][12],.5f));
+    Reset();g_nativeCinematicPlaying=true;CHECK(NativeCinematicPlaying());
+    ++g_trackedFrame.id;CHECK(!NativeCinematicPlaying());--g_trackedFrame.id;
+    g_trackedFrame.open=false;CHECK(!NativeCinematicPlaying());g_trackedFrame.open=true;
+    ++g_renderThreadId;CHECK(!NativeCinematicPlaying());--g_renderThreadId;
+    g_nativeCinematicAdmitted=false;CHECK(!NativeCinematicPlaying());
     for(unsigned i=0;i<96;++i)if(i!=0xEC/4)CHECK(g_protectedHandsTable.Table()[i]==sourceTable[i]);
     if(argc==2)NativePackOracle(argv[1]);
     printf("PASS actual protected hands: %u checks; per-hand tracking/IK failure, no pistol/support gate, pristine repeated pack, ownership/hold refusals, native ABI/ref once, floating state, LastError, reentrancy\n",checks);

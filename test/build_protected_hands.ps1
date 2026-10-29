@@ -38,6 +38,7 @@ $aim=Get-Content (Join-Path $repo 'src/native_aim.inl') -Raw
 $weapon=Get-Content (Join-Path $repo 'src/native_weapon.inl') -Raw
 $types=(Extract $aim 'struct NativeGameplaySample {' $true)+"`r`n"+(Extract $weapon 'struct NativeWeaponPose {' $true)
 $helpers=(Extract $aim 'static bool CopyNativeGameplay(')+"`r`n"+(Extract $aim 'static bool NativeAimOwnerMatches(')
+[IO.File]::WriteAllText((Join-Path $out 'actual_cinematic_gate.inl'),(Extract $aim 'static bool NativeCinematicPlaying('),[Text.Encoding]::UTF8)
 [IO.File]::WriteAllText((Join-Path $out 'actual_hands_types.inl'),$types,[Text.Encoding]::UTF8)
 [IO.File]::WriteAllText((Join-Path $out 'actual_hands_owner.inl'),$helpers,[Text.Encoding]::UTF8)
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

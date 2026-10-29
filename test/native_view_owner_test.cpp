@@ -21,7 +21,10 @@ static struct {uint64_t id=17;bool open=true;} g_trackedFrame;
 static uint64_t g_nativePlayerViewFrame=0;
 static uintptr_t g_nativePlayerViewRenderer=0;
 static uint32_t g_nativePlayerViewCamera=0;
-static unsigned char renderer[0x500],avatar[0x700],camera[0x80],inventory[0x300],selected[4],context[0x80],manager[0x200],scene[0x500];
+static bool g_nativeCinematicAdmitted=true,g_nativeCinematicPlaying=false;
+static uint64_t g_nativeCinematicFrame=0;
+static void* cinematicObject=nullptr;
+static unsigned char renderer[0x500],avatar[0x700],camera[0x80],inventory[0x300],selected[4],context[0x80],manager[0x280],scene[0x500];
 static void* blocks[8]{};
 static void* avatarBlock=avatar;
 static void* sceneBlock=scene;
@@ -56,6 +59,8 @@ static void Reset(){
     avatarBlock=avatar;Word(avatar,0,0x1001630);Word(camera,0,0xffc7c0);Word(inventory,0,0xffca10);
     sceneBlock=scene;Word(scene,0,0x12340000); // Scene MUST NOT be admitted as an avatar.
     Word(context,0,0xfc6d40);Word(manager,0,0xfc7d00);
+    cinematicObject=nullptr;Word(manager,0x268,uint32_t(uintptr_t(&cinematicObject)));
+    g_nativeCinematicFrame=0;g_nativeCinematicPlaying=false;g_nativeCinematicAdmitted=true;
     Ref(renderer,0x3f8,5,context);Ref(context,0x64,6,manager);
     Word(manager,0x1c8,uint32_t(uintptr_t(&sceneBlock)));
     Ref(renderer,0x3f4,0,selected);Ref(avatar,0x62c,1,camera);Ref(avatar,0x630,2,inventory);
@@ -64,6 +69,10 @@ static void Reset(){
 static void Observe(){void* reference=&sceneBlock;SetLastError(0x87654321);ObserveNativeViewOwner(renderer,&reference,manager);CHECK(GetLastError()==0x87654321);CHECK(getters==releases);}
 template<class F> static void Reject(F change){Reset();change();Observe();CHECK(!g_nativePlayerViewFrame && !g_nativePlayerViewRenderer && !aims && !throws && !hands && !weapons);}
 int main(){
+    Reset();Observe();CHECK(g_nativeCinematicFrame==17 && !g_nativeCinematicPlaying);
+    cinematicObject=scene;Observe();CHECK(g_nativeCinematicFrame==17 && g_nativeCinematicPlaying);
+    g_in3DGameplayMode=false;Observe();CHECK(!g_nativeCinematicFrame);
+    Reset();g_nativeCinematicAdmitted=false;Observe();CHECK(!g_nativeCinematicFrame && captures==1);
     Reset();Observe();CHECK(captures==1 && aims==1 && throws==1 && hands==1 && weapons==1);
     CHECK(pauseObservations==1 && pauseManager==manager);
     CHECK(g_nativePlayerViewFrame==17 && g_nativePlayerViewRenderer==uintptr_t(renderer));

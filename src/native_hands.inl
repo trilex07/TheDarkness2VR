@@ -35,6 +35,36 @@ struct NativeHandsPaletteCache {
     float original[44][16]{},applied[44][16]{};
 };
 static NativeHandsPaletteCache g_nativeHandsCache[3];
+// Retire only our still-present edits at the live native pack boundary.
+// If native animation has replaced either arm, leave its newer data intact.
+static void RestoreNativeHandsPalette(void* receiver,void* resource) {
+    bool locked=false;
+    __try {
+        auto renderer=static_cast<BYTE*>(receiver);
+        if(!renderer || !resource || !ProtectedHandsResourceOwned(resource) ||
+           **reinterpret_cast<void***>(renderer+0x5BC)!=resource)return;
+        const DWORD pose=*(DWORD*)(renderer+0x424),skin=*(DWORD*)(renderer+0x448);
+        if(pose>=3 || skin>=2)return;
+        auto vector=renderer+0x3F4+16*pose;
+        auto palette=*reinterpret_cast<float**>(vector);
+        if(!palette || *reinterpret_cast<float**>(vector+4)-palette!=130*16)return;
+        auto skeleton=**reinterpret_cast<void***>(static_cast<BYTE*>(resource)+0x5E0);
+        if(!TryAcquireSRWLockExclusive(&g_nativeHandsLock))return;
+        locked=true;auto& cache=g_nativeHandsCache[pose];
+        if(cache.renderer==renderer && cache.resource==resource && cache.palette==palette && cache.skeleton==skeleton) {
+            bool changed=false;
+            for(unsigned hand=0;hand<2;++hand) {
+                const unsigned offset=hand*22;
+                if(cache.appliedValid[hand] && !memcmp(palette+(2+offset)*16,cache.applied+offset,22*64)) {
+                    memcpy(palette+(2+offset)*16,cache.original+offset,22*64);changed=true;
+                }
+                cache.appliedValid[hand]=false;
+            }
+            if(changed)renderer[0x580]=renderer[0x581]=1;
+        }
+        ReleaseSRWLockExclusive(&g_nativeHandsLock);locked=false;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {if(locked)ReleaseSRWLockExclusive(&g_nativeHandsLock);}
+}
 static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expectedResource=nullptr,bool protectedRoute=false) {
     if(protectedRoute ? !ProtectedHandsAvailable() : (!g_nativeHandsEnabled || !g_nativeHandsInstalled)) return false;
     NativeGameplaySample sample;

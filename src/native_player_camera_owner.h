@@ -2,6 +2,18 @@
 #include <cstdint>
 
 namespace d2vr_player_camera {
+// RegionMgr::GetPlayingCinematic, FC7D00+1AC -> 6CF490, returns
+// &manager[268]. D9B590 copies this smart reference through 59AB10.
+// Inspect only its nullness while the native view callback owns the manager;
+// never retain or dereference the cinematic object itself.
+template<class Read> bool PlayingCinematic(uint32_t manager,Read read,bool& playing) {
+    uint32_t table=0,reference=0,object=0;
+    if(!manager || (manager&3) || manager>UINT32_MAX-0x268 ||
+       !read(manager,table) || table!=0xfc7d00 ||
+       !read(manager+0x268,reference) || !reference || (reference&3) ||
+       !read(reference,object))return false;
+    playing=object!=0;return true;
+}
 // The owned 985D80 callback preserves the selected RegionMgr receiver. Its
 // separate local-player getter supplies a scoped native avatar reference.
 // Renderer+460 remains only an optional FOV override, absent in observed play.

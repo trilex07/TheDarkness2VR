@@ -2613,3 +2613,26 @@ User reports haptics and L2 culling PASS for the prior a84fa35a candidate.
 NativeViewBoundary=3 and NativeCameraCover=0 already match the Steam profile.
 Consolidated peripheral/HUD/shadow/LOD/FPS validation remains NOT RUN.
 Right-eye flicker and native menu laser/cinematic-hand gating remain separate.
+
+## 2026-10-29: retire tracked-hand IK during native cinematics
+
+Native GetPlayingCinematic registration F82918/10A6130 selects D9B590.
+Its RegionMgr+1AC dispatch resolves FC7EAC -> 6CF490: return &manager+268.
+59AB10 copies that smart-reference handle; CA92C0 stores its replacement and
+balances native references. Exact installed EXE SHA remains D46BB6C...8134EC1.
+Private Ghidra exports cinematic-getter/owner/setter-20261029.txt in TEMP all
+end EVIDENCE COMPLETE. No native code/decompilation exported to the repository.
+
+Read only handle nullness within the validated native selected-view manager
+context; retain no cinematic pointer and call no cinematic methods. Pin the
+loaded getter/table separately so rejection cannot disable camera coverage.
+Use only same-frame render-thread state. The private skin pack hook retires
+our still-present IK edits, preserves either arm's newer native animation,
+and dirties both packed skin slots only when bytes actually change. Native
+packer ABI, reference consumption, LastError and FP state remain unchanged.
+Actual-source hands2233, owner graph4178 and view callback176 checks PASS,
+including cinematic entry/recovery, per-arm animation preservation, stale
+frame, thread and contract refusals. Headset visibility acceptance NOT RUN.
+Native menu laser still needs its native surface/input connection; existing
+VR Settings laser is separate and is not presented as native-menu completion.
+Both final x86 DLL builds and actual-source camera dispatch10000 PASS.

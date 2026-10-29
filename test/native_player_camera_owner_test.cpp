@@ -6,6 +6,16 @@ using namespace d2vr_player_camera;
 static unsigned checks=0;
 static void Check(bool v){++checks;if(!v){std::printf("FAIL %u\n",checks);std::exit(1);}}
 int main(){
+    {
+        std::map<uint32_t,uint32_t> m={{0x1000,0xfc7d00},{0x1268,0x5000},{0x5000,0}};
+        const auto r=[&](uint32_t p,uint32_t& v){auto i=m.find(p);if(i==m.end())return false;v=i->second;return true;};
+        bool playing=true;Check(PlayingCinematic(0x1000,r,playing) && !playing);
+        m[0x5000]=0xdeadbeef;Check(PlayingCinematic(0x1000,r,playing) && playing);
+        for(uint32_t bad:{0u,3u,0xfffffffcu}){Check(!PlayingCinematic(bad,r,playing));Check(playing);}
+        m.erase(0x5000);Check(!PlayingCinematic(0x1000,r,playing) && playing);
+        m[0x1268]=3;Check(!PlayingCinematic(0x1000,r,playing));
+        m[0x1000]=0xfc7d04;Check(!PlayingCinematic(0x1000,r,playing));
+    }
     // Synthetic addresses model the proven native smart-reference graph; no
     // game memory or native code is copied into this fixture.
     const std::map<uint32_t,uint32_t> valid={

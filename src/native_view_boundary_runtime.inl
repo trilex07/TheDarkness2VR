@@ -59,6 +59,10 @@ static void InstallNativeViewBoundary() {
         read(0xB0EF20,data,18) && !memcmp(data,"\x8b\x89\xc8\x01\x00\x00\x8b\x44\x24\x04\xff\x41\x04\x89\x08\xc2\x04\x00",18) &&
         read(0x964570,data,0x56) && d2vr_native_clone::MatchesDigest(data,0x56,
             "0464a12d76e2f874a147fb000bc1adf928510143079a82e053fb944c3bdd471d");
+    g_nativeCinematicAdmitted=g_nativePlayerOwnerAdmitted &&
+        read(0xFC7EAC,data,4) && !memcmp(data,"\x90\xf4\x6c\x00",4) &&
+        read(0x6CF490,data,7) && !memcmp(data,"\x8d\x81\x68\x02\x00\x00\xc3",7);
+    Log("[ProtectedHands] cinematicContract=%d; native RegionMgr GetPlayingCinematic, same-frame view context; retire owned IK only",int(g_nativeCinematicAdmitted));
     Log("[ProtectedPlayerOwner] admission=%d; selected context+CC RegionMgr, +174 scene, +18C local player; balanced native reference, visibility admission independent",
         int(g_nativePlayerOwnerAdmitted));
     if(g_nativeViewBoundaryMode==2) {

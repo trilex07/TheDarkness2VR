@@ -1,5 +1,11 @@
 #include "native_player_camera_owner.h"
 static bool g_nativePlayerOwnerAdmitted=false;
+static bool g_nativeCinematicAdmitted=false,g_nativeCinematicPlaying=false;
+static ULONGLONG g_nativeCinematicFrame=0;
+static bool NativeCinematicPlaying() {
+    return g_nativeCinematicAdmitted && GetCurrentThreadId()==g_renderThreadId &&
+        g_trackedFrame.open && g_trackedFrame.id && g_nativeCinematicFrame==g_trackedFrame.id && g_nativeCinematicPlaying;
+}
 static void ObserveNativePauseState(void* manager);
 static bool ProtectedAimCameraOwned(void* camera);
 static DWORD ProtectedAimCameraTable();
@@ -275,6 +281,7 @@ static void ReleaseSelectedLocalPlayer(uint32_t ref) {
 static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* manager) {
 #ifdef D2VR_MATCHED_CAPTURE
     if(GetCurrentThreadId()!=g_renderThreadId)return;
+    g_nativeCinematicFrame=0;
     if(g_nativePlayerOwnerAdmitted && g_nativeImageGuard.enabled && g_imagePreservingPresent)
         ObserveNativePauseState(manager);
     g_nativePlayerViewFrame=0;g_nativePlayerViewRenderer=0;g_nativePlayerViewCamera=0;
@@ -286,6 +293,13 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}
     };
     const auto r=uint32_t(reinterpret_cast<uintptr_t>(renderer));
+    bool cinematic=false;
+    if(g_nativeCinematicAdmitted &&
+       d2vr_player_camera::InspectViewContext(r,uint32_t(reinterpret_cast<uintptr_t>(manager)),
+           uint32_t(reinterpret_cast<uintptr_t>(reference)),read)==d2vr_player_camera::Status::Matched &&
+       d2vr_player_camera::PlayingCinematic(uint32_t(reinterpret_cast<uintptr_t>(manager)),read,cinematic)) {
+        g_nativeCinematicPlaying=cinematic;g_nativeCinematicFrame=g_trackedFrame.id;
+    }
     uint32_t selectedReference=0,selected=0,avatar=0;
     NativeCameraFields fields{};
     if(!r || r>UINT32_MAX-0x3f4 || !read(r+0x3f4,selectedReference) || !selectedReference ||
