@@ -1963,6 +1963,13 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 #else
     const auto sendConstants = forwardConstants;
 #endif
+    __try {
+        g_vsConstantHistory.eyeCarry.ForEachValidRun(g_frameStart.vertexFloatLimit,
+            [&](unsigned first,const float* values,unsigned count){
+                sendConstants(d2vr_replay_batch::Stage::Vertex,first,values,count);});
+    } __except (1) {
+        replayComplete=false;
+    }
     for (size_t i = 0; i < g_rec.size(); ++i) {
         const Rec& r = g_rec[i];
         if (dump) {
@@ -2098,6 +2105,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 if (ApplyVertexStereoUpload(tmp, src, uploadStart, uploadCount, g_activeVs, uploadParams,
                                        &rawReference)) src = tmp;
             }
+            g_vsConstantHistory.eyeNext.Write(uploadStart,uploadCount,src,size_t(uploadCount)*16);
             if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Vertex,
                 uploadStart,src,uploadCount,sendConstants);
             else if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Vertex,
@@ -2199,7 +2207,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             // call the ORIGINAL Apply: the vtable points at our hook which would try to
             // record while the record lock is held here -> deadlock
             if (!sb || !g_origSBApply || FAILED(g_origSBApply(sb)))replayComplete=false;
-            g_vsConstantHistory.replay.Clear();
+            g_vsConstantHistory.ReplayStateBlock();
             if(!SyncActiveShader(dev))replayComplete=false;
             HOOK_MARK(1900 + r.op);
             break;
@@ -2254,6 +2262,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         g_constantUploadWindow.captureBypass += g_replayConstantBatch && MatchedCaptureRecordingActive();
     }
 #endif
+    g_vsConstantHistory.EndReplay(replayComplete);
     g_recLock.store(0,std::memory_order_release);
     g_replayEye = -1;
     return replayComplete;
@@ -2264,7 +2273,10 @@ static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
     const HRESULT result=g_origSBApply ? g_origSBApply(sb):D3DERR_INVALIDCALL;
     if(FAILED(result))return result;
     InvalidateShadowAtlasPass();
-    {RecLockGuard lock;g_vsConstantHistory.live.Clear();}
+    {
+        RecLockGuard lock;g_vsConstantHistory.live.Clear();
+        if(!g_recActive)g_vsConstantHistory.eyeCarry.Clear();
+    }
     // Apply can restore VS/PS without passing through either shader setter.
     // Replay and our own snapshots already resynchronize those bindings. Do
     // the same for the live eye before its next constant upload/draw; otherwise

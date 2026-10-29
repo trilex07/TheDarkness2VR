@@ -1,9 +1,14 @@
+param([string]$SourceRevision='')
 $ErrorActionPreference='Stop'
 $here=Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo=Split-Path -Parent (Split-Path -Parent $here)
 $out=Join-Path $env:TEMP 'd2vr-replay-constant-window'
 New-Item -ItemType Directory -Path $out -Force | Out-Null
-$src=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw
+$src=if($SourceRevision){
+    $revisionSource=(& git -C $repo show "${SourceRevision}:src/stereo_replay.inl") -join "`n"
+    if($LASTEXITCODE -ne 0){throw 'Cannot read replay source revision'}
+    $revisionSource
+}else{Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw}
 $main=Get-Content -LiteralPath (Join-Path $repo 'src\d3d9.cpp') -Raw
 if($main -notmatch 'g_replayConstantWindow = GetPrivateProfileIntA\("Render", "ReplayConstantWindow", 0, chosenIni\)' -or
    $src -notmatch 'const bool windowEnabled = batchEnabled && g_replayConstantWindow;' -or
@@ -40,9 +45,11 @@ $extraCases=foreach($name in @('SetRenderState','SetStreamSource','SetStreamSour
             $case.Value.Replace('case OP_SetRenderState:', 'case OP_SetRenderState: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks();')
         } else {$case.Value}
     }
+$block=[regex]::Match($src.Substring($cases),"(?s)        case OP_ApplyStateBlock: \{.*?(?=        default:)")
+if(!$block.Success -or (!$SourceRevision -and $block.Value -notmatch 'g_vsConstantHistory\.ReplayStateBlock\(\);')){throw 'Replay state block must drop replay-eye register knowledge'}
 $actual=$src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
     $src.Substring($bindVS,$vsEnd-$bindVS) + $src.Substring($bindPS,$psEnd-$bindPS) +
-    ($extraCases -join "`n") +
+    ($extraCases -join "`n") + $block.Value +
     "        default: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks(); break;`n        }`n" + $src.Substring($footer,$end-$footer)
 [IO.File]::WriteAllText((Join-Path $out 'actual_replay_float_loop.inl'),$actual)
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"

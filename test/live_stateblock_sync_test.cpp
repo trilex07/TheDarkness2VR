@@ -52,6 +52,7 @@ static void Reset(FakeDevice& d,FakeShader& a,FakeShader& b,bool recording){
     order.clear();applies=invalidations=records=0;g_recOverflow=false;g_recActive=recording;
     g_vsConstantHistory.Clear();float matrix[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
     CHECK(g_vsConstantHistory.live.Write(0,4,matrix,sizeof(matrix)));
+    CHECK(g_vsConstantHistory.eyeCarry.Write(0,4,matrix,sizeof(matrix)));
     CHECK(a.refs==1 && b.refs==1 && !lockDepth);g_origSBApply=&Apply;
 }
 int main(){
@@ -65,6 +66,7 @@ int main(){
         CHECK(d.refs==1 && a.refs==1 && b.refs==1 && !g_recOverflow);
         CHECK(records==unsigned(recording) && invalidations==1);
         float matrix[16];CHECK(!g_vsConstantHistory.live.Matrix(0,matrix));
+        CHECK(g_vsConstantHistory.eyeCarry.Matrix(0,matrix)==recording);
         auto expected=std::vector<unsigned>{1,2,3,4,5};if(recording)expected.push_back(6);
         CHECK(order==expected);
     }
@@ -73,6 +75,7 @@ int main(){
         CHECK(Hook_SBApply(&block)==result && applies==1 && records==0);
         CHECK(activeVs==&a && activePs==&a && order==std::vector<unsigned>{1});
         float matrix[16];CHECK(g_vsConstantHistory.live.Matrix(0,matrix));
+        CHECK(g_vsConstantHistory.eyeCarry.Matrix(0,matrix));
     }
     for(bool recording:{false,true})for(bool pointer:{false,true})for(HRESULT result:{S_OK,D3DERR_INVALIDCALL}){
         if(pointer && SUCCEEDED(result))continue;

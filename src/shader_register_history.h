@@ -5,7 +5,8 @@
 
 namespace d2vr_shader_registers {
 // D3D9 float registers belong to the DEVICE, not the currently bound shader.
-// Values here are raw recorded native payloads, never adjusted eye constants.
+// History's live/begin/replay banks contain raw recorded native payloads;
+// eyeCarry/eyeNext contain the replay eye's materialized device values.
 // Production accesses are serialized by the existing recorder lock.
 struct Bank {
     float values[256*4]{};
@@ -43,12 +44,32 @@ public:
             if(!(valid[i/64]&(uint64_t(1)<<(i%64))))return false;
         std::memcpy(out,values+first*4,16*sizeof(float));return true;
     }
+    template<class F> void ForEachValidRun(unsigned limit,F&& f)const {
+        if(limit>256)limit=256;
+        for(unsigned i=0;i<limit;) {
+            if(!(valid[i/64]&(uint64_t(1)<<(i%64)))){++i;continue;}
+            unsigned end=i+1;
+            while(end<limit && (valid[end/64]&(uint64_t(1)<<(end%64))))++end;
+            f(i,values+i*4,end-i);i=end;
+        }
+    }
 };
 struct History {
     Bank live,begin,replay;
-    void BeginRecord(){begin=live;}
-    void BeginReplay(){replay=begin;}
-    void Clear(){live.Clear();begin.Clear();replay.Clear();}
+    // Unlike the raw banks, eyeCarry/eyeNext hold values the REPLAY eye forwarded.
+    // Frame-start state restores the live eye's adjusted registers; draws that
+    // inherit an earlier frame's upload need the replay eye's own values.
+    // Do not transform these values again with a new pose: both eyes inherit
+    // their own device state until a native upload replaces the affected rows.
+    Bank eyeCarry,eyeNext;
+    bool recordOpen=false;
+    void BeginRecord(){if(recordOpen)eyeCarry.Clear();recordOpen=true;begin=live;}
+    void BeginReplay(){replay=begin;eyeNext=eyeCarry;}
+    void ReplayStateBlock(){replay.Clear();eyeNext.Clear();}
+    void EndReplay(bool complete){if(complete)eyeCarry=eyeNext;else eyeCarry.Clear();recordOpen=false;}
+    // Native writes with no replay counterpart change the live device rows.
+    void InvalidateUnrecorded(unsigned first,unsigned count){live.Invalidate(first,count);eyeCarry.Invalidate(first,count);}
+    void Clear(){live.Clear();begin.Clear();replay.Clear();eyeCarry.Clear();eyeNext.Clear();recordOpen=false;}
 };
 struct Reference {
     float values[16]{};

@@ -267,3 +267,84 @@ path and no CPU readback or new explicit synchronization. Driver/GPU cost and
 in-game artifact improvement remain unmeasured. Do not describe this as a
 performance optimization, complete stereo repair or90FPS result. No SteamVR
 settings or installed game files changed in this step.
+
+## Frame-inherited vertex registers, 2026-10-29
+
+Replay starts by applying the frame-start D3DSBT_ALL block. Its VS float
+registers are the LIVE eye's materialized values (left-adjusted WVP/STP from
+the previous frame, restored by liveEnd). A draw that inherits a matrix
+uploaded in an earlier frame therefore rendered the right eye with the left
+matrix. The actual replay loop fails `InheritedAcrossFrames` (variant 0)
+before this change: the frame-N draw observes left c0.
+
+History now keeps the replay eye's forwarded VS rows (eyeNext) and commits
+them after a complete replay (eyeCarry). The next replay re-sends valid carried
+rows once, after the frame-start restore and before the first record, in
+contiguous runs bounded by the device limit. Unrecorded live writes invalidate
+their rows; an unrecorded live state-block Apply, a replay state-block Apply,
+a rejected replay, a recording that never reached replay, Reset and live-end
+restore failure clear it. Both eyes now inherit their own previous-frame values.
+
+PASS: actual replay float loop production/diagnostic 96 streams / 576096
+records / 58366 checks (inheritance, unrecorded row, rejected replay,
+unreplayed recording, state-block refusal across four grouping modes); replay
+surface status, projection history, register bank, live state-block sync,
+tentacle scope, eye history and both x86 DLL builds. Six suites that already
+fail on 7543d92 (shadow draw, state snapshot link, UP geometry, projection
+estimate, PS payload, sampler caps) are unchanged. Cost: two 4 KiB bank copies
+and bounded contiguous SetVertexShaderConstantF runs per replay. Runtime frequency of
+cross-frame inheritance in DarknessII.exe is unmeasured; PS constant
+inheritance and dynamic VB/IB/texture content versions remain open.
+
+## MAIN integration of Opus 5159cf4, 2026-10-29
+
+Integrated onto MAIN feature/render-command-worker at 1e61a2e, preserving 2f24fc3's
+bool SyncActiveShader receipt and sticky replay rejection. Source changes remain
+limited to the VS bank, replay and the unrecorded live VS setter. No accepted
+weapon, hand, tentacle, input, transfer worker or pacing implementation changed.
+
+Carry stores the bytes previously materialized for eye 1, not a reusable raw
+matrix to transform with the next pose. Native eye 0 likewise retains its own
+device bytes until an upload replaces them. Re-transforming only the carried
+right rows would double-transform them and diverge from the live eye. New
+uploads still use MakeEyeParams for the current frame and its raw references;
+OpenXR pose sampling/submission are unchanged. Actual stereo-math regression
+checks WVP/STP together in 64 changing pose/FOV cases, with and without head
+geometry, plus current-upload replacement and state-block/Reset invalidation.
+
+Replay StateBlock Apply clears raw replay knowledge and eyeNext. Unrecorded live
+Apply clears carry; a failed live Apply preserves the unchanged device state.
+Failed replay, skipped prior replay, failed live-end restoration and both Reset
+routes invalidate carry. This does not convert arbitrary matrices embedded in
+a recorded state block into right-eye matrices; that existing limitation must
+not be described as fixed by cross-frame inheritance repair.
+
+The updated actual-loop harness reproduces MAIN 1e61a2e's failure specifically
+at inheritedVariant=0/mode=0/draw=0. Its loop source is taken from that revision
+while the integration fixture supplies the new bank scaffold. Final production
+and diagnostic actual-loop tests pass 96 streams/576096 records/58370 checks
+each, including the actual StateBlock case. Live state-block synchronization
+passes 264146 checks; projection history passes 144416; bank bounds/equivalence
+passes 783041. Both x86 DLL builds pass. Accepted weapon, hand, throw, tentacle,
+right-eye color history and pixel metadata fixtures pass.
+
+Five pre-existing fixture failures reproduce on an isolated 1e61a2e export and
+the integration: shadow-draw missing fixture globals; UP missing RecordLiveResult;
+projection-estimate stale source-string assertion; PS payload missing
+g_activePsHash; sampler-caps stale Reset-entry assertion. They are not counted as
+passes. Snapshot receipt remains NOT RUN after earlier quarantine. Adaptive
+policy passes 3243 checks; its separate host executable builds but is NOT RUN
+because Windows reports a sharing lock after the script's bounded retry.
+
+Cost is two roughly 4 KiB bank copies and up to 256 carried VS rows per replay,
+split into at most 128 runs for a maximally fragmented validity mask. No GPU
+readback, new fence, sleep, draw or native pass was added. Driver cost and FPS
+impact are unmeasured; this is a correctness change, not a demonstrated speedup.
+
+Next authorized Steam/PSVR2 acceptance is one combined session: main/pause menu,
+stationary then slow head movement, peripheral geometry, shadows, dual-wield
+aiming and frame pacing at the existing resolution/profile. Compare against
+installed af9cdd7 with the closed-wrist asset preserved. Keep its DLL/config/hash
+backup; on wrong matrices, new flicker, crash or performance regression restore
+that baseline and retain logs/captures. No Steam deployment or automatic launch
+is part of this source integration.

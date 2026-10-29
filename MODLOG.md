@@ -2432,3 +2432,33 @@ paths and Gen:Variant.Draftor.34994. Their assertions remain NOT RUN. No restore
 security change or alternate executable retry was made. This supersedes the
 earlier unknown-component note; it does not invalidate the separate completed
 live-stateblock regression. No game launch, Steam change or FPS claim.
+
+## 2026-10-29: integrate Opus inherited right-eye register correction
+
+Fetched fix/right-eye-flicker-root-cause/5159cf4, based on 7543d92; reconciled
+with MAIN 1e61a2e instead of replacing files. Keep the newer SyncActiveShader
+failure receipt in replay and its fixture. Carry the right eye's successfully
+materialized VS register rows past frame-start StateBlock restoration; preserve
+Opus invalidation on unrecorded writes/Apply, replay Apply/failure, missing
+replay, Reset and existing live-end restore failure. No accepted gameplay or
+performance implementation was replaced. Full review, remaining state-block
+scope and consolidated runtime gate: docs/research/replay-projection-history-20261028.md.
+
+Baseline actual replay loop reproduces inheritedVariant=0/mode=0/draw=0 bank
+mismatch. Final actual-source production/diagnostic loop passes 58370 checks
+each (96 streams/576096 records), now including actual StateBlock Apply. Real
+WVP/STP stereo math passes 64 changing pose/FOV scenarios without applying the
+pose twice to carried constants. Projection history144416, live stateblock264146,
+register bank783041, tentacle26629, weapon122025+3200 native body invocations,
+hands2207, left aim461, throw316, right-eye color history and pixel metadata
+fixtures PASS. Both x86 DLL builds PASS. Adaptive policy3243 PASS; host integration
+NOT RUN (Windows sharing lock). Snapshot receipt NOT RUN (earlier quarantine).
+Five other fixture failures reproduce identically before/after integration;
+their missing fixture symbols/stale source assertions are documented, not waived
+or reported green. No FPS improvement or HMD visual acceptance claimed.
+
+Steam DLL remains af9cdd7 SHA256
+7AB078B3089958F306040E3696FD4EBBD54A7EA0B64C3BC047AD186D6A98E2A4;
+closed-wrist asset, profiles and SteamVR settings retained. No auto merge,
+deployment or game launch. Next runtime check combines flicker, head motion,
+periphery, shadows, hands and frame pacing with baseline rollback on regression.

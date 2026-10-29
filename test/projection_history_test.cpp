@@ -160,7 +160,72 @@ static void PartialScreenCases(){
     }
     puts("PASS actual partial STP completion: both eyes, head geometry, named/analyzed identities, every subrange, unknown-row/shader/lighting refusal, 68-to74 WVP+STP and guard bytes");
 }
+// Exercise carry using the real stereo math, not the replay-loop fixture's
+// bitwise upload sentinel. Inherited device constants keep their previous-eye
+// transform; a new upload uses the new pose, FOV and raw register reference.
+static void InheritedEyeTransforms() {
+    for(unsigned geometry=0;geometry<2;++geometry)for(unsigned frame=0;frame<32;++frame) {
+        VsInfo vi;vi.analyzed=true;vi.wvpBase=0;vi.stpBase=4;
+        float native[32],wvp[16],screen[16];
+        Perspective(wvp,float(frame)*.07f);Screen(wvp,screen);
+        memcpy(native,wvp,sizeof(wvp));memcpy(native+16,screen,sizeof(screen));
+        d2vr_shader_registers::History registers;
+        CHECK(registers.live.Write(0,8,native,sizeof(native)));
+        registers.BeginRecord();registers.BeginReplay();
+        const d2vr_shader_registers::Reference reference(registers.replay,0,4,0,8);
+        StereoParams params;params.transX=.0315f;params.transY=.01f;
+        params.fovScaleX=.8f;params.fovScaleY=.9f;params.headGeometry=geometry!=0;
+        const float angle=float(frame)*.003f;
+        params.headClip[0]=params.headClip[10]=std::cos(angle);
+        params.headClip[2]=-std::sin(angle);params.headClip[8]=std::sin(angle);
+        params.headClip[5]=params.headClip[15]=1;
+        params.headClip[12]=float(frame)*.002f;
+        float left[32],right[32];UINT first=0,count=8;
+        g_replayEye=1;
+        CHECK(ApplyVertexStereoUpload(right,native,first,count,&vi,params,&reference));
+        CHECK(first==0 && count==8);
+        CHECK(registers.eyeNext.Write(first,count,right,sizeof(right)));
+        params.transX=-params.transX;g_replayEye=-1;first=0;count=8;
+        CHECK(ApplyVertexStereoUpload(left,native,first,count,&vi,params,&reference));
+        CHECK(memcmp(left,right,sizeof(left))!=0);
+        registers.EndReplay(true);
+        // Frame-start Apply restores left. No upload means no second transform
+        // of the carry, even if the next frame's HMD parameters have changed.
+        params.transX=.04f;params.headClip[12]+=.05f;params.fovScaleX=.73f;
+        float driver[32];memcpy(driver,left,sizeof(driver));
+        registers.BeginRecord();registers.BeginReplay();
+        registers.eyeCarry.ForEachValidRun(256,[&](unsigned start,const float* values,unsigned rows) {
+            CHECK(start==0 && rows==8);memcpy(driver+start*4,values,rows*16);
+        });
+        CHECK(!memcmp(driver,right,sizeof(driver)));
+        float newRight[32];first=0;count=8;g_replayEye=1;
+        CHECK(ApplyVertexStereoUpload(newRight,native,first,count,&vi,params,&reference));
+        CHECK(memcmp(newRight,right,sizeof(right))!=0);
+        CHECK(registers.eyeNext.Write(first,count,newRight,sizeof(newRight)));
+        registers.EndReplay(true);
+        registers.eyeCarry.ForEachValidRun(256,[&](unsigned start,const float* values,unsigned rows) {
+            memcpy(driver+start*4,values,rows*16);
+        });
+        CHECK(!memcmp(driver,newRight,sizeof(driver)));
+        // State-block Apply destroys knowledge of both the raw replay rows and
+        // carried transformed rows. Reset must also clear the global bank.
+        registers.BeginRecord();registers.BeginReplay();registers.ReplayStateBlock();
+        registers.EndReplay(true);unsigned runs=0;
+        registers.eyeCarry.ForEachValidRun(256,[&](unsigned,const float*,unsigned){++runs;});
+        CHECK(!runs);
+        g_vsConstantHistory=registers;
+        CHECK(g_vsConstantHistory.eyeCarry.Write(0,8,right,sizeof(right)));
+        CHECK(g_vsConstantHistory.eyeNext.Write(0,8,right,sizeof(right)));
+        ResetProjectionHistories();
+        g_vsConstantHistory.eyeCarry.ForEachValidRun(256,[&](unsigned,const float*,unsigned){++runs;});
+        g_vsConstantHistory.eyeNext.ForEachValidRun(256,[&](unsigned,const float*,unsigned){++runs;});
+        CHECK(!runs && !g_vsConstantHistory.recordOpen);
+    }
+    g_vsConstantHistory.Clear();g_replayEye=-1;
+    puts("PASS actual stereo math carry: WVP+STP, 64 changing pose/FOV cases, inherited bytes not transformed twice, fresh uploads use new parameters, state-block and Reset invalidation");
+}
 int main(int argc,char** argv) {
+    InheritedEyeTransforms();
     PartialScreenCases();
     PartialWvpCases(argc==2 && !strcmp(argv[1],"--partial-legacy"));
     const bool legacy=argc==2 && !strcmp(argv[1],"--expect-legacy-mismatch");

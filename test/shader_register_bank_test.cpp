@@ -44,6 +44,25 @@ template<bool invalidate> static void Measure(const float* payload){
 }
 int main(){
     float payload[256*4];for(auto& value:payload){const uint32_t bits=Next();memcpy(&value,&bits,4);}
+    for(unsigned pattern=0;pattern<32;++pattern) {
+        d2vr_shader_registers::Bank bank;CHECK(bank.Write(0,256,payload,sizeof(payload)));
+        for(unsigned word=0;word<4;++word)bank.valid[word]=pattern==0?0:pattern==1?~uint64_t(0):
+            pattern==2?0x5555555555555555ull:(uint64_t(Next())<<32)|Next();
+        for(unsigned requested:{0u,1u,63u,64u,65u,255u,256u,257u,UINT32_MAX}) {
+            bool seen[256]{};unsigned previousEnd=0,runs=0;
+            const unsigned limit=std::min(requested,256u);
+            bank.ForEachValidRun(requested,[&](unsigned first,const float* values,unsigned count) {
+                CHECK(count && first<limit && count<=limit-first);
+                CHECK(!runs || first>previousEnd); // maximal disjoint runs
+                CHECK(!memcmp(values,payload+first*4,count*16));
+                for(unsigned row=first;row<first+count;++row){CHECK(!seen[row]);seen[row]=true;}
+                previousEnd=first+count;++runs;
+            });
+            CHECK(runs<=128);
+            for(unsigned row=0;row<256;++row)
+                CHECK(seen[row]==(row<limit && (bank.valid[row/64]&(uint64_t(1)<<(row%64)))));
+        }
+    }
     for(unsigned first=0;first<=256;++first)for(unsigned count=0;count<=256-first;++count){
         d2vr_shader_registers::Bank current;baseline_registers::Bank baseline;
         for(unsigned word=0;word<4;++word)current.valid[word]=baseline.valid[word]=(uint64_t(Next())<<32)|Next();
