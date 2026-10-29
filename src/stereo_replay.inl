@@ -561,7 +561,9 @@ static inline uint32_t RecPushLocked(const void* data, size_t bytes, const d2vr_
     if (bytes > (size_t)8 * 1024 * 1024) {g_recOverflow=true;bytes=0;} // incomplete packet
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
-    if (bytes && !d2vr_native_constants::Copy(proof,g_recData.data()+off,data,bytes)) {
+    if (bytes && !d2vr_native_constants::Copy(proof,g_recData.data()+off,data,bytes) &&
+        !(g_directRecordCopy.load(std::memory_order_relaxed) &&
+          d2vr_record_copy::DirectCopy(g_recData.data()+off,data,bytes))) {
         if(!d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),
             &ReadProcessMemory,g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit))
             g_recOverflow=true;

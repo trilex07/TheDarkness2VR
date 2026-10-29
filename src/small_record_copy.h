@@ -63,6 +63,30 @@ inline bool LegacyCopy(void* dst, const void* data, size_t bytes) {
     }
 }
 
+// Copy without a permission syscall. Consuming PAGE_GUARD is the only fault
+// side effect: re-arm that page so the caller's legacy fallback observes, and
+// refuses, the protection the source had before this read.
+inline LONG DirectCopyFilter(const EXCEPTION_POINTERS* info) {
+    const EXCEPTION_RECORD* record = info->ExceptionRecord;
+    if (record->ExceptionCode == STATUS_GUARD_PAGE_VIOLATION && record->NumberParameters >= 2) {
+        void* page = reinterpret_cast<void*>(record->ExceptionInformation[1]);
+        MEMORY_BASIC_INFORMATION m{};
+        DWORD previous = 0;
+        if (VirtualQuery(page, &m, sizeof(m)) == sizeof(m) && m.State == MEM_COMMIT &&
+            !(m.Protect & PAGE_GUARD))
+            VirtualProtect(page, 1, m.Protect | PAGE_GUARD, &previous);
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+inline bool DirectCopy(void* dst, const void* src, size_t bytes) {
+    __try {
+        memcpy(dst, src, bytes);
+        return true;
+    } __except (DirectCopyFilter(GetExceptionInformation())) {
+        return false;
+    }
+}
+
 // Output remains the legacy readable-prefix/zero-tail representation on error.
 // Only a full successful copy certifies an owned replay payload.
 inline bool Copy(void* dst, const void* data, size_t bytes, bool admitted,

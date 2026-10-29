@@ -42,6 +42,7 @@ static d2vr_shader_registers::History g_vsConstantHistory;
 static std::atomic<LONG> g_recLock{0};
 static bool g_smallRecordCopyAdmitted=false;
 static std::atomic<bool> g_wideRecordCopy{false};
+static std::atomic<bool> g_directRecordCopy{false};
 static RuntimeControl g_smallRecordCopyControl;
 #include "actual_record_types.inl"
 static std::vector<Rec> g_rec;
@@ -225,6 +226,11 @@ static void TestAtomicPayloadRecords() {
     assert(!reference.valid && reference.partialBase<0);++cases;
     g_rec.clear();g_recData.clear();
 }
+static bool GuardRaises(const volatile uint8_t* p) {
+    __try {(void)*p;}
+    __except(GetExceptionCode()==STATUS_GUARD_PAGE_VIOLATION?EXCEPTION_EXECUTE_HANDLER:EXCEPTION_CONTINUE_SEARCH) {return true;}
+    return false;
+}
 int main(int argc, char** argv) {
     assert(argc == 2);
     TestAtomicPayloadRecords();
@@ -358,6 +364,48 @@ int main(int argc, char** argv) {
         assert(Protection(memory+page)==mode);
         assert(VirtualProtect(memory+page,page,PAGE_READWRITE,&old));
     }
+    // Direct copy through the actual RecPush: identical legacy outputs, overflow
+    // receipts and page protections, including PAGE_GUARD re-arming.
+    g_wideRecordCopy=false;g_directRecordCopy=true;
+    const unsigned rpmBeforeDirect=readCalls;
+    TestIncompletePacket(memory,page);
+    TestActualRecPush(memory,page);
+    TestAtomicPayloadRecords();
+    assert(readCalls==rpmBeforeDirect); // no RPM fallback for readable sources
+    for(DWORD mode:{PAGE_NOACCESS,PAGE_READWRITE|PAGE_GUARD})for(size_t start:{page-16,page,page+8}) {
+        assert(VirtualProtect(memory+page,page,mode,&old));
+        std::vector<uint8_t> want(memory+start,memory+(start<page?page:start)),dst(64,0xcc);
+        want.resize(64,0);
+        g_recData.clear();g_recOverflow=false;
+        const uint32_t at=RecPush(memory+start,64);
+        assert(g_recOverflow && g_recLock==0 && !memcmp(g_recData.data()+at,want.data(),64));
+        assert(Protection(memory+page)==mode);
+        // A re-armed guard still raises for the native consumer of this page.
+        if(mode&PAGE_GUARD)assert(GuardRaises(memory+page));
+        assert(VirtualProtect(memory+page,page,PAGE_READWRITE,&old));cases+=3;
+    }
+    // Synthetic x86 cost of the actual RecPush per readable heap payload.
+    for(size_t bytes:{64u,272u,1088u}) {
+        double ns[2]{};
+        std::vector<uint8_t> source(bytes,0x3c);
+        for(int direct=0;direct<2;++direct) {
+            g_directRecordCopy=direct!=0;
+            LARGE_INTEGER f,b,e;QueryPerformanceFrequency(&f);
+            double best=1e30;
+            for(unsigned trial=0;trial<5;++trial) {
+                g_recData.clear();g_recOverflow=false;
+                QueryPerformanceCounter(&b);
+                for(unsigned i=0;i<20000;++i)RecPush(source.data(),bytes);
+                QueryPerformanceCounter(&e);
+                assert(!g_recOverflow);
+                const double t=double(e.QuadPart-b.QuadPart)*1e9/double(f.QuadPart)/20000.0;
+                if(t<best)best=t;
+            }
+            ns[direct]=best;
+        }
+        std::printf("RecPush %zu B: legacy VirtualQuery %.1f ns/call, direct %.1f ns/call (best of 5 x 20000, synthetic)\n",bytes,ns[0],ns[1]);
+    }
+    g_recData.clear();g_directRecordCopy=false;
     VirtualFree(memory, 0, MEM_RELEASE);
     std::printf("PASS small-record-copy: %u byte/range checks; x86 guard admission, exact counts, legacy fallback, actual RecPush offsets/append/bounds/sanity, and default OFF\n", cases);
 }

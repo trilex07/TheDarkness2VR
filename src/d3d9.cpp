@@ -178,6 +178,7 @@ static bool g_submissionPadToggle = false; // image-preserving replay submission
 static bool g_submissionPackage = false; // include wide owned capture + frame refs in A/B
 static bool g_submissionStatus = false;
 static std::atomic<bool> g_wideRecordCopy{false};
+static std::atomic<bool> g_directRecordCopy{true}; // 0 restores per-record VirtualQuery/RPM copies
 static bool g_triangleHoldRecenter = false; // short triangle tap retains menu
 static volatile LONG g_objectDrawToggleRequests = 0;
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
@@ -699,6 +700,9 @@ void LoadConfig() {
     g_submissionPadToggle = GetPrivateProfileIntA("Render", "SubmissionPadToggle", 0, chosenIni)!=0;
     g_submissionPackage = GetPrivateProfileIntA("Render", "SubmissionPackage", 0, chosenIni)!=0;
     g_submissionStatus = GetPrivateProfileIntA("Render", "SubmissionStatus", 0, chosenIni)!=0;
+    g_directRecordCopy = GetPrivateProfileIntA("Render", "DirectRecordCopy", 1, chosenIni)!=0;
+    Log("[DirectRecordCopy] enabled=%d; faulting sources fall back to the legacy copy, PAGE_GUARD re-armed",
+        int(g_directRecordCopy.load()));
     g_wideRecordCopy = GetPrivateProfileIntA("Render", "WideRecordCopy", 0, chosenIni)!=0;
     if(g_wideRecordCopy) Log("[WideRecordCopy] requested=1 limit=65536; requires SmallRecordCopy guard admission; exact-count RPM, legacy fallback; no permission cache");
     g_triangleHoldRecenter = GetPrivateProfileIntA("Render", "TriangleHoldRecenter", 0, chosenIni)!=0;

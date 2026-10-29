@@ -12,6 +12,10 @@ if(-not $renderer.Contains('static bool g_smallRecordCopyRequested = false;') -o
    -not $renderer.Contains('g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;')) {
     throw 'SmallRecordCopy requested/effective admission must remain default OFF'
 }
+if(-not $renderer.Contains('static std::atomic<bool> g_directRecordCopy{true};') -or
+   -not $renderer.Contains('g_directRecordCopy = GetPrivateProfileIntA("Render", "DirectRecordCopy", 1, chosenIni)!=0;')) {
+    throw 'DirectRecordCopy must default ON with Render/DirectRecordCopy=0 rollback'
+}
 $hookDevice=[regex]::Match($renderer,'(?s)void HookDevice\(IDirect3DDevice9\* dev\) \{.*?\r?\n\}')
 $admission=$hookDevice.Value.IndexOf('g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);')
 $replayHooks=$hookDevice.Value.IndexOf('d2vr_replay::InstallReplayHooks(dev);')
