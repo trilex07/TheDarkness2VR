@@ -79,6 +79,40 @@ session, then establish a valid input lifetime and menu-only event contract.
 The game's actual submitted menu surface and pause/menu state are separate
 requirements; the existing compositor settings quad cannot certify them.
 
+## Bounded in-process observation for the next manual session
+
+The protected diagnostic build now observes the existing device HWND after
+the independently SHA-pinned native player-owner admission succeeds. It reads
+the chain above, then input manager+A44 -> mouse reference -> MouseDeviceWin
+(FC00C8). Native updater 9A5D90 uses mouse+1A4 as its DirectInput receiver,
+calling vtable+24 GetDeviceState and +28 GetDeviceData. These addresses are
+recorded without calling either method. No factory or guessed object getter is
+used. The observer writes no native memory and injects no events.
+
+Two matching chains are bracketed by HWND PID/thread/userdata identity checks.
+Reads refuse guard/no-access or uncommitted pages. At most eight attempts one
+second apart are possible; the first successful observation disables further
+reads. The existing private d3d9.log receives one NativeMenuReceiver line.
+Production builds contain no observer operations. No INI switch or profile
+change is required. If native owner admission is unavailable, this observation
+is unavailable too; it cannot grant itself image identity.
+
+The log explicitly retains lifetimeLease=0, menuState=UNKNOWN,
+surface=UNKNOWN and injection=OFF. A matching snapshot does not justify future
+dereferences after the observation or prove that mouse focus equals a menu.
+Native callbacks require a separate owner-thread/lifetime contract; the next
+game run is needed to confirm the actual receiver before selecting that hook.
+
+Actual-source x86 snapshot fixture: 63 checks PASS, including missing fields,
+wrong concrete types/HWND, reference-vs-object mistakes, address overflow,
+alignment and changed snapshot rejection. The pinned installed EXE static
+audit PASS. Live in-game receiver observation is still NOT RUN.
+
+Bounded follow-up Ghidra queries also rejected two misleading entry routes:
+C4D7D0 registers/looks up ActionScript member names including onMouseMove;
+482D70/B8EA60 serialize input bindings including MENU_MOUSE_X/Y/Z. They are
+not verified event dispatchers and must not be used to inject clicks.
+
 ## Region manager to game-rules reference
 
 The pinned native registration table at 10A6150 associates `GetGameRules`

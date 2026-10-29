@@ -44,6 +44,7 @@
 #include "native_constant_gate.h"
 #include "startup_shader_warmup.h"
 #include "native_image_guard.h"
+#include "native_menu_input_snapshot.h"
 #include "vr_input.h"
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
@@ -4566,6 +4567,8 @@ bool InitXR() {
 }
 
 static void ReleaseVrSettingsRenderer();
+#include "native_menu_input_snapshot.inl"
+
 void PumpXR() {
     XrEventDataBuffer ev{ XR_TYPE_EVENT_DATA_BUFFER };
     while (xrPollEvent(g_xrInstance, &ev) == XR_SUCCESS) {
@@ -4640,6 +4643,7 @@ void PumpXR() {
         }
         ev = { XR_TYPE_EVENT_DATA_BUFFER };
     }
+    ObserveNativeMenuReceiver();
     if(g_xrRunning && g_displayRefresh.FallbackActive() && GetTickCount64()>=g_steamRefreshNext) {
         g_steamRefreshNext=GetTickCount64()+2000;
         const float previous=g_displayRefresh.Hz();
