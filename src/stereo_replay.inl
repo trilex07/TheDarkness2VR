@@ -29,6 +29,7 @@
 #include "replay_constant_window.h"
 #include "record_payload_storage.h"
 #include "projection_history.h"
+#include "projection_estimate_window.h"
 #include "pixel_shader_metadata.h"
 #include "vertex_shader_metadata.h"
 #include "up_geometry_capture.h"
@@ -305,35 +306,9 @@ static float g_cameraInverseProjection[16]{};
 // un-analyzed shader's parameter block, a skinned object with non-uniform scale) must not
 // win: publish through a small median window. The InverseProjection observer writes
 // g_cameraPx/g_cameraPy directly - those are exact.
-static float s_estHistX[8], s_estHistY[8];
-static int s_estHistN = 0;
-static unsigned s_estHistNext = 0;
+static d2vr_projection_estimate::Window s_estWindow;
 static void PublishProjectionEstimate(float px, float py) {
-    if (!(px > 0.2f && px < 8.0f && py > 0.2f && py < 16.0f)) return;
-    // Count saturates; the insertion cursor must continue rotating. Using the
-    // saturated count pinned seven startup samples forever after the eighth.
-    s_estHistX[s_estHistNext] = px;
-    s_estHistY[s_estHistNext] = py;
-    s_estHistNext = (s_estHistNext + 1) % 8;
-    if (s_estHistN < 8) ++s_estHistN;
-    if (s_estHistN < 3) return;
-    const int n = s_estHistN < 8 ? s_estHistN : 8;
-    float xs[8], ys[8];
-    for (int i = 0; i < n; ++i) { xs[i] = s_estHistX[i]; ys[i] = s_estHistY[i]; }
-    for (int i = 1; i < n; ++i) {   // insertion sort - n <= 8
-        const float kx = xs[i];
-        int j = i - 1;
-        while (j >= 0 && xs[j] > kx) { xs[j + 1] = xs[j]; --j; }
-        xs[j + 1] = kx;
-    }
-    for (int i = 1; i < n; ++i) {
-        const float ky = ys[i];
-        int j = i - 1;
-        while (j >= 0 && ys[j] > ky) { ys[j + 1] = ys[j]; --j; }
-        ys[j + 1] = ky;
-    }
-    g_estPx = xs[n / 2];
-    g_estPy = ys[n / 2];
+    if(!s_estWindow.Push(px,py,g_estPx,g_estPy))return;
     InterlockedExchange(&g_estValid, 1);
 }
 
