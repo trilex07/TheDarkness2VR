@@ -121,7 +121,7 @@ def export(stage, game_cache, voices, manifest_path, out):
     require(accepted == report['audio']['replaced'], 'Audio acceptance differs from deployed build')
     fonts = [dict(font=path, status='ASCII_FALLBACK_ONLY', required_glyphs='ĄąĆćĘęŁłŃńÓóŚśŹźŻż',
         task='Ustal kodowanie atlasu, dodaj rzeczywiste glify, UV i metryki; zachowaj pozostale jezyki',
-        header_count_offset=offset, original_english_glyphs=count) for path, offset, count in FONTS]
+        header_count_offset=offset, original_english_glyphs=count) for path, texture, offset, count, *_ in FONTS]
     audio.sort(key=lambda row: (row['priority'], row['native_path']))
     summary = dict(verified_pack_sha256=report['files'], text_categories=coverage,
         text_rows=len(texts), audio_statuses=dict(states), audio_backlog_rows=len(audio),

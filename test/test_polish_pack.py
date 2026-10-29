@@ -109,6 +109,54 @@ class PolishPackTests(unittest.TestCase):
             self.assertEqual(result[104:],toc[104:])
             self.assertTrue((out/"T.cache").read_bytes().startswith(b"oldSTAkeep"))
 
+    def test_planar_dxt3_roundtrip(self):
+        from polish_fonts import decode_planar_dxt3, encode_planar_dxt3
+        raw = bytes(16384)
+        alpha = decode_planar_dxt3(raw, 512, 32)
+        self.assertEqual(alpha.shape, (32, 512))
+        alpha[10:20, 20:30] = 255
+        encoded = encode_planar_dxt3(alpha, 512, 32, raw)
+        self.assertEqual(len(encoded), 16384)
+        decoded = decode_planar_dxt3(encoded, 512, 32)
+        self.assertTrue((decoded[10:20, 20:30] == 255).all())
+
+    def test_visual_diacritics_drawn_with_distinct_uvs(self):
+        import numpy as np
+        from polish_fonts import encode_planar_dxt3, decode_planar_dxt3
+        codes = sorted(set(map(ord, "OoAaCcEeLlNnSsZz ")))
+        n = len(codes)
+        h = bytearray(180)
+        for off in (16, 48):
+            struct.pack_into("<7I", h, off, n, 0, 0, 0, 0, 0, 0)
+        uv = [struct.pack("<4f", i*24/1024, 0, (i*24+16)/1024, 24/64) for i in range(n)]
+        metrics = [struct.pack("<7f", *([float(i)] * 7)) for i in range(n)]
+        body = b"".join(uv) + b"".join(metrics) + struct.pack("<" + str(n) + "H", *codes) + b"auxiliary"
+        alpha=np.zeros((64,1024),dtype=np.uint8)
+        for i in range(n):alpha[6:19,i*24+4:i*24+12]=255
+        raw_tex=encode_planar_dxt3(alpha,1024,64,bytes(65536))
+        hh, bb, tt = patch_font(bytes(h), body, 16, n, raw_tex, (1024,64,0,0,0))
+        self.assertEqual(len(tt), len(raw_tex))
+        new = struct.unpack_from("<" + str(n + 18) + "H", bb, (n + 18) * 44)
+        self.assertEqual(len(new), n + 18)
+        for letter, donor in LETTERS:
+            i, j = new.index(ord(letter)), new.index(ord(donor))
+            pl_u0, pl_v0, pl_u1, pl_v1 = struct.unpack_from("<4f", bb, i * 16)
+            self.assertNotEqual(bb[i*16:(i+1)*16],bb[j*16:(j+1)*16])
+            crop=decode_planar_dxt3(tt,1024,64)[round(pl_v0*64):round(pl_v1*64),round(pl_u0*1024):round(pl_u1*1024)]
+            self.assertGreater(np.count_nonzero(crop),np.count_nonzero(alpha[:24,j*24:j*24+16]))
+        rebuilt=decode_planar_dxt3(tt,1024,64)
+        self.assertTrue(np.array_equal(rebuilt[alpha>0],alpha[alpha>0]))
+
+    def test_native_alpha_dword_planes_are_not_interleaved(self):
+        from polish_fonts import decode_planar_dxt3
+        raw=bytearray(16384)
+        struct.pack_into('<I',raw,4,0x0000000f)
+        struct.pack_into('<I',raw,4096+4,0x000000f0)
+        alpha=decode_planar_dxt3(raw,512,32)
+        self.assertEqual(int(alpha[0,4]),255)
+        self.assertEqual(int(alpha[2,5]),255)
+        self.assertEqual(int(alpha[0,8]),0)
+
 
 if __name__ == "__main__":
     unittest.main()
