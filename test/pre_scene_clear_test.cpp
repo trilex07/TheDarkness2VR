@@ -9,6 +9,7 @@ using D3DTEXTUREFILTERTYPE=unsigned;
 struct D3DRECT {long x1,y1,x2,y2;};
 using D3DCOLOR=DWORD;
 static unsigned checks=0,starts=0,forwards=0,timing=0;
+struct RecLockGuard {};
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line%d %s\n",__LINE__,#x);exit(1);}}while(0)
 static bool g_insidePresentation=false,g_preSceneWriteMissed=false,captureFailure=false;
 static int g_submitMode=4,g_stereoMode=1;
@@ -36,6 +37,7 @@ template<class... A>static void RecEmit(unsigned op,unsigned mask,DWORD a,DWORD 
 }
 static void RecEmitData(unsigned,const D3DRECT*,size_t,DWORD flags,D3DCOLOR c,DWORD,DWORD,void*,unsigned,DWORD){CHECK(flags==1);commands.push_back(c);}
 using d2vr_replay::g_recActive;
+using d2vr_replay::g_recOverflow;
 static HRESULT WINAPI Forward(IDirect3DDevice9*,DWORD,const D3DRECT*,DWORD,D3DCOLOR c,float,DWORD){++forwards;color=c;return S_OK;}
 static HRESULT WINAPI ForwardFill(IDirect3DDevice9*,IDirect3DSurface9* surface,const RECT*,D3DCOLOR c){++forwards;color=surface->color=c;return S_OK;}
 static HRESULT WINAPI ForwardStretch(IDirect3DDevice9*,IDirect3DSurface9* source,const RECT*,IDirect3DSurface9* target,const RECT*,D3DTEXTUREFILTERTYPE){++forwards;color=target->color=source->color;return S_OK;}

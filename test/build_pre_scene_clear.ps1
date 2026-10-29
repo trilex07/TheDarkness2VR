@@ -12,7 +12,8 @@ function Extract([string]$path,[string]$signature){
  throw 'Unclosed function'
 }
 $main=Join-Path $repo 'src/d3d9.cpp'
-$body=Extract $main "static void RecordPreSceneWrite(IDirect3DDevice9* dev) {"
+$body=Extract (Join-Path $repo 'src/stereo_replay.inl') 'static inline HRESULT RecordLiveResult('
+$body+="`n"+(Extract $main "static void RecordPreSceneWrite(IDirect3DDevice9* dev) {")
 $body+="`n"+(Extract (Join-Path $repo 'src/stereo_replay.inl') 'static HRESULT STDMETHODCALLTYPE Hook_Clear(')
 $body+="`n"+(Extract (Join-Path $repo 'src/stereo_replay.inl') 'static HRESULT STDMETHODCALLTYPE Hook_StretchRect(')
 $body+="`n"+(Extract (Join-Path $repo 'src/stereo_replay.inl') 'static HRESULT STDMETHODCALLTYPE Hook_ColorFill(')

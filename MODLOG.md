@@ -2069,3 +2069,23 @@ copies/fills, mixed write order, exactly one capture, forwarding, render-thread
 and presentation gates, and capture failure. This proves a missing-command
 case; retained game evidence does not establish that this case caused the
 user's menu flicker. No headset or frame-time improvement is claimed.
+
+## 2026-10-29: reject packets after failed live state/surface writes
+
+Twenty record-before-forward hooks previously retained commands even when
+the original D3D9 call returned a failure. A replay could then successfully
+perform a state change, clear, fill or copy that the live eye never performed.
+RecordLiveResult now preserves the exact native HRESULT and marks an active
+packet incomplete on failure. Later successes cannot repair that packet;
+existing replay/history/layer refusal handles it. Success adds no lock,
+allocation, retry, cache or driver call. API arguments and command order stay
+unchanged. This covers the twenty hooks listed by build_live_record_status;
+it is not a claim that every live native error path is now transactional.
+
+The actual-hook x86 fixture passes 2405 checks across twenty APIs, five
+HRESULTs, recording ON/OFF and prior incomplete/complete packets. It checks
+every original argument, exactly one driver entry, exact returned HRESULT,
+failure-only locking and sticky refusal after a subsequent successful call.
+Pre-scene writes pass 9129 checks; actual replay surface and state receipt
+regressions also pass. These are CPU fault-injection fixtures, not evidence
+that this error occurs in the user's menu. No performance saving is claimed.

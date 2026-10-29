@@ -453,6 +453,17 @@ struct RecLockGuard {
     ~RecLockGuard() { g_recLock.store(0,std::memory_order_release); }
 };
 
+// Commands below are owned before forwarding the live call. A rejected live
+// write must not become a successful right-eye operation. Preserve the native
+// HRESULT and keep failure sticky until the next independent recording.
+static inline HRESULT RecordLiveResult(HRESULT result) {
+    if(FAILED(result) && g_recActive) {
+        RecLockGuard lock;
+        if(g_recActive)g_recOverflow=true;
+    }
+    return result;
+}
+
 // D3D state blocks exclude render targets and depth surfaces. Keep those explicitly.
 static void SyncActiveShader(IDirect3DDevice9* dev);
 struct DeviceSnapshot {
@@ -1319,7 +1330,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWO
         // a released surface wrapper address must not alias a later RT.
         CollectLightReadbackTarget(s);
     }
-    return g_orig.SetRenderTarget(dev, idx, s);
+    return RecordLiveResult(g_orig.SetRenderTarget(dev, idx, s));
 }
 static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, const D3DRECT* rects,
                                             DWORD flags, D3DCOLOR color, float z, DWORD st) {
@@ -1331,28 +1342,28 @@ static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, 
     } else if (g_recActive) {
         RecEmit(OP_Clear, 0, flags, color, (uint32_t&)z, st);
     }
-    return g_orig.Clear(dev, count, rects, flags, color, z, st);
+    return RecordLiveResult(g_orig.Clear(dev, count, rects, flags, color, z, st));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetTransform(IDirect3DDevice9* dev, D3DTRANSFORMSTATETYPE st, const D3DMATRIX* m) {
     if (g_recActive) RecEmitData(OP_SetTransform,m,sizeof(D3DMATRIX),st,0,0,0,{},1,0);
-    return g_orig.SetTransform(dev, st, m);
+    return RecordLiveResult(g_orig.SetTransform(dev, st, m));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetViewport(IDirect3DDevice9* dev, const D3DVIEWPORT9* vp) {
     InvalidateShadowAtlasPass();
     if (g_recActive) RecEmitData(OP_SetViewport,vp,sizeof(D3DVIEWPORT9),0,0,0,0,{},0,0);
-    return g_orig.SetViewport(dev, vp);
+    return RecordLiveResult(g_orig.SetViewport(dev, vp));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetClipPlane(IDirect3DDevice9* dev, DWORD index, const float* plane) {
     if (g_recActive && plane) RecEmitData(OP_SetClipPlane, plane, sizeof(float)*4, index);
-    return g_orig.SetClipPlane(dev, index, plane);
+    return RecordLiveResult(g_orig.SetClipPlane(dev, index, plane));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderState(IDirect3DDevice9* dev, D3DRENDERSTATETYPE st, DWORD v) {
     if (g_recActive) RecEmit(OP_SetRenderState, 0, st, v);
-    return g_orig.SetRenderState(dev, st, v);
+    return RecordLiveResult(g_orig.SetRenderState(dev, st, v));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetTextureStageState(IDirect3DDevice9* dev, DWORD stage, D3DTEXTURESTAGESTATETYPE t, DWORD v) {
     if (g_recActive) RecEmit(OP_SetTextureStageState, 0, stage, t, v);
-    return g_orig.SetTextureStageState(dev, stage, t, v);
+    return RecordLiveResult(g_orig.SetTextureStageState(dev, stage, t, v));
 }
 // Increase only an existing anisotropic filter's quality budget. Do not alter
 // point/linear filtering, mip selection or postprocessing texture coordinates.
@@ -1369,7 +1380,7 @@ static DWORD ResolveSamplerValue(IDirect3DDevice9* dev, D3DSAMPLERSTATETYPE t, D
 static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWORD smp, D3DSAMPLERSTATETYPE t, DWORD v) {
     v = ResolveSamplerValue(dev, t, v);
     if (g_recActive) RecEmit(OP_SetSamplerState, 0, smp, t, v);
-    return g_orig.SetSamplerState(dev, smp, t, v);
+    return RecordLiveResult(g_orig.SetSamplerState(dev, smp, t, v));
 }
 // A MAXANISOTROPY budget alone leaves LINEAR minification bilinear. Restrict
 // promotion to one bytecode-verified world diffuse sampler and restore it at
@@ -1528,7 +1539,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect(IDirect3DDevice9* dev, cons
         if (r) RecEmitData(OP_SetScissorRect,r,sizeof(RECT),0,0,0,0,{},0,1);
         else RecEmit(OP_SetScissorRect, 0);
     }
-    return g_orig.SetScissorRect(dev, r);
+    return RecordLiveResult(g_orig.SetScissorRect(dev, r));
 }
 
 struct UiClipState { RECT rect; DWORD enabled; bool applied; };
@@ -1654,31 +1665,31 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexDeclaration(IDirect3DDevice9* dev, IDirect3DVertexDeclaration9* d) {
     if (g_recActive) RecEmit(OP_SetVertexDeclaration, 0, (uint32_t)(uintptr_t)d);
-    return g_orig.SetVertexDeclaration(dev, d);
+    return RecordLiveResult(g_orig.SetVertexDeclaration(dev, d));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetFVF(IDirect3DDevice9* dev, DWORD fvf) {
     if (g_recActive) RecEmit(OP_SetFVF, 0, fvf);
-    return g_orig.SetFVF(dev, fvf);
+    return RecordLiveResult(g_orig.SetFVF(dev, fvf));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
     if (g_recActive) RecEmitData(OP_SetVSConstI, d, sizeof(int) * 4 * n, s, n);
-    return g_orig.SetVertexShaderConstantI(dev, s, d, n);
+    return RecordLiveResult(g_orig.SetVertexShaderConstantI(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstB(IDirect3DDevice9* dev, UINT s, const BOOL* d, UINT n) {
     if (g_recActive) RecEmitData(OP_SetVSConstB, d, sizeof(BOOL) * n, s, n);
-    return g_orig.SetVertexShaderConstantB(dev, s, d, n);
+    return RecordLiveResult(g_orig.SetVertexShaderConstantB(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSource(IDirect3DDevice9* dev, UINT num, IDirect3DVertexBuffer9* vb, UINT off, UINT stride) {
     if (g_recActive) RecEmit(OP_SetStreamSource, 0, num, (uint32_t)(uintptr_t)vb, off, stride);
-    return g_orig.SetStreamSource(dev, num, vb, off, stride);
+    return RecordLiveResult(g_orig.SetStreamSource(dev, num, vb, off, stride));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSourceFreq(IDirect3DDevice9* dev, UINT num, UINT freq) {
     if (g_recActive) RecEmit(OP_SetStreamSourceFreq, 0, num, freq);
-    return g_orig.SetStreamSourceFreq(dev, num, freq);
+    return RecordLiveResult(g_orig.SetStreamSourceFreq(dev, num, freq));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3DIndexBuffer9* ib) {
     if (g_recActive) RecEmit(OP_SetIndices, 0, (uint32_t)(uintptr_t)ib);
-    return g_orig.SetIndices(dev, ib);
+    return RecordLiveResult(g_orig.SetIndices(dev, ib));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* ps) {
     const HRESULT result=g_orig.SetPixelShader(dev,ps);
@@ -1716,11 +1727,11 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
 D2VR_CONSTANT_GATE(Hook_SetPSConstF,Native_SetPSConstF)
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
     if (g_recActive) RecEmitData(OP_SetPSConstI, d, sizeof(int) * 4 * n, s, n);
-    return g_orig.SetPixelShaderConstantI(dev, s, d, n);
+    return RecordLiveResult(g_orig.SetPixelShaderConstantI(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstB(IDirect3DDevice9* dev, UINT s, const BOOL* d, UINT n) {
     if (g_recActive) RecEmitData(OP_SetPSConstB, d, sizeof(BOOL) * n, s, n);
-    return g_orig.SetPixelShaderConstantB(dev, s, d, n);
+    return RecordLiveResult(g_orig.SetPixelShaderConstantB(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_StretchRect(IDirect3DDevice9* dev, IDirect3DSurface9* a, const RECT* ra,
     IDirect3DSurface9* b, const RECT* rb, D3DTEXTUREFILTERTYPE f) {
@@ -1731,7 +1742,7 @@ static HRESULT STDMETHODCALLTYPE Hook_StretchRect(IDirect3DDevice9* dev, IDirect
         if (rb) ob = RecPush(rb, sizeof(RECT));
         RecEmit(OP_StretchRect, (ra ? 1 : 0) | (rb ? 2 : 0), (uint32_t)(uintptr_t)a, (uint32_t)(uintptr_t)b, f, oa, ob);
     }
-    return g_orig.StretchRect(dev, a, ra, b, rb, f);
+    return RecordLiveResult(g_orig.StretchRect(dev, a, ra, b, rb, f));
 }
 static HRESULT STDMETHODCALLTYPE Hook_ColorFill(IDirect3DDevice9* dev, IDirect3DSurface9* s, const RECT* r, D3DCOLOR c) {
     RecordPreSceneWrite(dev);
@@ -1740,7 +1751,7 @@ static HRESULT STDMETHODCALLTYPE Hook_ColorFill(IDirect3DDevice9* dev, IDirect3D
         if (r) off = RecPush(r, sizeof(RECT));
         RecEmit(OP_ColorFill, r ? 1 : 0, (uint32_t)(uintptr_t)s, c, off);
     }
-    return g_orig.ColorFill(dev, s, r, c);
+    return RecordLiveResult(g_orig.ColorFill(dev, s, r, c));
 }
 static HRESULT STDMETHODCALLTYPE Hook_UpdateSurface(IDirect3DDevice9* dev, IDirect3DSurface9* a, const RECT* ra,
     IDirect3DSurface9* b, const POINT* p) {
