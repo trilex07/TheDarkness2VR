@@ -36,8 +36,8 @@ struct GpuFrameTiming {
                 const double ms=(b-a)*1000.0/f;
                 totalMs+=ms; maxMs=std::max(maxMs,ms); ++samples;
                 if(samples>=120) {
-                    Log("[GPUFrame] D3D9 live+replay mean=%.3fms max=%.3fms n=%u (excludes D3D11/XR)",totalMs/samples,maxMs,samples);
-                    if(splitSamples) Log("[GPUFrameSplit] live=%.3fms replay=%.3fms n=%u (D3D9 only)",
+                    Log("[GPUFrame] D3D9 live+replay mean=%.3fms max=%.3fms n=%u (timestamp span, includes submission gaps; NOT GPU Busy or full D3D11/XR time)",totalMs/samples,maxMs,samples);
+                    if(splitSamples) Log("[GPUFrameSplit] live=%.3fms replay=%.3fms n=%u (timestamp spans, NOT GPU Busy)",
                         liveMs/splitSamples,replayMs/splitSamples,splitSamples);
                     samples=0; totalMs=maxMs=0;
                     splitSamples=0; liveMs=replayMs=0;

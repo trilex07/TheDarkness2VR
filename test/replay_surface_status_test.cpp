@@ -22,7 +22,8 @@ static unsigned mask=0;
 static bool nullBinding=false;
 static unsigned bankClears=0,shaderSyncs=0;
 static struct {struct {void Clear(){++bankClears;}} replay;} g_vsConstantHistory;
-static void SyncActiveShader(IDirect3DDevice9*){++shaderSyncs;}
+static bool syncResult=true;
+static bool SyncActiveShader(IDirect3DDevice9*){++shaderSyncs;return syncResult;}
 static HRESULT STDMETHODCALLTYPE ApplyBlock(IDirect3DStateBlock9* block){CHECK(block==(IDirect3DStateBlock9*)0x3000);return Receipt(OP_ApplyStateBlock);}
 static auto g_origSBApply=&ApplyBlock;
 #define HOOK_MARK(x) ((void)0)
@@ -77,6 +78,10 @@ int main() {
         CHECK(calls==expected && attempts==7 && invalidations==2 && bankClears==1 && shaderSyncs==1);
     }
     failAt=attempts=0;calls.clear();
+    syncResult=false;
+    CHECK(!Actual({{OP_ApplyStateBlock,0,{0x3000}},{OP_EndScene,0,{}}},bytes));
+    CHECK((calls==std::vector<unsigned>{OP_ApplyStateBlock,OP_EndScene}));
+    syncResult=true;attempts=0;calls.clear();
     CHECK(!Actual({{OP_ApplyStateBlock,0,{0}}},bytes) && calls.empty());
     g_origSBApply=nullptr;
     CHECK(!Actual({{OP_ApplyStateBlock,0,{0x3000}}},bytes) && calls.empty());

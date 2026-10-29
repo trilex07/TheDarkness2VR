@@ -29,7 +29,7 @@ if(-not $ExpectLegacyStale){
     }
     [IO.File]::WriteAllText((Join-Path $out 'actual_shader_replay.inl'),($cases -join "`r`n"))
     [IO.File]::WriteAllText((Join-Path $out 'actual_pixel_sync.inl'),
-        (Extract 'static void SyncActiveShader(IDirect3DDevice9* dev) {').Replace('IDirect3DDevice9* dev','FixtureDevice* dev'))
+        (Extract 'static bool SyncActiveShader(IDirect3DDevice9* dev) {').Replace('IDirect3DDevice9* dev','FixtureDevice* dev'))
     [IO.File]::WriteAllText((Join-Path $out 'actual_pixel_light.inl'),
         (Extract 'if (g_lightPosShift && sp.transX'))
 }

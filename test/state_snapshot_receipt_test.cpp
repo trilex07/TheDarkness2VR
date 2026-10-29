@@ -26,7 +26,8 @@ struct FakeDevice{
 using ApplyFn=HRESULT(*)(FakeState*);
 static HRESULT OriginalApply(FakeState* state){return state->Apply();}
 static ApplyFn g_origSBApply=nullptr;
-static void SyncActiveShader(FakeDevice*){++syncs;}
+static bool syncResult=true;
+static bool SyncActiveShader(FakeDevice*){++syncs;return syncResult;}
 #include "actual_snapshot_cpu.inl"
 template<class Snapshot> static bool ApplyResult(Snapshot& snapshot,FakeDevice* device){
     if constexpr(std::is_void_v<decltype(snapshot.Apply(device))>){snapshot.Apply(device);return true;}
@@ -51,6 +52,9 @@ int main(){
     {FakeDevice dev,other;DeviceSnapshot snapshot;Reset();CHECK(snapshot.Capture(&dev));Reset();
         CHECK(!ApplyResult(snapshot,&other) && attempts==0);snapshot.Release();Released(dev);}
     {FakeDevice dev;DeviceSnapshot snapshot;Reset();CHECK(!ApplyResult(snapshot,&dev) && attempts==0);}
+    {FakeDevice dev;DeviceSnapshot snapshot;Reset();CHECK(snapshot.Capture(&dev));Reset();
+        syncResult=false;CHECK(!ApplyResult(snapshot,&dev));
+        CHECK(syncs==1 && attempts==6);syncResult=true;snapshot.Release();Released(dev);}
     // A failed reusable Capture retries with a fresh state block. Repeated
     // successful captures keep one owned reference and release every surface.
     {FakeDevice dev;DeviceSnapshot snapshot;Reset();CHECK(snapshot.Capture(&dev,true));

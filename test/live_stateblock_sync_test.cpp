@@ -84,10 +84,11 @@ int main(){
     Reset(d,a,b,true);g_origSBApply=nullptr;FakeBlock block{&d,&b,&b};
     CHECK(Hook_SBApply(&block)==D3DERR_INVALIDCALL && applies==0 && records==0 && order.empty());
     // A failed shader query cannot leave the previous shader's interpretation.
-    for(unsigned failure=1;failure<=3;++failure){
-        Reset(d,a,b,true);d.vsResult=(failure&1)?D3DERR_INVALIDCALL:S_OK;d.psResult=(failure&2)?D3DERR_INVALIDCALL:S_OK;
+    for(bool recording:{false,true})for(unsigned failure=1;failure<=3;++failure){
+        Reset(d,a,b,recording);d.vsResult=(failure&1)?D3DERR_INVALIDCALL:S_OK;d.psResult=(failure&2)?D3DERR_INVALIDCALL:S_OK;
         CHECK(Hook_SBApply(&block)==S_OK);
         CHECK(activeVs==((failure&1)?nullptr:&b) && activePs==((failure&2)?nullptr:&b));
+        CHECK(g_recOverflow==recording && records==0);
         CHECK(d.refs==1 && a.refs==1 && b.refs==1);
     }
     printf("PASS actual live stateblock+shader sync: %u checks; 16000 successful transitions, failed Apply/GetDevice/query, null shaders, raw-bank invalidation, original receipt, exact order and references; CPU fixture\n",checks);

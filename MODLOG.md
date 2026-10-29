@@ -2342,3 +2342,53 @@ backups/closed-wrist-20261029T150240 under the private runtime root. Prepared
 payload SHA256: 71781234a1851232a74876504ccda0d8a86365dc358efcefc11d79454b47a936.
 This is an asset-only update; no C++ rebuild or new x86 result is claimed.
 Headset appearance and articulation require the user's next test.
+
+## 2026-10-29: reject restored shader state when binding queries fail
+
+SyncActiveShader cleared stale metadata on failed GetVertexShader/GetPixelShader,
+but returned no status. A snapshot, replayed state-block Apply or native live
+Apply could therefore publish a pair with unknown shader interpretation. Return
+the combined query status and propagate it through all three callers. Valid null
+fixed-function bindings remain accepted. Keep successful call counts, native
+HRESULTs, shader references and cleanup order unchanged; no query retry added.
+
+Before correction, the actual c1a0985 live hook fails the new x86 assertion at
+check232071: failed binding queries still leave a publishable Apply record.
+After correction, 232129 actual-hook checks PASS, including recording OFF/ON,
+each failed query, null bindings and 16000 successful transitions. Pixel shader
+metadata/publication concurrency and replay surface/state-block receipt tests
+PASS; the latter now verifies query failure stays sticky through EndScene.
+Production and diagnostic x86 DLL builds PASS. The additional snapshot CPU
+receipt executable builds but Windows refuses to start it (access denial/file
+sharing violation), and a later check finds both generated executables missing;
+the responsible external component is unproven. Its new query-failure assertion
+is NOT RUN, not a pass. No protection setting was changed or file renamed.
+No new Steam DLL deployed, no observed runtime query failure or flicker root
+cause established, and no runtime FPS saving claimed.
+
+Clarify existing GPUFrame log labels: D3D9 timestamps measure marker spans,
+including submission gaps, not GPU Busy or full D3D11/OpenXR execution. The latest
+10-12 ms values alone cannot establish GPU saturation. No profiler added.
+
+Bounded next-cause audit: retained COM references do not preserve dynamic VB/IB
+contents or mutable state-block Capture values. Existing captures snapshot each
+first-person VB once, so they do not prove a same-frame overwrite in the menu.
+Do not add per-draw readbacks or claim this causes the reported flicker.
+Recreating an ALL/PIXEL/VERTEX block after Apply is not a proven equivalent clone:
+Capture preserves the original state membership, including its light inventory;
+a later newly created block can include additional lights. Custom EndStateBlock
+masks are also unknown. No speculative replacement was implemented.
+API contracts: https://learn.microsoft.com/en-us/windows/win32/api/d3d9/nf-d3d9-idirect3dstateblock9-capture
+and https://learn.microsoft.com/en-us/windows/win32/direct3d9/state-blocks-save-and-restore-state
+
+P3 native input export (D46B image, EVIDENCE COMPLETE), private
+d2vr-menu-registry-route-current.txt SHA256
+69CA89D5E2214894A23D874E52763CDF6DE9024502B2D6F3D89D9D874CF0699E:
+00560C40 assigns an intrusive reference to receiver+0C; it is not a registry
+getter. 006EBBC0 validates a device through vtable+4, appends its reference to
+manager+78, and returns a strong reference; it is not a mouse lookup. 00CE2B90
+creates a reference wrapper. 008460E0 creates MouseDeviceWin, inserts it through
+006EBBC0 and stores the returned reference at manager+A44. None is authorized as
+a read-only lookup for menu injection. Live manager ownership, native menu mode
+and the actually submitted interactive surface remain required before wiring
+the existing pointer core. No native call or input hook added on this evidence.

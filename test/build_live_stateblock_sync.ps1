@@ -14,7 +14,8 @@ function Extract([string]$signature) {
     }
     throw "Unclosed $signature"
 }
-$body=(Extract 'static void SyncActiveShader(IDirect3DDevice9* dev) {')+"`n"+(Extract 'static HRESULT STDMETHODCALLTYPE Hook_SBApply(')
+$syncSignature=if($source.Contains('static bool SyncActiveShader(IDirect3DDevice9* dev) {')){'static bool SyncActiveShader(IDirect3DDevice9* dev) {'}else{'static void SyncActiveShader(IDirect3DDevice9* dev) {'}
+$body=(Extract $syncSignature)+"`n"+(Extract 'static HRESULT STDMETHODCALLTYPE Hook_SBApply(')
 $body=$body.Replace('IDirect3DDevice9','FakeDevice').Replace('IDirect3DStateBlock9','FakeBlock').Replace('IDirect3DVertexShader9','FakeShader').Replace('IDirect3DPixelShader9','FakeShader')
 [IO.File]::WriteAllText((Join-Path $out 'actual_stateblock_sync.inl'),$body)
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

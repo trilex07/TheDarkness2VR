@@ -465,7 +465,7 @@ static inline HRESULT RecordLiveResult(HRESULT result) {
 }
 
 // D3D state blocks exclude render targets and depth surfaces. Keep those explicitly.
-static void SyncActiveShader(IDirect3DDevice9* dev);
+static bool SyncActiveShader(IDirect3DDevice9* dev);
 struct DeviceSnapshot {
     IDirect3DDevice9* owner = nullptr;
     IDirect3DStateBlock9* state = nullptr;
@@ -515,7 +515,7 @@ struct DeviceSnapshot {
         if(FAILED(dev->SetDepthStencilSurface(depth)))complete=false;
         // Apply state AFTER RTs because SetRenderTarget resets the viewport.
         if(FAILED(g_origSBApply ? g_origSBApply(state):state->Apply()))complete=false;
-        SyncActiveShader(dev);
+        if(!SyncActiveShader(dev))complete=false;
         return complete;
     }
 };
@@ -756,19 +756,24 @@ static void SetActivePixelShaderMetadata(const void* identity) {
     g_activePsViewExtents=metadata.extents;
     g_activePsHash=metadata.hash;
 }
-static void SyncActiveShader(IDirect3DDevice9* dev) {
+static bool SyncActiveShader(IDirect3DDevice9* dev) {
     IDirect3DVertexShader9* shader = nullptr;
     SetActiveVertexShaderMetadata(nullptr);
-    if (SUCCEEDED(dev->GetVertexShader(&shader)) && shader) {
+    const HRESULT vertexResult=dev->GetVertexShader(&shader);
+    if (SUCCEEDED(vertexResult) && shader) {
         SetActiveVertexShaderMetadata(shader);
         shader->Release();
     }
     IDirect3DPixelShader9* ps = nullptr;
     SetActivePixelShaderMetadata(nullptr);
-    if (SUCCEEDED(dev->GetPixelShader(&ps)) && ps) {
+    const HRESULT pixelResult=dev->GetPixelShader(&ps);
+    if (SUCCEEDED(pixelResult) && ps) {
         SetActivePixelShaderMetadata(ps);
         ps->Release();
     }
+    // Null shaders are valid fixed-function bindings. A failed query is unknown
+    // state, not a null binding: do not publish stereo using that interpretation.
+    return SUCCEEDED(vertexResult) && SUCCEEDED(pixelResult);
 }
 
 // Stock FXAA PS5104FEF7: retain declarations/CTAB and its own centre sample,
@@ -2195,7 +2200,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             // record while the record lock is held here -> deadlock
             if (!sb || !g_origSBApply || FAILED(g_origSBApply(sb)))replayComplete=false;
             g_vsConstantHistory.replay.Clear();
-            SyncActiveShader(dev);
+            if(!SyncActiveShader(dev))replayComplete=false;
             HOOK_MARK(1900 + r.op);
             break;
         }
@@ -2265,7 +2270,12 @@ static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
     // the same for the live eye before its next constant upload/draw; otherwise
     // live and replay interpret the same native registers as different shaders.
     IDirect3DDevice9* device=nullptr;
-    if(sb && SUCCEEDED(sb->GetDevice(&device)) && device)SyncActiveShader(device);
+    if(sb && SUCCEEDED(sb->GetDevice(&device)) && device) {
+        if(!SyncActiveShader(device)) {
+            RecLockGuard lock;
+            if(g_recActive)g_recOverflow=true;
+        }
+    }
     else {
         SetActiveVertexShaderMetadata(nullptr);
         SetActivePixelShaderMetadata(nullptr);

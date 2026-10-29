@@ -7,7 +7,7 @@
 #define CHECK(x) do{if(!(x)){printf("FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 using ApplyFn=HRESULT(STDMETHODCALLTYPE*)(IDirect3DStateBlock9*);
 static ApplyFn g_origSBApply=nullptr;
-static void SyncActiveShader(IDirect3DDevice9*){}
+static bool SyncActiveShader(IDirect3DDevice9*){return true;}
 #include "actual_snapshot.inl"
 int main(int argc,char**) {
     wchar_t path[MAX_PATH];CHECK(GetSystemDirectoryW(path,MAX_PATH));wcscat_s(path,L"\\d3d9.dll");

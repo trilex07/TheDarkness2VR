@@ -208,14 +208,14 @@ int main() {
     // Snapshot restoration can inherit a PS before any OP_SetPixelShader in
     // this replay. Its light upload must use the restored binding's hash.
     g_pixelShaders.Publish(&shader,{kShadowLightPsHash,44,55});
-    FixtureDevice device;SyncActiveShader(&device);
+    FixtureDevice device;CHECK(SyncActiveShader(&device));
     CHECK(vertexSyncs==1 && g_activePsHash==kShadowLightPsHash && g_activePsInverse==44 && g_activePsViewExtents==55);
     float values[8]={1,2,3,4,5,6,7,8},adjusted[8]{};
     CHECK(AdjustLight(adjusted,values,0,2,.25f,-.5f));
     CHECK(adjusted[0]==1.25f && adjusted[1]==1.5f && !memcmp(adjusted+2,values+2,6*sizeof(float)));
     CHECK(!AdjustLight(adjusted,values,1,2,.25f,-.5f));
     CHECK(!AdjustLight(adjusted,values,0,225,.25f,-.5f));
-    device.result=E_FAIL;SyncActiveShader(&device);
+    device.result=E_FAIL;CHECK(!SyncActiveShader(&device));
     CHECK(!g_activePsHash && g_activePsInverse==-1 && g_activePsViewExtents==-1);
     CHECK(!AdjustLight(adjusted,values,0,2,.25f,-.5f));
     // A worker repeatedly replaces a complete snapshot while two render-like

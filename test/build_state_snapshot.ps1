@@ -1,9 +1,9 @@
-param([switch]$Hardware,[switch]$CpuOnly)
+param([switch]$Hardware,[switch]$CpuOnly,[string]$SourceRef)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
-$out=Join-Path $env:TEMP 'd2vr-state-snapshot-tests'
+$out=Join-Path $env:TEMP ('d2vr-state-snapshot-tests-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $out -Force|Out-Null
-$text=Get-Content -LiteralPath "$repo\src\stereo_replay.inl" -Raw
+$text=if($SourceRef){(git -C $repo show "${SourceRef}:src/stereo_replay.inl") -join "`n"}else{Get-Content -LiteralPath "$repo\src\stereo_replay.inl" -Raw}
 $body=[regex]::Match($text,'(?s)struct DeviceSnapshot \{.*?\r?\n\};')
 if(-not $body.Success){throw 'Actual snapshot source missing'}
 $body.Value|Set-Content -LiteralPath "$out\actual_snapshot.inl" -Encoding utf8
