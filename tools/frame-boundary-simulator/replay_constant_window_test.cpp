@@ -24,6 +24,8 @@ static std::vector<Rec> g_rec;
 #include "actual_constant_binding_helpers.inl"
 static std::vector<uint8_t> arena;
 static unsigned checkAt=0,checks=0,apiCalls=0,apiFail=0,throwAt=0;
+static unsigned lastVsFirst=0,lastVsCount=0;
+static unsigned rejectAt=0;
 static bool g_replayConstantBatch=false,g_replayConstantWindow=false,capture=false,compensate=false;
 static bool g_replayConstantBindWindow=false;
 static bool g_recOverflow=false;
@@ -36,6 +38,7 @@ static struct {
 } g_constantUploadWindow;
 static bool g_skipLightVsShift=false;
 static struct Vs {uint32_t hash=0;} vertexMetadata;
+using VsInfo=Vs;
 static Vs* g_activeVs=&vertexMetadata;
 static bool bindingTransforms=false,collectReference=false,checkBindingSnapshots=false;
 static std::vector<std::array<const void*,2>> expectedBindings;
@@ -65,15 +68,17 @@ static HRESULT VSB(void*,UINT first,const BOOL* p,UINT n){return State(7,{first,
 static HRESULT PSI(void*,UINT first,const int* p,UINT n){return State(8,{first,n},p,n*16);}
 static HRESULT PSB(void*,UINT first,const BOOL* p,UINT n){return State(9,{first,n},p,n*4);}
 static void InvalidateShadowAtlasPass(){}
-static int ActiveWvpRegister(Vs*){return 0;}
+static int activeWvpBase=-1;
+static int ActiveWvpRegister(Vs*){return activeWvpBase;}
 static bool IsShadowAtlasPass(void*){return false;}
 static bool ApplyShiftToUpload(float* dst,const float* src,UINT,UINT n,Vs* vi,const Params&,
-                              const d2vr_shader_registers::Reference* =nullptr){
-    if(!n || n>68)return false;
+                              const d2vr_shader_registers::Reference* =nullptr,bool* =nullptr){
+    if(!n || n>72)return false;
     memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);
     bits^=0x10000;if(bindingTransforms){bits^=vi?vi->hash:0x1234;bits^=otherState[4];}
     memcpy(dst,&bits,4);return true;
 }
+#include "actual_partial_wvp.inl"
 static int g_activePsInverse=-1,g_activePsViewExtents=-1;
 static bool g_lightPosShift=false;
 static const void* g_replayPs=nullptr;
@@ -101,7 +106,9 @@ static void Log(const char*,...){}
 #define HOOK_MARK(value) ((void)0)
 static HRESULT Submit(bool vertex,UINT first,const float* values,UINT count){
     ++apiCalls;
+    if(vertex){lastVsFirst=first;lastVsCount=count;}
     if(throwAt && apiCalls==throwAt)RaiseException(0xe0420011,0,0,nullptr);
+    if(rejectAt && apiCalls==rejectAt){++apiFail;return D3DERR_INVALIDCALL;}
     const unsigned limit=vertex?256:224;
     if(!values || !count || first>=limit || count>limit-first){++apiFail;return D3DERR_INVALIDCALL;}
     auto& bank=vertex?driver.vs:driver.ps;
@@ -126,6 +133,7 @@ static void CheckBanks(){
 static bool Actual(){
     void* dev=nullptr;const int eye=1;const bool dump=false;const Params sp;
     const uint8_t* dataBase=arena.data();
+    g_vsConstantHistory.BeginReplay();
 #include "actual_replay_float_loop.inl"
     return replayComplete;
 }
@@ -133,6 +141,7 @@ static uint32_t rng=0xa18478ed;
 static uint32_t Random(){rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;}
 static void Build(){
     g_rec.clear();arena.clear();expected.clear();Banks ref;
+    d2vr_shader_registers::Bank nativeRegisters;
     for(unsigned i=0;i<6000;++i){
         Rec r;
         if(i%7==6){r.op=1+Random()%18;if(r.op==OP_SetVSConstF || r.op==OP_SetPSConstF)r.op=36;
@@ -142,13 +151,18 @@ static void Build(){
         if(i%19==0)r.a[0]=0; // projection/partial ranges and duplicated overlaps
         const unsigned bytes=r.a[1]*16;r.a[4]=unsigned(arena.size());arena.resize(arena.size()+bytes);
         for(unsigned b=0;b<bytes;b+=4){const auto bits=Random();memcpy(arena.data()+r.a[4]+b,&bits,4);}
+        if(r.op==OP_SetVSConstF)nativeRegisters.Write(r.a[0],r.a[1],arena.data()+r.a[4],bytes);
         const unsigned limit=r.op==OP_SetVSConstF?256:224;
         if(r.a[1] && r.a[0]<limit && r.a[1]<=limit-r.a[0]){
-            float tmp[68*4];const float* data=reinterpret_cast<const float*>(arena.data()+r.a[4]);
-            if(r.op==OP_SetVSConstF){if(ApplyShiftToUpload(tmp,data,r.a[0],r.a[1],g_activeVs,Params{}))data=tmp;}
+            float tmp[kVertexStereoUploadRows*4];const float* data=reinterpret_cast<const float*>(arena.data()+r.a[4]);
+            UINT first=r.a[0],count=r.a[1];
+            if(r.op==OP_SetVSConstF){
+                const d2vr_shader_registers::Reference reference(nativeRegisters,ActiveWvpRegister(g_activeVs));
+                if(ApplyVertexStereoUpload(tmp,data,first,count,g_activeVs,Params{},&reference))data=tmp;
+            }
             else if(CompensatePsConstants(tmp,data,r.a[0],r.a[1],-1,-1,Params{}))data=tmp;
             auto& bank=r.op==OP_SetVSConstF?ref.vs:ref.ps;
-            memcpy(bank.data()+r.a[0]*4,data,bytes);
+            memcpy(bank.data()+first*4,data,size_t(count)*16);
         }
         g_rec.push_back(r);
     }
@@ -199,7 +213,7 @@ static void ActualReduction(){
             g_rec.push_back(r);
         }
         Rec barrier;barrier.op=36;g_rec.push_back(barrier);expected.push_back(final);
-        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};
+        driver={};g_vsConstantHistory.Clear();apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};
         g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode==2;Actual();
         counts[mode]=apiCalls;assert(checkAt==1 && !apiFail);
     }
@@ -315,15 +329,40 @@ static void IndependentBindingReduction(){
     stateFailAt=0;bindingTransforms=collectReference=checkOtherState=compensate=false;
     otherState={};g_replayConstantBindWindow=false;
 }
+static void PartialReplay(){
+    capture=compensate=bindingTransforms=collectReference=checkOtherState=checkBindingSnapshots=false;
+    g_activeVs=&vertexMetadata;g_recOverflow=false;
+    g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
+    for(unsigned base:{0u,61u,252u})for(unsigned mode=0;mode<4;++mode){
+        activeWvpBase=int(base);g_vsConstantHistory.Clear();
+        uint32_t raw[16];for(unsigned i=0;i<16;++i)raw[i]=0x3f000000+i;
+        assert(g_vsConstantHistory.begin.Write(base,4,raw,sizeof(raw)));
+        arena.assign(16,0);uint32_t partial[4]={31,37,41,43};memcpy(arena.data(),partial,16);
+        memcpy(raw+12,partial,16);
+        g_rec.clear();Rec upload;upload.op=OP_SetVSConstF;upload.a[0]=base+3;upload.a[1]=1;
+        g_rec.push_back(upload);Rec draw;draw.op=OP_DrawIndexedPrimitive;g_rec.push_back(draw);
+        Banks wanted;memcpy(wanted.vs.data()+base*4,raw,sizeof(raw));wanted.vs[base*4]^=0x10000;
+        expected={wanted};driver={};checkAt=apiCalls=apiFail=0;
+        g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
+        assert(Actual() && checkAt==1 && !apiFail && apiCalls==1);
+        assert(lastVsFirst==base && lastVsCount==4);
+        float observed[16];assert(g_vsConstantHistory.replay.Matrix(int(base),observed));
+        assert(!memcmp(observed,raw,sizeof(raw)) && !memcmp(arena.data(),partial,16));++checks;
+    }
+    // A rejected completed upload keeps the eye incomplete and is not retried.
+    g_rec.pop_back();rejectAt=1;checkAt=apiCalls=apiFail=0;
+    assert(!Actual() && apiCalls==1 && apiFail==1);++checks;
+    rejectAt=0;activeWvpBase=-1;g_vsConstantHistory.Clear();
+}
 int main(){
-    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();unsigned streams=0,records=0;
+    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();unsigned streams=0,records=0;
     for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
     for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
         g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
         g_frameStart.vertexFloatLimit=caps;g_frameStart.pixelFloatLimit=caps==96?32:224;
         Build();const auto dataBefore=arena;
-        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};
+        driver={};g_vsConstantHistory.Clear();apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};
         const bool complete=Actual();assert(complete==(apiFail==0));
         assert(checkAt==expected.size() && arena==dataBefore);
 #ifdef D2VR_MATCHED_CAPTURE

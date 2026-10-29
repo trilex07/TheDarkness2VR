@@ -1954,14 +1954,16 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
     if ((g_hookMask & 8) && g_submitMode == 4 && g_stereoMode >= 1 &&
         d2vr_replay::g_replayEye < 0 && pConstantData && Vector4fCount <= 68 &&
         !d2vr_replay::IsShadowAtlasPass(dev)) {
-        static thread_local float s_tmpConst[68 * 4];
+        static thread_local float s_tmpConst[d2vr_replay::kVertexStereoUploadRows * 4];
         d2vr_replay::StereoParams sp = MakeEyeParams(0);
         if (g_stereoMode == 2) sp.separation = 0.0f;
         bool perspectiveUpload=false;
-        if (d2vr_replay::ApplyShiftToUpload(s_tmpConst, pConstantData, StartRegister,
-                                            Vector4fCount, d2vr_replay::g_activeVs, sp,
+        UINT uploadStart=StartRegister,uploadCount=Vector4fCount;
+        if (d2vr_replay::ApplyVertexStereoUpload(s_tmpConst, pConstantData, uploadStart,
+                                            uploadCount, d2vr_replay::g_activeVs, sp,
                                             &rawReference,&perspectiveUpload)) {
             pConstantData = s_tmpConst;
+            StartRegister=uploadStart;Vector4fCount=uploadCount;
             if(perspectiveUpload) {
                 g_had3DCameraThisFrame = true;
                 ++g_3dCamCallsThisFrame;
@@ -1976,7 +1978,9 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
     }
 #ifdef D2VR_MATCHED_CAPTURE
     if(witness) EndCameraUploadWitness(cameraSample,result);
-    EndMatchedSkinUpload(skinUpload,pConstantData,result);
+    // This witness retains the original native range, even after completion.
+    EndMatchedSkinUpload(skinUpload,skinUpload.valid ?
+        pConstantData+4*(skinUpload.start-StartRegister):pConstantData,result);
 #endif
     return result;
 }

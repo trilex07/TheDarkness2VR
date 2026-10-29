@@ -10,7 +10,8 @@ $src=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw
 $main=Get-Content -LiteralPath (Join-Path $repo 'src\d3d9.cpp') -Raw
 if($main -notmatch 'g_replayConstantBatch = GetPrivateProfileIntA\("Render", "ReplayConstantBatch", 0, chosenIni\)' -or
    $src -notmatch 'batchEnabled = batchEnabled && !MatchedCaptureRecordingActive\(\)' -or
-   $src.IndexOf('ApplyShiftToUpload(tmp, src, r.a[0], r.a[1]') -gt $src.IndexOf('constants.Upload(d2vr_replay_batch::Stage::Vertex') -or
+   $src.IndexOf('ApplyVertexStereoUpload(tmp, src, uploadStart, uploadCount') -lt 0 -or
+   $src.IndexOf('ApplyVertexStereoUpload(tmp, src, uploadStart, uploadCount') -gt $src.IndexOf('constants.Upload(d2vr_replay_batch::Stage::Vertex') -or
    $src.IndexOf('constants.Barrier(') -gt $src.IndexOf('switch ((RecOp)r.op) {')){throw 'Default/capture/barrier/original transform boundaries changed'}
 Push-Location $out
 try {

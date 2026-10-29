@@ -17,7 +17,10 @@ function Extract([string]$signature,[bool]$structure=$false) {
 }
 $parts=@((Extract 'struct VsInfo {' $true),(Extract 'struct StereoParams {' $true),
     (Extract 'static void ApplyEyeShiftToMatrix('),(Extract 'static int ActiveWvpRegister('),
-    (Extract 'static bool ApplyShiftToUpload('))
+    (Extract 'static bool ApplyShiftToUpload('),
+    'static constexpr UINT kVertexStereoUploadRows=72;',
+    (Extract '__declspec(noinline) static bool ApplyPartialWvpUpload('),
+    (Extract 'static bool ApplyVertexStereoUpload('))
 [IO.File]::WriteAllText((Join-Path $out 'actual_projection_history.inl'),($parts -join "`r`n"))
 [IO.File]::WriteAllText((Join-Path $out 'actual_shader_identity.inl'),
     (Extract 'static bool VertexShaderAnalysisKnown(')+"`r`n"+

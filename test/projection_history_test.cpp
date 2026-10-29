@@ -57,7 +57,56 @@ static bool ApplyWithRegisters(float* dst,const float* src,UINT first,UINT count
     const d2vr_shader_registers::Reference reference(*bank,ActiveWvpRegister(vi));
     return ApplyShiftToUpload(dst,src,first,count,vi,sp,&reference);
 }
+static void PartialWvpCases(bool legacy){
+    for(unsigned base:{0u,61u,125u,189u,252u})for(unsigned eye=0;eye<2;++eye)
+    for(unsigned geometry=0;geometry<2;++geometry)for(unsigned firstRow=0;firstRow<4;++firstRow)
+    for(unsigned rows=1;rows<=4-firstRow;++rows){
+        if(firstRow==0 && rows==4)continue;
+        VsInfo vi;vi.analyzed=true;vi.wvpBase=int(base);
+        StereoParams params;params.transX=eye?.0315f:-.0315f;params.transY=.01f;
+        params.fovScaleX=.8f;params.fovScaleY=.9f;params.headGeometry=geometry!=0;
+        params.headClip[0]=params.headClip[5]=params.headClip[10]=params.headClip[15]=1;
+        params.headClip[8]=.03f;params.headClip[12]=.02f;
+        float raw[16],actual[72*4],expected[16];Perspective(raw,float(base)*.1f);
+        // This is the raw register bank AFTER this native partial write.
+        raw[firstRow*4]+=.25f;
+        d2vr_shader_registers::Bank bank;CHECK(bank.Write(base,4,raw,sizeof(raw)));
+        const d2vr_shader_registers::Reference reference(bank,int(base));
+        CHECK(ApplyShiftToUpload(expected,raw,base,4,&vi,params,&reference));
+        UINT first=base+firstRow,count=rows;bool perspective=false;
+        const bool modified=legacy?
+            ApplyShiftToUpload(actual,raw+firstRow*4,first,count,&vi,params,&reference,&perspective):
+            ApplyVertexStereoUpload(actual,raw+firstRow*4,first,count,&vi,params,&reference,&perspective);
+        CHECK(modified);CHECK(first==base && count==4);CHECK(perspective);
+        CHECK(!memcmp(actual,expected,sizeof(expected)));
+        // Missing data never borrows a different shader's stale matrix.
+        auto unknown=reference;unknown.valid=false;
+        first=base+firstRow;count=rows;
+        CHECK(!ApplyVertexStereoUpload(actual,raw+firstRow*4,first,count,&vi,params,&unknown));
+        CHECK(first==base+firstRow && count==rows);
+    }
+    // Worst expansion on either side, including payload outside the WVP.
+    for(unsigned side=0;side<2;++side){
+        VsInfo vi;vi.analyzed=true;vi.wvpBase=68;
+        StereoParams params;params.transX=.03f;params.fovScaleX=.8f;
+        float native[256*4];for(unsigned i=0;i<256*4;++i)native[i]=float(i)*.001f;
+        float matrix[16];Perspective(matrix,7);memcpy(native+68*4,matrix,sizeof(matrix));
+        d2vr_shader_registers::Bank bank;CHECK(bank.Write(0,256,native,sizeof(native)));
+        const d2vr_shader_registers::Reference reference(bank,68);
+        UINT first=side?71:1,count=68;
+        const UINT expectedFirst=side?68:1,expectedCount=71;
+        float expected[72*4]{},actual[72*4+4];
+        for(auto& f:actual)f=-12345.f;
+        CHECK(ApplyShiftToUpload(expected,native+expectedFirst*4,expectedFirst,expectedCount,&vi,params,&reference));
+        CHECK(ApplyVertexStereoUpload(actual,native+first*4,first,count,&vi,params,&reference));
+        CHECK(first==expectedFirst && count==expectedCount);
+        CHECK(!memcmp(actual,expected,expectedCount*16));
+        for(unsigned i=count*4;i<72*4+4;++i)CHECK(actual[i]==-12345.f);
+    }
+    printf("PASS actual partial WVP completion: both eyes, head geometry, every partial subrange, register word boundaries, unknown-bank refusal, 68-to71 rows and guard bytes\n");
+}
 int main(int argc,char** argv) {
+    PartialWvpCases(argc==2 && !strcmp(argv[1],"--partial-legacy"));
     const bool legacy=argc==2 && !strcmp(argv[1],"--expect-legacy-mismatch");
     VsInfo vi;vi.analyzed=true;vi.wvpBase=0;vi.stpBase=4;
     StereoParams sp;sp.transX=.0315f;sp.transY=.01f;sp.fovScaleX=.82f;sp.fovScaleY=.91f;

@@ -29,6 +29,10 @@ if($helperBegin -lt 0 -or $helperEnd -lt 0){throw 'Actual binding classifier mis
 $enumBegin=$src.IndexOf('enum RecOp : uint16_t {',[StringComparison]::Ordinal)
 $enumEnd=$src.IndexOf('};',$enumBegin,[StringComparison]::Ordinal)+2
 [IO.File]::WriteAllText((Join-Path $out 'actual_record_ops.inl'),$src.Substring($enumBegin,$enumEnd-$enumBegin))
+$partialBegin=$src.IndexOf('static constexpr UINT kVertexStereoUploadRows=',[StringComparison]::Ordinal)
+$partialEnd=$src.IndexOf('// ------------------------------------------------------------- recording hooks',$partialBegin,[StringComparison]::Ordinal)
+if($partialBegin -lt 0 -or $partialEnd -lt 0){throw 'Actual partial WVP helper missing'}
+[IO.File]::WriteAllText((Join-Path $out 'actual_partial_wvp.inl'),$src.Substring($partialBegin,$partialEnd-$partialBegin))
 $extraCases=foreach($name in @('SetStreamSource','SetStreamSourceFreq','SetIndices','SetVertexDeclaration','SetViewport','SetScissorRect','SetVSConstI','SetVSConstB','SetPSConstI','SetPSConstB')) {
         $case=[regex]::Match($src.Substring($cases),"(?s)        case OP_${name}:.*?(?=        case |        default:)")
         if(!$case.Success){throw "Missing actual binding case $name"};$case.Value

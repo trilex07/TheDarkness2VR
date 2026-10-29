@@ -108,3 +108,43 @@ Five retained complete captures passed hash/Present validation (104/122/145/154/
 this candidate. No broad buffer snapshotting was added. Permanent flicker
 resolution, partial redraw history, dynamic GPU contents, partial/inherited
 stereo injection and native 90 FPS remain unverified or incomplete.
+
+## Partial WVP upload completion, 2026-10-29
+
+Actual ApplyShiftToUpload required a single upload to contain all four WVP
+rows. A write to only c3 therefore overwrote a previously adjusted device row
+with native data. The new regression calls this old function on a positively
+identified, completely known matrix and fails check 3 (modified, line 80) with
+`projection_history.exe --partial-legacy`. This proves a code defect, not its
+frequency or contribution to the user's reported artifacts.
+
+Live and replay now share ApplyVertexStereoUpload. When an original upload
+overlaps part of an identified WVP, it completes the matrix from the current
+raw device register reference, then runs the existing full transform. The
+forwarded range expands to include those four rows only after transformation
+succeeds. Surrounding uploaded payload stays intact; ranges remain contiguous.
+The recorder retains the original native range/bytes and projection snapshot;
+raw history never receives adjusted data. A native failure invalidates the
+expanded range and recording; a replay failure remains incomplete, without
+retry. The skin witness retains its original range and adjusts its forwarded
+pointer to that origin.
+
+Unknown rows, unidentified shaders, unrelated writes, full WVP uploads and
+shadow/light-pass admission retain existing behavior. No getter, external read,
+allocation, lock, persistent cache or new setting is added. At most three rows
+are added to a 68-row original upload; destination capacity is 72 rows. The
+completion scratch array exists only in a non-inlined partial-upload helper.
+
+PASS: 34082 actual-source projection/activity checks, including both eyes,
+head geometry, every partial WVP subrange, register-mask boundaries, unknown
+history refusal, 68-to71-row expansions and destination guard bytes. Actual
+replay production/diagnostic each passes 96 streams / 576096 records / 56834
+checks, including a frame-inherited partial WVP with grouping OFF/adjacent/
+window/binding-window, exact expanded API range, unchanged recorder bytes,
+raw-register isolation and failed-driver completion rejection. Both x86 DLL
+builds pass. No real-game/graphics-driver/HMD validation was run.
+
+Partial STP/previous matrices and matrices inherited by a draw with no current
+upload remain separate work. Dynamic VB/IB content versions and partial world
+history restoration remain open. CULL admission is unchanged. Neither stable
+90 FPS nor permanent disappearance of side clipping/right-eye flicker is proven.

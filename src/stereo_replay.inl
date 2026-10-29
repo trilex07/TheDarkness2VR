@@ -1221,6 +1221,34 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
     return modified;
 }
 
+// Complete a positively identified partial WVP from the current DEVICE bank.
+// A 68-row upload can overlap at most three missing WVP rows. Keep the extra
+// stack storage on this uncommon path, rather than every native constant call.
+static constexpr UINT kVertexStereoUploadRows=72;
+__declspec(noinline) static bool ApplyPartialWvpUpload(float* dst,const float* src,
+        UINT& start,UINT& count,VsInfo* vi,const StereoParams& sp,
+        const d2vr_shader_registers::Reference& reference,int base,bool* perspectiveUpload) {
+    const UINT first=(std::min)(start,UINT(base));
+    const UINT end=(std::max)(start+count,UINT(base)+4);
+    if(end-first>kVertexStereoUploadRows)return false;
+    float raw[kVertexStereoUploadRows*4];
+    // The two overlapping ranges cover every row of [first,end).
+    memcpy(raw+(start-first)*4,src,size_t(count)*16);
+    memcpy(raw+(UINT(base)-first)*4,reference.values,sizeof(reference.values));
+    if(!ApplyShiftToUpload(dst,raw,first,end-first,vi,sp,&reference,perspectiveUpload))return false;
+    start=first;count=end-first;return true;
+}
+static bool ApplyVertexStereoUpload(float* dst,const float* src,UINT& start,UINT& count,
+        VsInfo* vi,const StereoParams& sp,const d2vr_shader_registers::Reference* reference,
+        bool* perspectiveUpload=nullptr) {
+    const int base=ActiveWvpRegister(vi);
+    if(src && reference && reference->valid && base>=0 && base<=252 && count && count<=68 &&
+       start<=256 && count<=256-start && start<UINT(base)+4 && start+count>UINT(base) &&
+       !(start<=UINT(base) && start+count>=UINT(base)+4))
+        return ApplyPartialWvpUpload(dst,src,start,count,vi,sp,*reference,base,perspectiveUpload);
+    return ApplyShiftToUpload(dst,src,start,count,vi,sp,reference,perspectiveUpload);
+}
+
 // ------------------------------------------------------------- recording hooks
 typedef HRESULT(STDMETHODCALLTYPE* PFN_SetRenderTarget)(IDirect3DDevice9*, DWORD, IDirect3DSurface9*);
 typedef HRESULT(STDMETHODCALLTYPE* PFN_Clear)(IDirect3DDevice9*, DWORD, const D3DRECT*, DWORD, D3DCOLOR, float, DWORD);
@@ -1979,19 +2007,20 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             memcpy(&uploadParams.projectionPy,&r.a[3],sizeof(float));
             // MUST hold Vector4fCount vectors of 4 floats each (bone palettes upload up to
             // 68 vectors = 272 floats). The old size (17*4) overflowed the stack -> fail-fast.
-            float tmp[68 * 4];
+            float tmp[kVertexStereoUploadRows * 4];
+            UINT uploadStart=r.a[0],uploadCount=r.a[1];
             bool lightVs = false;
             if (g_skipLightVsShift && g_activeVs && g_activeVs->hash == 0x68EEE79Cu)
                 lightVs = true;   // candidate fix (Shift+F2): light volume in engine/world space
             if (eye >= 0 && r.a[1] <= 68 && !lightVs && !IsShadowAtlasPass(dev)) {
-                if (ApplyShiftToUpload(tmp, src, r.a[0], r.a[1], g_activeVs, uploadParams,
+                if (ApplyVertexStereoUpload(tmp, src, uploadStart, uploadCount, g_activeVs, uploadParams,
                                        &rawReference)) src = tmp;
             }
             if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Vertex,
-                r.a[0],src,r.a[1],sendConstants);
+                uploadStart,src,uploadCount,sendConstants);
             else if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Vertex,
-                r.a[0],src,r.a[1],sendConstants);
-            else sendConstants(d2vr_replay_batch::Stage::Vertex,r.a[0],src,r.a[1]);
+                uploadStart,src,uploadCount,sendConstants);
+            else sendConstants(d2vr_replay_batch::Stage::Vertex,uploadStart,src,uploadCount);
             break;
         }
         case OP_SetVSConstI:
