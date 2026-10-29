@@ -17,6 +17,11 @@ int main(){
  CHECK(cache.Forward(1,43,fail)<0);CHECK(cache.Forward(1,43,fail)<0 && calls==6);
  cache.Forward(-1,43,send);cache.Forward(-1,43,send);CHECK(calls==8);
  CHECK(Cache::Sampler(257,1)==-1 && Cache::Stage(8,1)==-1 && Cache::Render(256)==-1);
+ // OFF always forwards, including duplicates; Clear/SB cannot silently re-enable it.
+ cache.Configure(false);unsigned before=calls;
+ cache.Forward(1,43,send);cache.Forward(1,43,send);CHECK(calls==before+2);
+ cache.Clear();cache.Forward(1,43,send);CHECK(calls==before+3);
+ cache.Configure(true);cache.Forward(1,43,send);cache.Forward(1,43,send);CHECK(calls==before+4);
  // Compare full state at every simulated material draw, including scope and SB barriers.
  unsigned baseline[744]{},filtered[744]{};unsigned issued[2]{};
  for(unsigned i=0;i<4000;++i){

@@ -1,3 +1,4 @@
+static bool g_replayBufferVersions=true;
 // Actual recorder + binding/draw hooks + buffer interception + replay cases.
 // Only the D3D9 driver is doubled. Lock returns writable memory; draws consume
 // the bound bytes immediately. This proves ordering, not hardware timings.
@@ -275,4 +276,14 @@ int main(){
     g_createVB=&DriverCreateVB;g_createIB=&DriverCreateIB;
     g_rec.reserve(4096);g_recData.reserve(4u<<20);observed.reserve(16);
     BufferCases();LifecycleCases();BoundaryCases();Benchmark();CHECK(!liveBuffers && !g_bufferObjects);
+    // Disabled startup path must not dereference the supplied device/resource,
+    // scan inherited bindings, or mark writes applied. No driver object needed.
+    g_replayBufferVersions=false;
+    bool complete=true;auto* untouched=reinterpret_cast<IUnknown*>(0x1234);
+    CHECK(ReplayBuffer(untouched,complete)==untouched && complete);
+    CHECK(ReplayInheritedBuffers(nullptr));
+    g_bufferFrameOpen=false;g_bufferWritesApplied=false;
+    FinishBufferRecording();CloseBufferFrame();ResetBufferReplicas();
+    CHECK(!g_bufferFrameOpen && !g_bufferWritesApplied);
+    std::puts("PASS disabled buffer path: original identity, no inherited scan or replica lifecycle");
 }

@@ -189,6 +189,8 @@ static std::atomic<bool> g_wideRecordCopy{false};
 static std::atomic<bool> g_directRecordCopy{false}; // diagnostic opt-in; 0 restores legacy copies
 static bool g_triangleHoldRecenter = false; // short triangle tap retains menu
 static volatile LONG g_objectDrawToggleRequests = 0;
+static bool g_replayStateFilter = false; // independent opt-in until PSVR2 acceptance
+static bool g_replayBufferVersions = false; // quarantined after b6d2bfbf runtime regression; restart required
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
 static bool g_replayConstantBindWindow = false; // OFF; float packets may cross inert material bindings
@@ -726,6 +728,10 @@ void LoadConfig() {
     if(g_objectDrawPadToggle) Log("[ObjectDrawTest] L3+R3 toggle armed; replaces chord recenter, F8 still recenters; switch applies at next frame boundary");
     if(g_skipObjectDraws) Log("[ObjectDrawTest] enabled=1; omit triangle batches >2 primitives in both eyes; includes world geometry, CPU preparation retained");
     if(g_skipShadowAtlasDraws) Log("[ShadowDrawTest] enabled=1; omit RGB565 square subviewport atlas draws in both eyes; heuristic coverage, altered lighting; CPU preparation retained");
+    g_replayStateFilter = GetPrivateProfileIntA("Render", "ReplayStateFilter", 0, chosenIni)!=0;
+    g_replayBufferVersions = GetPrivateProfileIntA("Render", "ReplayBufferVersions", 0, chosenIni)!=0;
+    Log("[ReplayStateFilter] enabled=%d; independent replay-local scalar filtering",int(g_replayStateFilter));
+    Log("[ReplayBufferVersions] enabled=%d; startup-only; quarantined after reported hang/CPU regression",int(g_replayBufferVersions));
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
     g_replayConstantBindWindow = GetPrivateProfileIntA("Render", "ReplayConstantBindWindow", 0, chosenIni)!=0;
