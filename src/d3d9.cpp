@@ -24,6 +24,7 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 #include "xr_display_refresh.h"
+#include "steamvr_refresh_native.h"
 #include "adaptive_fps.h"
 #include "vr_settings.h"
 
@@ -1380,6 +1381,8 @@ bool g_xrReady = false;
 bool g_xrRunning = false;
 XrSessionState g_xrSessionState = XR_SESSION_STATE_UNKNOWN;
 static d2vr_refresh::Display g_displayRefresh;
+static d2vr_refresh::SteamReader<d2vr_refresh::SteamNative> g_steamRefresh;
+static ULONGLONG g_steamRefreshNext=0;
 static d2vr_adaptive::Controller g_adaptiveFPS;
 static thread_local d2vr_adaptive::Presentation g_adaptivePresentation;
 static uint64_t BeginAdaptivePresentation() {
@@ -4569,8 +4572,10 @@ void PumpXR() {
         if (ev.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
             auto* s = reinterpret_cast<XrEventDataSessionStateChanged*>(&ev);
             g_xrSessionState=s->state;
-            if(s->state==XR_SESSION_STATE_LOSS_PENDING || s->state==XR_SESSION_STATE_EXITING)
+            if(s->state==XR_SESSION_STATE_LOSS_PENDING || s->state==XR_SESSION_STATE_EXITING) {
                 g_displayRefresh.Stop();
+                g_steamRefresh.Stop();
+            }
             Log("[XRSession] state=%d",(int)s->state);
             if(s->state!=XR_SESSION_STATE_FOCUSED) {
                 g_vrSettings.Close();
@@ -4583,9 +4588,19 @@ void PumpXR() {
                 bi.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
                 if (XR_SUCCEEDED(xrBeginSession(g_xrSession, &bi))) {
                     g_xrRunning = true;
-                    g_displayRefresh.Start(g_xrInstance,g_xrSession,&xrGetInstanceProcAddr);
+                    g_steamRefresh.Stop();
+                    if(!g_displayRefresh.Start(g_xrInstance,g_xrSession,&xrGetInstanceProcAddr)) {
+                        XrInstanceProperties properties{XR_TYPE_INSTANCE_PROPERTIES};
+                        if(xrGetInstanceProperties(g_xrInstance,&properties)==XR_SUCCESS &&
+                           g_steamRefresh.Start(properties.runtimeName)) {
+                            g_displayRefresh.Fallback(g_steamRefresh.Read());
+                            g_steamRefreshNext=GetTickCount64()+2000;
+                        }
+                    }
                     Log("[DisplayRefresh] physicalHz=%.3f extensionEnabled=%d; zero=unknown; application pacing is separate; half-rate control unimplemented",
                         double(g_displayRefresh.Hz()),int(g_displayRefresh.Enabled()));
+                    if(g_displayRefresh.FallbackActive())
+                        Log("[DisplayRefresh] source=OpenVR HMD DisplayFrequency; read-only background client, no pacing/settings control");
                     g_anchorValid = false;
                     g_vrRefValid = false;
                     Log("XR session running (TestMode=%d SubmitMode=%d TrackingSubMode=%d)",
@@ -4598,9 +4613,10 @@ void PumpXR() {
             } else if (s->state == XR_SESSION_STATE_STOPPING) {
                 ReleaseVrSettingsRenderer();
                 if (g_gameHwnd) ShowWindow(g_gameHwnd, SW_SHOWNA);
-                xrEndSession(g_xrSession);
+                if(xrEndSession(g_xrSession)==XR_SUCCESS)g_adaptiveFPS.SessionEnded();
                 g_xrRunning = false;
                 g_displayRefresh.Stop();
+                g_steamRefresh.Stop();
                 g_trackedFrame.open=false;
                 PublishXrPad(nullptr);
                 for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.motion.valid=false; }
@@ -4609,6 +4625,7 @@ void PumpXR() {
             g_vrSettings.Close();g_vrSettingsToggle.Update(false,false);
             g_adaptiveFPS.DiscardFrames();
             g_displayRefresh.Stop();
+            g_steamRefresh.Stop();
         } else if(g_displayRefresh.Event(ev)) {
             Log("[DisplayRefresh] changed physicalHz=%.3f; zero=unknown",double(g_displayRefresh.Hz()));
         } else if(ev.type==XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
@@ -4622,6 +4639,13 @@ void PumpXR() {
             Log("[Tracking] reference space change: reset anchors and gesture velocities");
         }
         ev = { XR_TYPE_EVENT_DATA_BUFFER };
+    }
+    if(g_xrRunning && g_displayRefresh.FallbackActive() && GetTickCount64()>=g_steamRefreshNext) {
+        g_steamRefreshNext=GetTickCount64()+2000;
+        const float previous=g_displayRefresh.Hz();
+        g_displayRefresh.Fallback(g_steamRefresh.Read());
+        if(previous!=g_displayRefresh.Hz())
+            Log("[DisplayRefresh] OpenVR physicalHz=%.3f; zero=unknown",double(g_displayRefresh.Hz()));
     }
 }
 

@@ -1,4 +1,5 @@
 #include "../src/xr_display_refresh.h"
+#include "../src/steamvr_refresh.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -11,6 +12,17 @@ static float queryHz=90;
 static bool nullFunction=false;
 static XrInstance instance=(XrInstance)1;
 static XrSession session=(XrSession)2;
+struct FakeSteam {
+    bool load=true,init=true,system=true;
+    unsigned loads=0,inits=0,systems=0,reads=0,stops=0,unloads=0;
+    float hz=120;
+    bool Load(){++loads;return load;}
+    bool Initialize(){++inits;return init;}
+    bool System(){++systems;return system;}
+    float Frequency(){++reads;return hz;}
+    void Shutdown(){++stops;}
+    void Unload(){++unloads;}
+};
 static XrResult XRAPI_CALL Enumerate(const char* layer,uint32_t capacity,uint32_t* count,XrExtensionProperties* properties) {
     ++enumerations;CHECK(!layer);
     if(enumerationMode==1)return XR_ERROR_RUNTIME_FAILURE;
@@ -39,6 +51,37 @@ static XrEventDataBuffer Event(float hz) {
     static_assert(sizeof(change)<=sizeof(buffer));memcpy(&buffer,&change,sizeof(change));return buffer;
 }
 int main() {
+    {
+        d2vr_refresh::SteamReader<FakeSteam> steam;
+        auto& backend=steam.Backend();
+        for(const char* name:{"", "Ste", "SteamVRfake", "Windows Mixed Reality", "Oculus"})
+            CHECK(!steam.Start(name));
+        CHECK(!steam.Start(nullptr));CHECK(!backend.loads && !steam.Read());
+        backend.load=false;CHECK(!steam.Start("SteamVR"));CHECK(!backend.inits && !backend.unloads);
+        backend.load=true;backend.init=false;CHECK(!steam.Start("SteamVR"));CHECK(backend.unloads==1 && !backend.stops);
+        backend.init=true;backend.system=false;CHECK(!steam.Start("SteamVR/OpenXR"));
+        CHECK(backend.stops==1 && backend.unloads==2);
+        backend.system=true;CHECK(steam.Start("SteamVR/OpenXR"));CHECK(steam.Read()==120);
+        backend.hz=119.88f;CHECK(steam.Read()==119.88f);
+        for(float hz:{0.f,-90.f,1001.f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+            backend.hz=hz;CHECK(steam.Read()==0);
+        }
+        steam.Stop();CHECK(!steam.Read());CHECK(backend.stops==2 && backend.unloads==3);
+        steam.Stop();CHECK(backend.stops==2 && backend.unloads==3);
+        CHECK(steam.Start("steamvr"));CHECK(!steam.Start("Other runtime"));
+        CHECK(backend.stops==3 && backend.unloads==4);
+    }
+    {
+        Display fallback;
+        CHECK(fallback.Fallback(90));CHECK(fallback.Hz()==90 && fallback.FallbackActive());
+        CHECK(!fallback.Fallback(0));CHECK(!fallback.Hz() && fallback.FallbackActive());
+        CHECK(fallback.Fallback(120));CHECK(!fallback.Event(Event(72)));CHECK(fallback.Hz()==120);
+        fallback.Stop();CHECK(!fallback.Hz() && !fallback.FallbackActive());
+        CHECK(fallback.Fallback(72));fallback.Enable(false);CHECK(!fallback.FallbackActive());
+        Reset();CHECK(fallback.Discover(&Enumerate));fallback.Enable(true);
+        CHECK(fallback.Start(instance,session,&Resolve));CHECK(!fallback.Fallback(120));
+        CHECK(fallback.Hz()==90 && !fallback.FallbackActive());
+    }
     for(int mode=0;mode<=8;++mode) {
         Reset();enumerationMode=mode;Display display;
         const bool supported=display.Discover(&Enumerate);

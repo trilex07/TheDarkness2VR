@@ -11,10 +11,11 @@ class Display {
     bool advertised_=false,enabled_=false;
     float hz_=0;
     PFN_xrGetDisplayRefreshRateFB get_=nullptr;
+    bool fallback_=false;
     static bool Valid(float hz) {return std::isfinite(hz) && hz>=1 && hz<=1000;}
 public:
     bool Discover(PFN_xrEnumerateInstanceExtensionProperties enumerate) {
-        advertised_=enabled_=false;hz_=0;get_=nullptr;
+        advertised_=enabled_=false;Stop();
         if(!enumerate)return false;
         for(unsigned attempt=0;attempt<2;++attempt) {
             uint32_t count=0;
@@ -34,12 +35,17 @@ public:
         }
         return false;
     }
-    void Enable(bool requested) {enabled_=requested && advertised_;hz_=0;get_=nullptr;}
+    void Enable(bool requested) {enabled_=requested && advertised_;Stop();}
     bool Enabled() const {return enabled_;}
     float Hz() const {return hz_;} // zero means unknown; never substitute 90
-    void Stop() {hz_=0;get_=nullptr;}
+    void Stop() {hz_=0;get_=nullptr;fallback_=false;}
+    bool FallbackActive()const{return fallback_;}
+    bool Fallback(float hz) {
+        if(get_)return false; // enabled successful OpenXR query always wins
+        fallback_=true;hz_=Valid(hz)?hz:0;return hz_>0;
+    }
     bool Start(XrInstance instance,XrSession session,PFN_xrGetInstanceProcAddr resolve) {
-        hz_=0;get_=nullptr;
+        Stop();
         if(!enabled_ || !instance || !session || !resolve)return false;
         PFN_xrVoidFunction function=nullptr;
         if(resolve(instance,"xrGetDisplayRefreshRateFB",&function)!=XR_SUCCESS || !function)return false;
