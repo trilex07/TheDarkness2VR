@@ -54,6 +54,18 @@ public:
         }
     }
 };
+// Eye-specific PS values need only materialized rows, not another raw bank.
+// Store compensated uploads; ordinary uploads invalidate overlapping rows.
+struct EyeHistory {
+    Bank eyeCarry,eyeNext;
+    bool recordOpen=false;
+    void BeginRecord(){if(recordOpen)eyeCarry.Clear();recordOpen=true;}
+    void BeginReplay(){eyeNext=eyeCarry;}
+    void ReplayStateBlock(){eyeNext.Clear();}
+    void InvalidateUnrecorded(unsigned first,unsigned count){eyeCarry.Invalidate(first,count);}
+    void EndReplay(bool complete){if(complete)eyeCarry=eyeNext;else eyeCarry.Clear();recordOpen=false;}
+    void Clear(){eyeCarry.Clear();eyeNext.Clear();recordOpen=false;}
+};
 struct History {
     Bank live,begin,replay;
     // Unlike the raw banks, eyeCarry/eyeNext hold values the REPLAY eye forwarded.

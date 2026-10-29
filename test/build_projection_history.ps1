@@ -22,6 +22,8 @@ $parts=@((Extract 'struct VsInfo {' $true),(Extract 'struct StereoParams {' $tru
     (Extract '__declspec(noinline) static bool ApplyPartialProjectionUpload('),
     (Extract 'static bool ApplyVertexStereoUpload('))
 [IO.File]::WriteAllText((Join-Path $out 'actual_projection_history.inl'),($parts -join "`r`n"))
+[IO.File]::WriteAllText((Join-Path $out 'actual_pixel_projection.inl'),
+    (Extract 'static bool ApplyInverseProjection(')+"`r`n"+(Extract 'static bool CompensatePsConstants('))
 [IO.File]::WriteAllText((Join-Path $out 'actual_shader_identity.inl'),
     (Extract 'static bool VertexShaderAnalysisKnown(')+"`r`n"+
     (Extract 'static bool RememberVertexShader(')+"`r`n"+(Extract 'static void ResetProjectionHistories(')+"`r`n"+

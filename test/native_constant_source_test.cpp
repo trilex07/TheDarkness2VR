@@ -8,6 +8,8 @@
 #include "../src/native_constant_source.h"
 #include "../src/native_constant_gate.h"
 #include "../src/small_record_copy.h"
+#include "../src/shader_register_history.h"
+static d2vr_shader_registers::EyeHistory g_psEyeHistory;
 using IDirect3DDevice9=void;
 using namespace d2vr_native_constants;
 static uintptr_t apiReturn,callbackReturn,parentReturn;
@@ -185,11 +187,16 @@ static void PixelSubmissionFailures() {
     for(HRESULT status:{S_OK,S_FALSE,E_INVALIDARG,E_OUTOFMEMORY,HRESULT(0x88760868)}) {
         g_recActive=active;g_recOverflow=overflow;forwardStatus=status;
         const auto calls=forwardCalls,locks=resultLocks;
+        g_psEyeHistory.Clear();g_psEyeHistory.eyeCarry.Write(0,4,values,sizeof(values));
         Check(Native_SetPSConstF(nullptr,0,values,4,nullptr,0,0)==status,"actual PS hook preserves native HRESULT");
         Check(forwardCalls==calls+1,"actual PS hook forwards once");
         Check(!memcmp(forwarded,values,sizeof(values)),"actual PS hook preserves upload bits");
         Check(g_recOverflow==(overflow||(active&&FAILED(status))),"rejected live PS upload invalidates pair and success cannot repair it");
-        Check(resultLocks==locks+unsigned(active&&FAILED(status)),"successful PS upload adds no result lock");
+        Check(resultLocks==locks+unsigned((active&&FAILED(status))||(!active&&SUCCEEDED(status))),
+              "only rejected recorded or successful unrecorded PS uploads lock history");
+        float inherited[16];
+        Check(g_psEyeHistory.eyeCarry.Matrix(0,inherited)==(active||FAILED(status)),
+              "only successful unrecorded PS upload invalidates inherited rows");
     }
     g_recActive=true;g_recOverflow=false;forwardStatus=S_OK;
 }

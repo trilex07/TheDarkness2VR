@@ -18,6 +18,7 @@
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL %u line %d: %s\n",checks,__LINE__,#x);exit(1);}}while(0)
 static int g_projectionFix=1,g_lightingPreset=0;
+static bool g_noInvProj=false;
 static uint32_t g_diagnosticSkipVs=0;
 static bool g_scale2DContent=false,g_fixMotionVectorProjection=true;
 static volatile LONG g_shiftCount=0;
@@ -28,6 +29,7 @@ static uint64_t g_wvpHistoryGeneration=0;
 static void PublishProjectionEstimate(float,float){}
 template<class... T> static void Log(const char*,T...){}
 #include "actual_projection_history.inl"
+#include "actual_pixel_projection.inl"
 #include "../src/vertex_shader_metadata.h"
 struct IDirect3DVertexShader9 {};
 static d2vr_shader_metadata::Vertices<VsInfo> g_vsInfo;
@@ -35,6 +37,7 @@ static std::shared_ptr<VsInfo> g_activeVsOwner;
 static VsInfo* g_activeVs=nullptr;
 static unsigned lockDepth=0;
 static d2vr_shader_registers::History g_vsConstantHistory;
+static d2vr_shader_registers::EyeHistory g_psEyeHistory;
 struct RecLockGuard {RecLockGuard(){CHECK(!lockDepth++);}~RecLockGuard(){CHECK(!--lockDepth);}};
 #include "actual_shader_identity.inl"
 static bool g_hadWorldDrawThisFrame=false,g_had3DCameraThisFrame=true;
@@ -224,7 +227,40 @@ static void InheritedEyeTransforms() {
     g_vsConstantHistory.Clear();g_replayEye=-1;
     puts("PASS actual stereo math carry: WVP+STP, 64 changing pose/FOV cases, inherited bytes not transformed twice, fresh uploads use new parameters, state-block and Reset invalidation");
 }
+static void InheritedPixelTransforms(){
+    g_projectionFix=2;
+    for(unsigned geometry=0;geometry<2;++geometry)for(unsigned frame=0;frame<32;++frame){
+        float native[20]{},projection[16];Perspective(projection,float(frame)*.01f);
+        CHECK(d2vr_math::Invert(projection,native));native[16]=1.2f;native[17]=.8f;
+        StereoParams params;params.transX=.0315f;params.transY=.01f;
+        params.fovScaleX=.8f;params.fovScaleY=.9f;params.headGeometry=geometry!=0;
+        params.inverseHeadClip[0]=params.inverseHeadClip[5]=params.inverseHeadClip[10]=params.inverseHeadClip[15]=1;
+        params.inverseHeadClip[12]=float(frame)*.002f;
+        float right[20],left[20];
+        CHECK(CompensatePsConstants(right,native,0,5,0,4,params));
+        params.transX=-params.transX;
+        CHECK(CompensatePsConstants(left,native,0,5,0,4,params));
+        CHECK(memcmp(left,right,sizeof(left))!=0);
+        d2vr_shader_registers::EyeHistory history;history.BeginRecord();history.BeginReplay();
+        CHECK(history.eyeNext.Write(0,5,right,sizeof(right)));history.EndReplay(true);
+        params.transX=.06f;params.fovScaleX=.7f;params.inverseHeadClip[12]+=.03f;
+        float driver[20];memcpy(driver,left,sizeof(left));history.BeginRecord();history.BeginReplay();
+        history.eyeCarry.ForEachValidRun(224,[&](unsigned first,const float* values,unsigned count){
+            CHECK(first==0&&count==5);memcpy(driver+first*4,values,count*16);
+        });
+        CHECK(!memcmp(driver,right,sizeof(right))); // inherited bytes, no double transform
+        float current[20];CHECK(CompensatePsConstants(current,native,0,5,0,4,params));
+        CHECK(memcmp(current,right,sizeof(right))!=0);
+        CHECK(history.eyeNext.Write(0,5,current,sizeof(current)));history.EndReplay(true);
+        g_psEyeHistory=history;ResetProjectionHistories();unsigned runs=0;
+        g_psEyeHistory.eyeCarry.ForEachValidRun(224,[&](unsigned,const float*,unsigned){++runs;});
+        CHECK(!runs&&!g_psEyeHistory.recordOpen);
+    }
+    g_projectionFix=1;
+    puts("PASS actual PS inverse-projection/extents math: 64 changing pose/FOV cases, inherited eye bytes, current upload replacement, Reset invalidation");
+}
 int main(int argc,char** argv) {
+    InheritedPixelTransforms();
     InheritedEyeTransforms();
     PartialScreenCases();
     PartialWvpCases(argc==2 && !strcmp(argv[1],"--partial-legacy"));

@@ -3500,6 +3500,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         eye1Ok=false;
         d2vr_replay::RecLockGuard lock;
         d2vr_replay::g_vsConstantHistory.Clear();
+        d2vr_replay::g_psEyeHistory.Clear();
         warnEarly("live-end state restore failed");
     }
     d2vr_replay::InvalidateShadowAtlasPass();

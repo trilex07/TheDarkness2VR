@@ -31,6 +31,8 @@ static bool g_replayConstantBatch=false,g_replayConstantWindow=false,capture=fal
 static bool g_replayConstantBindWindow=false;
 static bool g_recOverflow=false;
 static d2vr_shader_registers::History g_vsConstantHistory;
+static d2vr_shader_registers::EyeHistory g_psEyeHistory;
+static bool testPixelInheritance=false;
 static struct {unsigned vertexFloatLimit=256,pixelFloatLimit=224;} g_frameStart;
 [[maybe_unused]] static bool MatchedCaptureRecordingActive(){return capture;}
 namespace d2vr_cpu_sync {static struct {bool enabled=true;} timing;}
@@ -122,9 +124,12 @@ static HRESULT Submit(bool vertex,UINT first,const float* values,UINT count){
 static HRESULT VS(void*,UINT first,const float* data,UINT n){return Submit(true,first,data,n);}
 static HRESULT PS(void*,UINT first,const float* data,UINT n){return Submit(false,first,data,n);}
 static std::array<uint32_t,16> stateBlockVs{};
+static std::array<uint32_t,16> stateBlockPs{};
+static bool applyPixelBlock=false;
 static HRESULT ApplyBlock(IDirect3DStateBlock9* block) {
     assert(block==(IDirect3DStateBlock9*)0x3000);
-    memcpy(driver.vs.data(),stateBlockVs.data(),sizeof(stateBlockVs));return S_OK;
+    memcpy(driver.vs.data(),stateBlockVs.data(),sizeof(stateBlockVs));
+    if(applyPixelBlock)memcpy(driver.ps.data(),stateBlockPs.data(),sizeof(stateBlockPs));return S_OK;
 }
 static auto g_origSBApply=&ApplyBlock;
 static bool SyncActiveShader(void*){return true;}
@@ -149,6 +154,8 @@ static bool Actual(){
     void* dev=nullptr;const int eye=1;const bool dump=false;const Params sp;
     const uint8_t* dataBase=arena.data();
     g_vsConstantHistory.BeginReplay();
+    if(!testPixelInheritance)g_psEyeHistory.Clear();
+    g_psEyeHistory.BeginReplay();
 #include "actual_replay_float_loop.inl"
     return replayComplete;
 }
@@ -419,6 +426,54 @@ static void InheritedAcrossFrames(){
     inheritedVariant=~0u;
     activeWvpBase=-1;g_vsConstantHistory.Clear();g_replayConstantBindWindow=false;
 }
+static void PixelInheritedAcrossFrames(){
+    testPixelInheritance=true;
+    capture=bindingTransforms=collectReference=checkOtherState=checkBindingSnapshots=false;
+    compensate=true;g_activeVs=&vertexMetadata;g_recOverflow=false;
+    activeWvpBase=activeStpBase=-1;
+    uint32_t raw[16];for(unsigned i=0;i<16;++i)raw[i]=0x3f100000+i*7;
+    uint32_t left[16],right[16];memcpy(left,raw,sizeof(raw));memcpy(right,raw,sizeof(raw));
+    left[0]^=0x40000;right[0]^=0x20000;
+    for(unsigned variant=0;variant<8;++variant)for(unsigned mode=0;mode<4;++mode){
+        inheritedVariant=100+variant;inheritedMode=mode;compensate=true;applyPixelBlock=false;
+        g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
+        g_vsConstantHistory.Clear();g_psEyeHistory.Clear();driver={};checkAt=apiCalls=apiFail=0;
+        arena.assign(64,0);memcpy(arena.data(),raw,sizeof(raw));
+        g_vsConstantHistory.BeginRecord();g_psEyeHistory.BeginRecord();
+        g_rec.clear();Rec upload;upload.op=OP_SetPSConstF;upload.a[1]=4;
+        g_rec.push_back(upload);Rec draw;draw.op=OP_DrawIndexedPrimitive;g_rec.push_back(draw);
+        Banks first;if(variant!=2)memcpy(first.ps.data(),right,sizeof(right));expected={first};
+        if(variant==4){
+            applyPixelBlock=true;stateBlockVs.fill(0);memcpy(stateBlockPs.data(),left,sizeof(left));
+            Rec block;block.op=OP_ApplyStateBlock;block.a[0]=0x3000;
+            g_rec.push_back(block);g_rec.push_back(draw);
+            Banks restored;memcpy(restored.ps.data(),left,sizeof(left));expected.push_back(restored);
+        }
+        rejectAt=variant==2?1:0;
+        assert(Actual()==(variant!=2)&&checkAt==(variant==4?2u:1u));++checks;rejectAt=0;
+        // Actual frame-start StateBlock restores left-eye materialized PS rows.
+        memcpy(driver.ps.data(),left,sizeof(left));
+        if(variant==1)g_psEyeHistory.InvalidateUnrecorded(0,1);
+        if(variant==3)g_psEyeHistory.BeginRecord();
+        if(variant==5)g_psEyeHistory.Clear();
+        g_vsConstantHistory.BeginRecord();g_psEyeHistory.BeginRecord();
+        g_rec.clear();
+        if(variant==6){compensate=false;upload.a[1]=1;g_rec.push_back(upload);}
+        g_rec.push_back(draw);Banks inherited;
+        memcpy(inherited.ps.data(),variant==0?right:left,sizeof(left));
+        if(variant==6)memcpy(inherited.ps.data(),raw,16);
+        expected={inherited};checkAt=apiCalls=apiFail=0;rejectAt=variant==7?1:0;
+        assert(Actual()==(variant!=7)&&checkAt==1&&apiFail==(variant==7?1u:0u));++checks;rejectAt=0;
+        if(variant==6){
+            // A raw replacement must not resurrect the old eye-adjusted row.
+            memcpy(driver.ps.data(),raw,16);g_psEyeHistory.BeginRecord();g_vsConstantHistory.BeginRecord();
+            g_rec={draw};expected={inherited};checkAt=apiCalls=apiFail=0;
+            assert(Actual()&&checkAt==1);++checks;
+        }
+    }
+    compensate=testPixelInheritance=applyPixelBlock=false;inheritedVariant=~0u;
+    g_psEyeHistory.Clear();g_vsConstantHistory.Clear();
+}
 static void RenderStateReduction(){
     const std::pair<unsigned,unsigned> safe[]={
         {D3DRS_ZENABLE,D3DZB_TRUE},{D3DRS_ZWRITEENABLE,0},{D3DRS_ALPHABLENDENABLE,1},
@@ -482,7 +537,7 @@ static void RenderStateReduction(){
     throwAt=0;collectReference=false;otherState={};g_replayConstantBindWindow=false;
 }
 int main(){
-    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();InheritedAcrossFrames();RenderStateReduction();unsigned streams=0,records=0;
+    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();InheritedAcrossFrames();PixelInheritedAcrossFrames();RenderStateReduction();unsigned streams=0,records=0;
     for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
     for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;

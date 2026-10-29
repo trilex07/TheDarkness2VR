@@ -22,6 +22,7 @@ static unsigned mask=0;
 static bool nullBinding=false;
 static unsigned bankClears=0,shaderSyncs=0;
 static struct {void ReplayStateBlock(){++bankClears;}} g_vsConstantHistory;
+static struct {void ReplayStateBlock(){}} g_psEyeHistory;
 static bool syncResult=true;
 static bool SyncActiveShader(IDirect3DDevice9*){++shaderSyncs;return syncResult;}
 static HRESULT STDMETHODCALLTYPE ApplyBlock(IDirect3DStateBlock9* block){CHECK(block==(IDirect3DStateBlock9*)0x3000);return Receipt(OP_ApplyStateBlock);}

@@ -9,6 +9,8 @@
 #include <cstdio>
 #include "../../src/replay_constant_batch.h"
 #include "../../src/replay_constant_window.h"
+#include "../../src/shader_register_history.h"
+static d2vr_shader_registers::EyeHistory g_psEyeHistory;
 static_assert(sizeof(void*)==4,"production x86");
 enum {OP_SetPSConstF=27};
 struct Rec {uint32_t op,n,a[6];};

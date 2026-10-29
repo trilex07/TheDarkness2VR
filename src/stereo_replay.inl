@@ -522,6 +522,7 @@ struct DeviceSnapshot {
 static DeviceSnapshot g_frameStart;
 static uint64_t g_wvpHistoryGeneration=0;
 static d2vr_shader_registers::History g_vsConstantHistory;
+static d2vr_shader_registers::EyeHistory g_psEyeHistory;
 static FrameResourceRefs<IUnknown> g_recordRefs;
 static void ReleaseRecording(bool keepSnapshot=false) {
     g_recActive = false;
@@ -545,6 +546,7 @@ static void RecBeginFrame(IDirect3DDevice9* dev) {
     if (g_recData.capacity() < (4u << 20)) g_recData.reserve(4u << 20);
     ++g_wvpHistoryGeneration;
     g_vsConstantHistory.BeginRecord();
+    g_psEyeHistory.BeginRecord();
     g_recOverflow = false;
     g_recActive = true;
 }
@@ -737,6 +739,7 @@ static bool RememberVertexShader(IDirect3DVertexShader9* shader,VsInfo& analyzed
 static void ResetProjectionHistories() {
     RecLockGuard lock;
     g_vsConstantHistory.Clear();
+    g_psEyeHistory.Clear();
     g_vsInfo.ForEach([](VsInfo& info){info.wvpHistory={};});
 }
 static std::shared_ptr<VsInfo> g_activeVsOwner;
@@ -1723,6 +1726,9 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
         CompensatePsConstants(adjusted, d, s, n, g_activePsInverse, g_activePsViewExtents,
                               MakeEyeParams(0))) d = adjusted;
     const HRESULT result=RecordLiveResult(g_orig.SetPixelShaderConstantF(dev,s,d,n));
+    if(SUCCEEDED(result) && g_replayEye<0 && !g_recActive) {
+        RecLockGuard lock;g_psEyeHistory.InvalidateUnrecorded(s,n);
+    }
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedProjectionObserved(native,d,s,n,g_activePsInverse,result);
 #endif
@@ -1926,6 +1932,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     }
     const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)
     g_vsConstantHistory.BeginReplay();
+    g_psEyeHistory.BeginReplay();
     if (g_replayTestClear) {
         // diagnostic: flood the current render target magenta before replaying; if the eye1
         // capture does not turn magenta, the replay never reaches the captured surface.
@@ -1969,6 +1976,12 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         g_vsConstantHistory.eyeCarry.ForEachValidRun(g_frameStart.vertexFloatLimit,
             [&](unsigned first,const float* values,unsigned count){
                 sendConstants(d2vr_replay_batch::Stage::Vertex,first,values,count);});
+        // Frame-start D3DSBT_ALL restores the LIVE eye's materialized PS rows.
+        // An inherited inverse projection/light upload must retain eye 1's
+        // previous bytes, just as eye 0 retains its own until a native upload.
+        g_psEyeHistory.eyeCarry.ForEachValidRun(g_frameStart.pixelFloatLimit,
+            [&](unsigned first,const float* values,unsigned count){
+                sendConstants(d2vr_replay_batch::Stage::Pixel,first,values,count);});
     } __except (1) {
         replayComplete=false;
     }
@@ -2164,6 +2177,11 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 }
             }
             const float* values2 = copied ? adjusted : values;
+            // Only eye-adjusted rows require carry. An ordinary replacement
+            // upload removes overlapping old eye-specific values, including
+            // when the same device registers are reused by a different PS.
+            g_psEyeHistory.eyeNext.Invalidate(r.a[0],r.a[1]);
+            if(copied)g_psEyeHistory.eyeNext.Write(r.a[0],r.a[1],values2,size_t(r.a[1])*16);
             if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Pixel,
                 r.a[0],values2,r.a[1],sendConstants);
             else if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Pixel,
@@ -2210,6 +2228,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             // record while the record lock is held here -> deadlock
             if (!sb || !g_origSBApply || FAILED(g_origSBApply(sb)))replayComplete=false;
             g_vsConstantHistory.ReplayStateBlock();
+            g_psEyeHistory.ReplayStateBlock();
             if(!SyncActiveShader(dev))replayComplete=false;
             HOOK_MARK(1900 + r.op);
             break;
@@ -2265,6 +2284,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     }
 #endif
     g_vsConstantHistory.EndReplay(replayComplete);
+    g_psEyeHistory.EndReplay(replayComplete);
     g_recLock.store(0,std::memory_order_release);
     g_replayEye = -1;
     return replayComplete;
@@ -2277,7 +2297,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
     InvalidateShadowAtlasPass();
     {
         RecLockGuard lock;g_vsConstantHistory.live.Clear();
-        if(!g_recActive)g_vsConstantHistory.eyeCarry.Clear();
+        if(!g_recActive){g_vsConstantHistory.eyeCarry.Clear();g_psEyeHistory.Clear();}
     }
     // Apply can restore VS/PS without passing through either shader setter.
     // Replay and our own snapshots already resynchronize those bindings. Do
