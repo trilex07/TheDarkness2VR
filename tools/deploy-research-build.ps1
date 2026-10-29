@@ -19,6 +19,10 @@ if (-not (Test-Path $srcDll)) {
     if (-not (Test-Path $srcDll)) { throw "Missing build output: $srcDll" }
 }
 
+& (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll $srcDll -RenderIni @(
+ (Join-Path $GameDir 'Darkness2VR.ini'),(Join-Path $RepoRoot 'Darkness2VR.ini')) `
+ -DiagnosticIni (Join-Path $GameDir 'Darkness2VR-diagnostic.ini') | Out-Host
+
 $dstDll = Join-Path $GameDir 'd3d9.dll'
 $backupDir = Join-Path $env:LOCALAPPDATA 'Darkness2VR\backups'
 New-Item -ItemType Directory -Force -Path $backupDir | Out-Null

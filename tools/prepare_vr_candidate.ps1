@@ -28,6 +28,9 @@ $files=Get-ChildItem -LiteralPath $candidate -File | Where-Object Name -ne 'SHA2
 $hashes=@($files | ForEach-Object { @{File=$_.Name;SHA256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash} })
 $hashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $candidate 'SHA256.json') -Encoding utf8
 if($Install) {
+    & (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll (Join-Path $candidate 'd3d9.dll') `
+        -RenderIni @((Join-Path $candidate 'Darkness2VR.ini')) `
+        -DiagnosticIni (Join-Path $game 'Darkness2VR-diagnostic.ini') | Out-Host
     $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
     foreach($name in @('d3d9.dll','Darkness2VR.ini')) {
         $target=Join-Path $game $name

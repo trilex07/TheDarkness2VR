@@ -6960,6 +6960,11 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         DisableThreadLibraryCalls(mod);
         LogInit();
         LogStartupStage(1, "DllMain PROCESS_ATTACH");
+#ifdef D2VR_MATCHED_CAPTURE
+        Log("[BuildFlavor] Darkness2VR-build:protected-native-v1");
+#else
+        Log("[BuildFlavor] Darkness2VR-build:standard-v1");
+#endif
         g_vehHandle = AddVectoredExceptionHandler(1, &CrashVehHandler);
         LogStartupStage(2, "VEH crash handler installed");
         LoadConfig();

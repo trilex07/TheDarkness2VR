@@ -37,6 +37,9 @@ Assert-Free
 if($SourceCommit -notmatch '^[0-9a-f]{40}$'){throw 'Require full committed source identity'}
 if((Hash (Join-Path $GameDir 'DarknessII.exe')) -ne 'D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1'){throw 'Native EXE identity mismatch'}
 Assert-PE $CandidateDll 0x14c
+& (Join-Path $PSScriptRoot '../assert-candidate-profile.ps1') -CandidateDll $CandidateDll -RenderIni @(
+ (Join-Path $GameDir 'Darkness2VR.ini'),(Join-Path $env:LOCALAPPDATA 'Darkness2VR/Darkness2VR.ini')) `
+ -DiagnosticIni (Join-Path $GameDir 'Darkness2VR-diagnostic.ini') | Out-Host
 Assert-PE $BridgeExe 0x8664
 Assert-PE $ToolkitLoader 0x8664
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path

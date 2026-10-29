@@ -41,6 +41,9 @@ try {
 
     if ($Install) {
         if (-not (Test-Path -LiteralPath $GameDir)) { throw "Game dir not found: $GameDir" }
+        & (Join-Path $here 'tools/assert-candidate-profile.ps1') -CandidateDll (Join-Path $here 'd3d9.dll') `
+            -RenderIni @((Join-Path $here 'Darkness2VR.ini'),(Join-Path $GameDir 'Darkness2VR.ini')) `
+            -DiagnosticIni (Join-Path $GameDir 'Darkness2VR-diagnostic.ini') | Out-Host
         $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
         $target = Join-Path $GameDir "d3d9.dll"
         if (Test-Path $target) {

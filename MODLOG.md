@@ -2636,3 +2636,34 @@ frame, thread and contract refusals. Headset visibility acceptance NOT RUN.
 Native menu laser still needs its native surface/input connection; existing
 VR Settings laser is separate and is not presented as native-menu completion.
 Both final x86 DLL builds and actual-source camera dispatch10000 PASS.
+
+
+## 2026-10-30 — reject incompatible DLL build flavors before deployment
+
+The b6d2bfbf failed session and 213bb4f7 recovery candidate used standard x86
+DLLs. The installed profile requires the D2VR_MATCHED_CAPTURE protected-native
+variant for ImagePreservingPresent/Input, native FOV boundary mode 3, protected
+head/gestures/aim/throw/hands and native copy/preload optimizations. The retained
+b6d log explicitly refused QueryPreload as requiring that architecture; source
+preprocessor gates prove other required implementations were absent. The earlier
+accepted 4A503FDD DLL contains ProtectedPlayerOwner, whereas the standard variant
+does not. This packaging mistake is concrete; it does NOT isolate the reported
+17 FPS / 70 ms or AppHangB1 to a single mechanism.
+
+Both variants now log a retained build-flavor marker. The read-only deployment
+gate checks x86 PE DLL identity and required profile features before any target
+mutation, without loading the DLL. Build-install, research, haptics and legacy
+candidate installation entrypoints use this gate. The protected-native build
+keeps matched capture disabled by the existing INI. ReplayStateFilter and
+ReplayBufferVersions remain OFF; the failed Polish pack is not reinstalled.
+
+44 real-DLL profile tests PASS, including standard/protected feature matrix,
+local override, absent profile, bad PE/architecture and an actual rejected
+research-install preserving the target bytes. Both x86 DLL builds PASS. Native
+owner graph 4178/view callback 176 and VR Settings input4518/renderer863/host50/
+submission7215 PASS. Existing shadow warnings in the owner fixture remain.
+Steam candidate correction restores the supported build variant and preserves
+accepted profile values; physical visuals/FPS/hang recovery remain NOT RUN.
+No native menu laser completion, half-rate forcing or new FPS gain is claimed.
+UEVR OverlayComponent was reviewed as a design reference (actual surface and
+input ownership); no source copied and no new license obligation introduced.
