@@ -12,6 +12,10 @@ if(-not $renderer.Contains('static bool g_smallRecordCopyRequested = false;') -o
    -not $renderer.Contains('g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;')) {
     throw 'SmallRecordCopy requested/effective admission must remain default OFF'
 }
+if(-not $renderer.Contains('static std::atomic<bool> g_directRecordCopy{false};') -or
+   -not [regex]::IsMatch($renderer,'g_directRecordCopy=false;\s*#ifdef D2VR_MATCHED_CAPTURE\s*g_directRecordCopy = GetPrivateProfileIntA\("Render", "DirectRecordCopy", 0, "\.\\\\Darkness2VR-diagnostic\.ini"\)!=0;\s*#endif')) {
+    throw 'DirectRecordCopy must default OFF and accept Render/DirectRecordCopy only in the diagnostic profile/build'
+}
 $hookDevice=[regex]::Match($renderer,'(?s)void HookDevice\(IDirect3DDevice9\* dev\) \{.*?\r?\n\}')
 $admission=$hookDevice.Value.IndexOf('g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);')
 $replayHooks=$hookDevice.Value.IndexOf('d2vr_replay::InstallReplayHooks(dev);')

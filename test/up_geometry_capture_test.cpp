@@ -20,6 +20,7 @@ static std::vector<Rec> g_rec;
 static d2vr_record_payload::Storage g_recData;
 static std::atomic<LONG> g_recLock{0};
 static std::atomic<bool> g_wideRecordCopy{true};
+static std::atomic<bool> g_directRecordCopy{false};
 static uint64_t g_recCounts[40]{};
 static d2vr_replay::FrameResourceRefs<IUnknown> g_recordRefs;
 static bool SmallRecordCopyIsEnabled(){return true;}

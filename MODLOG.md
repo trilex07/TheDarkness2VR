@@ -2482,3 +2482,31 @@ flavors. Earlier integration DLL builds remain applicable: production source
 is unchanged. The two previously NOT RUN host tests remain NOT RUN; no security
 workaround or executable retry. Runtime visual acceptance and FPS impact remain
 pending the consolidated authorized headset session. Steam installation intact.
+
+## 2026-10-29: Opus DirectRecordCopy manual Steam candidate
+
+Integrated e491485 onto MAIN 9c831d5 without conflicts; Opus DirectCopy/filter
+and recorder ordering retained byte-for-byte. Only the configuration admission
+differs: default OFF, with Render/DirectRecordCopy read exclusively from the
+diagnostic INI in DiagnosticCapture builds. The authorized Steam test profile
+will use 1 (ON); ordinary builds remain OFF. Latest WVP/STP eye carry, gameplay,
+hands, tentacles and performance code retained. Incomplete VR settings work is
+saved in a separate stash and excluded from this candidate.
+
+Both x86 DLL builds PASS. Actual recorder/memory fixture10681 checks; UP4403;
+projection history144416; live stateblock264146; live status2848; replay surface
+128 streams/896 calls; actual float replay58370 checks per production/diagnostic;
+protected hands2207, left aim461, tentacle26629, head117021, XInput20041 and
+gestures774 PASS. Source default/profile gate checked by the recorder fixture.
+These do not establish PAGE_GUARD concurrency or protection-restoration safety.
+The unresolved risks and manual-test-only scope are explicit in
+docs/research/direct-record-copy-20261029.md; no runtime FPS claim.
+
+Verified rollback preimage: working af9cdd7 DLL SHA256
+7AB078B3089958F306040E3696FD4EBBD54A7EA0B64C3BC047AD186D6A98E2A4
+and every active INI (two game and two local) under
+%LOCALAPPDATA%/Darkness2VR/backups/direct-record-copy-20261029T162713.
+Pinned EXE D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1
+verified; elevated CIM sees no game, only SteamVR/fpsVR utilities. Deployment
+receipt and immediate rollback are kept with the private candidate package.
+No game launch, profiler, extra A/B session or SteamVR configuration change.
