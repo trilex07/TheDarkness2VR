@@ -222,7 +222,21 @@ def validate_text(stage):
     return report
 
 
-def release(stage, previous_stage, backlog, out, quickbms, bms_script):
+def deployed_preimage(baseline, manifest):
+    """Use immutable deployment receipts, never a later-mutated staging folder."""
+    result=dict(baseline)
+    receipt=json.loads(manifest.read_text(encoding='utf-8-sig'))
+    seen=set()
+    for row in receipt['files']:
+        name=row['name'];value=row['afterSha256'].lower()
+        require(name in result and name not in seen,'Unexpected deployment receipt identity')
+        require(len(value)==64 and all(c in '0123456789abcdef' for c in value),'Invalid deployment receipt hash')
+        seen.add(name);result[name]=value
+    require(bool(seen),'Empty deployment receipt')
+    return result
+
+
+def release(stage, previous_stage, backlog, out, quickbms, bms_script, deployed_manifest=None):
     require(not out.exists(),'Release destination already exists')
     fonts=validate_fonts(stage);text=validate_text(stage);audio=audio_inventory(stage,previous_stage,backlog)
     archives=verify_archives(stage,quickbms,bms_script)
@@ -238,6 +252,9 @@ def release(stage, previous_stage, backlog, out, quickbms, bms_script):
     manifest['preimage_profiles']={
         'vanilla':{name:sha(stage/'baseline'/name) for name in files},
         'accepted_polish':{name:sha((previous_stage/'candidate'/name) if (previous_stage/'candidate'/name).exists() else (stage/'baseline'/name)) for name in files}}
+    if deployed_manifest:
+        manifest['preimage_profiles']['recorded_deployment']=deployed_preimage(manifest['preimage_profiles']['vanilla'],deployed_manifest)
+        manifest['deployment_receipt_sha256']=sha(deployed_manifest)
     out.mkdir(parents=True);(out/'payload').mkdir();(out/'inputs').mkdir();(out/'tools').mkdir()
     for name in files:shutil.copyfile(stage/'candidate'/name,out/'payload'/name)
     for name in ('translations.json','translation-coverage.json','font-report.json','missing-story.json'):
@@ -264,4 +281,5 @@ def release(stage, previous_stage, backlog, out, quickbms, bms_script):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('stage','previous-stage','backlog','out','quickbms','bms-script'):parser.add_argument('--'+name,type=Path,required=True)
-    args=parser.parse_args();release(args.stage,args.previous_stage,args.backlog,args.out,args.quickbms,args.bms_script)
+    parser.add_argument('--deployed-manifest',type=Path)
+    args=parser.parse_args();release(args.stage,args.previous_stage,args.backlog,args.out,args.quickbms,args.bms_script,args.deployed_manifest)

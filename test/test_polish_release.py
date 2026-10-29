@@ -13,6 +13,17 @@ from polish_translate import assemble
 
 
 class PolishReleaseTests(unittest.TestCase):
+    def test_deployed_preimage_uses_receipt_not_mutable_staging(self):
+        from polish_release import deployed_preimage
+        with tempfile.TemporaryDirectory() as folder:
+            receipt=Path(folder)/'receipt.json'
+            receipt.write_text(json.dumps({'files':[{'name':'B.Font.cache','afterSha256':'b'*64}]}))
+            baseline={'B.Font.cache':'a'*64,'B.Texture_en.cache':'c'*64}
+            self.assertEqual(deployed_preimage(baseline,receipt),{'B.Font.cache':'b'*64,'B.Texture_en.cache':'c'*64})
+            self.assertEqual(baseline['B.Font.cache'],'a'*64)
+            receipt.write_text(json.dumps({'files':[{'name':'unknown','afterSha256':'b'*64}]}))
+            self.assertRaises(ValueError,deployed_preimage,baseline,receipt)
+
     def package(self,root):
         package=root/'package';(package/'payload').mkdir(parents=True)
         cache=root/'cache';cache.mkdir();old={};new={}
