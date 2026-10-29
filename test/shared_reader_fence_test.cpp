@@ -51,10 +51,10 @@ static void LastConsumerExcludesLateUnrelatedWork() {
     CHECK(fence.Wait(true,ops));
     CHECK(!fence.pending && ops.completed<ops.submitted && ops.ends==1);
     CHECK(ops.events[2]=="End" && ops.events[3]=="late-NIS-eye-cache");
-    CHECK(ops.events[5]=="Flush" && ops.events[6]=="GetData");
+    CHECK(ops.events[5]=="GetData" && ops.flushes==0);
     CHECK(Draw(fence,ops,"right-shared-read"));
     ops.completed=ops.cutoff;CHECK(fence.Wait(true,ops));
-    CHECK(ops.ends==2 && ops.flushes==2);
+    CHECK(ops.ends==2 && ops.flushes==0);
 }
 static void LegacyRetainsOverwriteTimeEnd() {
     Fence fence;Ops ops;
@@ -70,7 +70,9 @@ static void PollFailureAndTimeoutRetainDependency() {
         Fence fence;Ops ops;CHECK(Draw(fence,ops,"shared-read"));
         ops.failed=driverFailure;CHECK(!fence.Wait(true,ops));
         CHECK(fence.pending && !fence.CanRead(ops) && ops.ends==1);
+        CHECK(ops.flushes==(driverFailure?0u:1u));
         CHECK(!fence.Wait(true,ops));CHECK(ops.ends==1 && fence.pending);
+        CHECK(ops.flushes==(driverFailure?0u:1u)); // retry never resubmits a flushed event
         ops.failed=false;ops.completed=ops.cutoff;
         CHECK(fence.Wait(true,ops));CHECK(!fence.pending && ops.ends==1);
     }
@@ -121,19 +123,43 @@ static void TransferredWorkerReadIsNotReended() {
     CHECK(fence.TrackIssuedRead(ops));
     CHECK(ops.events.empty() && fence.pending && !fence.CanRead(ops));
     // Worker issues the exact event while it exclusively owns the context.
-    ops.Submit("worker-shared-read");ops.End();
+    ops.Submit("worker-shared-read");ops.End();ops.Flush();
     CHECK(!fence.Wait(true,ops) && fence.pending && ops.ends==1);
     ops.Submit("later-XR-copy");ops.completed=ops.cutoff;
     CHECK(fence.Wait(true,ops) && !fence.pending && ops.ends==1);
+    CHECK(ops.flushes==1); // worker submission only, even across a timeout/retry
     CHECK(ops.completed<ops.submitted);
     CHECK(fence.TrackIssuedRead(ops));
     CHECK(!fence.TrackIssuedRead(ops) && fence.fault && ops.ends==1);
 }
+static void PendingNativeEventSubmitsExactlyOnce(){
+    Fence fence;Ops ops;CHECK(Draw(fence,ops,"native-read"));
+    CHECK(!fence.Wait(true,ops) && fence.pending && fence.submitted);
+    CHECK((ops.events[3]=="GetData" && ops.events[4]=="Flush"));
+    CHECK(ops.flushes==1 && !fence.CanRead(ops));
+    ops.completed=ops.cutoff;
+    CHECK(fence.Wait(true,ops) && !fence.pending && !fence.submitted && ops.flushes==1);
+    CHECK(Draw(fence,ops,"next-native-read") && !fence.submitted);
+    ops.completed=ops.cutoff;CHECK(fence.Wait(true,ops) && ops.flushes==1);
+}
+static void RepeatedWorkerEventsKeepSubmissionProof(){
+    Fence fence;Ops ops;
+    for(unsigned job=0;job<2000;++job){
+        CHECK(fence.TrackIssuedRead(ops) && fence.submitted);
+        ops.Submit("worker-read");ops.End();ops.Flush(); // Run before Finish returns
+        ops.completed=ops.cutoff;ops.Submit("later-unrelated-XR-work");
+        CHECK(fence.Wait(true,ops) && !fence.pending && !fence.submitted);
+        CHECK(ops.ends==job+1 && ops.flushes==job+1 && ops.polls==job+1);
+        CHECK(ops.completed<ops.submitted);
+    }
+    ops.Release();fence.Reset();CHECK(!fence.submitted);
+}
 int main(){
+    PendingNativeEventSubmitsExactlyOnce();RepeatedWorkerEventsKeepSubmissionProof();
     TransferredWorkerReadIsNotReended();
     NoReaderOrFailedDraw();LastConsumerExcludesLateUnrelatedWork();
     LegacyRetainsOverwriteTimeEnd();PollFailureAndTimeoutRetainDependency();
     PendingQueryCannotBeReended();ContextQueryAndThreadMustMatch();
     ResetAndResizeOwnSeparateLifetimes();RepeatedEyesHaveOneDependencyEach();
-    std::puts("PASS actual shared-reader Fence helper: last-consumer/legacy order, later unrelated commands, repeated eyes, timeout/error, wrong owner, pending reuse, Reset/resize");
+    std::puts("PASS actual shared-reader Fence: 2000 worker jobs with2000 flushes instead4000; completed native event no flush; pending native event once; last-consumer/legacy order, later unrelated work, timeout/error retains dependency, wrong owner, Reset/resize; CPU protocol only");
 }

@@ -3061,7 +3061,8 @@ struct SharedReaderFenceOps {
     void End() {g_ctx11->End(g_sharedFence11);}
     void Flush() {g_ctx11->Flush();}
     d2vr_shared_reader::Poll GetData() {
-        // Fence::PollIssued explicitly Flushes once before polling.
+        // Fence submits an unflushed pending event once; transferred worker
+        // events were already Flushed before the context lease was returned.
         const HRESULT hr=g_ctx11->GetData(g_sharedFence11,nullptr,0,D3D11_ASYNC_GETDATA_DONOTFLUSH);
         return hr==S_OK ? d2vr_shared_reader::Poll::Ready :
             hr==S_FALSE ? d2vr_shared_reader::Poll::Pending : d2vr_shared_reader::Poll::Failed;

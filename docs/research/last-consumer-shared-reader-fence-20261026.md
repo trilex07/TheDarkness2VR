@@ -78,3 +78,37 @@ Private diagnostic DLL SHA-256:
 This fence candidate is NOT deployed in the resource-ref A/B, which remains
 frozen at `c86c2c8` with the legacy reader fence in both variants. Runtime and
 HMD benefit of the last-consumer candidate remain NOT RUN.
+
+## Reuse the exact event submission proof, 2026-10-29
+
+Current worker Run unconditionally Ends and Flushes its reader event before
+returning the D3D11 context lease. TrackIssuedRead retains that exact event,
+but Wait previously called PollIssued and Flushed it again. In the retained
+runtime log, deferReader=1, lastConsumerFence=1 and worker mode=1 were admitted;
+the redundant path therefore applies to that configuration. Existing join and
+reader wall times overlap and are not removable CPU-cost estimates.
+
+Fence now retains submission proof separately from pending GPU completion.
+Transferred worker events are already submitted when the joined owner polls
+them; polling no longer Flushes again. A native End without a Flush first
+checks GetData(DONOTFLUSH). Ready needs no Flush, Pending submits once, and
+Failed retains its dependency. Timeout/retry keeps the submitted flag, avoiding
+resubmission of that same event. Only the exact event's Ready result clears
+the pending dependency. Context/query/thread checks, overwrite admission,
+packet/resource retention, Reset separation and legacy mode remain intact.
+No GPU wait was removed or moved onto an unowned context.
+
+Actual-helper CPU regression PASS: 2000 transferred events use 2000 Flushes
+(worker submissions) rather than 4000 (including overwrite-time duplicates).
+Already-ready native events need none; pending native events submit once.
+Tests include late unrelated GPU work, timeout/error and retries, wrong owner,
+pending reuse rejection, Reset/resize and unchanged legacy ordering. Both x86
+DLL builds PASS. Interop harness compiles x86 with /WX; hardware execution
+NOT RUN. The build script now supports -CompileOnly for that explicit check.
+
+No INI edit is needed for the existing candidate's worker/deferred-reader
+profile. MAIN should preserve verified backup/rollback and compare the same
+scene, both-eye correctness and existing CPUSync/worker timing receipts in one
+consolidated run. No ms/frame saving, 90 FPS or flicker resolution is established
+by the CPU call-count regression. Earlier historical checks above were not all
+rerun for this extension.

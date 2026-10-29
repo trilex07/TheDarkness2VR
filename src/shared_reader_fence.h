@@ -6,7 +6,7 @@
 namespace d2vr_shared_reader {
 enum class Poll { Ready, Pending, Failed };
 struct Fence {
-    bool pending=false, fault=false;
+    bool pending=false, fault=false, submitted=false;
     const void* context=nullptr;
     const void* query=nullptr;
     uint32_t thread=0;
@@ -21,19 +21,18 @@ struct Fence {
         // whose old result is still the required overwrite dependency.
         if(!CanRead(ops)) {fault=true;return false;}
         ops.End();
-        context=ops.Context();query=ops.Query();thread=ops.Thread();pending=true;
+        context=ops.Context();query=ops.Query();thread=ops.Thread();pending=true;submitted=false;
         return true;
     }
-    // A joined transfer worker has issued (or will issue before returning its
-    // context lease) this exact query. Record its dependency without re-End.
+    // A joined transfer worker has Ended AND Flushed (or will do both before
+    // returning its context lease) this exact query. Do not re-End or re-Flush.
     // Caller must join the worker before polling or reusing the context.
     template<class Ops> bool TrackIssuedRead(const Ops& ops) {
         if(!CanRead(ops)) {fault=true;return false;}
-        context=ops.Context();query=ops.Query();thread=ops.Thread();pending=true;
+        context=ops.Context();query=ops.Query();thread=ops.Thread();pending=true;submitted=true;
         return true;
     }
-    template<class Ops> static bool PollIssued(Ops& ops) {
-        ops.Flush();
+    template<class Ops> static bool PollSubmitted(Ops& ops) {
         const uint64_t start=ops.Now();
         Poll status;
         while((status=ops.GetData())==Poll::Pending) {
@@ -41,6 +40,9 @@ struct Fence {
             ops.PauseThread();
         }
         return status==Poll::Ready;
+    }
+    template<class Ops> static bool PollIssued(Ops& ops) {
+        ops.Flush();return PollSubmitted(ops);
     }
     template<class Ops> bool Wait(bool lastConsumer,Ops& ops) {
         if(!ops.Valid()) return false;
@@ -51,8 +53,16 @@ struct Fence {
         }
         if(fault || !Matches(ops)) return false;
         if(!pending) return true; // no shared read since creation/last completion
-        if(!PollIssued(ops)) return false; // failure/timeout retain the dependency
-        pending=false; // only successful completion permits another overwrite
+        if(!submitted) {
+            // A completed exact event needs no submission or unrelated flush.
+            // GetData uses DONOTFLUSH; Pending still requires one explicit Flush.
+            const Poll status=ops.GetData();
+            if(status==Poll::Failed)return false;
+            if(status==Poll::Ready){pending=false;return true;}
+            ops.Flush();submitted=true;
+        }
+        if(!PollSubmitted(ops)) return false; // retain query AND submission proof
+        pending=false;submitted=false; // only exact completion permits overwrite
         return true;
     }
     // Called after releasing the old query/texture lifetime (including Reset),
