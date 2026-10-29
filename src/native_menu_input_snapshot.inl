@@ -46,6 +46,10 @@ static void ObserveNativeMenuReceiver() {
     const HWND window=g_renderSizeHwnd;
     DWORD pid=0;const DWORD thread=GetWindowThreadProcessId(window,&pid);
     const auto framework=uint32_t(GetWindowLongPtrW(window,GWLP_USERDATA));
+    // FrameworkWin is also the selected-view receiver. Mode3 legitimately
+    // installs our immutable private table before this observer runs. Accept
+    // only the exact clone prepared from FC8930, never the other view class.
+    const auto ownedFrameworkTable=uint32_t(reinterpret_cast<uintptr_t>(g_nativeViewTables[0].Table()));
     const auto read=[](uint32_t address,uint32_t& value) {
         MEMORY_BASIC_INFORMATION region{};
         if(VirtualQuery(reinterpret_cast<const void*>(address),&region,sizeof(region))!=sizeof(region) ||
@@ -58,8 +62,8 @@ static void ObserveNativeMenuReceiver() {
     d2vr_menu_native::Snapshot first,second;
     DWORD afterPid=0;
     if(thread && pid==GetCurrentProcessId() &&
-       d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,first) &&
-       d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,second) && first==second &&
+       d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,first,ownedFrameworkTable) &&
+       d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,second,ownedFrameworkTable) && first==second &&
        GetWindowThreadProcessId(window,&afterPid)==thread && afterPid==pid &&
        uint32_t(GetWindowLongPtrW(window,GWLP_USERDATA))==framework) {
         complete=true;

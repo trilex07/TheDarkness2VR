@@ -193,6 +193,21 @@ rules-factory-body, rules-instance and pause-predicate with the same prefix/date
 Each ends in EVIDENCE COMPLETE; no extracted executable or decompilation is
 committed.
 
+## Private-framework receiver compatibility follow-up
+
+The retained a508d5b5 game log reports eight failed receiver observations.
+The observer required the stock FrameworkWin table FC8930, but mode3 publishes
+our own SHA-pinned immutable clone of that same table before the observer runs.
+This is a concrete source-level incompatibility; it does not establish that it
+is the only runtime refusal. Observe now accepts the exact table supplied by
+g_nativeViewTables[0].Table(), in addition to stock FC8930. It does not accept
+the other view class, an observed arbitrary table, a neighboring clone address
+or a weakened input/mouse/reference graph. The stable pair still is not a
+lifetime lease and does not enable injection. The regression reproduces the
+old rejection and tests clone admission plus retained graph/identity failures.
+128 x86 snapshot checks PASS. Next consolidated game log must confirm whether
+the real receiver is now found before input integration uses its implementation.
+
 ## Performance priority decision
 
 The retained zero-loss outdoor capture 20261027T141205Z-c4e8bb85 has inclusive

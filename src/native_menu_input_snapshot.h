@@ -47,13 +47,17 @@ template<class Read> bool ObservePause(uint32_t manager,Read read,PauseSnapshot&
     }
     output=s;return true;
 }
-template<class Read> bool Observe(uint32_t hwnd,uint32_t framework,Read read,Snapshot& output) {
+// ownedFrameworkTable must come from our pinned immutable framework clone,
+// never from an observed unknown instance. All other graph/type checks remain.
+template<class Read> bool Observe(uint32_t hwnd,uint32_t framework,Read read,Snapshot& output,
+                                  uint32_t ownedFrameworkTable=0) {
     Snapshot s;s.framework=framework;
     const auto field=[&](uint32_t base,uint32_t offset,uint32_t& value) {
         return Pointer(base) && offset<=UINT32_MAX-base-3 && read(base+offset,value);
     };
     uint32_t table=0,mirror=0;
-    if(!hwnd || !field(framework,0,table) || table!=0xFC8930 ||
+    if(!hwnd || !field(framework,0,table) ||
+       (table!=0xFC8930 && (!ownedFrameworkTable || table!=ownedFrameworkTable)) ||
        !field(framework,0xF8,mirror) || mirror!=hwnd ||
        !field(framework,0xA8,s.clientRef) || !field(s.clientRef,0,s.client) ||
        !field(s.client,0x374,s.inputRef) || !field(s.inputRef,0,s.input) ||

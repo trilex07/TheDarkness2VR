@@ -23,6 +23,22 @@ int main() {
     CHECK(first.device==0x500000 && first.getState==0x70001001 && first.getData==0x70002001);
     CHECK(Observe(0x1234,0x100000,read,second));CHECK(first==second);
     const auto originalMemory=memory;
+    // Mode3 replaces FrameworkWin's instance table before input observation.
+    // A valid receiver must survive exactly OUR admitted immutable clone.
+    constexpr uint32_t clone=0x71000000;
+    memory[0x100000]=clone;second=first;
+    CHECK(!Observe(0x1234,0x100000,read,second));CHECK(first==second);
+    CHECK(Observe(0x1234,0x100000,read,second,clone));CHECK(first==second);
+    CHECK(!Observe(0x1234,0x100000,read,second,clone+4));
+    CHECK(!Observe(0x4321,0x100000,read,second,clone));
+    for(uint32_t field:{0x1000A8u,0x310000u,0x410000u,0x600024u}) {
+        const auto saved=memory[field];memory[field]=0;
+        CHECK(!Observe(0x1234,0x100000,read,second,clone));
+        CHECK(first==second);memory[field]=saved;
+    }
+    memory[0x100000]=clone+4;
+    CHECK(!Observe(0x1234,0x100000,read,second,clone));
+    memory=originalMemory;
     for(auto entry:originalMemory) {
         memory.erase(entry.first);second=first;
         CHECK(!Observe(0x1234,0x100000,read,second));CHECK(first==second);
