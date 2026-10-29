@@ -1,5 +1,11 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#include "../../src/replay_state_cache.h"
+#include <atomic>
+static std::atomic<bool> g_bufferUnsafeAlias{false};
+static bool g_bufferWritesApplied=false;
+template<class T>static T* ReplayBuffer(T* p,bool&){return p;}
+template<class T>static bool ReplayInheritedBuffers(T*){return true;}
 #include <windows.h>
 #include <d3d9.h>
 #include <array>

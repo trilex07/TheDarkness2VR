@@ -15,7 +15,7 @@ $cases=foreach($op in $ops){
 $out=Join-Path $env:TEMP 'd2vr-replay-state-status'
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 $fixture=Get-Content (Join-Path $PSScriptRoot 'replay_state_status_test.cpp') -Raw
-[IO.File]::WriteAllText((Join-Path $out 'actual_test.cpp'),$fixture.Replace('@ENUM@',$enum).Replace('@CASES@',($cases -join "`n")))
+[IO.File]::WriteAllText((Join-Path $out 'actual_test.cpp'),$fixture.Replace('@STATE_CACHE@',(Get-Content (Join-Path $repo 'src/replay_state_cache.h') -Raw)).Replace('@ENUM@',$enum).Replace('@CASES@',($cases -join "`n")))
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 Push-Location $out

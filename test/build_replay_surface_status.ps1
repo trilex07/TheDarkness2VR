@@ -12,7 +12,7 @@ $cases=foreach($op in 'SetRenderTarget','SetDepthStencilSurface','Clear','Stretc
 }
 $fixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'replay_surface_status_test.cpp') -Raw
 $generated=Join-Path $env:TEMP 'd2vr-replay-surface-status.cpp'
-$fixture.Replace('@ENUM@',$enum).Replace('@CASES@',($cases -join "`n"))|Set-Content -LiteralPath $generated -Encoding UTF8
+$fixture.Replace('@STATE_CACHE@',(Get-Content (Join-Path $repo 'src/replay_state_cache.h') -Raw)).Replace('@ENUM@',$enum).Replace('@CASES@',($cases -join "`n"))|Set-Content -LiteralPath $generated -Encoding UTF8
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
 $exe=Join-Path $env:TEMP 'd2vr-replay-surface-status.exe'

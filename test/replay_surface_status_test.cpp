@@ -1,4 +1,5 @@
 #include <d3d9.h>
+@STATE_CACHE@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -53,6 +54,7 @@ struct Original {
     HRESULT EndScene(IDirect3DDevice9*) {return Receipt(OP_EndScene);}
 } g_orig;
 static bool Actual(const std::vector<Rec>& records,const unsigned char* dataBase) {
+    d2vr_replay_state::Cache stateCache;
     bool replayComplete=true;
     IDirect3DDevice9* dev=nullptr;
     for(const auto& r:records) switch((RecOp)r.op) {

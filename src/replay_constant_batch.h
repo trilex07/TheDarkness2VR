@@ -39,6 +39,7 @@ class Constants {
     Stage stage_ = Stage::None;
     unsigned first_ = 0, end_ = 0, vsLimit_ = 0, psLimit_ = 0;
     bool enabled_ = false;
+    const float* borrowed_ = nullptr;
 public:
     Constants(bool enabled, unsigned vsLimit, unsigned psLimit)
         : vsLimit_(vsLimit > 256 ? 256 : vsLimit),
@@ -48,18 +49,20 @@ public:
         return enabled_ && stage_ != Stage::None && stage == stage_ &&
                first == end_ && count && first < limit && count <= limit - first;
     }
-    void Abort() { stage_ = Stage::None; enabled_ = false; }
+    void Abort() { stage_ = Stage::None; enabled_ = false; borrowed_=nullptr; }
     template<class Send> void Flush(Send send) {
         if (stage_ == Stage::None) return;
         const auto stage = stage_; const auto first = first_, count = end_ - first_;
+        const float* data=borrowed_?borrowed_:values_+first*4;
+        borrowed_=nullptr;
         stage_ = Stage::None; // consume BEFORE entering the driver; never retry a call
-        if (send(stage, first, values_ + first * 4, count) < 0) enabled_ = false;
+        if (send(stage, first, data, count) < 0) enabled_ = false;
     }
     template<class Send> void Barrier(Stage next, Send send) {
         if (next == Stage::None || next != stage_) Flush(send);
     }
     template<class Send> void Upload(Stage stage, unsigned first, const float* src,
-                                     unsigned count, Send send) {
+                                     unsigned count, Send send, bool durable=false) {
         const unsigned limit = stage == Stage::Vertex ? vsLimit_ : psLimit_;
         if (!enabled_ || stage == Stage::None || !src || !count ||
             first >= limit || count > limit - first) {
@@ -69,7 +72,13 @@ public:
         }
         if (stage != stage_ || first != end_) Flush(send);
         if (!enabled_) { send(stage, first, src, count); return; }
-        if (stage_ == Stage::None) { stage_ = stage; first_ = end_ = first; }
+        if (stage_ == Stage::None) {
+            stage_ = stage; first_ = end_ = first;
+            // Only explicitly durable recorder-arena spans may be borrowed.
+            // Transformed stack packets keep the original owned-copy path.
+            if(durable){borrowed_=src;end_=first+count;return;}
+        }
+        if(borrowed_){memcpy(values_+first_*4,borrowed_,size_t(end_-first_)*16);borrowed_=nullptr;}
         memcpy(values_ + first * 4, src, size_t(count) * 4 * sizeof(float));
         end_ += count;
     }

@@ -14,7 +14,7 @@ if($main -notmatch 'g_replayConstantWindow = GetPrivateProfileIntA\("Render", "R
    $src -notmatch 'const bool windowEnabled = batchEnabled && g_replayConstantWindow;' -or
    $src -notmatch 'bindWindowEnabled && IsConstantMaterialBinding\(r.op,&r\)' -or
    $src -notmatch 'constantWindow.Abort\(\); batchEnabled=false;') {throw 'Default/barrier/abort contract changed'}
-$begin=$src.IndexOf('    bool replayComplete=!g_recOverflow;',[StringComparison]::Ordinal)
+$begin=$src.IndexOf('    bool replayComplete=',[StringComparison]::Ordinal)
 $cases=$src.IndexOf('        switch ((RecOp)r.op) {',$begin,[StringComparison]::Ordinal)
 $vs=$src.IndexOf('        case OP_SetVSConstF: {',$cases,[StringComparison]::Ordinal)
 $vsEnd=$src.IndexOf('        case OP_SetVSConstI:', $vs,[StringComparison]::Ordinal)
@@ -47,7 +47,7 @@ $extraCases=foreach($name in @('SetRenderState','SetStreamSource','SetStreamSour
     }
 $block=[regex]::Match($src.Substring($cases),"(?s)        case OP_ApplyStateBlock: \{.*?(?=        default:)")
 if(!$block.Success -or (!$SourceRevision -and $block.Value -notmatch 'g_vsConstantHistory\.ReplayStateBlock\(\);')){throw 'Replay state block must drop replay-eye register knowledge'}
-$actual=$src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
+$actual="    d2vr_replay_state::Cache stateCache;`n" + $src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
     $src.Substring($bindVS,$vsEnd-$bindVS) + $src.Substring($bindPS,$psEnd-$bindPS) +
     ($extraCases -join "`n") + $block.Value +
     "        default: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks(); break;`n        }`n" + $src.Substring($footer,$end-$footer)

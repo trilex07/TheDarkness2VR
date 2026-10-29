@@ -26,6 +26,7 @@
 #include "stereo_geometry.h"
 #include "material_sampling.h"
 #include "replay_constant_batch.h"
+#include "replay_state_cache.h"
 #include "replay_constant_window.h"
 #include "record_payload_storage.h"
 #include "projection_history.h"
@@ -1934,6 +1935,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     }
     // No driver/state reuse across frames. Capture retains exact original
     // upload boundaries so its per-record projection witnesses stay authoritative.
+    static d2vr_replay_state::Cache stateCache;stateCache.Clear();
     bool replayComplete=!g_recOverflow && !g_bufferUnsafeAlias.load(std::memory_order_acquire);
     if(!ReplayInheritedBuffers(dev))replayComplete=false;
     bool batchEnabled = g_replayConstantBatch;
@@ -2026,17 +2028,17 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if(FAILED(g_orig.SetClipPlane(dev, r.a[0], (const float*)(dataBase + r.a[4]))))replayComplete=false;
             break;
         case OP_SetRenderState:
-            if(FAILED(g_orig.SetRenderState(dev, (D3DRENDERSTATETYPE)r.a[0], r.a[1])))replayComplete=false;
+            if(FAILED(stateCache.Forward(IsConstantRenderStateBinding(r.a[0],r.a[1])?d2vr_replay_state::Cache::Render(r.a[0]):-1,r.a[1],[&](){return g_orig.SetRenderState(dev, (D3DRENDERSTATETYPE)r.a[0], r.a[1]);})))replayComplete=false;
             break;
         case OP_SetTexture:
             if(FAILED(g_orig.SetTexture(dev, r.a[0], (IDirect3DBaseTexture9*)(uintptr_t)r.a[1])))replayComplete=false;
             if (r.a[0] < 16) replayTex[r.a[0]] = (const void*)(uintptr_t)r.a[1];
             break;
         case OP_SetTextureStageState:
-            if(FAILED(g_orig.SetTextureStageState(dev, r.a[0], (D3DTEXTURESTAGESTATETYPE)r.a[1], r.a[2])))replayComplete=false;
+            if(FAILED(stateCache.Forward(d2vr_replay_state::Cache::Stage(r.a[0],r.a[1]),r.a[2],[&](){return g_orig.SetTextureStageState(dev, r.a[0], (D3DTEXTURESTAGESTATETYPE)r.a[1], r.a[2]);})))replayComplete=false;
             break;
         case OP_SetSamplerState:
-            if(FAILED(g_orig.SetSamplerState(dev, r.a[0], (D3DSAMPLERSTATETYPE)r.a[1], r.a[2])))replayComplete=false;
+            if(FAILED(stateCache.Forward(d2vr_replay_state::Cache::Sampler(r.a[0],r.a[1]),r.a[2],[&](){return g_orig.SetSamplerState(dev, r.a[0], (D3DSAMPLERSTATETYPE)r.a[1], r.a[2]);})))replayComplete=false;
             break;
         case OP_SetScissorRect:
             if(FAILED(g_orig.SetScissorRect(dev, r.n ? (const RECT*)(dataBase + r.a[0]) : nullptr)))replayComplete=false;
@@ -2046,6 +2048,9 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const UiClipState clip = BeginScaledUiClip(dev);
             if(FAILED(DrawPrimitiveWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2])))replayComplete=false;
             EndScaledUiClip(dev, clip);
+            stateCache.Invalidate(d2vr_replay_state::Cache::Render(D3DRS_SCISSORTESTENABLE));
+            stateCache.Invalidate(d2vr_replay_state::Cache::Sampler(0,D3DSAMP_MINFILTER));
+            stateCache.Invalidate(d2vr_replay_state::Cache::Sampler(0,D3DSAMP_MAXANISOTROPY));
             break;
         }
         case OP_DrawIndexedPrimitive: {
@@ -2053,6 +2058,9 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const UiClipState clip = BeginScaledUiClip(dev);
             if(FAILED(DrawIndexedPrimitiveWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], (INT)r.a[1], r.a[2], r.a[3], r.a[4], r.a[5])))replayComplete=false;
             EndScaledUiClip(dev, clip);
+            stateCache.Invalidate(d2vr_replay_state::Cache::Render(D3DRS_SCISSORTESTENABLE));
+            stateCache.Invalidate(d2vr_replay_state::Cache::Sampler(0,D3DSAMP_MINFILTER));
+            stateCache.Invalidate(d2vr_replay_state::Cache::Sampler(0,D3DSAMP_MAXANISOTROPY));
             break;
         }
         case OP_DrawPrimitiveUP: {
@@ -2061,6 +2069,9 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             const UiClipState clip = BeginScaledUiClip(dev);
             if(FAILED(DrawPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], data, r.a[2])))replayComplete=false;
             EndScaledUiClip(dev, clip);
+            stateCache.Invalidate(d2vr_replay_state::Cache::Render(D3DRS_SCISSORTESTENABLE));
+            stateCache.Invalidate(d2vr_replay_state::Cache::Sampler(0,D3DSAMP_MINFILTER));
+            stateCache.Invalidate(d2vr_replay_state::Cache::Sampler(0,D3DSAMP_MAXANISOTROPY));
             HOOK_MARK(1900 + r.op);
             break;
         }
@@ -2075,6 +2086,9 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if(FAILED(DrawIndexedPrimitiveUPWithDiffuse(dev, (D3DPRIMITIVETYPE)r.a[0], r.a[1], r.a[2], r.a[3],
                                          ib, (D3DFORMAT)r.a[4], vb, stride)))replayComplete=false;
             EndScaledUiClip(dev, clip);
+            stateCache.Invalidate(d2vr_replay_state::Cache::Render(D3DRS_SCISSORTESTENABLE));
+            stateCache.Invalidate(d2vr_replay_state::Cache::Sampler(0,D3DSAMP_MINFILTER));
+            stateCache.Invalidate(d2vr_replay_state::Cache::Sampler(0,D3DSAMP_MAXANISOTROPY));
             HOOK_MARK(1900 + r.op);
             break;
         }
@@ -2119,7 +2133,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Vertex,
                 uploadStart,src,uploadCount,sendConstants);
             else if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Vertex,
-                uploadStart,src,uploadCount,sendConstants);
+                uploadStart,src,uploadCount,sendConstants,src==(const float*)(dataBase+r.a[4]));
             else sendConstants(d2vr_replay_batch::Stage::Vertex,uploadStart,src,uploadCount);
             break;
         }
@@ -2185,7 +2199,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Pixel,
                 r.a[0],values2,r.a[1],sendConstants);
             else if (batchEnabled) constants.Upload(d2vr_replay_batch::Stage::Pixel,
-                r.a[0],values2,r.a[1],sendConstants);
+                r.a[0],values2,r.a[1],sendConstants,values2==(const float*)(dataBase+r.a[4]));
             else {
 #ifdef D2VR_MATCHED_CAPTURE
                 const HRESULT uploaded=sendConstants(d2vr_replay_batch::Stage::Pixel,r.a[0],values2,r.a[1]);
@@ -2221,6 +2235,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_UpdateTexture:
             break;
         case OP_ApplyStateBlock: {
+            stateCache.Clear();
             InvalidateShadowAtlasPass();
             HOOK_MARK(900 + r.op);
             IDirect3DStateBlock9* sb = (IDirect3DStateBlock9*)(uintptr_t)r.a[0];
@@ -2258,6 +2273,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 constants.Flush(sendConstants);
         }
         } __except (1) {
+            stateCache.Clear();
             replayComplete=false;
             constants.Abort(); constantWindow.Abort(); batchEnabled=false;
 #ifdef D2VR_MATCHED_CAPTURE
