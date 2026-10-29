@@ -208,6 +208,15 @@ public:
     bool InPresentation() const {return path_.depth!=0;}
     void Fail(const char* why) {fault_=true;warm_=false;if(cb_.log) cb_.log("[ImagePresent] FAIL %s; XR admission closed",why);}
     void ResetBegin() {resetting_=true;warm_=false;thread_=0;}
-    void ResetEnd(bool success) {resetting_=!success;}
+    void ResetEnd(bool success,IDirect3DDevice9* device=nullptr) {
+        // Compatibility layers may replace public slot13 AFTER CreateDevice
+        // returned. Re-observe its current implementation while the caller
+        // supplies a live Reset receiver. The outer engine Create return must
+        // still qualify; an inner wrapper call cannot grant XR admission.
+        // No object/vtable writes, retained device pointer or per-frame probe.
+        if(success && device && started_ && !fault_)
+            Install((*reinterpret_cast<void***>(device))[13],Method::Create);
+        resetting_=!success;
+    }
 };
 }

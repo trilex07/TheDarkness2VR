@@ -87,3 +87,29 @@ separately identified profile; never enable the old EXE hook to bypass failure.
 Full protected VR and a separate PSVR2 acceptance package remain gated on actual
 successful gameplay projection-layer submission and overlay UI verification.
 Hands, targeting, tentacles, FOV, resolution and image quality remain out of scope.
+
+## 2026-10-29: late Windows compatibility wrapper blocks acquisition
+
+The deployed 48fa62e startup remained EXTERNAL_PENDING: CreateAdditionalSwapChain
+returned D3D_OK through caller 6DA9109E (unqualified), while native Present caller
+00A94057 was qualified but had no admitted acquisition. Read-only inspection of
+the live device 0F7A58C0 found public slot13=6DA91050 in SYSTEM32/apphelp.dll;
+the observer had installed the earlier D3D9 implementation 64B3CE30. Windows
+therefore inserted its public wrapper after initial observation. A retained
+successful run instead acquired from native caller 00964CC1.
+
+After successful Reset/ResetEx, re-observe the receiver's current public Create
+implementation. This uses the existing bounded external-entry admission and
+module-pinning checks. It does not write a COM table, retain the receiver, probe
+each frame, modify the EXE, or admit an inner wrapper return as native. Exact
+native acquisition and Present checks remain mandatory; failed Reset does not
+install another entry.
+
+An actual x86 fixture inserts a wrapper after Start. Before the fix its first
+native Present assertion failed, reproducing loss of outer acquisition. With
+the fix, 1000 Reset/create/two-Present/release cycles pass: one forwarded create
+per call, 2000 native Presents, 1000 accepted render pairs, unchanged COM tables
+and EXE text. Existing base/Ex/private-slot, recursive-call, unqualified-create,
+failed-Present, thread-change and main-EXE refusal cases also pass. Production
+and DiagnosticCapture x86 builds pass. These are offline results; recovery of
+this apphelp path and stereo output still require the next game launch.

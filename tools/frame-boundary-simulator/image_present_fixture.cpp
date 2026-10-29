@@ -54,6 +54,12 @@ static __declspec(noinline) HRESULT STDMETHODCALLTYPE CreateAdditional(Object* o
     pool={{baseVT,&pool},{exVT,&pool},{privateVT,&pool},1,true};
     *out=reinterpret_cast<IDirect3DSwapChain9*>(&pool.base);return S_OK;
 }
+// The Windows compatibility layer can replace the public device slot after
+// CreateDevice returns. Its inner call hides the engine return address.
+static __declspec(noinline) HRESULT STDMETHODCALLTYPE LateCreateWrapper(Object* o,D3DPRESENT_PARAMETERS* pp,IDirect3DSwapChain9** out) {
+    const HRESULT result=CreateAdditional(o,pp,out);
+    return result;
+}
 extern "C" __declspec(dllexport) IDirect3DDevice9* __cdecl FixtureDevice() {
     deviceVT[0]=baseVT[0]=exVT[0]=privateVT[0]=reinterpret_cast<void*>(&Query);
     deviceVT[1]=baseVT[1]=exVT[1]=privateVT[1]=reinterpret_cast<void*>(&Add);
@@ -70,3 +76,4 @@ extern "C" __declspec(dllexport) void __cdecl FixtureExpect(const RECT* a,const 
 }
 extern "C" __declspec(dllexport) void __cdecl FixtureCycle(){cycle=true;}
 extern "C" __declspec(dllexport) void __cdecl FixtureCreateTarget(void* p){deviceVT[13]=p;}
+extern "C" __declspec(dllexport) void __cdecl FixtureWrapCreate(){deviceVT[13]=reinterpret_cast<void*>(&LateCreateWrapper);}

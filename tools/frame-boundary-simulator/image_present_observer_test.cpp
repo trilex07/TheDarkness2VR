@@ -19,6 +19,7 @@ static IDirect3DDevice9* borrowed=nullptr;
 static const FixtureStats* stats=nullptr;
 static bool timingEnabled=true,forwardActive=false,expectedQualified=true;
 static bool createCallerQualified=true,presentCallerQualified=true;
+static bool createOnlyMainCaller=false;
 static std::vector<std::string> receipts;
 static unsigned expectedReceiptNative=0,expectedReceiptCreates=0;
 static void receiptLog(const char* format,...) {
@@ -50,6 +51,11 @@ static void forwardEnd() {
     phase=3;forwardActive=false;++forwardEnds;
 }
 static bool qualifies(d2vr_image_present::Method method,uintptr_t caller) {
+    if(method==d2vr_image_present::Method::Create && createOnlyMainCaller) {
+        const auto image=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+        const auto pe=reinterpret_cast<IMAGE_NT_HEADERS*>(image+reinterpret_cast<IMAGE_DOS_HEADER*>(image)->e_lfanew);
+        if(caller<image || caller>=image+pe->OptionalHeader.SizeOfImage)return false;
+    }
     return caller!=0 && (method==d2vr_image_present::Method::Create?createCallerQualified:presentCallerQualified);
 }
 static void before(IDirect3DSwapChain9* sc,uintptr_t caller,bool native,bool ready) {
@@ -115,6 +121,26 @@ int main(int argc,char** argv) {
     assert(!observer.Ready());assert(*reinterpret_cast<void***>(device)==vt);
     assert(originalEx->Release()==1 && originalBase->Release()==0);
     RECT a{1,2,31,47},b{4,5,57,63};RGNDATA dirty{};const auto window=reinterpret_cast<HWND>(0x1234);
+    if(argc>2 && !std::strcmp(argv[2],"late-create-wrapper")) {
+        auto wrap=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(dll,"FixtureWrapCreate"));assert(wrap);
+        createOnlyMainCaller=true;wrap();
+        const std::vector<void*> wrappedTable(vt,vt+180);
+        for(unsigned run=0;run<1000;++run) {
+            observer.ResetBegin();observer.ResetEnd(true,device);
+            IDirect3DSwapChain9* base=nullptr;
+            const auto previousCreates=stats->creates;
+            assert(device->CreateAdditionalSwapChain(&pp,&base)==S_OK && base);
+            assert(stats->creates==previousCreates+1 && !observer.Ready());
+            expect(&a,&b,window,&dirty,0x13579,S_OK);
+            assert(base->Present(&a,&b,window,&dirty,0x13579)==S_OK && observer.Ready());
+            assert(base->Present(&a,&b,window,&dirty,0x13579)==S_OK && observer.Ready());
+            assert(base->Release()==0);
+        }
+        assert(rendered==1000 && accepted==1000 && observer.nativePresents==2000);
+        assert(!std::memcmp(vt,wrappedTable.data(),180*sizeof(void*)) && TextSnapshot()==text);
+        assert(!observer.Failed() && !observer.recursive && stats->creates==1001);
+        puts("PASS late Create wrapper:1000 Reset/create/present cycles, exact outer native admission, original creates once, tables/EXE unchanged");return 0;
+    }
     if(receiptTest) {
         // The typed API can succeed for an untrusted caller. Observation alone
         // must not grant native-camera/XR ownership, even to a later native caller.

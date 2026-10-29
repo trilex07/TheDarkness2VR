@@ -21,6 +21,8 @@ try {
     if($LASTEXITCODE -ne 0){throw 'disabled forwarding timing failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll') unqualified-create
     if($LASTEXITCODE -ne 0){throw 'bounded acquisition/admission receipts failed'}
+    & .\observer-test.exe (Join-Path $outDir 'fixture.dll') late-create-wrapper
+    if($LASTEXITCODE -ne 0){throw 'late compatibility-layer Create observation failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll') deny
     if($LASTEXITCODE -ne 0){throw 'EXE write rejection failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll') hr-error

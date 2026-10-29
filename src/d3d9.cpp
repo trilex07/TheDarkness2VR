@@ -5620,7 +5620,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     d2vr_shader_preload::EndReset(dev,hr);
     QueryPreloadEndReset(dev,hr);
 #ifdef D2VR_MATCHED_CAPTURE
-    if(g_imagePreservingPresent) g_imagePresent.ResetEnd(SUCCEEDED(hr));
+    if(g_imagePreservingPresent) g_imagePresent.ResetEnd(SUCCEEDED(hr),dev);
     g_capturePresent.ResetResult(SUCCEEDED(hr));
     InterlockedExchange(&g_captureResetting,FAILED(hr));
 #endif
@@ -5679,7 +5679,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     QueryPreloadEndReset(dev,g_origResetEx?hr:E_FAIL);
 #ifdef D2VR_MATCHED_CAPTURE
     g_capturePresent.ResetResult(g_origResetEx && SUCCEEDED(hr));
-    if(g_imagePreservingPresent) g_imagePresent.ResetEnd(g_origResetEx && SUCCEEDED(hr));
+    if(g_imagePreservingPresent) g_imagePresent.ResetEnd(g_origResetEx && SUCCEEDED(hr),dev);
     InterlockedExchange(&g_captureResetting,!g_origResetEx || FAILED(hr));
 #endif
     if (SUCCEEDED(hr)) g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetSucceeded));
