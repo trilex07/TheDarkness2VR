@@ -19,9 +19,9 @@ function IniContract([string]$path) {
     foreach($line in (Get-Content -LiteralPath $path)) {
         $text=$line.Trim()
         if(!$text -or $text.StartsWith(';') -or $text.StartsWith('#')){continue}
-        if($text -match '^\[(.+)\]$'){$section=$Matches[1]}
+        if($text -match '^\[(.+)\]$'){$section=$Matches[1];continue}
         if($section -ieq 'Input' -and $text -match '^AdaptiveTriggers\s*='){continue}
-        $lines+=$text
+        $lines+="$section|$text"
     }
     $lines -join "`n"
 }
