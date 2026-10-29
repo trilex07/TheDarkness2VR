@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include "up_geometry_capture.h"
 static unsigned checks=0,calls=0,locks=0,records=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line%d %s\n",__LINE__,#x);exit(1);}}while(0)
 static bool g_recActive=true,g_recOverflow=false;
@@ -23,10 +24,12 @@ struct {
     Forward SetRenderTarget,Clear,SetTransform,SetViewport,SetClipPlane,SetRenderState,
         SetTextureStageState,SetSamplerState,SetScissorRect,SetVertexDeclaration,SetFVF,
         SetVertexShaderConstantI,SetVertexShaderConstantB,SetStreamSource,SetStreamSourceFreq,
-        SetIndices,SetPixelShaderConstantI,SetPixelShaderConstantB,StretchRect,ColorFill;
+        SetIndices,SetPixelShaderConstantI,SetPixelShaderConstantB,StretchRect,ColorFill,
+        DrawPrimitive,DrawIndexedPrimitive,DrawPrimitiveUP,DrawIndexedPrimitiveUP;
 } g_orig;
 @ENUM@
 template<class... A> static void RecEmit(A...){if(g_recActive&&!g_recOverflow)++records;}
+template<class... A> static void RecEmitLocked(A...){if(g_recActive&&!g_recOverflow)++records;}
 template<class... A> static void RecEmitData(A...){if(g_recActive&&!g_recOverflow)++records;}
 // These calls use an explicit empty ownership proof, which a variadic stub
 // cannot deduce. Match the actual shared data-emission signature instead.
@@ -34,6 +37,19 @@ struct Proof{};
 static void RecEmitData(unsigned,const void*,size_t,uint32_t=0,uint32_t=0,uint32_t=0,uint32_t=0,
     const Proof& = {},unsigned=4,uint32_t=UINT32_MAX){if(g_recActive&&!g_recOverflow)++records;}
 static uint32_t RecPush(const void*,size_t){return 0;}
+static uint32_t RecPushLocked(const void*,size_t){return 0;}
+static std::vector<uint8_t> g_recData;
+static LONG g_lastHookId=0;
+#define HOOK_MARK(n) (g_lastHookId=(n))
+static bool skipDraw=false;
+static bool SkipObjectDrawForTest(D3DPRIMITIVETYPE,UINT){return skipDraw;}
+static bool SkipShadowDrawForTest(IDirect3DDevice9*){return false;}
+struct WorldDiffuseScope {explicit WorldDiffuseScope(IDirect3DDevice9*){}};
+struct TentacleHeadScope {explicit TentacleHeadScope(IDirect3DDevice9*){}};
+static unsigned clipBegins=0,clipEnds=0;
+struct UiClipState{};
+static UiClipState BeginScaledUiClip(IDirect3DDevice9*){++clipBegins;return {};}
+static void EndScaledUiClip(IDirect3DDevice9*,const UiClipState&){++clipEnds;}
 static void InvalidateShadowAtlasPass(){}
 static void CollectLightReadbackTarget(IDirect3DSurface9*){}
 static void RecordPreSceneWrite(IDirect3DDevice9*){}
@@ -41,6 +57,7 @@ static DWORD ResolveSamplerValue(IDirect3DDevice9*,D3DSAMPLERSTATETYPE,DWORD val
 static std::vector<unsigned> g_rec;
 namespace d2vr_trace {
 static bool g_enabled=false;
+static void NoteDraw(){}
 template<class... A> static void Emit(A...){}
 }
 @IMPLEMENTATION@
@@ -76,12 +93,33 @@ int main(){
         RUN(SetPSConstB,dev,1u,values,1u);
         RUN(StretchRect,dev,surface,&rect,surface,&rect,D3DTEXF_NONE);
         RUN(ColorFill,dev,surface,&rect,D3DCOLOR(0x87654321));
+        RUN(DrawPrimitive,dev,D3DPT_TRIANGLELIST,3u,2u);
+        RUN(DrawIndexedPrimitive,dev,D3DPT_TRIANGLELIST,-2,3u,6u,4u,2u);
+        float vertices[18]{};uint16_t elements[6]{0,1,2,3,4,5};
+        // UP recording owns one extra lock even on a successful live draw.
+        Expect(dev,D3DPT_TRIANGLELIST,2u,vertices,12u);
+        CHECK(Hook_DrawPrimitiveUP(dev,D3DPT_TRIANGLELIST,2,vertices,12)==status);
+        CHECK(calls==1 && locks==unsigned(active&&FAILED(status))+unsigned(active&&!oldOverflow));
+        CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));
+        CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;
+        Expect(dev,D3DPT_TRIANGLELIST,0u,6u,2u,elements,D3DFMT_INDEX16,vertices,12u);
+        CHECK(Hook_DrawIndexedPrimitiveUP(dev,D3DPT_TRIANGLELIST,0,6,2,elements,D3DFMT_INDEX16,vertices,12)==status);
+        CHECK(calls==1 && locks==unsigned(active&&FAILED(status))+unsigned(active&&!oldOverflow));
+        CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));
+        CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;
     }
+    CHECK(clipBegins==80 && clipEnds==clipBegins);
+    // Intentional draw suppression still returns success without calling the
+    // driver or making a previously complete recording invalid.
+    skipDraw=true;g_recActive=true;g_recOverflow=false;status=D3DERR_DEVICELOST;
+    Expect(dev,D3DPT_TRIANGLELIST,0u,2u);
+    CHECK(Hook_DrawPrimitive(dev,D3DPT_TRIANGLELIST,0,2)==D3D_OK);
+    CHECK(calls==0 && !g_recOverflow);skipDraw=false;
     // A successful later call cannot certify a packet containing a failed call.
     g_recActive=true;g_recOverflow=false;status=D3DERR_DEVICELOST;
     Expect(dev,0u,surface);CHECK(Hook_SetRenderTarget(dev,0,surface)==status);
     CHECK(g_recOverflow&&records==1);
     status=S_OK;Expect(dev,surface,&rect,D3DCOLOR(7));
     CHECK(Hook_ColorFill(dev,surface,&rect,7)==S_OK&&g_recOverflow&&records==0);
-    printf("PASS actual live hooks: %u checks, 20 APIs x 20 recording/status cases; exact arguments/HRESULT/one forward, sticky incomplete packet, success path without locking; CPU fixture, not game evidence\n",checks);
+    printf("PASS actual live hooks: %u checks, 24 APIs x 20 recording/status cases; four draw paths including UP, clip cleanup, intentional suppression, exact arguments/HRESULT/one forward, sticky incomplete packet; CPU fixture, not game evidence\n",checks);
 }

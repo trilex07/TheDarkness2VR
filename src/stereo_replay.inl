@@ -1600,7 +1600,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPR
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if (g_recActive) RecEmit(OP_DrawPrimitive, 0, t, sv, pc);
     const UiClipState clip = BeginScaledUiClip(dev);
-    HRESULT hr = DrawPrimitiveWithDiffuse(dev, t, sv, pc);
+    HRESULT hr = RecordLiveResult(DrawPrimitiveWithDiffuse(dev, t, sv, pc));
     EndScaledUiClip(dev, clip);
     return hr;
 }
@@ -1609,7 +1609,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if (g_recActive) RecEmit(OP_DrawIndexedPrimitive, 0, t, (uint32_t)bvi, mvi, nv, si, pc);
     const UiClipState clip = BeginScaledUiClip(dev);
-    HRESULT hr = DrawIndexedPrimitiveWithDiffuse(dev, t, bvi, mvi, nv, si, pc);
+    HRESULT hr = RecordLiveResult(DrawIndexedPrimitiveWithDiffuse(dev, t, bvi, mvi, nv, si, pc));
     EndScaledUiClip(dev, clip);
     return hr;
 }
@@ -1628,7 +1628,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3D
         }
     }
     const UiClipState clip = BeginScaledUiClip(dev);
-    HRESULT hr = DrawPrimitiveUPWithDiffuse(dev, t, pc, vb, stride);
+    HRESULT hr = RecordLiveResult(DrawPrimitiveUPWithDiffuse(dev, t, pc, vb, stride));
     EndScaledUiClip(dev, clip);
     return hr;
 }
@@ -1659,7 +1659,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
         }
     }
     const UiClipState clip = BeginScaledUiClip(dev);
-    HRESULT hr = DrawIndexedPrimitiveUPWithDiffuse(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+    HRESULT hr = RecordLiveResult(DrawIndexedPrimitiveUPWithDiffuse(dev, t, mvi, nv, pc, ib, fmt, vb, stride));
     EndScaledUiClip(dev, clip);
     return hr;
 }

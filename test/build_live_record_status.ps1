@@ -12,7 +12,10 @@ function Extract([string]$signature){
  throw 'Unclosed function'
 }
 $body=Extract 'static inline HRESULT RecordLiveResult('
-foreach($name in 'SetRenderTarget','Clear','SetTransform','SetViewport','SetClipPlane','SetRenderState','SetTextureStageState','SetSamplerState','SetScissorRect','SetVertexDeclaration','SetFVF','SetVSConstI','SetVSConstB','SetStreamSource','SetStreamSourceFreq','SetIndices','SetPSConstI','SetPSConstB','StretchRect','ColorFill'){
+foreach($name in 'DrawPrimitive','DrawIndexedPrimitive','DrawPrimitiveUP','DrawIndexedPrimitiveUP'){
+ $body+="`n"+(Extract "static HRESULT ${name}WithDiffuse(")
+}
+foreach($name in 'SetRenderTarget','Clear','SetTransform','SetViewport','SetClipPlane','SetRenderState','SetTextureStageState','SetSamplerState','SetScissorRect','SetVertexDeclaration','SetFVF','SetVSConstI','SetVSConstB','SetStreamSource','SetStreamSourceFreq','SetIndices','SetPSConstI','SetPSConstB','StretchRect','ColorFill','DrawPrimitive','DrawIndexedPrimitive','DrawPrimitiveUP','DrawIndexedPrimitiveUP'){
  $body+="`n"+(Extract "static HRESULT STDMETHODCALLTYPE Hook_$name(")
 }
 $enum=[regex]::Match($source,'(?s)enum RecOp : uint16_t \{.*?\};').Value
@@ -23,7 +26,7 @@ $fixture.Replace('@ENUM@',$enum).Replace('@IMPLEMENTATION@',$body)|Set-Content -
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 $exe=Join-Path $env:TEMP 'd2vr-live-record-status.exe'
-cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 `"$generated`" /Fo:`"$env:TEMP\d2vr-live-record-status.obj`" /Fe:`"$exe`""
+cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 /I`"$repo/src`" `"$generated`" /Fo:`"$env:TEMP\d2vr-live-record-status.obj`" /Fe:`"$exe`""
 if($LASTEXITCODE -ne 0){throw 'Live result regression build failed'}
 & $exe
 if($LASTEXITCODE -ne 0){throw 'Live result regression failed'}

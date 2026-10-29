@@ -2224,3 +2224,17 @@ and existing ABI/FP/LastError comparisons pass. New tests distinguish a closed
 XR frame, wrong gun argument and missing active-hand tracking from an accepted
 left/right ray, retaining no-write behavior on refusal. Physical validation
 remains failed for the prior candidate and pending for this diagnostic.
+
+## 2026-10-29: fail closed after rejected live draws
+
+The four DrawPrimitive/DrawIndexedPrimitive/UP hooks recorded before forwarding
+but did not mark the packet incomplete on a failed native draw. They now feed
+their unchanged HRESULT through RecordLiveResult before clip restoration.
+Successful draws add no driver calls or failure-path lock. Deliberate diagnostic
+draw suppression still returns D3D_OK. Replay's separate draw-error checks remain.
+
+The actual-source x86 regression passes 2848 checks over 24 APIs and 20 status/
+recording combinations, including all four draw variants, exact arguments,
+one native call, UP recording ownership, clip cleanup and sticky invalidation.
+This closes a proven publication gap; no runtime draw failure, yellow-artifact
+root cause or performance improvement has been demonstrated by this fixture.
