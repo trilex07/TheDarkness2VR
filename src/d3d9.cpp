@@ -5893,6 +5893,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         g_sysmem = nullptr;
     }
     d2vr_replay::ReleaseRecording();
+    d2vr_replay::ResetBufferReplicas();
     d2vr_replay::ResetProjectionHistories();
     if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
@@ -5950,6 +5951,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
         g_sysmem->Release();
         g_sysmem = nullptr;
     }
+    // ResetEx preserves default-pool buffers; their replay replicas survive too.
     d2vr_replay::ReleaseRecording();
     d2vr_replay::ResetProjectionHistories();
     if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
@@ -6086,15 +6088,14 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
         }
         Log("[LightingPreset] last choice %s: %s", saved ? "saved" : "SAVE FAILED", g_lightingChoicePath);
     }
+    d2vr_replay::CloseBufferFrame();
     BeginTrackedFrame(); // latch before either eye starts drawing the next game frame
     if (g_submitMode == 4 && g_stereoMode >= 1) {
         d2vr_replay::LightEndOfWindowSnapshot(dev);   // diagnostic only (LightReadback)
         InterlockedExchange(&g_needRecBegin, 1);
         g_preSceneWriteMissed=false;
-    } else if (d2vr_replay::g_recActive) {
-        d2vr_replay::g_recActive = false;
-        d2vr_replay::g_rec.clear();
-        d2vr_replay::g_recData.clear();
+    } else {
+        d2vr_replay::ReleaseRecording();
     }
 
 }
