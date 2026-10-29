@@ -70,11 +70,13 @@ static void NativePistolBody(const char* path,d2vr_weapon_bridge::Fire original,
         uintptr_t returns[2]{};
         for(unsigned fixed=0;fixed<2;++fixed){
             const auto before=*static_cast<const unsigned*>(result(3));State state{};
+            const auto shotBefore=d2vr::psvr2::shotSerial[1-slot].load();
             // Reproduce the old entry adapter too: even its correct incoming
             // controller matrix is overwritten by CFBBA0's camera branch.
             const float* incoming=(!fixed&&tracked&&emits)?expected:stock;
             returns[fixed]=invoke(bodies[fixed],fires[slot],inventory+0xB0+12*slot,incoming,&state);
             CHECK(*static_cast<const unsigned*>(result(3))==before+(emits?1:0));
+            CHECK(d2vr::psvr2::shotSerial[1-slot].load()==shotBefore+((fixed&&tracked&&emits)?1:0));
             CHECK(gunRef[1]==1&&nativeAvatarReference[1]==1);
             if(emits){
                 const auto observed=static_cast<const float*>(result(1));

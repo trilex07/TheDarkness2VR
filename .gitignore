@@ -6,5 +6,6 @@
 *.map
 *.dll
 *.bak*
+tests/psvr2/out/
 test_vt.cpp
 TheDarkness2VR/

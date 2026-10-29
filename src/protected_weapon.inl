@@ -1,5 +1,6 @@
 #ifdef D2VR_MATCHED_CAPTURE
 #include "native_weapon_bridge.h"
+#include "psvr2/ShotEvents.h"
 #include "native_weapon_prefix_plan.h"
 static d2vr_native_view::InstanceTable g_protectedWeaponModelTable,g_protectedWeaponFireTable;
 static d2vr_native_clone::Code g_protectedWeaponModelCode,g_protectedWeaponFireCode;
@@ -145,6 +146,21 @@ static bool ResolveProtectedWeaponFire(void* fire,void* weaponRef,float* world) 
     }
     return applied;
 }
+static void ReportProtectedWeaponShot(void* fire,void* weaponRef,bool fired) {
+    if(!fired || !ProtectedWeaponAvailable())return;
+    NativeGameplaySample owner;
+    if(!CopyNativeGameplay(owner))return;
+    __try {
+        for(unsigned slot=0;slot<2;++slot) {
+            void *gun=nullptr,*model=nullptr,*equippedFire=nullptr;
+            if(ProtectedWeaponOwner(reinterpret_cast<void*>(owner.camera),slot,gun,model,equippedFire) &&
+               equippedFire==fire && ProtectedWeaponFireOwned(fire) && weaponRef &&
+               **static_cast<void***>(weaponRef)==gun) {
+                d2vr::psvr2::noteShot(1-slot);return;
+            }
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER){}
+}
 static bool PrepareProtectedWeaponCode() {
     if(g_protectedWeaponReady)return true;
     if(g_protectedWeaponPrepareAttempted)return false;
@@ -162,7 +178,7 @@ static bool PrepareProtectedWeaponCode() {
         reinterpret_cast<LPCSTR>(d2vr_weapon_bridge::Bridge::ModelEntry()),&self) ||
        !d2vr_weapon_bridge::Bridge::Prepare(reinterpret_cast<d2vr_weapon_bridge::Compare>(0x481F50),
            reinterpret_cast<d2vr_weapon_bridge::Fire>(0xC47570),ResolveProtectedWeaponModel,
-           ResolveProtectedWeaponFire,g_nativeImageGuard))return false;
+           ResolveProtectedWeaponFire,g_nativeImageGuard,ReportProtectedWeaponShot))return false;
     const Override comparison{0,0x262,d2vr_weapon_bridge::Bridge::ModelEntry()};
     // CFBBA0 can replace its incoming matrix using the native camera. Change
     // only its final consumer call, after that computation. Its retained refs,
@@ -232,6 +248,7 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
     }
 }
 #else
+static bool ProtectedWeaponFireOwned(void*) {return false;}
 static bool ProtectedWeaponModelOwned(void*) {return false;}
 static bool CopyProtectedWeaponHandPose(DWORD,unsigned,XrPosef&) {return false;}
 static void PrepareProtectedWeaponForCamera(void*) {}

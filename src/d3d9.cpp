@@ -108,6 +108,10 @@ static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "xinput.lib")
 
+#include "psvr2/IpcClient.h"
+#include "psvr2/HapticDelivery.h"
+#include "psvr2/ShotEvents.h"
+
 namespace {
 
 CRITICAL_SECTION g_logLock;
@@ -142,6 +146,7 @@ bool g_clipScaledUi = true;
 bool g_fixMotionVectorProjection = false;
 bool g_worldDiffuseAnisotropy = false;
 bool g_gestureBridge = false; // diagnostic detection until native context/weapon state is verified
+bool g_adaptiveTriggers = true;
 bool g_tentacleBridge = false; // separate, opt-in stock-game action bridge
 bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
 bool g_nativeLeftAim=false;
@@ -739,6 +744,7 @@ void LoadConfig() {
     Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control; 3=D3D11-only worker/native D3D9 flags)",g_stereoTransferMode);
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
+    g_adaptiveTriggers = GetPrivateProfileIntA("Input", "AdaptiveTriggers", 1, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
     g_tentacleAimMarker = GetPrivateProfileIntA("Input", "TentacleAimMarker", 1, chosenIni) != 0;
     g_nativeLeftAim = GetPrivateProfileIntA("Input", "NativeLeftAim", 0, chosenIni) != 0;
@@ -3610,7 +3616,11 @@ XrAction g_actStickR = XR_NULL_HANDLE;
 XrPath g_pathHandLeft = XR_NULL_PATH;
 XrPath g_pathHandRight = XR_NULL_PATH;
 bool g_padActionsReady = false;
-XrAction g_actGripPose[2]{}, g_actAimPose[2]{}, g_actSqueeze[2]{};
+XrAction g_actGripPose[2]{}, g_actAimPose[2]{}, g_actSqueeze[2]{}, g_actHaptic[2]{};
+bool g_gripHapticOn[2]{};
+static d2vr::psvr2::HapticDelivery g_hapticDelivery[2];
+static ULONGLONG g_hapticRetry[2]{};
+static unsigned g_hapticEpoch=0;
 XrSpace g_handGripSpace[2]{}, g_handAimSpace[2]{};
 struct TrackedHand {
     XrPosef grip{}, aim{};
@@ -3633,7 +3643,49 @@ struct GestureState {
 };
 static GestureState g_gestures;
 static d2vr_input::Tentacles g_tentacles;
+static void CancelGripHaptic(int hand) {
+    const auto now=GetTickCount64();
+    if(!g_gripHapticOn[hand] || !g_xrSession || !g_actHaptic[hand] || now>=g_hapticDelivery[hand].until) {
+        g_gripHapticOn[hand]=false;g_hapticDelivery[hand].stopped();g_hapticRetry[hand]=0;return;
+    }
+    if(now<g_hapticRetry[hand])return;
+    XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
+    info.action=g_actHaptic[hand];info.subactionPath=hand?g_pathHandRight:g_pathHandLeft;
+    if(xrStopHapticFeedback(g_xrSession,&info)==XR_SUCCESS) {
+        g_gripHapticOn[hand]=false;g_hapticDelivery[hand].stopped();g_hapticRetry[hand]=0;
+    } else g_hapticRetry[hand]=now+10; // retry cancellation only until finite expiry
+}
+static void StopGripHaptics() {
+    ++g_hapticEpoch;
+    d2vr::psvr2::SubmitBothOff(d2vr::psvr2::TriggerOffReason::Unfocused);
+    for (int hand = 0; hand < 2; ++hand)CancelGripHaptic(hand);
+}
+
+static void ApplyGripHaptic(int hand, const d2vr::psvr2::GripHaptic& haptic,
+                            std::uint64_t event,bool continuous=false) {
+    if (!g_xrSession || !g_actHaptic[hand]) return;
+    XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
+    info.action = g_actHaptic[hand];
+    info.subactionPath = hand ? g_pathHandRight : g_pathHandLeft;
+    if (!d2vr::psvr2::gripHapticActive(haptic)) {
+        CancelGripHaptic(hand);
+        return;
+    }
+    const auto now=GetTickCount64();
+    if(now<g_hapticRetry[hand] || !g_hapticDelivery[hand].needsApply(haptic,event,now,continuous))return;
+    XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
+    vibration.amplitude = haptic.amplitude;
+    vibration.frequency = haptic.frequency;
+    vibration.duration = static_cast<XrDuration>(haptic.durationNanoseconds);
+    const auto result=xrApplyHapticFeedback(g_xrSession,&info,
+        reinterpret_cast<const XrHapticBaseHeader*>(&vibration));
+    if(result==XR_SUCCESS) {
+        g_gripHapticOn[hand]=true;g_hapticDelivery[hand].applied(haptic,event,now);
+    } else g_hapticRetry[hand]=now+100;
+}
+
 static void ResetPoseInput() {
+    StopGripHaptics();
 #ifdef D2VR_MATCHED_CAPTURE
     g_protectedGrips={};
     g_protectedRightTentacle={};
@@ -3696,6 +3748,10 @@ static bool SuggestBindings(const char* profile, const XrActionSuggestedBinding*
             sprintf_s(path, "%s/input/squeeze/value", hand);
             all.push_back({g_actSqueeze[h],XrPathFrom(path)});
         }
+        if (g_actHaptic[h]) {
+            sprintf_s(path, "%s/output/haptic", hand);
+            all.push_back({g_actHaptic[h], XrPathFrom(path)});
+        }
     }
     XrInteractionProfileSuggestedBinding ipb{ XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
     ipb.interactionProfile = XrPathFrom(profile);
@@ -3730,6 +3786,9 @@ bool InitXrGamepadActions() {
         if (!CreatePadAction(g_padActionSet,name,XR_ACTION_TYPE_POSE_INPUT,hand,&g_actAimPose[h])) return false;
         sprintf_s(name,"%s_squeeze",h ? "right" : "left");
         if (!CreatePadAction(g_padActionSet,name,XR_ACTION_TYPE_FLOAT_INPUT,hand,&g_actSqueeze[h])) return false;
+        sprintf_s(name,"%s_haptic",h ? "right" : "left");
+        if (!CreatePadAction(g_padActionSet,name,XR_ACTION_TYPE_VIBRATION_OUTPUT,hand,&g_actHaptic[h]))
+            Log("grip haptic action unavailable on %s", h ? "right" : "left");
         XrActionSpaceCreateInfo space{XR_TYPE_ACTION_SPACE_CREATE_INFO};
         space.subactionPath=hand; space.poseInActionSpace.orientation.w=1;
         space.action=g_actGripPose[h];
@@ -3776,6 +3835,8 @@ bool InitXrGamepadActions() {
         { g_actStickR,     XrPathFrom("/user/hand/right/input/thumbstick/click") },
     };
     SuggestBindings(touch, touchB, static_cast<uint32_t>(sizeof(touchB) / sizeof(touchB[0])));
+    SuggestBindings("/interaction_profiles/sony/psvr2_sense_controller", touchB,
+        static_cast<uint32_t>(sizeof(touchB) / sizeof(touchB[0])));
 
     const char* index = "/interaction_profiles/valve/index_controller";
     XrActionSuggestedBinding indexB[] = {
@@ -3901,8 +3962,168 @@ static void LocateTrackedHands() {
     }
 }
 
+static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
+    if (!g_adaptiveTriggers) {
+        StopGripHaptics();
+        return;
+    }
+    if(!focused || !gp){StopGripHaptics();return;}
+    const auto started = d2vr::psvr2::ClientStart();
+    static int announced = -1;
+    const int announcement = started == d2vr::psvr2::ClientStartResult::Disabled ? 0 : 1;
+    if (announced != announcement) {
+        announced = announcement;
+        Log("[PSVR2] adaptive triggers %s", announcement
+            ? "client started" : "inactive (helper unavailable or externally disabled)");
+    }
+    const bool triggerClient = d2vr::psvr2::ClientRunning();
+
+    using namespace d2vr::psvr2;
+    FrameGates gates{};
+    gates.toolkitEnabled = true;
+    gates.steamVrCompatibleRuntime = true;
+    bool menu = g_vrSettings.Open() || g_tentacles.paused ||
+        (gp && (gp->wButtons & XINPUT_GAMEPAD_START) != 0);
+#ifdef D2VR_MATCHED_CAPTURE
+    menu=menu || g_protectedRightTentacle.paused || g_protectedLeftTentacle.paused;
+#endif
+    gates.openXrFocused = focused && g_xrSessionState == XR_SESSION_STATE_FOCUSED;
+    gates.gameplayActive = g_in3DGameplayMode && !menu;
+    gates.inactiveReason = menu ? TriggerOffReason::Menu : TriggerOffReason::Loading;
+
+    unsigned char observed[2]{};
+    unsigned char demonHold = 0;
+    unsigned char shotOwnedMask=0;
+    if (gates.openXrFocused && gates.gameplayActive) {
+        NativeGameplaySample sample{};
+        if (CopyNativeGameplay(sample)) {
+            observed[0] = sample.firearm[0];
+            observed[1] = sample.firearm[1];
+            demonHold = sample.demonHold;
+            shotOwnedMask=sample.shotOwnedMask;
+        }
+    }
+    const Firearm kinds[2] = {
+        resolveFirearm(static_cast<Firearm>(observed[1]), static_cast<Firearm>(observed[0])),
+        resolveFirearm(static_cast<Firearm>(observed[0]), static_cast<Firearm>(observed[1]))};
+
+    static WeaponLatch latch[2]{};
+    static ULONGLONG fireSince[2]{};
+    static std::uint32_t seenShot[2]{};
+    static ULONGLONG shotUntil[2]{};
+    static unsigned epoch=0;
+    if(epoch!=g_hapticEpoch) {
+        epoch=g_hapticEpoch;
+        for(unsigned hand=0;hand<2;++hand) {
+            shotUntil[hand]=0;seenShot[hand]=shotSerial[hand].load(std::memory_order_acquire);
+        }
+    }
+    static ULONGLONG reloadUntil = 0;
+    static ULONGLONG xSince = 0;
+    static ULONGLONG eatUntil = 0;
+    static ULONGLONG impaleUntil = 0;
+    static ULONGLONG throwUntil = 0;
+    static bool wasThrowAck = false;
+    static bool wasHolding = false;
+    static unsigned char loggedKind[2]{0xff, 0xff};
+    static unsigned char loggedCue[2]{0xff, 0xff};
+    const ULONGLONG now = GetTickCount64();
+    const bool xDown = gp && (gp->wButtons & XINPUT_GAMEPAD_X) != 0;
+    const bool characterHeld = demonHold == 2;
+    if (!xDown) xSince = 0;
+    else if (!xSince) xSince = now ? now : 1;
+    const bool xHeld = xSince && now - xSince >= 280;
+    const bool hipReload = g_gestures.reloadUntil && now < g_gestures.reloadUntil;
+    const bool individualReload=now<g_gestures.reloadUntilByHand[0] || now<g_gestures.reloadUntilByHand[1];
+    if (hipReload || (xDown && !xHeld && !characterHeld && !individualReload)) reloadUntil = now + 400;
+    if (xHeld || (characterHeld && xDown)) reloadUntil = 0;
+    if (characterHeld && gp && (gp->wButtons & XINPUT_GAMEPAD_A) != 0)
+        impaleUntil = now + 700;
+    if (xHeld || (characterHeld && xDown)) eatUntil = now + 700;
+    const bool holding = (g_tentacleBridge && g_tentacles.holdingIntent) || demonHold != 0
+        || (!g_tentacleBridge && g_gestures.grabbed);
+    const bool throwAck = g_tentacleBridge && g_tentacles.awaitingThrowAck;
+    if ((throwAck && !wasThrowAck) || (!g_tentacleBridge && wasHolding && !holding
+        && d2vr_input::Length(g_hands[0].motion.velocity) > .8f)) {
+        throwUntil = now + 140;
+        eatUntil = impaleUntil = 0;
+    }
+    wasThrowAck = throwAck;
+    wasHolding = holding;
+    if(!gates.openXrFocused || !gates.gameplayActive) {
+        xSince=eatUntil=impaleUntil=throwUntil=reloadUntil=0;
+        fireSince[0]=fireSince[1]=shotUntil[0]=shotUntil[1]=0;
+    }
+    d2vr::psvr2::TentacleCue cues[2]{};
+    if (gates.openXrFocused && gates.gameplayActive) {
+        if (now < eatUntil) cues[0] = d2vr::psvr2::TentacleCue::Eat;
+        else if (now < impaleUntil) cues[0] = d2vr::psvr2::TentacleCue::Impale;
+        else if (now < throwUntil) cues[0] = d2vr::psvr2::TentacleCue::Throw;
+        else if (holding) cues[0] = d2vr::psvr2::TentacleCue::Grip;
+        if (gp && (gp->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0)
+            cues[1] = d2vr::psvr2::TentacleCue::Strike;
+    }
+    const bool reloading = now < reloadUntil;
+    const BYTE analog[2] = {
+        static_cast<BYTE>(gp ? gp->bLeftTrigger : 0),
+        static_cast<BYTE>(gp ? gp->bRightTrigger : 0)};
+    for (int hand = 0; hand < 2; ++hand) {
+        const bool connected=g_hands[hand].aimValid || g_hands[hand].gripValid;
+        const bool active=gates.openXrFocused && gates.gameplayActive && connected;
+        const bool nativeShots=(shotOwnedMask&(1u<<(1-hand)))!=0;
+        const auto serial=shotSerial[hand].load(std::memory_order_acquire);
+        const bool newShot=serial!=seenShot[hand];seenShot[hand]=serial;
+        if(!active)shotUntil[hand]=0;
+        else if(nativeShots && newShot)shotUntil[hand]=now+60;
+        if (loggedKind[hand] != static_cast<unsigned char>(kinds[hand])) {
+            loggedKind[hand] = static_cast<unsigned char>(kinds[hand]);
+            Log("[PSVR2] %s firearm=%s", hand ? "right" : "left", firearmName(kinds[hand]));
+        }
+        if (loggedCue[hand] != static_cast<unsigned char>(cues[hand])) {
+            loggedCue[hand] = static_cast<unsigned char>(cues[hand]);
+            if (cues[hand] != d2vr::psvr2::TentacleCue::None)
+                Log("[PSVR2] %s tentacle=%s", hand ? "right" : "left",
+                    tentacleCueName(cues[hand]));
+        }
+        const bool pulled = active && analog[hand] >= 64;
+        if(!pulled)shotUntil[hand]=0;
+        if (!pulled) fireSince[hand] = 0;
+        else if (!fireSince[hand]) fireSince[hand] = now ? now : 1;
+        const auto held = fireSince[hand] ? now - fireSince[hand] : 0;
+        const bool handReloading=reloading || now<g_gestures.reloadUntilByHand[hand];
+        const bool vibratingShot=nativeShots ? now<shotUntil[hand] : pulled;
+        GripHaptic haptic = tentacleHaptic(cues[hand]);
+        if (active && vibratingShot && !handReloading)
+            haptic = combineGripHaptic(haptic, weaponHaptic(kinds[hand], true, nativeShots?0:held));
+        const auto identity=(static_cast<std::uint64_t>(nativeShots?serial:fireSince[hand])<<8)
+            | static_cast<unsigned char>(cues[hand]);
+        const bool continuous=!nativeShots && pulled &&
+            (kinds[hand]==Firearm::Automatic || kinds[hand]==Firearm::Smg || kinds[hand]==Firearm::Rifle);
+        ApplyGripHaptic(hand, active ? haptic : GripHaptic{},identity,continuous);
+        if (!triggerClient) continue;
+        const auto which = hand ? TriggerHand::Right : TriggerHand::Left;
+        if(!active){Submit(offCommand(which,menu?TriggerOffReason::Menu:TriggerOffReason::Unfocused));continue;}
+        if (gates.openXrFocused && gates.gameplayActive
+            && noteFirearmChange(latch[hand], kinds[hand])) {
+            consumeFirearmReset(latch[hand]);
+            Submit(weaponChangedReset(which));
+            continue;
+        }
+        HandInput input{};
+        input.firearm = kinds[hand];
+        input.fireDown = nativeShots ? now<shotUntil[hand] : pulled;
+        input.fireHeldMilliseconds = nativeShots ? 0 : held;
+        input.reloading = handReloading;
+        input.tentacle = cues[hand];
+        Submit(selectHand(gates, input, which));
+    }
+}
+
 bool SyncOpenXRGamepad(XINPUT_STATE* out) {
-    if (!out || !g_padActionsReady || !g_xrRunning) return false;
+    if (!out || !g_padActionsReady || !g_xrRunning) {
+        if (!g_xrRunning) PublishAdaptiveTriggers(nullptr, false);
+        return false;
+    }
     XrActiveActionSet active{ g_padActionSet, XR_NULL_PATH };
     XrActionsSyncInfo sync{ XR_TYPE_ACTIONS_SYNC_INFO };
     sync.countActiveActionSets = 1;
@@ -3926,7 +4147,9 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     // XR_SESSION_NOT_FOCUSED is positive but actions must not be forwarded.
     if (syncResult != XR_SUCCESS) {
         g_vrSettings.Close();g_vrSettingsToggle.Update(false,false);
-        ResetPoseInput();return false;
+        PublishAdaptiveTriggers(nullptr, false);
+        ResetPoseInput();
+        return false;
     }
 
     float lx = 0, ly = 0, rx = 0, ry = 0, lt = 0, rt = 0;
@@ -4023,6 +4246,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         Log("XR Pad live: LStick=(%d, %d) RStick=(%d, %d) Trig=(%u, %u) Btns=0x%04X",
             gp.sThumbLX, gp.sThumbLY, gp.sThumbRX, gp.sThumbRY, gp.bLeftTrigger, gp.bRightTrigger, gp.wButtons);
     }
+    PublishAdaptiveTriggers(&gp, true);
     return true;
 }
 
@@ -4584,6 +4808,7 @@ void PumpXR() {
                 g_vrSettings.Close();
                 g_vrSettingsToggle.Update(false,false);
                 g_adaptiveFPS.DiscardFrames();
+                d2vr::psvr2::SubmitBothOff(d2vr::psvr2::TriggerOffReason::Unfocused);
                 ResetPoseInput(); PublishXrPad(nullptr);
             }
             if (s->state == XR_SESSION_STATE_READY) {
@@ -4615,6 +4840,7 @@ void PumpXR() {
                 }
             } else if (s->state == XR_SESSION_STATE_STOPPING) {
                 ReleaseVrSettingsRenderer();
+                d2vr::psvr2::SubmitBothOff(d2vr::psvr2::TriggerOffReason::SessionEnd);
                 if (g_gameHwnd) ShowWindow(g_gameHwnd, SW_SHOWNA);
                 if(xrEndSession(g_xrSession)==XR_SUCCESS)g_adaptiveFPS.SessionEnded();
                 g_xrRunning = false;
@@ -6794,6 +7020,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
         Log("[RenderPipelineTrace] attempted=%ld dropped=%ld (last worker flush may be lost at process exit)",
             (long)InterlockedCompareExchange(&d2vr_trace::g_count,0,0),
             (long)InterlockedCompareExchange(&d2vr_trace::g_dropped,0,0));
+        d2vr::psvr2::ClientRequestStop();
 #ifdef D2VR_MATCHED_CAPTURE
         if(!RemoveNativeHandsPackHook()) RaiseFailFastException(nullptr,nullptr,0);
 #endif

@@ -14,6 +14,7 @@ static bool ProtectedHandsResourceOwned(void* resource);
 static void PrepareProtectedHandsForCamera(void* camera);
 static void ResetProtectedHandPoses();
 static bool ProtectedWeaponModelOwned(void* model);
+static bool ProtectedWeaponFireOwned(void* fire);
 static void PrepareProtectedWeaponForCamera(void* camera);
 // Pinned stock EXE, x86. C62F50 builds inventory aim; C6300F calls the camera
 // matrix getter (thiscall, no stack args, EAX pointer), then reads forward row2
@@ -36,6 +37,8 @@ struct NativeGameplaySample {
     ULONGLONG time=0;
     d2vr_input::GrabFeedback grab=d2vr_input::GrabFeedback::Unknown;
     DWORD camera=0,inventory=0,entities[2]{}; // primary/right, secondary/left
+    unsigned char firearm[2]{}; // same slots: [0] right, [1] left
+    unsigned char shotOwnedMask=0; // native final-consumer reports available
     bool offHandEquipped=false;
     DWORD grabFire=0,grabEntity=0;
 #ifdef D2VR_MATCHED_CAPTURE
@@ -43,6 +46,7 @@ struct NativeGameplaySample {
 #endif
     // Character/weapon holds do not use the ordinary prop throw path.
     bool alternateHeldTarget=false;
+    unsigned char demonHold=0; // 1 object, 2 character held for an execution
 };
 static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
 static NativeGameplaySample g_nativeGameplay;
@@ -175,8 +179,11 @@ static bool CaptureNativeGameplay(void* self) {
                 auto fire=**(BYTE***)(parts+48*mode+0xC);
                 if(fire && (*(DWORD*)fire==0x1004FE8 || ProtectedThrowFireOwned(fire)) && *(DWORD*)(fire+4)==0x11126F0 &&
                    **(BYTE***)(fire+0x4C)==weapon) {
-                    const bool busy=**(DWORD**)(fire+0x558) || **(DWORD**)(fire+0x580) || **(DWORD**)(fire+0x590);
+                    const auto characterRef=*(DWORD**)(fire+0x584);
+                    const bool character=characterRef && *characterRef!=0;
+                    const bool busy=**(DWORD**)(fire+0x558) || **(DWORD**)(fire+0x580) || **(DWORD**)(fire+0x590) || character;
                     s.grab=busy ? d2vr_input::GrabFeedback::Busy:d2vr_input::GrabFeedback::Empty;
+                    s.demonHold=character ? 2 : busy ? 1 : 0;
                     s.grabFire=(DWORD)(uintptr_t)fire;
                     s.grabEntity=**(DWORD**)(fire+0x580);
                     const auto alternateCharacter=*(DWORD**)(fire+0x584);
@@ -194,6 +201,20 @@ static bool CaptureNativeGameplay(void* self) {
         for(int hand=0;hand<2;++hand) {
             auto gun=**(BYTE***)(inventory+0xB0+12*hand);
             if(!gun || *(DWORD*)gun!=0x1010E30 || **(BYTE***)(gun+0x980)!=avatar) continue;
+            s.firearm[hand]=d2vr::psvr2::ObserveFirearm(gun);
+            // Optional haptic metadata must not invalidate the established
+            // gameplay/held-target sample on an unsupported weapon layout.
+            __try {
+                const auto mode=*reinterpret_cast<DWORD*>(gun+0xA78);
+                auto parts=*reinterpret_cast<BYTE**>(gun+0xA64);
+                if(mode<4 && parts) {
+                    auto action=**reinterpret_cast<BYTE***>(parts+48*mode+0xC);
+                    if(action && ProtectedWeaponFireOwned(action)) {
+                        s.shotOwnedMask|=1u<<hand;
+                        if(!s.firearm[hand])s.firearm[hand]=static_cast<unsigned char>(d2vr::psvr2::Firearm::Pistol);
+                    }
+                }
+            } __except(EXCEPTION_EXECUTE_HANDLER){}
             auto entity=**(BYTE***)(gun+0xE0+0x4C); // native A1DA90(0,0)
             if(entity && (*(DWORD*)entity==0xFD6BC0 || ProtectedWeaponModelOwned(entity))) s.entities[hand]=(DWORD)(uintptr_t)entity;
         }

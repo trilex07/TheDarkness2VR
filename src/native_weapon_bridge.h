@@ -14,11 +14,13 @@ using Compare=int(__cdecl*)(const float*,const float*,float);
 using Fire=void(__thiscall*)(void*,void*,const float*,uintptr_t,uintptr_t,uintptr_t);
 using ModelResolve=bool(*)(const float*,float*);
 using FireResolve=bool(*)(void*,void*,float*);
+using ShotReport=void(*)(void*,void*,bool);
 namespace detail {
 inline Compare compare=nullptr;
 inline Fire fire=nullptr;
 inline ModelResolve modelResolve=nullptr;
 inline FireResolve fireResolve=nullptr;
+inline ShotReport shotReport=nullptr;
 inline thread_local bool resolving=false;
 static void __cdecl ApplyModel(const float* current,float* candidate) {
     const DWORD error=GetLastError();
@@ -36,6 +38,11 @@ static bool __cdecl ApplyFire(void* self,void* weaponRef,float* matrix) {
         __finally {resolving=false;SetLastError(error);}
     }
     return applied;
+}
+static void __cdecl ReportFire(void* self,void* weaponRef,unsigned result) {
+    const DWORD error=GetLastError();
+    __try {if(shotReport)shotReport(self,weaponRef,(result&0xff)!=0);}
+    __finally {SetLastError(error);}
 }
 static __declspec(naked) int __cdecl ModelEntry(const float*,const float*,float) {
     __asm {
@@ -92,7 +99,23 @@ static __declspec(naked) void __fastcall FireEntry(void*,void*,void*,const float
         push dword ptr [ebp+8]
         mov ecx,esi
         call dword ptr [fire] // original final consumer once; removes 20 bytes
-        // Do not touch original outgoing FP state, volatile registers or flags.
+        // Preserve the complete outgoing machine state around notification.
+        pushfd
+        pushad
+        mov ebx,esp
+        sub esp,528
+        and esp,-16
+        fxsave [esp]
+        fninit
+        push eax
+        push dword ptr [ebp+8]
+        push esi
+        call ReportFire
+        add esp,12
+        fxrstor [esp]
+        mov esp,ebx
+        popad
+        popfd
         lea esp,[ebp-16]
         pop edi
         pop esi
@@ -106,7 +129,7 @@ static __declspec(naked) void __fastcall FireEntry(void*,void*,void*,const float
 class Bridge {
 public:
     static bool Prepare(Compare compare,Fire fire,ModelResolve model,FireResolve shot,
-                        const d2vr_native_image::Guard& guard) {
+                        const d2vr_native_image::Guard& guard,ShotReport report=nullptr) {
         static_assert(sizeof(void*)==4,"x86 only");
         if(!guard.enabled || !guard.base || guard.bytes<9 || !compare || !fire || !model || !shot ||
            reinterpret_cast<uintptr_t>(compare)<guard.base ||
@@ -115,14 +138,16 @@ public:
            reinterpret_cast<uintptr_t>(fire)-guard.base>=guard.bytes ||
            !guard.Allows(reinterpret_cast<uintptr_t>(model),1) ||
            !guard.Allows(reinterpret_cast<uintptr_t>(shot),1) ||
+           (report && !guard.Allows(reinterpret_cast<uintptr_t>(report),1)) ||
            !guard.Allows(reinterpret_cast<uintptr_t>(&detail::ModelEntry),1) ||
            !guard.Allows(reinterpret_cast<uintptr_t>(&detail::FireEntry),1))return false;
         const unsigned char expected[]={0x55,0x8b,0xec,0x83,0xe4,0xf0,0x83,0xec,0x50};
         __try {if(std::memcmp(reinterpret_cast<void*>(compare),expected,sizeof(expected)))return false;}
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}
         if(detail::compare)return detail::compare==compare && detail::fire==fire &&
-            detail::modelResolve==model && detail::fireResolve==shot;
+            detail::modelResolve==model && detail::fireResolve==shot && detail::shotReport==report;
         detail::compare=compare;detail::fire=fire;detail::modelResolve=model;detail::fireResolve=shot;
+        detail::shotReport=report;
         return true;
     }
     static void* ModelEntry(){return reinterpret_cast<void*>(&detail::ModelEntry);}

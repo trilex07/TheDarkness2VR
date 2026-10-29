@@ -11,6 +11,7 @@
 #include "../src/stereo_math.h"
 #include "../src/native_view_instance.h"
 #include "../src/native_weapon_bridge.h"
+#include "../src/psvr2/IpcClient.h"
 #include "../src/native_weapon_prefix_plan.h"
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line%d %s\n",__LINE__,#x);exit(1);}}while(0)
@@ -43,6 +44,7 @@ static bool ProtectedAimCameraOwned(void* p){return p==camera;}
 static bool ProtectedHandsResourceOwned(void*){return false;}
 static bool ProtectedThrowFireOwned(void*){return false;}
 static bool ProtectedWeaponModelOwned(void*);
+static bool ProtectedWeaponFireOwned(void*);
 #define GetTickCount64 Clock
 #include "actual_weapon_owner.inl"
 #include "../src/protected_weapon.inl"
@@ -135,10 +137,29 @@ int main(int argc,char** argv) {
     const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
     const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(reinterpret_cast<const BYTE*>(module)+dos->e_lfanew);
     g_nativeImageGuard={true,reinterpret_cast<uintptr_t>(module),pe->OptionalHeader.SizeOfImage};
-    CHECK(d2vr_weapon_bridge::Bridge::Prepare(compare,original,ResolveProtectedWeaponModel,ResolveProtectedWeaponFire,g_nativeImageGuard));
+    CHECK(d2vr_weapon_bridge::Bridge::Prepare(compare,original,ResolveProtectedWeaponModel,ResolveProtectedWeaponFire,g_nativeImageGuard,ReportProtectedWeaponShot));
     CHECK(g_protectedWeaponModelTable.Prepare(modelTable,131,0xF0/4,d2vr_weapon_bridge::Bridge::ModelEntry(),g_nativeImageGuard));
     CHECK(g_protectedWeaponFireTable.Prepare(fireTable,33,0x64/4,d2vr_weapon_bridge::Bridge::FireEntry(),g_nativeImageGuard));
     g_protectedWeaponReady=true;
+    Reset();Word(guns[0],0xA64,1);CHECK(CaptureNativeGameplay(camera));
+    CHECK(g_nativeGameplay.camera==Ptr(camera) && !(g_nativeGameplay.shotOwnedMask&1));
+    CHECK(g_nativeGameplay.grab==d2vr_input::GrabFeedback::Empty);
+    // Fresh native receiver ownership and result gate the event, independently.
+    for(unsigned slot=0;slot<2;++slot) {
+        Reset();const auto hand=1-slot;
+        const auto before=d2vr::psvr2::shotSerial[hand].load();
+        const auto peer=d2vr::psvr2::shotSerial[slot].load();
+        ReportProtectedWeaponShot(fires[slot],inventory+0xB0+12*slot,false);
+        CHECK(d2vr::psvr2::shotSerial[hand].load()==before);
+        ReportProtectedWeaponShot(fires[slot],inventory+0xB0+12*(1-slot),true);
+        CHECK(d2vr::psvr2::shotSerial[hand].load()==before);
+        ReportProtectedWeaponShot(fires[slot],inventory+0xB0+12*slot,true);
+        CHECK(d2vr::psvr2::shotSerial[hand].load()==before+1);
+        CHECK(d2vr::psvr2::shotSerial[slot].load()==peer);
+        g_protectedRightTentacle.paused=true;
+        ReportProtectedWeaponShot(fires[slot],inventory+0xB0+12*slot,true);
+        CHECK(d2vr::psvr2::shotSerial[hand].load()==before+1);
+    }
     for(unsigned slot=0;slot<2;++slot) {
         Reset();Ref(guns[slot],0x12C,nullptr);
         const auto logged=logCalls;
