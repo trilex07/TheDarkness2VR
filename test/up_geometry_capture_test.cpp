@@ -148,5 +148,20 @@ int main() {
     Reset();driverResult=S_FALSE;
     CHECK(Hook_DrawPrimitiveUP(nullptr,D3DPT_TRIANGLELIST,1,direct.data(),16)==S_FALSE);
     g_recActive=false;CHECK(Replay() && driverCalls==2);
+    // Readable, valid geometry must still invalidate the entire recording if
+    // the native draw fails. A later successful draw cannot repair that frame.
+    for(bool indexed:{false,true})for(bool active:{false,true}) {
+        Reset();g_recActive=active;driverResult=D3DERR_INVALIDCALL;
+        auto draw=[&] {
+            return indexed ? Hook_DrawIndexedPrimitiveUP(nullptr,D3DPT_TRIANGLELIST,0,3,1,
+                validIndices,D3DFMT_INDEX16,direct.data(),16) :
+                Hook_DrawPrimitiveUP(nullptr,D3DPT_TRIANGLELIST,1,direct.data(),16);
+        };
+        CHECK(draw()==D3DERR_INVALIDCALL && driverCalls==1 && g_recOverflow==active);
+        CHECK(g_rec.size()==(active?1u:0u) && g_recLock==0);
+        driverResult=D3D_OK;
+        CHECK(draw()==D3D_OK && driverCalls==2 && g_recOverflow==active);
+        CHECK(g_rec.size()==(active?1u:0u) && g_recLock==0);
+    }
     printf("PASS actual UP hooks+replay: %u checks; both index formats/nonzero minima, all primitive extents, overwritten inputs, inaccessible prefix, initialized arena padding, overflow rejection/original once; no GPU/HMD claim\n",checks);
 }

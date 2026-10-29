@@ -7,6 +7,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include <atomic>
 
 static unsigned checks;
 static void Check(bool ok, const char* text) {
@@ -32,12 +33,14 @@ static HRESULT STDMETHODCALLTYPE SetRuntimeSampler(IDirect3DDevice9* dev,DWORD s
 }
 static int g_submitMode=4,g_textureAnisotropy=16;
 static bool g_samplerCapsCacheEnabled=false,g_recActive=true;
+static bool g_recOverflow=false;
+static std::atomic<LONG> g_recLock{0};
 static struct { decltype(&SetRuntimeSampler) SetSamplerState=&SetRuntimeSampler; } g_orig;
 enum { OP_SetSamplerState=1 };
 struct SamplerRecord {unsigned op,unused;DWORD sampler;D3DSAMPLERSTATETYPE type;DWORD value;};
 static std::vector<SamplerRecord> records;
 static void RecEmit(unsigned op,unsigned unused,DWORD sampler,D3DSAMPLERSTATETYPE type,DWORD value) {
-    records.push_back({op,unused,sampler,type,value});
+    if(!g_recOverflow) records.push_back({op,unused,sampler,type,value});
 }
 #include "actual_sampler_hook.inl"
 
@@ -45,10 +48,12 @@ static void TestActualABHook() {
     void* slots[8]{};slots[7]=reinterpret_cast<void*>(&QueryRuntimeCaps);
     RuntimeDevice state{slots};auto* dev=reinterpret_cast<IDirect3DDevice9*>(&state);
     auto call=[&](DWORD original,DWORD expected,D3DSAMPLERSTATETYPE type=D3DSAMP_MAXANISOTROPY) {
-        records.clear();const unsigned prior=state.setters;
+        // Each resolver case starts a fresh recording; test sticky failure below.
+        records.clear();g_recOverflow=false;const unsigned prior=state.setters;
         const HRESULT hr=Hook_SetSamplerState(dev,5,type,original);
         Check(hr==state.setResult && state.setters==prior+1,"actual sampler setter forwarded once with original HRESULT");
         Check(state.sampler==5 && state.type==type && state.value==expected,"actual resolved sampler arguments unchanged");
+        Check(g_recOverflow==(g_recActive && FAILED(hr)),"actual failed live receipt invalidates recording only while active");
         Check(records.size()==(g_recActive?1u:0u),"actual recording admission retained");
         if(g_recActive) Check(records[0].op==OP_SetSamplerState && records[0].unused==0 &&
             records[0].sampler==5 && records[0].type==type && records[0].value==expected,
@@ -98,6 +103,13 @@ static void TestActualABHook() {
     const auto beforeToggle=state.queries;g_samplerCapsCacheEnabled=false;
     call(2,8);call(2,8);
     Check(state.queries==beforeToggle+2,"switching OFF restores exact per-call queries");
+    state.setResult=E_FAIL;call(2,8);
+    const auto recorded=records.size(),setters=state.setters;
+    state.setResult=D3D_OK;
+    Check(Hook_SetSamplerState(dev,5,D3DSAMP_MAXANISOTROPY,2)==D3D_OK &&
+        state.setters==setters+1 && records.size()==recorded && g_recOverflow,
+        "failed frame stays ineligible while subsequent native calls still execute");
+    g_recActive=false;call(2,8);state.setResult=E_FAIL;call(2,8);g_recActive=true;
 }
 
 int main() {

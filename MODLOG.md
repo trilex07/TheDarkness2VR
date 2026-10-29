@@ -2462,3 +2462,23 @@ Steam DLL remains af9cdd7 SHA256
 closed-wrist asset, profiles and SteamVR settings retained. No auto merge,
 deployment or game launch. Next runtime check combines flicker, head motion,
 periphery, shadows, hands and frame pacing with baseline rollback on regression.
+
+## 2026-10-29: restore five stale actual-source regression fixtures
+
+Follow-up to the Opus integration, with no production source or game changes.
+UP geometry now compiles the actual RecordLiveResult receipt and verifies valid
+geometry rejected by the driver, sticky failure, recording OFF and original
+HRESULT/one native call. PS payload uses the current bound g_activePsHash
+metadata rather than the obsolete pointer map (576 cases per build flavor).
+Shadow draw extracts its actual four wrappers without unrelated world-draw
+bookkeeping (covered by projection history). Projection estimator assertions
+now require the current expanded upload range and both WVP/STP witnesses.
+Sampler lifecycle checks admit exactly the three unconditional reset cleanup
+calls preceding caps invalidation; actual lock/receipt bodies are compiled,
+with sticky failed-frame and inactive-recording checks (4125 checks).
+
+All five previously failing fixtures now PASS on x86, including both PS fixture
+flavors. Earlier integration DLL builds remain applicable: production source
+is unchanged. The two previously NOT RUN host tests remain NOT RUN; no security
+workaround or executable retry. Runtime visual acceptance and FPS impact remain
+pending the consolidated authorized headset session. Steam installation intact.

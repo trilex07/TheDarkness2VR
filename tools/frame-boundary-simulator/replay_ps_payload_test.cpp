@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
-#include <unordered_map>
 #include <cassert>
 #include <cstdio>
 #include "../../src/replay_constant_batch.h"
@@ -29,9 +28,8 @@ static HRESULT Send(void*,UINT s,const float* p,UINT n){
 struct {HRESULT(*SetPixelShaderConstantF)(void*,UINT,const float*,UINT)=Send;} g_orig;
 static int g_activePsInverse=-1,g_activePsViewExtents=-1;
 static bool g_lightPosShift=false;
-static const void* g_replayPs=reinterpret_cast<void*>(1);
 static const uint32_t kShadowLightPsHash=0xC4D1FB10u;
-static std::unordered_map<const void*,uint32_t> g_psHashByPtr;
+static uint32_t g_activePsHash=0;
 #ifdef D2VR_MATCHED_CAPTURE
 static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT) {}
 #endif
@@ -61,7 +59,7 @@ int main(){
     for(UINT count:{0u,1u,17u,224u,225u,0xffffffffu}) {
         std::vector<float> values(225*4);for(unsigned i=0;i<values.size();++i)values[i]=float(i)+.25f;
         const auto original=values;Params sp;sp.transX=-.032f;sp.transY=.012f;
-        compensation=compensated;g_lightPosShift=light;g_psHashByPtr[g_replayPs]=hash;
+        compensation=compensated;g_lightPosShift=light;g_activePsHash=hash;
         copies=apiCalls=0;Rec rec{};rec.op=OP_SetPSConstF;rec.a[0]=start;rec.a[1]=count;
         Actual(rec,reinterpret_cast<const uint8_t*>(values.data()),sp,batched,window && batched);
         const bool changed=light && hash==kShadowLightPsHash && start==0 && count>0 && count<=224;

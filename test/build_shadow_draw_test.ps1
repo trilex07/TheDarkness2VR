@@ -8,6 +8,12 @@ $end=$src.IndexOf('static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect',$start)
 $classStart=$src.IndexOf('static bool IsShadowAtlas(')
 $classEnd=$src.IndexOf('struct ShadowPassState',$classStart)
 if($start -lt 0 -or $end -lt 0 -or $classStart -lt 0 -or $classEnd -lt 0){throw 'Missing actual source'}
+# The neighboring world-draw bookkeeping has its own actual-source fixture.
+# Extract only the classifier and draw wrappers exercised here.
+$noteStart=$src.IndexOf('static void NoteRecordedWorldDraw() {',$start)
+$noteEnd=$src.IndexOf('static HRESULT DrawPrimitiveWithDiffuse(',$noteStart)
+if($noteStart -lt $start -or $noteEnd -le $noteStart -or $noteEnd -ge $end){throw 'World draw source boundaries missing'}
+$drawSource=$src.Substring($start,$noteStart-$start)+$src.Substring($noteEnd,$end-$noteEnd)
 $out=Join-Path $env:TEMP ('d2vr-shadow-draw-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $out -Force|Out-Null
 $prefix=@'
@@ -61,7 +67,7 @@ int main(){
  puts("PASS actual four draw wrappers: default OFF/no query, native HRESULT, non-atlas forwarding, live+both replay eyes skipped; classifier excludes camera/full/invalid targets. No FPS claim.");
 }
 '@
-[IO.File]::WriteAllText((Join-Path $out 'test.cpp'),$prefix+"`n"+$src.Substring($classStart,$classEnd-$classStart)+$src.Substring($start,$end-$start)+$suffix)
+[IO.File]::WriteAllText((Join-Path $out 'test.cpp'),$prefix+"`n"+$src.Substring($classStart,$classEnd-$classStart)+$drawSource+$suffix)
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vs=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'

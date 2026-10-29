@@ -8,7 +8,12 @@ foreach ($signature in @(
     'HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {',
     'void HookDevice(IDirect3DDevice9* dev) {'
 )) {
-    $pattern = [regex]::Escape($signature) + '\s*d2vr_sampling::InvalidateSamplerCaps\(\);'
+    # Reset now releases readback/preload ownership before invalidating caps.
+    # Admit exactly that unconditional prefix, with no branch or early return.
+    $prefix = if ($signature.StartsWith('HRESULT')) {
+        '\s*d2vr_replay::ReleaseLightReadbackTargets\(\);\s*d2vr_shader_preload::BeginReset\(dev\);\s*QueryPreloadBeginReset\(dev\);'
+    } else { '' }
+    $pattern = [regex]::Escape($signature) + $prefix + '\s*d2vr_sampling::InvalidateSamplerCaps\(\);'
     if (-not [regex]::IsMatch($renderer, $pattern)) { throw "Missing unconditional entry invalidation: $signature" }
 }
 $replay = Get-Content -LiteralPath (Join-Path $root 'src\stereo_replay.inl') -Raw
@@ -22,11 +27,14 @@ if (-not $match.Success -or (($match.Groups[1].Value -replace '(?m)//[^\r\n]*', 
 $actualResolver = $match.Value
 $forwardPattern = '(?s)static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState\(IDirect3DDevice9\* dev, DWORD smp, D3DSAMPLERSTATETYPE t, DWORD v\) \{(.*?)\r?\n\}'
 $match = [regex]::Match($replay, $forwardPattern)
-$expected = 'v=ResolveSamplerValue(dev,t,v);if(g_recActive)RecEmit(OP_SetSamplerState,0,smp,t,v);returng_orig.SetSamplerState(dev,smp,t,v);'
+$expected = 'v=ResolveSamplerValue(dev,t,v);if(g_recActive)RecEmit(OP_SetSamplerState,0,smp,t,v);returnRecordLiveResult(g_orig.SetSamplerState(dev,smp,t,v));'
 if (-not $match.Success -or ($match.Groups[1].Value -replace '\s', '') -ne $expected) {
     throw 'Exact resolved recording/argument/HRESULT forwarding changed'
 }
 $actualHook = $match.Value
+$guard = [regex]::Match($replay,'(?s)struct RecLockGuard \{.*?\r?\n\};')
+$receipt = [regex]::Match($replay,'(?s)static inline HRESULT RecordLiveResult\(HRESULT result\) \{.*?\r?\n\}')
+if(-not $guard.Success -or -not $receipt.Success){throw 'Actual recording receipt/lock source missing'}
 if (-not $renderer.Contains('bool g_samplerCapsCacheEnabled = false;') -or
     -not $renderer.Contains('g_samplerCapsCacheEnabled = GetPrivateProfileIntA("Render", "SamplerCapsCache", 0, chosenIni) != 0;')) {
     throw 'SamplerCapsCache must be explicitly OFF by default'
@@ -34,7 +42,7 @@ if (-not $renderer.Contains('bool g_samplerCapsCacheEnabled = false;') -or
 $outDir = Join-Path $env:TEMP 'd2vr-sampler-caps-cache-unit'
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 # Compile the actual source bodies with the existing test's owned COM fixture.
-($actualResolver + "`n" + $actualHook) | Set-Content -LiteralPath (Join-Path $outDir 'actual_sampler_hook.inl') -Encoding utf8
+($guard.Value + "`n" + $receipt.Value + "`n" + $actualResolver + "`n" + $actualHook) | Set-Content -LiteralPath (Join-Path $outDir 'actual_sampler_hook.inl') -Encoding utf8
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if (-not $vs) { throw 'Visual Studio C++ tools unavailable' }

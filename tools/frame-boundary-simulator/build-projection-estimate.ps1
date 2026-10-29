@@ -5,12 +5,13 @@ $renderer=Get-Content -LiteralPath (Join-Path $repo 'src\d3d9.cpp') -Raw
 foreach($required in @('memcpy(&camera[0],&d2vr_replay::g_cameraPx,sizeof(float));',
     'memcpy(&camera[1],&d2vr_replay::g_cameraPy,sizeof(float));',
     'StartRegister, Vector4fCount,camera[0],camera[1],proof,',
-    '4,UINT32_MAX,d2vr_replay::ActiveWvpRegister(d2vr_replay::g_activeVs),&rawReference);')) {
+    '4,UINT32_MAX,d2vr_replay::ActiveWvpRegister(d2vr_replay::g_activeVs),&rawReference,',
+    'd2vr_replay::ActiveStpRegister(d2vr_replay::g_activeVs));')) {
     if(-not $renderer.Contains($required)){throw "Missing live projection recording: $required"}
 }
 foreach($required in @('memcpy(&uploadParams.projectionPx,&r.a[2],sizeof(float));',
     'memcpy(&uploadParams.projectionPy,&r.a[3],sizeof(float));',
-    'r.a[1], g_activeVs, uploadParams,',
+    'ApplyVertexStereoUpload(tmp, src, uploadStart, uploadCount, g_activeVs, uploadParams,',
     '&rawReference)')) {
     if(-not $source.Contains($required)){throw "Missing replay projection witness: $required"}
 }

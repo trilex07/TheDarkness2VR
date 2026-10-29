@@ -22,6 +22,7 @@ function Extract([string]$signature,[bool]$structure=$false) {
 $types=[regex]::Match($source,'(?s)enum RecOp : uint16_t \{.*?struct Rec \{.*?\r?\n\};').Value
 if(!$types){throw 'Record types missing'}
 $core=@((Extract 'struct RecLockGuard {' $true),
+    (Extract 'static inline HRESULT RecordLiveResult('),
     (Extract 'static inline uint32_t RecPushLocked('),(Extract 'static inline uint32_t RecPush('),
     (Extract 'static inline void RecEmitLocked('),(Extract 'static inline void RecEmit(')) -join "`n"
 $hooks=@((Extract 'static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP('),
