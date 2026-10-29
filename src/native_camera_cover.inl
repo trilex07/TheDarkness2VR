@@ -282,10 +282,17 @@ static void ObserveNativeSelectedCamera(void* view,void* renderer,void* camera,
     // Do not compute unused candidates for observations/unmatched cameras.
     const bool boundaryReady=(g_nativeViewBoundaryMode==2 && g_nativeFrustumBoundary.Installed()) ||
         (g_nativeViewBoundaryMode==3 && g_nativeTranslatedViewPrepared);
-    const bool canApply=beforeCopy && v==0x98618E && boundaryReady && ready;
+    // A preceding shader receipt admits the camera identity, not a fixed FOV.
+    // ADS rebuilds this same camera every frame before its new shader upload.
+    // The culling builder validates CURRENT native view/projection/VP and uses
+    // the exact frame eye transforms, retaining the native volume as well.
+    // Requiring yesterday's matrix here disables coverage throughout zoom.
+    const bool cameraWitness=g_nativeViewWitness.CanCover(g_trackedFrame.id,v,r,c);
+    const bool canApply=beforeCopy && v==0x98618E && boundaryReady && cameraWitness &&
+        d2vr_replay::g_cameraProjectionKnown;
     g_nativeCullingReason=!beforeCopy || v!=0x98618E || !boundaryReady?NativeCullingReason::Context:
-        !witnessReady?NativeCullingReason::PreviousProjection:
-        !ready?NativeCullingReason::ShaderProjection:NativeCullingReason::Geometry;
+        !cameraWitness?NativeCullingReason::PreviousProjection:
+        !d2vr_replay::g_cameraProjectionKnown?NativeCullingReason::ShaderProjection:NativeCullingReason::Geometry;
     const bool cullingReady=canApply && PrepareOwnedCullingInput(camera,fields,cullingInput);
     bool cullingApplied=false;
     // The exact98618E instruction follows native camera rebuilding and precedes

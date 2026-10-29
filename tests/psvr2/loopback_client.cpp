@@ -76,6 +76,16 @@ int wmain(int argc, wchar_t** argv) {
             && record[5] == 2 && record[6] == 4 && record[7] == 7;
         weapons = left && right;
     }
+    bool quietHeld=false;
+    if(weapons) {
+        const int leftSets=record[8],rightSets=record[9];
+        // Longer than the former server read timeout. No heartbeat, repeated
+        // state packet or new driver submission is needed to hold resistance.
+        Sleep(1600);
+        quietHeld=loadStatus(statusPath,record) && record[0]==static_cast<int>(EffectMode::Weapon)
+            && record[4]==static_cast<int>(EffectMode::Weapon)
+            && record[8]==leftSets && record[9]==rightSets;
+    }
     Submit(vibrationCommand(TriggerHand::Left, 3, 7, 55));
     bool independent = false;
     if (weapons) {
@@ -106,13 +116,13 @@ int wmain(int argc, wchar_t** argv) {
         released=loadStatus(statusPath,record) && record[0]==0 && record[4]==0;
         if(!released)Sleep(100);
     }
-    if (!weapons || !independent || !duplicateFree || !released) {
-        std::fprintf(stderr, "loopback weapons=%d independent=%d status=%d %d %d %d | %d %d %d %d\n",
-            weapons ? 1 : 0, independent ? 1 : 0,
+    if (!weapons || !quietHeld || !independent || !duplicateFree || !released) {
+        std::fprintf(stderr, "loopback weapons=%d quiet=%d independent=%d dedupe=%d released=%d status=%d %d %d %d | %d %d %d %d\n",
+            int(weapons), int(quietHeld), int(independent), int(duplicateFree), int(released),
             record[0], record[1], record[2], record[3],
             record[4], record[5], record[6], record[7]);
         return 5;
     }
-    std::printf("PASS loopback owned=%d: dual hand, 10000 duplicate submissions suppressed, shutdown off\n",int(owned));
+    std::printf("PASS loopback owned=%d: dual hand, idle held 1600ms, 10000 duplicate submissions suppressed, shutdown off\n",int(owned));
     return 0;
 }

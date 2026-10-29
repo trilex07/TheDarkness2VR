@@ -38,6 +38,11 @@ haptic host, x86/x64 policy, protocol/backend and x86-to-x64 fake-driver loopbac
 The owned-bootstrap test overrides LOCALAPPDATA only inside its fixture process.
 Both loopbacks verify 10,000 duplicate submissions produce no driver calls and
 both triggers release on shutdown. Fake loaders stay under `tests/psvr2/out`.
+Both also hold unchanged effects for 1600 ms without another driver submission.
+The previous helper fails this check (`quiet=0`): its 1000 ms pending-read
+timeout disconnected a correctly quiet client and released both triggers.
+Keep that read pending until a message, parent exit or shutdown; cancellation
+still drains the OVERLAPPED operation before releasing its storage.
 
 Run `build.ps1 -DiagnosticCapture` for the preserved Steam input/hands profile.
 Run `tools/psvr2/build-bridge.ps1` for the separate production x64 helper.
@@ -65,6 +70,13 @@ left/right firing, both tentacle actions, reload, menu/focus/reconnect and the
 existing stereo/peripheral geometry/flicker/frame-pacing checks. Roll back on
 crash, broken input/stereo or performance loss. Do not claim headset acceptance
 before that consolidated session.
+
+Headset feedback on the a508d5b5 candidate confirms felt adaptive resistance,
+but reports no grip vibration. This is NOT full haptic acceptance. The next
+proxy logs the first three vibration submission results per hand and bounded
+result changes, plus the output binding count on interaction-profile changes.
+These receipts distinguish no bound output, runtime refusal and accepted
+submission without claiming that an accepted impulse was physically felt.
 
 Full native menu laser control remains a separate open task: the retained pause
 observer alone does not supply the menu input receiver or its display surface.

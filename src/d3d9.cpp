@@ -3679,6 +3679,16 @@ static void ApplyGripHaptic(int hand, const d2vr::psvr2::GripHaptic& haptic,
     vibration.duration = static_cast<XrDuration>(haptic.durationNanoseconds);
     const auto result=xrApplyHapticFeedback(g_xrSession,&info,
         reinterpret_cast<const XrHapticBaseHeader*>(&vibration));
+    // Bounded delivery receipts distinguish missing bindings/runtime refusal
+    // from native event routing. Never emit per-frame success logs.
+    static unsigned receipts[2]{};
+    static XrResult previousResult[2]={XR_ERROR_RUNTIME_FAILURE,XR_ERROR_RUNTIME_FAILURE};
+    if(receipts[hand]<3 || (result!=previousResult[hand] && receipts[hand]<16)) {
+        ++receipts[hand];previousResult[hand]=result;
+        Log("[GripHaptic] hand=%s result=%d amplitude=%.2f frequency=%.1f durationNs=%llu event=%llu; submission receipt, not physical feedback proof",
+            hand?"right":"left",int(result),haptic.amplitude,haptic.frequency,
+            haptic.durationNanoseconds,event);
+    }
     if(result==XR_SUCCESS) {
         g_gripHapticOn[hand]=true;g_hapticDelivery[hand].applied(haptic,event,now);
     } else g_hapticRetry[hand]=now+100;
@@ -4142,6 +4152,14 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
             if(XR_SUCCEEDED(xrGetCurrentInteractionProfile(g_xrSession,h ? g_pathHandRight:g_pathHandLeft,&profile)) && profile.interactionProfile)
                 xrPathToString(g_xrInstance,profile.interactionProfile,sizeof(name),&length,name);
             Log("[XRInput] %s profile=%s",h ? "R":"L",name);
+            static XrPath hapticProfile[2]={XR_NULL_PATH,XR_NULL_PATH};
+            if(g_actHaptic[h] && profile.interactionProfile!=hapticProfile[h]) {
+                hapticProfile[h]=profile.interactionProfile;
+                XrBoundSourcesForActionEnumerateInfo bound{XR_TYPE_BOUND_SOURCES_FOR_ACTION_ENUMERATE_INFO};
+                bound.action=g_actHaptic[h];uint32_t sources=0;
+                const auto result=xrEnumerateBoundSourcesForAction(g_xrSession,&bound,0,&sources,nullptr);
+                Log("[GripHapticBinding] hand=%s profile=%s result=%d sources=%u",h?"right":"left",name,int(result),sources);
+            }
         }
     }
     // XR_SESSION_NOT_FOCUSED is positive but actions must not be forwarded.

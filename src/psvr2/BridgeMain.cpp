@@ -198,7 +198,14 @@ bool readExact(HANDLE pipe, HANDLE parent, void* destination, DWORD bytes) {
         bool success = ReadFile(pipe, output + total, bytes - total, &read, &overlapped) != FALSE;
         if (!success && GetLastError() == ERROR_IO_PENDING) {
             const HANDLE waits[]{overlapped.hEvent, parent, shutdownEvent};
-            const DWORD wait = WaitForMultipleObjects(3, waits, FALSE, 1000);
+            // The client intentionally sends only changed commands. A quiet
+            // pipe is not a disconnect: keep this same read pending until data
+            // arrives, the parent exits, or shutdown is requested.
+            DWORD wait;
+            do {
+                wait = WaitForMultipleObjects(3, waits, FALSE, 1000);
+            } while(wait==WAIT_TIMEOUT && parentStillAlive(parent) &&
+                    !shutdownRequested.load(std::memory_order_acquire));
             if (wait == WAIT_OBJECT_0)
                 success = GetOverlappedResult(pipe, &overlapped, &read, FALSE) != FALSE;
             else {
