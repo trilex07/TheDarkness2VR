@@ -1927,7 +1927,8 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
         }
         d2vr_replay::RecEmitData(d2vr_replay::OP_SetVSConstF, pConstantData,
                                  sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount,camera[0],camera[1],proof,
-                                 4,UINT32_MAX,d2vr_replay::ActiveWvpRegister(d2vr_replay::g_activeVs),&rawReference);
+                                 4,UINT32_MAX,d2vr_replay::ActiveWvpRegister(d2vr_replay::g_activeVs),&rawReference,
+                                 d2vr_replay::ActiveStpRegister(d2vr_replay::g_activeVs));
     }
 
     // ---- True stereo: live pass renders eye 0 (eye 1 comes from the replay pass) ----

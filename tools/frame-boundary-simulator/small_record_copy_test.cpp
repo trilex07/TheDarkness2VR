@@ -174,6 +174,24 @@ static void TestAtomicPayloadRecords() {
     RecEmitData(OP_SetVSConstF,matrix,16,0,1,0,0,{},4,UINT32_MAX,0,&reference);
     assert(!reference.valid && !g_vsConstantHistory.live.Matrix(0,observed));++cases;
     g_recOverflow=false;
+    g_vsConstantHistory.Clear();
+    float screen[16];for(unsigned i=0;i<16;++i)screen[i]=float(50+i);
+    RecEmitData(OP_SetVSConstF,screen,sizeof(screen),61,4,0,0,{},4,UINT32_MAX,0,&reference,61);
+    assert(reference.partialBase<0);++cases; // complete writes need no second snapshot
+    float partial[4]={101,102,103,104};
+    memcpy(screen+12,partial,sizeof(partial));
+    const auto recordedAt=g_rec.size();
+    RecEmitData(OP_SetVSConstF,partial,sizeof(partial),64,1,0,0,{},4,UINT32_MAX,0,&reference,61);
+    assert(!reference.valid && reference.partialBase==61 && !memcmp(reference.partialValues,screen,sizeof(screen)));++cases;
+    const auto& record=g_rec[recordedAt];
+    assert(record.a[0]==64 && record.a[1]==1 && !memcmp(g_recData.data()+record.a[4],partial,sizeof(partial)));++cases;
+    g_vsConstantHistory.live.Clear();
+    assert(!memcmp(reference.partialValues,screen,sizeof(screen)));++cases; // owned per-call data
+    RecEmitData(OP_SetVSConstF,partial,sizeof(partial),64,1,0,0,{},4,UINT32_MAX,0,&reference,61);
+    assert(reference.partialBase<0);++cases; // no stale rows from a former upload
+    g_recActive=false;reference.partialBase=61;
+    RecEmitData(OP_SetVSConstF,partial,sizeof(partial),64,1,0,0,{},4,UINT32_MAX,0,&reference,61);
+    assert(!reference.valid && reference.partialBase<0);++cases;
     g_rec.clear();g_recData.clear();
 }
 int main(int argc, char** argv) {

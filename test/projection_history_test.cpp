@@ -105,7 +105,63 @@ static void PartialWvpCases(bool legacy){
     }
     printf("PASS actual partial WVP completion: both eyes, head geometry, every partial subrange, register word boundaries, unknown-bank refusal, 68-to71 rows and guard bytes\n");
 }
+static void PartialScreenCases(){
+    for(unsigned base:{4u,61u,125u,189u,252u})for(unsigned named=0;named<2;++named)
+    for(unsigned eye=0;eye<2;++eye)for(unsigned geometry=0;geometry<2;++geometry)
+    for(unsigned firstRow=0;firstRow<4;++firstRow)for(unsigned rows=1;rows<=4-firstRow;++rows){
+        if(firstRow==0 && rows==4)continue;
+        VsInfo vi;vi.analyzed=true;vi.wvpBase=0;vi.stpBase=int(base);
+        if(named){vi.reflected=true;vi.reflectedWvp=0;vi.reflectedStp=int(base);}
+        StereoParams params;params.transX=eye?.0315f:-.0315f;params.fovScaleX=.8f;params.fovScaleY=.9f;
+        params.headGeometry=geometry!=0;
+        params.headClip[0]=params.headClip[5]=params.headClip[10]=params.headClip[15]=1;
+        params.headClip[8]=.03f;params.headClip[12]=.02f;
+        float wvp[16],screen[16],expected[16],actual[76*4];Perspective(wvp,3);Screen(wvp,screen);
+        d2vr_shader_registers::Bank bank;CHECK(bank.Write(0,4,wvp,sizeof(wvp)));
+        CHECK(bank.Write(base,4,screen,sizeof(screen)));
+        const d2vr_shader_registers::Reference reference(bank,0,int(base),base+firstRow,rows);
+        CHECK(reference.partialBase==int(base));
+        CHECK(ApplyShiftToUpload(expected,screen,base,4,&vi,params,&reference));
+        UINT first=base+firstRow,count=rows;bool perspective=true;
+        for(auto& f:actual)f=-12345.f;
+        CHECK(ApplyVertexStereoUpload(actual,screen+firstRow*4,first,count,&vi,params,&reference,&perspective));
+        CHECK(first==base && count==4);CHECK(!perspective);
+        CHECK(!memcmp(actual,expected,sizeof(expected)));
+        for(unsigned i=16;i<76*4;++i)CHECK(actual[i]==-12345.f);
+        // Missing rows and a different shader's auxiliary base cannot authorize expansion.
+        bank.Invalidate(base+(firstRow+rows)%4,1);
+        const d2vr_shader_registers::Reference unknown(bank,0,int(base),base+firstRow,rows);
+        CHECK(unknown.partialBase<0);
+        first=base+firstRow;count=rows;
+        CHECK(!ApplyVertexStereoUpload(actual,screen+firstRow*4,first,count,&vi,params,&unknown));
+        CHECK(first==base+firstRow && count==rows);
+        auto changed=vi;changed.reflectedStp=changed.stpBase=-1;
+        CHECK(!ApplyVertexStereoUpload(actual,screen+firstRow*4,first,count,&changed,params,&reference));
+        g_lightingPreset=7;
+        CHECK(!ApplyVertexStereoUpload(actual,screen+firstRow*4,first,count,&vi,params,&reference));
+        CHECK(first==base+firstRow && count==rows);g_lightingPreset=0;
+    }
+    // Simultaneous WVP/STP completion at opposite ends is a 68-to74-row write.
+    for(unsigned reverse=0;reverse<2;++reverse){
+        VsInfo vi;vi.analyzed=true;vi.wvpBase=reverse?70:0;vi.stpBase=reverse?0:70;
+        StereoParams params;params.transX=.03f;params.fovScaleX=.8f;params.fovScaleY=.9f;
+        float native[256*4];for(unsigned i=0;i<256*4;++i)native[i]=float(i)*.001f;
+        float wvp[16],screen[16];Perspective(wvp,7);Screen(wvp,screen);
+        memcpy(native+vi.wvpBase*4,wvp,sizeof(wvp));memcpy(native+vi.stpBase*4,screen,sizeof(screen));
+        d2vr_shader_registers::Bank bank;CHECK(bank.Write(0,256,native,sizeof(native)));
+        const d2vr_shader_registers::Reference reference(bank,vi.wvpBase,vi.stpBase,3,68);
+        float expected[76*4],actual[76*4+4];for(auto& f:actual)f=-12345.f;
+        CHECK(ApplyShiftToUpload(expected,native,0,74,&vi,params,&reference));
+        UINT first=3,count=68;
+        CHECK(ApplyVertexStereoUpload(actual,native+12,first,count,&vi,params,&reference));
+        CHECK(first==0 && count==74);CHECK(!memcmp(actual,expected,count*16));
+        for(unsigned i=count*4;i<76*4+4;++i)CHECK(actual[i]==-12345.f);
+        CHECK(!memcmp(native+vi.wvpBase*4,wvp,sizeof(wvp)) && !memcmp(native+vi.stpBase*4,screen,sizeof(screen)));
+    }
+    puts("PASS actual partial STP completion: both eyes, head geometry, named/analyzed identities, every subrange, unknown-row/shader/lighting refusal, 68-to74 WVP+STP and guard bytes");
+}
 int main(int argc,char** argv) {
+    PartialScreenCases();
     PartialWvpCases(argc==2 && !strcmp(argv[1],"--partial-legacy"));
     const bool legacy=argc==2 && !strcmp(argv[1],"--expect-legacy-mismatch");
     VsInfo vi;vi.analyzed=true;vi.wvpBase=0;vi.stpBase=4;

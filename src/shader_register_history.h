@@ -39,7 +39,17 @@ struct History {
 struct Reference {
     float values[16]{};
     bool valid=false;
+    // Only populated for an overlapping partial auxiliary projection. Normal
+    // uploads do not read/copy another matrix from the raw register bank.
+    float partialValues[16]{};
+    int partialBase=-1;
     Reference()=default;
-    Reference(const Bank& bank,int first):valid(bank.Matrix(first,values)){}
+    Reference(const Bank& bank,int first,int auxiliary=-1,unsigned start=0,unsigned count=0)
+        :valid(bank.Matrix(first,values)) {
+        if(auxiliary>=0 && auxiliary<=252 && auxiliary!=first && count &&
+           start<=256 && count<=256-start && start<unsigned(auxiliary)+4 && start+count>unsigned(auxiliary) &&
+           !(start<=unsigned(auxiliary) && start+count>=unsigned(auxiliary)+4) &&
+           bank.Matrix(auxiliary,partialValues))partialBase=auxiliary;
+    }
 };
 }

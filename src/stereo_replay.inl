@@ -643,8 +643,9 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
                                uint32_t a0 = 0, uint32_t a1 = 0, uint32_t a2 = 0, uint32_t a3 = 0,
                                const d2vr_native_constants::Proof& proof = {},
                                unsigned payloadSlot = 4, uint32_t recordCount = UINT32_MAX,
-                               int referenceBase=-1,d2vr_shader_registers::Reference* reference=nullptr) {
-    if(reference)reference->valid=false;
+                               int referenceBase=-1,d2vr_shader_registers::Reference* reference=nullptr,
+                               int auxiliaryBase=-1) {
+    if(reference){reference->valid=false;reference->partialBase=-1;}
     if (!g_recActive) return;
     RecLockGuard lock;
     if (!g_recActive) return;
@@ -658,7 +659,7 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
         const bool complete=uint64_t(off)+bytes<=g_recData.size();
         if(complete)g_vsConstantHistory.live.Write(a0,a1,g_recData.data()+off,bytes);
         else g_vsConstantHistory.live.Invalidate(a0,a1);
-        if(reference)*reference=d2vr_shader_registers::Reference(g_vsConstantHistory.live,referenceBase);
+        if(reference)*reference=d2vr_shader_registers::Reference(g_vsConstantHistory.live,referenceBase,auxiliaryBase,a0,a1);
     }
     uint32_t args[5]={a0,a1,a2,a3,0};
     args[payloadSlot]=off; // internal callers use slots 0, 1 or 4
@@ -1075,6 +1076,10 @@ static int ActiveWvpRegister(const VsInfo* vi) {
     return (g_projectionFix&1) && vi && vi->reflected?vi->reflectedWvp:
         vi && vi->analyzed?vi->wvpBase:-1;
 }
+static int ActiveStpRegister(const VsInfo* vi) {
+    return (g_projectionFix&1) && vi && vi->reflected?vi->reflectedStp:
+        vi && vi->analyzed?vi->stpBase:-1;
+}
 static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT count,
                                VsInfo* vi, const StereoParams& sp,
                                const d2vr_shader_registers::Reference* registers=nullptr,
@@ -1232,20 +1237,24 @@ static bool ApplyShiftToUpload(float* dst, const float* src, UINT start, UINT co
     return modified;
 }
 
-// Complete a positively identified partial WVP from the current DEVICE bank.
-// A 68-row upload can overlap at most three missing WVP rows. Keep the extra
+// Complete identified partial WVP/STP from the current DEVICE bank. Both
+// matrices intersect the original upload, so the union has no unknown gaps.
+// A 68-row upload can gain at most three missing rows at each end. Keep extra
 // stack storage on this uncommon path, rather than every native constant call.
-static constexpr UINT kVertexStereoUploadRows=72;
-__declspec(noinline) static bool ApplyPartialWvpUpload(float* dst,const float* src,
+static constexpr UINT kVertexStereoUploadRows=76;
+__declspec(noinline) static bool ApplyPartialProjectionUpload(float* dst,const float* src,
         UINT& start,UINT& count,VsInfo* vi,const StereoParams& sp,
-        const d2vr_shader_registers::Reference& reference,int base,bool* perspectiveUpload) {
-    const UINT first=(std::min)(start,UINT(base));
-    const UINT end=(std::max)(start+count,UINT(base)+4);
+        const d2vr_shader_registers::Reference& reference,int base,int auxiliary,bool* perspectiveUpload) {
+    UINT first=start,end=start+count;
+    for(int matrix:{base,auxiliary})if(matrix>=0) {
+        first=(std::min)(first,UINT(matrix));end=(std::max)(end,UINT(matrix)+4);
+    }
     if(end-first>kVertexStereoUploadRows)return false;
     float raw[kVertexStereoUploadRows*4];
-    // The two overlapping ranges cover every row of [first,end).
+    // Original payload and its overlapping matrices cover [first,end).
     memcpy(raw+(start-first)*4,src,size_t(count)*16);
-    memcpy(raw+(UINT(base)-first)*4,reference.values,sizeof(reference.values));
+    if(base>=0)memcpy(raw+(UINT(base)-first)*4,reference.values,sizeof(reference.values));
+    if(auxiliary>=0)memcpy(raw+(UINT(auxiliary)-first)*4,reference.partialValues,sizeof(reference.partialValues));
     if(!ApplyShiftToUpload(dst,raw,first,end-first,vi,sp,&reference,perspectiveUpload))return false;
     start=first;count=end-first;return true;
 }
@@ -1253,10 +1262,17 @@ static bool ApplyVertexStereoUpload(float* dst,const float* src,UINT& start,UINT
         VsInfo* vi,const StereoParams& sp,const d2vr_shader_registers::Reference* reference,
         bool* perspectiveUpload=nullptr) {
     const int base=ActiveWvpRegister(vi);
-    if(src && reference && reference->valid && base>=0 && base<=252 && count && count<=68 &&
-       start<=256 && count<=256-start && start<UINT(base)+4 && start+count>UINT(base) &&
-       !(start<=UINT(base) && start+count>=UINT(base)+4))
-        return ApplyPartialWvpUpload(dst,src,start,count,vi,sp,*reference,base,perspectiveUpload);
+    if(src && reference && count && count<=68 && start<=256 && count<=256-start) {
+        const auto partial=[&](int matrix) {
+            return matrix>=0 && matrix<=252 && start<UINT(matrix)+4 && start+count>UINT(matrix) &&
+                !(start<=UINT(matrix) && start+count>=UINT(matrix)+4);
+        };
+        const int wvp=reference->valid && partial(base)?base:-1;
+        const int auxiliary=reference->partialBase==ActiveStpRegister(vi) &&
+            partial(reference->partialBase)?reference->partialBase:-1;
+        if(wvp>=0 || auxiliary>=0)
+            return ApplyPartialProjectionUpload(dst,src,start,count,vi,sp,*reference,wvp,auxiliary,perspectiveUpload);
+    }
     return ApplyShiftToUpload(dst,src,start,count,vi,sp,reference,perspectiveUpload);
 }
 
@@ -2011,7 +2027,8 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 #endif
             const float* src = (const float*)(dataBase + r.a[4]);
             g_vsConstantHistory.replay.Write(r.a[0],r.a[1],src,size_t(r.a[1])*16);
-            const d2vr_shader_registers::Reference rawReference(g_vsConstantHistory.replay,ActiveWvpRegister(g_activeVs));
+            const d2vr_shader_registers::Reference rawReference(g_vsConstantHistory.replay,ActiveWvpRegister(g_activeVs),
+                ActiveStpRegister(g_activeVs),r.a[0],r.a[1]);
             StereoParams uploadParams = sp;
             uploadParams.projectionSnapshot = true;
             memcpy(&uploadParams.projectionPx,&r.a[2],sizeof(float));

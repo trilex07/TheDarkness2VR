@@ -186,3 +186,35 @@ transform. It needs coherent live/replay materialized-register ownership,
 not an unconditional extra setter on every draw. No such speculative upload
 or cache was added here. No HMD, performance or permanent-flicker claim follows
 from these CPU failure regressions.
+
+## Partial screen projection completion, 2026-10-29
+
+The remaining partial-upload defect also affected ScreenTextureProjection.
+An actual-source regression with known WVP/STP and a single STP row at c7
+failed the former ApplyVertexStereoUpload (check5, line117): the raw row
+bypassed stereo correction. This establishes a supported-API correctness
+defect; retained logs do not establish its runtime frequency or contribution
+to the reported right-eye artifacts.
+
+Live recording now captures an auxiliary STP reference from the same locked,
+current raw bank only when that identified matrix overlaps a partial upload.
+Replay captures its own reference in record order. The shared completion helper
+fits original data and the overlapping WVP/STP into one contiguous owned
+scratch range, then uses the existing full-matrix correction and admission.
+There are no uninitialized gaps, getters, allocations or new locks. Original
+recorder range/bytes and raw registers remain native. Unknown rows, changed
+shader identity, skipped lighting/orthographic rules and failed transform
+retain their existing refusal behavior. Complete STP uploads do not read a
+second matrix. Both ends can add three rows to a68-row upload: output storage
+is now76 rows and the largest tested completed range is74 rows.
+
+Actual-source projection/activity tests pass143200 checks across both eyes,
+head transforms, named/analyzed STP, all partial subranges, register validity
+boundaries, unknown rows, changed shader/lighting refusal, simultaneous WVP/STP
+completion and guard bytes. Actual replay production/diagnostic each passes
+96streams/576096records/56858checks, including frame-inherited STP with all
+four grouping modes, exact expanded forwarding and raw-record isolation.
+Actual recorder6109checks cover locked auxiliary capture, original bytes,
+owned lifetime and inactive/stale refusal. Both x86 builds pass. Dynamic VB/IB
+contents, draw-inherited matrices without an upload and partial previous-frame
+matrices remain open. No real-game, GPU/HMD or90FPS claim is made.

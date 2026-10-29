@@ -16,10 +16,10 @@ function Extract([string]$signature,[bool]$structure=$false) {
     return $text.Substring($start,$end-$start+1)+$(if($structure){';'}else{''})
 }
 $parts=@((Extract 'struct VsInfo {' $true),(Extract 'struct StereoParams {' $true),
-    (Extract 'static void ApplyEyeShiftToMatrix('),(Extract 'static int ActiveWvpRegister('),
+    (Extract 'static void ApplyEyeShiftToMatrix('),(Extract 'static int ActiveWvpRegister('),(Extract 'static int ActiveStpRegister('),
     (Extract 'static bool ApplyShiftToUpload('),
-    'static constexpr UINT kVertexStereoUploadRows=72;',
-    (Extract '__declspec(noinline) static bool ApplyPartialWvpUpload('),
+    [regex]::Match($text,'static constexpr UINT kVertexStereoUploadRows=\d+;').Value,
+    (Extract '__declspec(noinline) static bool ApplyPartialProjectionUpload('),
     (Extract 'static bool ApplyVertexStereoUpload('))
 [IO.File]::WriteAllText((Join-Path $out 'actual_projection_history.inl'),($parts -join "`r`n"))
 [IO.File]::WriteAllText((Join-Path $out 'actual_shader_identity.inl'),

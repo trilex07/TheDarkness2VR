@@ -70,10 +70,12 @@ static HRESULT PSB(void*,UINT first,const BOOL* p,UINT n){return State(9,{first,
 static void InvalidateShadowAtlasPass(){}
 static int activeWvpBase=-1;
 static int ActiveWvpRegister(Vs*){return activeWvpBase;}
+static int activeStpBase=-1;
+static int ActiveStpRegister(Vs*){return activeStpBase;}
 static bool IsShadowAtlasPass(void*){return false;}
 static bool ApplyShiftToUpload(float* dst,const float* src,UINT,UINT n,Vs* vi,const Params&,
                               const d2vr_shader_registers::Reference* =nullptr,bool* =nullptr){
-    if(!n || n>72)return false;
+    if(!n || n>76)return false;
     memcpy(dst,src,size_t(n)*16);uint32_t bits;memcpy(&bits,dst,4);
     bits^=0x10000;if(bindingTransforms){bits^=vi?vi->hash:0x1234;bits^=otherState[4];}
     memcpy(dst,&bits,4);return true;
@@ -333,8 +335,9 @@ static void PartialReplay(){
     capture=compensate=bindingTransforms=collectReference=checkOtherState=checkBindingSnapshots=false;
     g_activeVs=&vertexMetadata;g_recOverflow=false;
     g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
+    for(unsigned kind=0;kind<2;++kind)
     for(unsigned base:{0u,61u,252u})for(unsigned mode=0;mode<4;++mode){
-        activeWvpBase=int(base);g_vsConstantHistory.Clear();
+        activeWvpBase=kind?-1:int(base);activeStpBase=kind?int(base):-1;g_vsConstantHistory.Clear();
         uint32_t raw[16];for(unsigned i=0;i<16;++i)raw[i]=0x3f000000+i;
         assert(g_vsConstantHistory.begin.Write(base,4,raw,sizeof(raw)));
         arena.assign(16,0);uint32_t partial[4]={31,37,41,43};memcpy(arena.data(),partial,16);
@@ -352,7 +355,7 @@ static void PartialReplay(){
     // A rejected completed upload keeps the eye incomplete and is not retried.
     g_rec.pop_back();rejectAt=1;checkAt=apiCalls=apiFail=0;
     assert(!Actual() && apiCalls==1 && apiFail==1);++checks;
-    rejectAt=0;activeWvpBase=-1;g_vsConstantHistory.Clear();
+    rejectAt=0;activeWvpBase=activeStpBase=-1;g_vsConstantHistory.Clear();
 }
 int main(){
     HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();unsigned streams=0,records=0;
