@@ -79,6 +79,42 @@ session, then establish a valid input lifetime and menu-only event contract.
 The game's actual submitted menu surface and pause/menu state are separate
 requirements; the existing compositor settings quad cannot certify them.
 
+## Region manager to game-rules reference
+
+The pinned native registration table at 10A6150 associates `GetGameRules`
+(string FB5E6C) with D9B8C0. This wrapper converts its receiver using the
+RegionMgr SWIG type slot 10EBE00 and invokes vtable+13C with a local output
+reference. RegionMgr's pinned FC7D00+13C contains 490D30. Its complete 18-byte
+body loads the reference at receiver+BC, increments that reference's +4 count,
+stores the reference in the caller's output, and returns that output in EAX
+with RET 4. It does not return the GameRules object directly.
+
+D9B8C0 copies the returned reference using 59AB10, releases the temporary,
+and publishes the retained reference through the object's native type
+metadata and SWIG. This closes the earlier uncertainty about what the
+RegionMgr+BC getter represents: it is the native `GetGameRules` route.
+The separate `GetGameRules` registration at 10BACB0 invokes DDD0D0 using
+another receiver type slot, 1100A50, and helper 9E3600. These receivers must
+not be interchanged.
+
+This does not identify the live concrete game-rules vtable, prove that a
+selected region exists during the main menu, or establish a rendered menu
+surface. In particular, the already identified `IsPauseMenuShowing` +80
+dispatch must not be called on the reference wrapper or an assumed object.
+No production query or input injection was added. The remaining runtime
+observation belongs in the consolidated manual session, before using this
+route to distinguish native pause state from the controller's pause latch.
+
+Read-only Ghidra exports all contain EVIDENCE COMPLETE; private export hashes:
+
+- Native wrapper/getter query: ecb94fbb9184620d3aab09ae37fdc730463c9bb69eedcf2cf9f8c131f8e537c7.
+- Reference assignment/publication: 5e2bdd3762c7367b1d00ec4d22bf3d62ba4d2c78bb51e32300f1e07e5e56a407.
+- Verified getter/second wrapper: 59fd149b70168681eb8d4586aa9538dfddd80238141625b087b988b3b0d861bd.
+
+Independent PE read verifies the vtable slot and all 18 getter bytes. No new
+DLL, native patch, Steam deployment or performance result follows from this
+static contract.
+
 ## Performance priority decision
 
 The retained zero-loss outdoor capture 20261027T141205Z-c4e8bb85 has inclusive

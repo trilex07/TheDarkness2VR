@@ -2558,3 +2558,16 @@ game closed. The earlier minidump captures no framework heap instance and does
 not close this gate. No C++/DLL/INI changes or runtime performance claim.
 Native menu surface/state and safe input lifetime remain unresolved; details
 in docs/research/native-menu-input-contract-20261029.md.
+
+## 2026-10-29: identify RegionMgr's game-rules reference
+
+Native GetGameRules registration 10A6150 -> D9B8C0 converts the receiver using
+RegionMgr's SWIG type slot 10EBE00, then invokes +13C. FC7D00+13C -> 490D30
+returns a retained reference from RegionMgr+BC (not the object), with EAX
+output identity and RET 4. Wrapper assignment 59AB10 and native SWIG publication
+confirm the returned reference route. Independent PE vtable/full-getter pin
+PASS; all three private Ghidra exports complete. This narrows the native pause
+state route without substituting render activity or a controller pause latch.
+Live concrete receiver, main-menu ownership and submitted menu surface remain
+unverified; no production virtual call/input injection or C++ change added.
+Detailed evidence and hashes: docs/research/native-menu-input-contract-20261029.md.
