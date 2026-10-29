@@ -1973,3 +1973,14 @@ material-field refusals and guard/fault regressions. Actual RecPush/small copy
 not a game saving. Separate activeStackProved/activeStackCopies receipts expose
 incremental runtime coverage. No game launch or90FPS proof; original resolution,
 hands, throw, opponent action and culling paths are retained.
+
+## 2026-10-29: protected controller direction for native character throws
+
+Pinned release879C88 shares its velocity with character consumer75AD20 via
+879CA6; saved ESI is the retained +584 reference, alive through that call.
+75AD20 forwards the same pointer/mode2 to the character body array at+4F0/+4F4.
+The protected comparison adapter now carries ESI and admits a freshly owned,
+unchanged character target; +590 and legacy character overrides stay excluded.
+Native speed/W, spin, animation, reference ownership and body fanout are retained.
+Private Ghidra output: TEMP/d2vr-character-throw-75ad20.txt. Source/ABI/native
+consumer regressions pass; full enemy lifecycle and HMD acceptance remain open.

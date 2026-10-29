@@ -80,7 +80,96 @@ static XINPUT_GAMEPAD Step(unsigned ms,float grip,float x,float velocity) {
     CHECK((gp.wButtons&untouched)==untouched);
     CHECK(gp.sThumbRX==12345&&gp.sThumbRY==-5432);return gp;
 }
-int main() {
+static const void* CharacterRef(){return *reinterpret_cast<void**>(fire+0x584);}
+using CharacterConsumer=void(__thiscall*)(void*,const float*,unsigned);
+static CharacterConsumer characterConsumer=nullptr;
+struct BodyRef {void* object;unsigned strong=1,weak=0;};
+struct Physics {void** table;};
+static Physics physics;
+static unsigned bodyCalls=0;static const float* expectedVelocity=nullptr;
+static void __fastcall BodyVelocity(Physics* self,void*,BodyRef* body,const float* velocity,unsigned mode){
+    CHECK(self==&physics && body->object && body->strong==2);
+    CHECK(velocity==expectedVelocity && mode==2);
+    --body->strong;++bodyCalls;
+}
+static Physics* __fastcall PhysicsForCharacter(void* self,void*){CHECK(self==avatar);return &physics;}
+static void LoadCharacterConsumer(const char* path){
+    // The build script verifies the full EXE/consumer hashes before producing
+    // this private92-byte fixture. Only its backend getter is redirected here.
+    HANDLE file=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
+    CHECK(file!=INVALID_HANDLE_VALUE && GetFileSize(file,nullptr)==0x5C);
+    auto code=static_cast<BYTE*>(VirtualAlloc(nullptr,0x1000,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));CHECK(code);
+    DWORD bytes=0;CHECK(ReadFile(file,code,0x5C,&bytes,nullptr) && bytes==0x5C);CloseHandle(file);
+    CHECK(code[0x29]==0xE8);
+    const auto displacement=DWORD(reinterpret_cast<uintptr_t>(&PhysicsForCharacter))-DWORD(reinterpret_cast<uintptr_t>(code+0x2E));
+    memcpy(code+0x2A,&displacement,4);
+    CHECK(code[0x59]==0xC2 && code[0x5A]==8 && code[0x5B]==0);
+    DWORD old=0;CHECK(VirtualProtect(code,0x1000,PAGE_EXECUTE_READ,&old));CHECK(FlushInstructionCache(GetCurrentProcess(),code,0x5C));
+    characterConsumer=reinterpret_cast<CharacterConsumer>(code);
+}
+static void ConsumeCharacterVelocity(const float* velocity){
+    void* table[50]{};table[0xC4/4]=reinterpret_cast<void*>(&BodyVelocity);physics.table=table;
+    BodyRef a{entity},empty{nullptr},b{fire};BodyRef* bodies[]={&a,&empty,&b};
+    Word(avatar,0x4F0,Ptr(bodies));Word(avatar,0x4F4,Ptr(bodies+3));
+    bodyCalls=0;expectedVelocity=velocity;
+    characterConsumer(avatar,velocity,2);
+    if(bodyCalls!=2 || a.strong!=1 || empty.strong!=1 || b.strong!=1)
+        printf("Native fanout calls=%u refs=%u,%u,%u\n",bodyCalls,a.strong,empty.strong,b.strong);
+    CHECK(bodyCalls==2 && a.strong==1 && empty.strong==1 && b.strong==1);
+    Word(avatar,0x4F0,0);Word(avatar,0x4F4,0);
+}
+static void CharacterCases(){
+    for(unsigned flag=0;flag<2;++flag){
+        Reset();gameplay.alternateHeldTarget=true;SetRef(fire,0x584,avatar);entity[0x24]=BYTE(flag);Arm();
+        BYTE beforeFire[sizeof(fire)],beforeCamera[sizeof(camera)];
+        memcpy(beforeFire,fire,sizeof(fire));memcpy(beforeCamera,camera,sizeof(camera));
+        float velocity[4]={3,4,0,.75f};
+        // A direct/legacy call without the native retained receiver cannot
+        // authorize a character. Its token remains available to the real site.
+        RejectedVelocity(velocity);CHECK(g_nativeThrowToken.until);
+        CHECK(ResolveProtectedThrowVelocity(fire,velocity,CharacterRef()));
+        CHECK(std::fabs(d2vr_input::Length({velocity[0],velocity[1],velocity[2]})-5)<.00001f);
+        CHECK(velocity[0]>4.8f && velocity[1]==0 && velocity[2]>1.2f && velocity[3]==.75f);
+        ConsumeCharacterVelocity(velocity);
+        CHECK(!g_nativeThrowToken.until);
+        CHECK(!memcmp(beforeFire,fire,sizeof(fire)) && !memcmp(beforeCamera,camera,sizeof(camera)));
+        const float sent[4]={velocity[0],velocity[1],velocity[2],velocity[3]};
+        CHECK(!ResolveProtectedThrowVelocity(fire,velocity,CharacterRef()));CHECK(!memcmp(sent,velocity,16));
+    }
+    for(unsigned refusal=0;refusal<9;++refusal){
+        Reset();gameplay.alternateHeldTarget=true;SetRef(fire,0x584,avatar);Arm();
+        const void* reference=CharacterRef();void* other=entity;
+        if(refusal==0)SetRef(fire,0x584,entity);
+        if(refusal==1)SetRef(fire,0x584,nullptr);
+        if(refusal==2)SetRef(fire,0x590,entity);
+        if(refusal==3)SetRef(fire,0x580,avatar);
+        if(refusal==4)reference=&other; // native dispatch target differs from fire
+        if(refusal==5)reference=reinterpret_cast<const void*>(1);
+        if(refusal==6)clockMs+=650;
+        if(refusal==7)copyOK=false;
+        if(refusal==8)g_protectedLeftThrow=false;
+        float velocity[4]={3,4,0,.75f},before[4];memcpy(before,velocity,16);
+        CHECK(!ResolveProtectedThrowVelocity(fire,velocity,reference));CHECK(!memcmp(before,velocity,16));
+    }
+    Reset();gameplay.alternateHeldTarget=true;SetRef(fire,0x584,avatar);SetRef(fire,0x590,entity);
+    PublishNativeThrow(true,false,true,{2,0,0},{0,0,-1},true);CHECK(!g_nativeThrowToken.until);
+    Reset();gameplay.alternateHeldTarget=true;SetRef(fire,0x584,avatar);
+    g_nativeLeftAim=g_nativeThrowInstalled=true;
+    PublishNativeThrow(true,false,true,{2,0,0},{0,0,-1},false);CHECK(!g_nativeThrowToken.until);
+    // Actual recognizer -> token -> native retained-receiver consumption.
+    Reset();gameplay.grab=d2vr_input::GrabFeedback::Empty;
+    Step(0,0,0,0);Step(20,1,0,0);
+    gameplay.grab=d2vr_input::GrabFeedback::Busy;gameplay.alternateHeldTarget=true;SetRef(fire,0x584,avatar);
+    Step(160,1,0,0);Step(180,1,.18f,2);Step(200,1,.22f,2);Step(220,1,.26f,2);Step(240,1,.30f,2);
+    CHECK(Step(260,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);CHECK(g_nativeThrowToken.until==1910);
+    float velocity[4]={3,4,0,.5f};CHECK(ResolveProtectedThrowVelocity(fire,velocity,CharacterRef()));
+    CHECK(!(Step(400,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));CHECK(!g_nativeThrowToken.until);
+}
+int main(int argc,char** argv) {
+    CHECK(argc==2);LoadCharacterConsumer(argv[1]);
+    Reset();gameplay.alternateHeldTarget=true;SetRef(fire,0x584,avatar);
+    PublishNativeThrow(true,false,true,{2,0,0},{0,0,-1},true);
+    CHECK(g_nativeThrowToken.until==1650); // owned native character release
     Reset();CHECK(!NativeHeldActionContext());gameplay.alternateHeldTarget=true;
     CHECK(NativeHeldActionContext());g_hands[0].valid=false;g_hands[1].valid=false;
     CHECK(NativeHeldActionContext()); // face-button action needs no controller pose
@@ -137,7 +226,8 @@ int main() {
     CHECK(!(Step(40,1,.2f,2).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));CHECK(!g_nativeThrowToken.until);
     // Acquisition can enter the native enemy/weapon branch after the grab
     // pulse. Its stock LB release must remain reachable from a left stroke;
-    // the ordinary-prop velocity override must NEVER be armed for this branch.
+    // an alternate feedback flag alone cannot authorize velocity steering.
+    // The fresh native character branch is exercised separately below.
     Reset();gameplay.grab=d2vr_input::GrabFeedback::Empty;
     Step(0,0,0,0);CHECK(Step(20,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);
     gameplay.alternateHeldTarget=true;gameplay.grab=d2vr_input::GrabFeedback::Busy;
@@ -157,5 +247,7 @@ int main() {
     CHECK(!(Step(160,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
     CHECK(!(Step(180,0,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
     CHECK(!g_nativeThrowToken.until);
-    printf("PASS protected throw actual bodies: %u checks; live owner/entity/branch gates,one-shot token,native speed/W preserved,left stroke+aim,enemy stock release reachable,neutral LB gap,right inputs independent\n",checks);
+    CharacterCases();
+    CHECK(VirtualFree(reinterpret_cast<void*>(characterConsumer),0,MEM_RELEASE));
+    printf("PASS protected throw actual bodies: %u checks; live owner/entity/character/retained-receiver gates,one-shot token,native speed/W preserved,left stroke+aim,enemy release direction,neutral LB gap,right inputs independent\n",checks);
 }

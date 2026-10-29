@@ -17,14 +17,14 @@ static bool ProtectedLeftAimHeld() {
 static void ResetProtectedLeftThrow() {
     g_protectedLeftTentacle={};std::memset(g_protectedThrowInputOwner,0,sizeof(g_protectedThrowInputOwner));
 }
-static bool ResolveProtectedThrowVelocity(void* fire,float* velocity) {
+static bool ResolveProtectedThrowVelocity(void* fire,float* velocity,const void* nativeCharacterReference=nullptr) {
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     if(!ProtectedThrowAvailable() || !ProtectedThrowFireOwned(fire) ||
        GetCurrentThreadId()!=g_renderThreadId || !g_trackedFrame.open || !g_haveViews ||
        !g_in3DGameplayMode || (g_trackedFrame.flags&tracked)!=tracked ||
        g_protectedRightTentacle.paused || g_protectedLeftTentacle.paused ||
        !g_hands[0].valid || !g_headGeometry || !g_headGeometryReferenceValid)return false;
-    return TryNativeThrowVelocity(fire,velocity,0xFFC7C0,true);
+    return TryNativeThrowVelocity(fire,velocity,0xFFC7C0,true,nativeCharacterReference);
 }
 static void PrepareProtectedThrowForCamera(void* camera) {
     if(!g_protectedLeftThrow || !g_protectedLeftAim || !g_nativePlayerOwnerAdmitted ||

@@ -11,8 +11,9 @@ static unsigned checks=0,calls=0;
 static bool modify=false;
 static Fire fire;
 static void Check(bool v){++checks;if(!v){printf("FAIL %u\n",checks);exit(1);}}
-static bool Resolve(void* self,float* velocity) {
+static bool Resolve(void* self,float* velocity,const void* characterReference) {
     ++calls;Check(self==&fire && velocity==fire.velocity);
+    Check(characterReference==reinterpret_cast<const void*>(0x45678901));
     if(modify){velocity[0]=4;velocity[1]=0;velocity[2]=3;}
     SetLastError(99);_mm_setcsr(_mm_getcsr()^0x6000);
     __asm fld1

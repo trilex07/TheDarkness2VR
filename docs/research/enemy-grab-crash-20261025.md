@@ -61,3 +61,44 @@ enemy attacks, executions, release/throw animations and trajectories remain
 to be accepted together in MAIN's consolidated headset test. Controller-based
 velocity steering for the alternate enemy/weapon physics branches remains
 unimplemented; this change removes the blocked native action, not that limit.
+
+## Protected character release direction, 2026-10-29
+
+The retained Ghidra release implementation and a new read-only75AD20 export
+identify a supported character velocity boundary. At8799AF, ESI receives the
+native +584 reference; it is retained before879C88 and released afterward.
+The comparison's velocity at stack+60 is passed unchanged to75AD20 at879CA6,
+with the native mode2.75AD20 forwards that same pointer/mode to each nonempty
+body through backend VT+C4. Its complete92-byte body ends at75AD7B (RET8).
+The +590 retained-target branch has other side effects and remains excluded.
+
+The protected adapter now forwards the saved native ESI reference as a third
+resolver argument while retaining the existing comparison's ABI. Publication
+and consumption both refresh the camera/inventory/fire reciprocal owner graph,
+the exact +580 entity and +584 character. Consumption additionally requires the
+native retained reference to name that character. A changed/cleared target,
+retained +590 target, missing native reference, stale/expired token, tracking
+loss or wrong owner leaves the original velocity intact. Ordinary prop rules
+and the legacy EXE-patching path do not gain character permission.
+
+Only XYZ direction changes. Native speed/W, angular velocity, animation,
+reference counts,75AD20 fanout and downstream physics remain native. No EXE,
+static table, character state or body array is modified by the implementation.
+Existing character attacks/executions still use stock face-button actions.
+This does not implement controller steering of a character while it is held.
+
+The old6022144 actual-source fixture fails at its first character token
+admission check (line86). The updated fixture passes316 checks, including the
+recognizer-to-character release, target transitions, forged native reference,
+retained-target refusal, one-shot consumption and native speed/W preservation.
+A private copy of the actual92-byte75AD20 consumer executes against an owned
+stub backend: two live bodies receive the same velocity pointer/mode2, the
+empty body is skipped and native reference increments are balanced. No game
+bytes enter Git.21 pinned instruction contracts and the consumer SHA256 pass.
+The comparison ABI fixture passes2000 native-vs-adapter calls including the
+exact ESI argument, GPR/EFLAGS/x87/SSE/MXCSR, LastError and stack/return state.
+Aim461 and equipped-weapon74795 checks pass; both x86 DLL flavors build.
+
+These isolated native-consumer tests do not execute the full enemy animation,
+ragdoll or collision lifecycle. In-game direction, stability and the historical
+enemy-lift crash remain unverified; no FPS or complete enemy-interaction claim.

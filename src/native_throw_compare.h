@@ -6,14 +6,14 @@
 #include "native_image_guard.h"
 namespace d2vr_throw_compare {
 using Compare=int(__cdecl*)(const float*,const float*,float);
-using Resolve=bool(*)(void*,float*);
+using Resolve=bool(*)(void*,float*,const void*);
 namespace detail {
 inline Compare original=nullptr;
 inline Resolve resolve=nullptr;
 inline thread_local bool resolving=false;
-static void __cdecl Apply(void* fire,float* velocity) {
+static void __cdecl Apply(void* fire,float* velocity,const void* characterReference) {
     const auto error=GetLastError();
-    if(!resolving) {resolving=true;resolve(fire,velocity);resolving=false;}
+    if(!resolving) {resolving=true;resolve(fire,velocity,characterReference);resolving=false;}
     SetLastError(error);
 }
 static __declspec(naked) int __cdecl Entry(const float*,const float*,float) {
@@ -25,10 +25,11 @@ static __declspec(naked) int __cdecl Entry(const float*,const float*,float) {
         and esp,-16
         fxsave [esp]
         fninit
+        push dword ptr [esi+4] // pinned release's retained character reference: ESI
         push dword ptr [esi+40] // original first stack argument: velocity
         push dword ptr [esi]    // pinned release method's EDI: fire receiver
         call Apply
-        add esp,8
+        add esp,12
         fxrstor [esp]
         mov esp,esi
         popad

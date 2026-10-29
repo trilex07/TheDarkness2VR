@@ -1,5 +1,8 @@
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
+$nativeBody=Join-Path $env:TEMP 'd2vr-native-character-consumer.bin'
+python -B (Join-Path $PSScriptRoot 'native_character_throw_contract.py') --exe 'C:\Program Files (x86)\Steam\steamapps\common\Darkness II\DarknessII.exe' --fixture-body $nativeBody
+if($LASTEXITCODE -ne 0){throw 'Native character contract failed'}
 function Extract([string]$source,[string]$signature) {
     $start=$source.IndexOf($signature,[StringComparison]::Ordinal)
     if($start -lt 0){throw "Missing $signature"}
@@ -26,6 +29,7 @@ $bodies=@((Extract $main 'static XrVector3f RotVec('),(Extract $aim 'static bool
     (Extract $aim 'static bool NativeHeldActionContext() {'),
     (Extract $protected 'static bool ProtectedThrowAvailable() {'),
     (Extract $protected 'static bool ProtectedLeftAimHeld() {'),(Extract $protected 'static void ResetProtectedLeftThrow() {'),
+    (Extract $throw 'static bool ReadNativeThrowTarget('),
     (Extract $throw 'static void PublishNativeThrow('),(Extract $throw 'static bool TryNativeThrowVelocity('),
     (Extract $protected 'static bool ResolveProtectedThrowVelocity('),(Extract $protected 'static void ApplyProtectedLeftThrow('))
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_protected_throw_under_test.inl'),($bodies -join "`r`n"),[Text.Encoding]::UTF8)
@@ -36,5 +40,5 @@ $source=Join-Path $PSScriptRoot 'protected_left_throw_test.cpp'
 $out=Join-Path $env:TEMP 'd2vr-protected-left-throw.exe'
 cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 /I`"$sdk\include`" /I`"$env:TEMP`" `"$source`" /Fo:`"$env:TEMP\d2vr-protected-left-throw.obj`" /Fe:`"$out`""
 if($LASTEXITCODE -ne 0){throw 'Protected left throw build failed'}
-& $out
+& $out $nativeBody
 if($LASTEXITCODE -ne 0){throw 'Protected left throw regression failed'}
