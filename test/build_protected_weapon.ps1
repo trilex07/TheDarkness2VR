@@ -15,7 +15,7 @@ function Extract([string]$text,[string]$signature,[bool]$structure=$false) {
 $aim=Get-Content (Join-Path $repo 'src/native_aim.inl') -Raw
 $body=(Extract $aim 'struct NativeGameplaySample {' $true)+"`r`nstatic NativeGameplaySample g_nativeGameplay;`r`n"+
     (Extract $aim 'static bool CopyNativeGameplay(')+"`r`n"+(Extract $aim 'static bool NativeAimOwnerMatches(')+"`r`n"+
-    (Extract $aim 'static bool CaptureNativeGameplay(')
+    (Extract $aim 'static bool CaptureNativeGameplay(')+"`r`n"+(Extract $aim 'static bool NativeTentacleHeadAttachmentAllowed(')
 [IO.File]::WriteAllText((Join-Path $out 'actual_weapon_owner.inl'),$body,[Text.Encoding]::UTF8)
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'

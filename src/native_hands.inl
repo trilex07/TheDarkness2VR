@@ -2,6 +2,7 @@
 static bool ProtectedHandsAvailable();
 static bool ProtectedHandsResourceOwned(void* resource);
 static bool CopyProtectedHandPoses(DWORD camera,NativeWeaponPose (&poses)[2]);
+static bool CopyProtectedWeaponHandPose(DWORD camera,unsigned hand,XrPosef& pose);
 // Shared guarded IK. Legacy triggers remain separate from the protected
 // private-instance packer in protected_hands.inl; neither is implicitly enabled.
 static bool g_nativeHandsInstalled=false;
@@ -38,9 +39,12 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
     if(protectedRoute ? !ProtectedHandsAvailable() : (!g_nativeHandsEnabled || !g_nativeHandsInstalled)) return false;
     NativeGameplaySample sample;
     if(!CopyNativeGameplay(sample) || (!expectedResource && !sample.entities[0])) return false;
-    // Grab/attach animations rewrite the same palette; defer human IK until empty.
-    if(sample.grab==d2vr_input::GrabFeedback::Busy || sample.alternateHeldTarget ||
-       (expectedResource && sample.grab!=d2vr_input::GrabFeedback::Empty)) return false;
+    // The protected receiver is the selected avatar's packer, after animation
+    // and before skin packing. Its owned human bones 2..45 can follow the
+    // controllers during a demon hold; tentacle/attachment bones stay native.
+    // The older pistol-triggered route has no such ordering guarantee.
+    if(sample.grab==d2vr_input::GrabFeedback::Unknown ||
+       (!protectedRoute && (sample.grab==d2vr_input::GrabFeedback::Busy || sample.alternateHeldTarget)))return false;
     float gunWorld[16]{};
     if(!expectedResource &&
        !TryNativeWeaponMatrix((void*)sample.entities[0],gunWorld,cameraVtable)) return false;

@@ -90,3 +90,29 @@ The x86 actual-source fixture passes 74711 checks, including four separately
 populated native target fields, sustained grip, one release stroke and return
 to Empty. Existing throw218 and left-aim461 checks pass. Both DLL flavors build.
 These CPU fixtures do not validate native enemy lifecycle or headset behavior.
+
+## Held-target headset feedback corrections, 2026-10-29
+
+The user reports that a demon hold disables tracked human hands/pistol, the
+one-handed pistol sits above the hand, and head-attached tentacles separate from
+their held target. Three independent source contracts account for these effects:
+the human packer and pistol resolvers explicitly rejected Busy/alternate holds;
+human weapon sockets used grip space while the pistol used aim space; and a
+mesh-scoped rendering correction cancelled the head transform only on tentacles.
+
+The protected packer now permits holds while preserving root and demon bones
+0..1/46..129; legacy hand hooks retain their Busy refusal. The equipped gun is
+revalidated through its own inventory/model/fire ownership chain on each use.
+An equipped hand uses that gun's aim pose, preserving the existing native socket
+calibration. A hold cannot authorize foreign, replaced or dropped guns. The
+tentacle correction requires fresh Empty native feedback, so held target and
+tentacle remain in their unmodified native world space during acquisition/holds.
+
+Actual-source x86 fixtures pass 58,828 hand checks (including native B1E500 skin
+arithmetic), 74,795 weapon/sampler checks, 19,069 draw-scope checks and 774 gesture
+checks. Repeated held-hand packing has no accumulated delta and leaves demon
+bones byte-identical. Both DLL flavors build. The leg reload and control/overlay
+overrides are described in profiles/controller-playtest-fixes. Sleeve cutting
+remains unimplemented: the two captured human-arm materials do not yet identify
+sleeve triangles. These are offline corrections awaiting the user's HMD test;
+no physical grip, native attachment continuity or performance improvement claimed.

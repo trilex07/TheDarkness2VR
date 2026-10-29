@@ -1613,6 +1613,7 @@ static void QueryPreloadTick() {
 #ifdef D2VR_MATCHED_CAPTURE
 static void NativeViewProjectionObserved(const float* inverse);
 #endif
+static bool NativeTentacleHeadAttachmentAllowed();
 #include "stereo_replay.inl"
 
 static void UpdateHeadGeometry(const XrPosef& head) {
@@ -4104,12 +4105,12 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
                 if(gestureBridge) objectiveUntil=now+120;
             }
         }
-        // Approximate standing hip relative to HMD; seated calibration/native reload
-        // state are not known yet, so bridge is explicitly opt-in in this candidate.
+        // Bring the weapon hand to the upper leg, below the former hip zone.
+        // The existing dwell/rearm and tracking/trigger/pause gates still apply.
         const float yaw=ComputeHorizontalYaw(head.orientation);
         const XrVector3f hipDelta=RotVec({0,-std::sin(yaw*.5f),0,std::cos(yaw*.5f)},
             p.x-head.position.x,p.y-head.position.y,p.z-head.position.z);
-        const float distance=d2vr_input::Length({hipDelta.x-(h ? .23f:-.23f),hipDelta.y+.75f,hipDelta.z});
+        const float distance=d2vr_input::Length({hipDelta.x-(h ? .23f:-.23f),hipDelta.y+1.05f,hipDelta.z});
         if(reload[h].Update(safe,distance,time,.20f,.30f,.20)) {
             Log("[Gesture] Reload%s detected; bridge=%d (gamepad reload is shared)",h ? "Right":"Left",(int)gestureBridge);
             if(gestureBridge) {

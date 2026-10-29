@@ -38,10 +38,13 @@ static void PublishProtectedHandPoses() {
         float reference[16],inverse[16];
         if(d2vr_math::TrackingPose(q,p,reference) && d2vr_math::Invert(reference,inverse)) {
             camera=owner.camera;
-            // Human hands follow grip spaces independently. Aim validity, a
-            // pistol, support snapping and the other controller are irrelevant.
+            // Free hands follow grip. An equipped, independently owned pistol
+            // uses the SAME aim-space transform as its model/fire resolver.
+            // Mixing grip-space human sockets with aim-space guns separates
+            // the visible grip even when both controller poses are valid.
             for(unsigned hand=0;hand<2;++hand)if(g_hands[hand].gripValid) {
-                const auto& grip=g_hands[hand].grip;
+                XrPosef grip=g_hands[hand].grip;
+                CopyProtectedWeaponHandPose(owner.camera,hand,grip);
                 const float hq[4]={grip.orientation.x,grip.orientation.y,grip.orientation.z,grip.orientation.w};
                 const float hp[3]={grip.position.x,grip.position.y,grip.position.z};
                 float tracking[16];

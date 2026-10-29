@@ -35,6 +35,8 @@ struct IDirect3DDevice9 {
 };
 struct StereoParams {bool headGeometry=true;float inverseHeadClip[16]{};} params;
 static bool g_headAttachedTentacles=true,shadow=false;
+static bool headAttachmentAllowed=true;
+static bool NativeTentacleHeadAttachmentAllowed(){return headAttachmentAllowed;}
 static int g_submitMode=4,g_stereoMode=1,g_replayEye=-1;
 struct Shader {unsigned hash=0x1CB7CEE2;} shader;
 static Shader* g_activeVs=&shader;
@@ -72,6 +74,12 @@ int main(){
     auto rejected=[&]{const unsigned sets=dev.sets;float before[16];memcpy(before,dev.matrix,64);
         {TentacleHeadScope scope(&dev);CHECK(!scope.applied);}
         CHECK(dev.sets==sets && Equal(before,dev.matrix) && !dev.vb.refs && !dev.ib.refs);};
+    // Both eyes retain the original world transform throughout a hold. This
+    // matches the unmodified held-object draw instead of head-attaching one end.
+    headAttachmentAllowed=false;
+    for(int eye=-1;eye<2;++eye){g_replayEye=eye;rejected();}
+    CHECK(!dev.vb.queries && !dev.ib.queries && !dev.indexQueries);
+    headAttachmentAllowed=true;
     shader.hash=0x12345678;rejected();shader.hash=0x1CB7CEE2;
     // Shared skinned shader alone never establishes player mesh ownership.
     const unsigned indicesBefore=dev.indexQueries;

@@ -27,6 +27,12 @@ static struct {uint64_t id=20;bool open=true;XrViewStateFlags flags=15;} g_track
 static XrPosef g_headGeometryReference{{0,0,0,1},{}};
 static d2vr_input::Tentacles g_protectedLeftTentacle,g_protectedRightTentacle;
 static struct {bool gripValid=true;XrPosef grip{{0,0,0,1},{}};} g_hands[2];
+static bool equippedAim[2]{};
+static XrPosef weaponAim[2]{};
+static bool CopyProtectedWeaponHandPose(DWORD,unsigned hand,XrPosef& pose) {
+    if(!equippedAim[hand])return false;
+    pose=weaponAim[hand];return true;
+}
 static SRWLOCK g_nativeWeaponLock=SRWLOCK_INIT,g_nativeGameplayLock=SRWLOCK_INIT;
 static NativeWeaponPose g_nativeWeaponPoses[2];
 static bool g_nativeSupport=false;
@@ -86,6 +92,7 @@ static void Reset(){
     g_renderThreadId=GetCurrentThreadId();g_headGeometryReference={{0,0,0,1},{}};
     g_hands[0].grip={{0,0,0,1},{-.5f,.2f,-.1f}};g_hands[1].grip={{0,0,0,1},{.5f,.2f,-.1f}};
     g_hands[0].gripValid=g_hands[1].gripValid=true;ResetProtectedHandPoses();
+    equippedAim[0]=equippedAim[1]=false;
     *reinterpret_cast<void***>(resource)=sourceTable;
     CHECK(g_protectedHandsTable.Publish(resource,g_nativeImageGuard));
 }
@@ -199,8 +206,20 @@ int main(int argc,char** argv){
     // Neither an unreachable arm nor its failed solve may suppress its peer.
     Reset();g_hands[1].grip.position={.15f,0,0};CHECK(Apply());CHECK(Near(palette[5][12],-.5f));Untouched(24,130);
     Reject([]{g_hands[0].gripValid=g_hands[1].gripValid=false;});
-    Reject([]{g_nativeGameplay.grab=d2vr_input::GrabFeedback::Busy;});
-    Reject([]{g_nativeGameplay.alternateHeldTarget=true;});
+    for(bool alternate:{false,true}) {
+        Reset();g_nativeGameplay.grab=d2vr_input::GrabFeedback::Busy;g_nativeGameplay.alternateHeldTarget=alternate;
+        CHECK(Apply());CHECK(Near(palette[5][12],-.5f) && Near(palette[27][12],.5f));
+        Untouched(0,2);Untouched(46,130); // root and demon attachment skeleton untouched
+        float onceHeld[130][16];memcpy(onceHeld,palette,sizeof(onceHeld));
+        for(unsigned n=0;n<100;++n){CHECK(Apply());CHECK(!memcmp(onceHeld,palette,sizeof(onceHeld)));}
+    }
+    for(unsigned hand=0;hand<2;++hand) {
+        Reset();equippedAim[hand]=true;weaponAim[hand]={{0,0,0,1},{hand?.6f:-.6f,.3f,-.15f}};
+        CHECK(Apply());const unsigned socket=hand?43:21;
+        CHECK(Near(palette[socket][12],hand?.6f:-.6f));
+        CHECK(Near(palette[socket][13],.3f) && Near(palette[socket][14],.15f));
+        CHECK(Near(palette[hand?5:27][12],hand?-.5f:.5f));
+    }
     Reject([]{g_nativeGameplay.grab=d2vr_input::GrabFeedback::Unknown;});
     Reject([]{g_protectedTrackedHands=false;});Reject([]{g_haveViews=false;});Reject([]{g_in3DGameplayMode=false;});
     Reject([]{g_trackedFrame.open=false;});Reject([]{g_trackedFrame.flags=0;});Reject([]{g_renderThreadId++;});

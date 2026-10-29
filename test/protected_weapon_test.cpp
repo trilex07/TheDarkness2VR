@@ -88,10 +88,14 @@ template<class Mutation> static void Reject(Mutation change) {
 }
 static void GrabFeedbackCases(){
     using d2vr_input::GrabFeedback;
+    Reset();g_nativeGameplay.grab=GrabFeedback::Unknown;CHECK(!NativeTentacleHeadAttachmentAllowed());
+    Reset();clockMs+=150;CHECK(!NativeTentacleHeadAttachmentAllowed());
     for(unsigned field:{0x558u,0x580u,0x584u,0x590u}){
         Reset();CHECK(g_nativeGameplay.grab==GrabFeedback::Empty && !g_nativeGameplay.alternateHeldTarget);
+        CHECK(NativeTentacleHeadAttachmentAllowed());
         Ref(grab,field,avatar);CHECK(CaptureNativeGameplay(camera));
         CHECK(g_nativeGameplay.grab==GrabFeedback::Busy);
+        CHECK(!NativeTentacleHeadAttachmentAllowed());
         CHECK(g_nativeGameplay.alternateHeldTarget==(field==0x584 || field==0x590));
         // Drive the real recognizer from the real native sampler, rather than
         // mocking an already-consistent Busy/alternate pair.
@@ -151,10 +155,10 @@ int main(int argc,char** argv) {
     base[0]=0;base[2]=1;base[8]=-1;base[10]=0;
     CHECK(ResolveProtectedWeaponFire(fires[0],inventory+0xB0,world));CHECK(Near(world[12],9.6f) && Near(world[14],30.5f));
     // A nullable +584 alternate-character field is valid when empty. Conversely,
-    // even a newer grab receiver not present in the cached sample must gate us.
+    // A held target is separate from the still-owned equipped pistol.
     Reset();Word(grab,0x584,0);CHECK(ResolveProtectedWeaponFire(fires[0],inventory+0xB0,world));
     Reset();Ref(grab,0x580,avatar);CHECK(g_nativeGameplay.grab==d2vr_input::GrabFeedback::Empty);
-    CHECK(!ResolveProtectedWeaponFire(fires[0],inventory+0xB0,world));
+    CHECK(ResolveProtectedWeaponFire(fires[0],inventory+0xB0,world));
     Reset();CHECK(!ResolveProtectedWeaponFire(fires[0],inventory+0xBC,world));
     Reject([]{g_hands[1].aimValid=false;});Reject([]{clockMs=1150;});Reject([]{g_trackedFrame.open=false;});
     Reject([]{g_trackedFrame.flags=0;});Reject([]{g_renderThreadId=0;});Reject([]{g_protectedTrackedHands=false;});
@@ -162,8 +166,18 @@ int main(int argc,char** argv) {
     Reject([]{g_gameUnitsPerMeter=0;});Reject([]{g_hands[1].aim.position.x=4;});Reject([]{g_hands[1].aim.orientation.w=NAN;});
     Reject([]{Word(guns[0],0xA78,4);});Reject([]{Ref(guns[0],0x980,nullptr);});Reject([]{Word(fires[0],4,0);});
     Reject([]{Ref(fires[0],0x4C,guns[1]);});Reject([]{Ref(inventory,0xB0,guns[1]);});
-    Reject([]{Ref(grab,0x558,avatar);});Reject([]{Ref(grab,0x580,avatar);});Reject([]{Ref(grab,0x584,avatar);});
-    Reject([]{Ref(grab,0x590,avatar);});Reject([]{Ref(inventory,0x20C+6*4,nullptr);});
+    for(unsigned field:{0x558u,0x580u,0x584u,0x590u})for(unsigned slot=0;slot<2;++slot) {
+        Reset();Ref(grab,field,avatar);CHECK(CaptureNativeGameplay(camera));
+        float model[16],shot[16];
+        CHECK(ResolveProtectedWeaponModel(reinterpret_cast<float*>(models[slot]+0x140),model));
+        CHECK(ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*slot,shot));
+        CHECK(!memcmp(model,shot,64));
+        XrPosef pose{};CHECK(CopyProtectedWeaponHandPose(Ptr(camera),1-slot,pose));
+        CHECK(!memcmp(&pose,&g_hands[1-slot].aim,sizeof(pose)));
+        Ref(guns[slot],0x980,nullptr);
+        CHECK(!ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*slot,shot));
+        CHECK(!CopyProtectedWeaponHandPose(Ptr(camera),1-slot,pose));
+    }
     Reject([]{*reinterpret_cast<void***>(models[0])=modelTable;});
     // Actual bridge: unchanged and tracked matrices, five arguments, native
     // receiver, stack cleanup, result registers/flags, FPU and LastError.

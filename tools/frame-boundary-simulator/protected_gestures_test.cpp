@@ -110,16 +110,18 @@ int main(){
     for(unsigned i=0;i<40;++i){gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));}
     Step(.01,XINPUT_GAMEPAD_START);Check(!g_protectedRightTentacle.paused);
     for(unsigned i=0;i<10;++i){gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));}
-    // Objective uses a left-face dwell, reload uses the existing hip dwell.
+    // Objective uses a left-face dwell, reload uses the upper-leg dwell.
     Reset();Step();g_hands[0].grip.position={-.18f,1.58f,-.08f};bool objective=false;
     for(unsigned i=0;i<30;++i)objective|=(Step().wButtons&XINPUT_GAMEPAD_BACK)!=0;
     Check(objective);
     for(unsigned i=0;i<30;++i)Step();Check(!(Step().wButtons&XINPUT_GAMEPAD_BACK));
     g_haveViews=false;Step();g_haveViews=true;
     for(unsigned i=0;i<40;++i)Check(!(Step().wButtons&XINPUT_GAMEPAD_BACK));
-    Reset();Step();g_hands[1].grip.position={.23f,.85f,0};bool reload=false;
+    Reset();Step();g_hands[1].grip.position={.23f,.55f,0};bool reload=false;
     for(unsigned i=0;i<25;++i)reload|=(Step().wButtons&XINPUT_GAMEPAD_X)!=0;
     Check(reload);
+    Reset();Step();g_hands[1].grip.position={.23f,.85f,0};
+    for(unsigned i=0;i<40;++i)Check(!(Step().wButtons&XINPUT_GAMEPAD_X)); // former hip zone
     // Objective/reload belong to one controller; loss of the other must not
     // cancel either recognition or its already-issued pulse.
     Reset();g_hands[1].valid=g_hands[1].gripValid=false;Step();
@@ -128,7 +130,7 @@ int main(){
     Check(objective);
     for(unsigned hand=0;hand<2;++hand) {
         Reset();g_hands[1-hand].valid=g_hands[1-hand].gripValid=false;Step();
-        g_hands[hand].grip.position={hand?.23f:-.23f,.85f,0};reload=false;
+        g_hands[hand].grip.position={hand?.23f:-.23f,.55f,0};reload=false;
         for(unsigned i=0;i<25;++i)reload|=(Step().wButtons&XINPUT_GAMEPAD_X)!=0;
         Check(reload);Check(Step().wButtons&XINPUT_GAMEPAD_X);
         g_hands[hand].valid=g_hands[hand].gripValid=false;Check(!(Step().wButtons&XINPUT_GAMEPAD_X));
@@ -136,14 +138,14 @@ int main(){
         for(unsigned i=0;i<25;++i)Check(!(Step().wButtons&XINPUT_GAMEPAD_X));
     }
     Reset();g_hands[0].valid=g_hands[1].valid=false;Step();
-    g_hands[1].grip.position={.23f,.85f,0};reload=false;
+    g_hands[1].grip.position={.23f,.55f,0};reload=false;
     for(unsigned i=0;i<25;++i)reload|=(Step().wButtons&XINPUT_GAMEPAD_X)!=0;
-    Check(reload); // missing aiming pose cannot cancel tracked grip/hip dwell
-    Reset();Step();g_hands[0].grip.position={-.23f,.85f,0};g_hands[1].grip.position={.23f,.85f,0};
+    Check(reload); // missing aiming pose cannot cancel tracked grip/leg dwell
+    Reset();Step();g_hands[0].grip.position={-.23f,.55f,0};g_hands[1].grip.position={.23f,.55f,0};
     for(unsigned i=0;i<25;++i)Step();
     g_hands[0].gripValid=false;Check(Step().wButtons&XINPUT_GAMEPAD_X);
     g_hands[1].gripValid=false;Check(!(Step().wButtons&XINPUT_GAMEPAD_X));
-    Reset();Step();g_hands[1].grip.position={.23f,.85f,0};
+    Reset();Step();g_hands[1].grip.position={.23f,.55f,0};
     for(unsigned i=0;i<25;++i)Step();
     Step(.01,XINPUT_GAMEPAD_START);
     for(unsigned i=0;i<40;++i)Check(!(Step().wButtons&(XINPUT_GAMEPAD_X|XINPUT_GAMEPAD_BACK|XINPUT_GAMEPAD_RIGHT_SHOULDER)));

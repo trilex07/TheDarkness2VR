@@ -1404,6 +1404,9 @@ struct TentacleHeadScope {
            !g_activeVs || (g_activeVs->hash!=0x1CB7CEE2u &&
                             g_activeVs->hash!=0x34D4EEE8u &&
                             g_activeVs->hash!=0xE3259C61u)) return;
+        // Keep the tentacle and its native-held target in the same world space.
+        // This does not change target physics, its transform, or human hand IK.
+        if(!NativeTentacleHeadAttachmentAllowed()) return;
         const StereoParams sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
         if(!sp.headGeometry || IsShadowAtlasPass(dev)) return;
         IDirect3DVertexBuffer9* vb=nullptr;

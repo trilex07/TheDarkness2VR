@@ -47,23 +47,11 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
     NativeGameplaySample owner;
     if(!CopyNativeGameplay(owner))return false;
     void* camera=reinterpret_cast<void*>(owner.camera);
-    // Refresh held-state fields at consumption, not just their prior sample.
+    // A demon hold does not transfer ownership of the separately equipped gun.
+    // Revalidate that gun's live inventory/model/fire chain below; never steer
+    // the demon's held entity or its throw/attachment/physics branch here.
     __try {
         if(!ProtectedAimCameraOwned(camera) || !NativeAimOwnerMatches(camera))return false;
-        auto avatar=**reinterpret_cast<BYTE***>(static_cast<BYTE*>(camera)+0x30);
-        auto inventory=**reinterpret_cast<BYTE***>(avatar+0x630);
-        auto tentacle=**reinterpret_cast<BYTE***>(inventory+0x20C+6*4);
-        if(!tentacle || *reinterpret_cast<DWORD*>(tentacle)!=0xFD6E00 ||
-           **reinterpret_cast<BYTE***>(tentacle+0x980)!=avatar)return false;
-        const DWORD grabMode=*reinterpret_cast<DWORD*>(tentacle+0xA78);
-        if(grabMode>=4)return false;
-        auto grabParts=*reinterpret_cast<BYTE**>(tentacle+0xA64);
-        auto grab=**reinterpret_cast<BYTE***>(grabParts+48*grabMode+0xC);
-        if(!grab || (*reinterpret_cast<DWORD*>(grab)!=0x1004FE8 && !ProtectedThrowFireOwned(grab)) ||
-           *reinterpret_cast<DWORD*>(grab+4)!=0x11126F0 || **reinterpret_cast<BYTE***>(grab+0x4C)!=tentacle)return false;
-        const auto alternate=*reinterpret_cast<DWORD**>(grab+0x584);
-        if(**reinterpret_cast<DWORD**>(grab+0x558) || **reinterpret_cast<DWORD**>(grab+0x580) ||
-           (alternate && *alternate) || **reinterpret_cast<DWORD**>(grab+0x590))return false;
         for(unsigned slot=0;slot<2;++slot) {
             void *gun=nullptr,*equippedModel=nullptr,*equippedFire=nullptr;
             if(!ProtectedWeaponOwner(camera,slot,gun,equippedModel,equippedFire) ||
@@ -89,6 +77,13 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
         }
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
     return false;
+}
+static bool CopyProtectedWeaponHandPose(DWORD camera,unsigned hand,XrPosef& pose) {
+    if(hand>=2 || !ProtectedWeaponAvailable() || !g_hands[hand].aimValid)return false;
+    void *gun=nullptr,*model=nullptr,*fire=nullptr;
+    if(!ProtectedWeaponOwner(reinterpret_cast<void*>(camera),1-hand,gun,model,fire) ||
+       !ProtectedWeaponModelOwned(model) || !ProtectedWeaponFireOwned(fire))return false;
+    pose=g_hands[hand].aim;return true;
 }
 static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {
     if(!current || !candidate)return false;
@@ -148,5 +143,6 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
 }
 #else
 static bool ProtectedWeaponModelOwned(void*) {return false;}
+static bool CopyProtectedWeaponHandPose(DWORD,unsigned,XrPosef&) {return false;}
 static void PrepareProtectedWeaponForCamera(void*) {}
 #endif

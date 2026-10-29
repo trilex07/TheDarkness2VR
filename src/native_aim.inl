@@ -50,6 +50,14 @@ static bool CopyNativeGameplay(NativeGameplaySample& out) {
     out=g_nativeGameplay; ReleaseSRWLockShared(&g_nativeGameplayLock);
     return out.camera && GetTickCount64()-out.time<150;
 }
+static bool NativeTentacleHeadAttachmentAllowed() {
+    // Native attachment/character solvers leave the held target in world space.
+    // Cancelling only the tentacle's head transform separates the visible pair.
+    // Acquisition is Busy too: do not wait for the final attachment to appear.
+    NativeGameplaySample sample;
+    return CopyNativeGameplay(sample) &&
+        sample.grab==d2vr_input::GrabFeedback::Empty && !sample.alternateHeldTarget;
+}
 static bool NativeHeldActionContext() {
 #ifdef D2VR_MATCHED_CAPTURE
     NativeGameplaySample owner;
