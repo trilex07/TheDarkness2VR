@@ -47,7 +47,7 @@ $extraCases=foreach($name in @('SetRenderState','SetStreamSource','SetStreamSour
     }
 $block=[regex]::Match($src.Substring($cases),"(?s)        case OP_ApplyStateBlock: \{.*?(?=        default:)")
 if(!$block.Success -or (!$SourceRevision -and $block.Value -notmatch 'g_vsConstantHistory\.ReplayStateBlock\(\);')){throw 'Replay state block must drop replay-eye register knowledge'}
-$actual="    d2vr_replay_state::Cache stateCache;`n" + $src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
+$actual="    d2vr_replay_state::Cache stateCache; d2vr_replay_state::Bindings bindings; using Binding=d2vr_replay_state::Bindings;`n" + $src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
     $src.Substring($bindVS,$vsEnd-$bindVS) + $src.Substring($bindPS,$psEnd-$bindPS) +
     ($extraCases -join "`n") + $block.Value +
     "        default: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks(); break;`n        }`n" + $src.Substring($footer,$end-$footer)
