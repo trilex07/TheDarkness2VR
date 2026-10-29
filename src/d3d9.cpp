@@ -24,6 +24,7 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 #include "xr_display_refresh.h"
+#include "adaptive_fps.h"
 
 #include <xinput.h>
 
@@ -355,6 +356,7 @@ int g_fovFrustumHook = 0;         // 0=off (10-byte patch @B23F7F risky at intro
 int g_hideGameWindow = 0;         // opt-in: hide desktop window when XR runs
 int g_suppressDesktopPresent = 0; // opt-in: skip desktop Present when OpenXR has the frame
 int g_disableOpenXR = 0;          // research: never call InitXR / xrWaitFrame (trace-only runs)
+static d2vr_adaptive::Mode g_adaptiveFPSMode=d2vr_adaptive::Mode::Off;
 static volatile LONG g_fovProbeInstalled = 0;
 static volatile LONG g_xrSubmittedThisFrame = 0;
 static volatile LONG g_needRecBegin = 1; // Next native surface write/BeginScene, never mid-frame EndScene.
@@ -658,6 +660,13 @@ void LoadConfig() {
     }
 
     g_asyncLogRequested = GetPrivateProfileIntA("Render", "AsyncLog", 0, chosenIni) != 0;
+    char adaptive[32]{};
+    GetPrivateProfileStringA("Render","AdaptiveFPS","OFF",adaptive,sizeof(adaptive),chosenIni);
+    g_adaptiveFPSMode=(!_stricmp(adaptive,"AUTO") || !strcmp(adaptive,"1")) ? d2vr_adaptive::Mode::Auto:
+        (!_stricmp(adaptive,"HALF") || !strcmp(adaptive,"2")) ? d2vr_adaptive::Mode::Half:d2vr_adaptive::Mode::Off;
+    if(g_adaptiveFPSMode!=d2vr_adaptive::Mode::Off)
+        Log("[AdaptiveFPS] requested=%s; runtime pacing adapter unavailable; will report unsupported, never sleep or skip XR frames",
+            g_adaptiveFPSMode==d2vr_adaptive::Mode::Auto ? "AUTO":"HALF");
     Log("[AsyncLog] requested=%d; startup synchronous, worker starts only at HookDevice", (int)g_asyncLogRequested);
     g_testMode = GetPrivateProfileIntA("Render", "TestMode", 0, chosenIni);
     g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
@@ -1356,6 +1365,43 @@ bool g_xrReady = false;
 bool g_xrRunning = false;
 XrSessionState g_xrSessionState = XR_SESSION_STATE_UNKNOWN;
 static d2vr_refresh::Display g_displayRefresh;
+static d2vr_adaptive::Controller g_adaptiveFPS;
+static thread_local d2vr_adaptive::Presentation g_adaptivePresentation;
+static uint64_t BeginAdaptivePresentation() {
+    return g_adaptiveFPSMode!=d2vr_adaptive::Mode::Off && g_submitMode==4 && g_frameBoundaryPolicy==0 ?
+        g_adaptivePresentation.Begin():0;
+}
+static void EndAdaptivePresentation(uint64_t serial,HRESULT hr,bool forwarded=true) {
+    const auto frame=g_adaptivePresentation.End(serial,forwarded && hr==D3D_OK);
+    if(!frame || GetCurrentThreadId()!=g_renderThreadId || g_xrSessionState!=XR_SESSION_STATE_FOCUSED)return;
+    const DWORD savedError=GetLastError();
+    __declspec(align(16)) unsigned char floating[512];
+    _fxsave(floating);
+    __asm fninit
+    // No runtime adapter is bound yet. This activates truthful unique-frame
+    // feedback and policy status, not an emulated cap or compositor control.
+    const double now=GetTickCount64()*.001;
+    g_adaptiveFPS.Configure(g_adaptiveFPSMode,g_displayRefresh.Hz(),now);
+    g_adaptiveFPS.Frame(frame,now);
+    const auto state=g_adaptiveFPS.State();
+    static int lastStatus=-1;
+    if(lastStatus!=int(state.status) || frame%300==0) {
+        lastStatus=int(state.status);
+        Log("[AdaptiveFPS] status=%s physicalHz=%.3f uniqueAppFPS=%.2f halfApplied=%d frame=%llu; requires fresh stereo XR + forwarded D3D_OK; complete CPU/GPU recovery input not connected",
+            d2vr_adaptive::Name(state.status),state.refresh,state.fps,int(state.half),frame);
+    }
+    _fxrstor(floating);
+    SetLastError(savedError);
+}
+class AdaptivePresentationScope {
+    uint64_t serial_=BeginAdaptivePresentation();
+public:
+    AdaptivePresentationScope()=default;
+    ~AdaptivePresentationScope(){if(serial_)g_adaptivePresentation.End(serial_,false);}
+    AdaptivePresentationScope(const AdaptivePresentationScope&)=delete;
+    AdaptivePresentationScope& operator=(const AdaptivePresentationScope&)=delete;
+    void Returned(HRESULT hr,bool forwarded=true){if(serial_)EndAdaptivePresentation(serial_,hr,forwarded);serial_=0;}
+};
 
 XrSwapchain g_swapchain[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
 uint32_t g_scW = 0, g_scH = 0;
@@ -1427,6 +1473,12 @@ struct TrackedFrame {
     float halfFovX=0,halfFovY=0,offsetX=0,cropX=1,cropY=1;
 };
 TrackedFrame g_trackedFrame;
+static void AdaptiveStereoSubmitted(XrResult result,bool havePixels,uint32_t layerCount) {
+    if(g_adaptiveFPSMode!=d2vr_adaptive::Mode::Off && result==XR_SUCCESS &&
+       g_submitMode==4 && havePixels && layerCount==1 && g_pairSubmitMetaValid &&
+       g_eyePairFrameId==g_trackedFrame.id)
+        g_adaptivePresentation.StereoSubmitted(g_trackedFrame.id);
+}
 static TrackedFrame g_lastWorldHeadContext;
 static void ResolveHeadGeometryBackgroundPose(bool world, bool geometry) {
     if(world) {
@@ -4473,6 +4525,7 @@ void PumpXR() {
                 g_displayRefresh.Stop();
             Log("[XRSession] state=%d",(int)s->state);
             if(s->state!=XR_SESSION_STATE_FOCUSED) {
+                g_adaptiveFPS.DiscardFrames();
                 ResetPoseInput(); PublishXrPad(nullptr);
             }
             if (s->state == XR_SESSION_STATE_READY) {
@@ -4502,6 +4555,7 @@ void PumpXR() {
                 for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.motion.valid=false; }
             }
         } else if(ev.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
+            g_adaptiveFPS.DiscardFrames();
             g_displayRefresh.Stop();
         } else if(g_displayRefresh.Event(ev)) {
             Log("[DisplayRefresh] changed physicalHz=%.3f; zero=unknown",double(g_displayRefresh.Hz()));
@@ -5217,6 +5271,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
 #endif
         endR=xrEndFrame(g_xrSession, &fei);
     }
+    AdaptiveStereoSubmitted(endR,havePixels,layerCount);
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1 && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
 #endif
@@ -5815,6 +5870,7 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* dev, const RECT* a, con
                                        const RGNDATA* r) {
     if(g_insidePresentation) return g_origPresent(dev,a,b,w,r);
     PresentationScope presenting;
+    AdaptivePresentationScope adaptive;
 #ifdef D2VR_MATCHED_CAPTURE
     g_presentCaller=reinterpret_cast<uintptr_t>(_ReturnAddress());
 #endif
@@ -5849,11 +5905,14 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* dev, const RECT* a, con
     }
 #ifdef D2VR_MATCHED_CAPTURE
     const HRESULT result=g_origPresent(dev, a, b, w, r);
+    adaptive.Returned(result);
     matched_capture::PresentReturned(result,true);
     g_capturePresent.Leave();
     return result;
 #else
-    return g_origPresent(dev, a, b, w, r);
+    const HRESULT result=g_origPresent(dev, a, b, w, r);
+    adaptive.Returned(result);
+    return result;
 #endif
 }
 
@@ -5861,6 +5920,7 @@ HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a,
                                          const RGNDATA* r, DWORD flags) {
     if(g_insidePresentation) return g_origPresentEx ? g_origPresentEx(dev,a,b,w,r,flags):D3D_OK;
     PresentationScope presenting;
+    AdaptivePresentationScope adaptive;
 #ifdef D2VR_MATCHED_CAPTURE
     g_presentCaller=reinterpret_cast<uintptr_t>(_ReturnAddress());
 #endif
@@ -5887,12 +5947,15 @@ HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a,
         return D3D_OK;
     }
     const HRESULT result=g_origPresentEx ? g_origPresentEx(dev, a, b, w, r, flags) : D3D_OK;
+    adaptive.Returned(result,g_origPresentEx!=nullptr);
     matched_capture::PresentReturned(result,g_origPresentEx!=nullptr);
     g_capturePresent.Leave();
     return result;
 #else
     if (g_suppressDesktopPresent && ShouldRouteDisplayToHeadsetOnly()) return D3D_OK;
-    return g_origPresentEx ? g_origPresentEx(dev, a, b, w, r, flags) : D3D_OK;
+    const HRESULT result=g_origPresentEx ? g_origPresentEx(dev, a, b, w, r, flags) : D3D_OK;
+    adaptive.Returned(result,g_origPresentEx!=nullptr);
+    return result;
 #endif
 }
 
@@ -5919,6 +5982,7 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
     }
     const bool outer=!g_insidePresentation;
     PresentationScope presenting;
+    AdaptivePresentationScope adaptive;
     void* caller=_ReturnAddress();
     g_presentCaller=reinterpret_cast<uintptr_t>(caller);
     IDirect3DDevice9* owner=nullptr;
@@ -5945,6 +6009,7 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
         d2vr_cpu_sync::Scope cpuPresent(d2vr_cpu_sync::PresentForward);
         hr=next(sc,a,b,w,r,flags); // Exactly one call; no live slot re-read.
     }
+    adaptive.Returned(hr,outer && exactCaller && !dispatch.fault);
     const bool reportReturn=dispatch.Returned(static_cast<int32_t>(hr));
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::timing.Report(g_srcW,g_srcH,g_trackedFrame.id);
@@ -5965,6 +6030,7 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
 #else
     const auto next = reinterpret_cast<PFN_SwapChainPresent>((*reinterpret_cast<void***>(sc))[3]);
     PresentationScope presenting;
+    AdaptivePresentationScope adaptive;
     // Complete the recorded game frame while its backbuffer is still valid,
     // before a DISCARD Present. Overlay scenes inside next() are not game frames.
     if (g_presentHookLevel >= 1) {
@@ -5978,6 +6044,7 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
         }
     }
     const HRESULT hr = next(sc, a, b, w, r, flags);
+    adaptive.Returned(hr);
     const LONG n = InterlockedIncrement(&g_swapChainPresentCount);
     InterlockedExchange(&g_presentSeen, 1);
     if (n == 1) {

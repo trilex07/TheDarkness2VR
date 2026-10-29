@@ -2238,3 +2238,27 @@ recording combinations, including all four draw variants, exact arguments,
 one native call, UP recording ownership, clip cleanup and sticky invalidation.
 This closes a proven publication gap; no runtime draw failure, yellow-artifact
 root cause or performance improvement has been demonstrated by this fixture.
+
+## 2026-10-29: adaptive policy and actual presentation receipts
+
+Add the OFF/AUTO/HALF policy and opt-in INI integration. OFF is the default.
+Only a fresh stereo XR_SUCCESS submission paired with a forwarded native
+D3D_OK Present can count as an application frame. Nested/aborted presentations,
+empty layers, stale pair IDs, background sessions and positive non-success
+statuses cannot count. The callback preserves LastError and live x87/MXCSR.
+
+The policy covers actual 72/90/120-family refresh rates, sustained low unique
+application cadence, hysteresis, release failures and recovery from complete,
+fresh CPU/GPU workloads independently of capped FPS. No pacing adapter is bound
+and complete workload feedback is not connected: AUTO/HALF currently report
+UNSUPPORTED. No sleeps, skipped eyes, refresh-setting changes or compositor
+control are introduced. The VR Settings UI and real runtime transitions remain
+unfinished; this is not a completed Adaptive FPS feature.
+
+Validation: 3243 x86 policy/receipt checks, 1057 actual-source host-integration
+checks with native exit 0, and 360 physical-refresh adapter checks pass. Both
+production and DiagnosticCapture x86 DLL builds pass. The integration fixture
+needs an explicit main return with its inline assembly. Bitdefender held its
+new EXE during scanning; the harness retries only sharing violation 32 on the
+same file for up to 40 seconds and never treats a failed start as a pass.
+No game, headset, runtime pacing or FPS improvement is claimed.

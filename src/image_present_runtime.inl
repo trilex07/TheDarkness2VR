@@ -11,6 +11,7 @@ struct ImagePresentScope {
     IDirect3DDevice9* owner=nullptr;
     LARGE_INTEGER forwardStart{};
     bool forwardActive=false;
+    uint64_t adaptiveSerial=0;
 };
 static thread_local ImagePresentScope g_imagePresentScope;
 static void ImagePresentBefore(IDirect3DSwapChain9* sc,uintptr_t caller,bool qualified,bool ready) {
@@ -31,6 +32,7 @@ static void ImagePresentBefore(IDirect3DSwapChain9* sc,uintptr_t caller,bool qua
     }
     const HRESULT hr=sc->GetDevice(&state.owner);
     if(FAILED(hr) || !state.owner) {g_imagePresent.Fail("GetDevice failed at native Present");return;}
+    state.adaptiveSerial=BeginAdaptivePresentation();
     g_presentCaller=caller;
     const auto decision=g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent));
     {
@@ -50,6 +52,8 @@ static void ImagePresentForwardEnd() {
 }
 static void ImagePresentAfter(IDirect3DSwapChain9* sc,uintptr_t caller,bool qualified,bool ready,HRESULT hr) {
     auto& state=g_imagePresentScope;
+    if(state.adaptiveSerial)
+        EndAdaptivePresentation(state.adaptiveSerial,hr,state.opened && qualified && ready && !g_imagePresent.Failed());
     if(state.opened) {
         if(g_imagePresent.Failed()) matched_capture::Reject("external Present observer fault");
         matched_capture::PresentReturned(hr,true);
