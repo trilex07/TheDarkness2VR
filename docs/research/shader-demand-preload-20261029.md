@@ -43,3 +43,12 @@ stereo regressions and both full x86 configurations must pass before deployment.
 Runtime validation remains outstanding. The first session learns demand; the
 next startup can use it. Unknown shaders require successful native creation
 before learning. No reduction in milliseconds or FPS improvement is claimed.
+
+The existing actual-source x86 D3D9 REF fixture also passes after updating its
+archive-format and learned-inventory expectations. It exercises the real
+`Create`, `PrepareState`, `Tick`, background disk writer and Reset callbacks:
+the first startup prepares two programs, one depleted VS request learns a
+second independent object, and the next startup prepares four objects for
+three programs. PAGE_GUARD remains set after rejected capture; a 16-thread
+contention test transfers one inventory object exactly once. This is software
+D3D9 fixture evidence, not headset, driver-cost or game FPS validation.

@@ -36,7 +36,7 @@ static void Core() {
         for(auto& t:threads)t.join();CHECK(winners==1);
         CHECK(!pool.Take(&device,code,code[0],result));
         uint64_t version=0;const auto archive=pool.Archive(version);
-        CHECK(version==2 && d2vr_startup_shader::Validate(reinterpret_cast<const unsigned char*>(archive.data()),archive.size()*4));
+        CHECK(version==2 && ValidateArchive(reinterpret_cast<const unsigned char*>(archive.data()),archive.size()*4));
         pool.ClearObjects();CHECK(a.releases==0 && b.releases==1);
         a.Release();pool.ExpireOne();CHECK(a.releases==1 && b.releases==1);
     }
@@ -136,17 +136,17 @@ int main(int argc,char**) {
     current->nextTick=0;Tick();
     const auto deadline=GetTickCount64()+5000;
     while(current->writing.load() && GetTickCount64()<deadline) Sleep(10);
-    CHECK(!current->writing && current->saved==3 && current->writeFailures==0);
+    CHECK(!current->writing && current->saved==4 && current->writeFailures==0); // learned second VS creation + new PS
     CHECK(ReadArchive(cache).size()>8);
     v1->Release();v2->Release();p1->Release();p2->Release();state.store(nullptr);current.reset();
     current=PrepareState(device,cache,seed);state.store(current.get());CHECK(current->pool.Size()==3);
     // A long menu/readiness delay cannot silently destroy the startup inventory.
     // Advance Tick's clock without sleeping; no driver calls occur in Tick.
     const auto late=GetTickCount64()+3600000;
-    CHECK(current->pool.Pending()==3);
+    CHECK(current->pool.Pending()==4); // two independent VS objects learned above
     current->nextTick=late+10000;
     for(unsigned i=0;i<1024;++i)Tick(late+i);
-    CHECK(current->pool.Pending()==3);
+    CHECK(current->pool.Pending()==4);
     current->nextTick=0;
     if(hardware) {BeginReset(device);HR(deviceEx->ResetEx(&pp,nullptr));EndReset(device,D3D_OK);}
     const unsigned before=creates;
