@@ -89,3 +89,37 @@ null/non-null binds and successful transitions. The 100,000-publication and
 24,486 projection-history regressions and both x86 builds pass. This repairs
 a proven error path; its contribution to observed HMD flicker is unmeasured.
 
+## Live state-block shader resynchronization, 2026-10-29
+
+The actual Hook_SBApply previously cleared raw history and recorded Apply before
+calling the driver, then retained the previous active VS/PS metadata even if
+Apply restored different shaders. Replay and DeviceSnapshot::Apply already call
+SyncActiveShader. A CPU fixture executing the actual old hook plus actual sync
+fails check4, line61 against18f483a: live metadata differs from device bindings.
+
+The hook now forwards Apply once and returns its exact HRESULT. Only success
+invalidates the raw bank/shadow-pass knowledge and records the command. A borrowed
+device from the block is used to resynchronize both shaders before later uploads;
+its returned COM reference is released once. Failed/missing device lookup clears
+metadata and rejects an active recording. Failed Apply leaves prior known state
+and recording intact. No native patch, EXE byte or configuration change is made.
+
+Crucial scope: Render.StateBlockHook defaults OFF and is absent from both currently
+installed INIs. This corrects a dormant optional path; it does NOT explain the
+current HMD artifacts and was NOT enabled or deployed. Dynamic VB/IB versions and
+draw-inherited projection ownership remain unproven/open. No runtime saving or
+permanent flicker fix is claimed.
+
+Validation:232094 checks over16000 successful transitions; both original success
+receipts, null bindings, failed Apply/GetDevice/shader queries, reference balance,
+no COM callbacks under the recorder lock, exact order and raw-bank invalidation.
+Existing pixel metadata/100000 concurrent publications and replay surfaces
+128streams/896calls pass. Production and diagnostic x86 builds pass. An adjacent
+unchanged DeviceSnapshot CPU fixture linked but Windows refused execution in a
+fresh isolated TEMP directory; it is NOT counted as passing this turn. No game,
+GPU or HMD run was performed.
+
+Contracts: [state-block application](https://learn.microsoft.com/en-us/windows/win32/api/d3d9/nf-d3d9-idirect3dstateblock9-apply),
+[captured state](https://learn.microsoft.com/en-us/windows/win32/direct3d9/state-blocks-save-and-restore-state),
+[device lookup](https://learn.microsoft.com/en-us/windows/win32/api/d3d9/nf-d3d9-idirect3dstateblock9-getdevice).
+

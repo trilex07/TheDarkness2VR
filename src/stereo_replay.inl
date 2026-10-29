@@ -2242,10 +2242,25 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 
 // ------------------------------------------------------------- state block hooks
 static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
+    const HRESULT result=g_origSBApply ? g_origSBApply(sb):D3DERR_INVALIDCALL;
+    if(FAILED(result))return result;
     InvalidateShadowAtlasPass();
     {RecLockGuard lock;g_vsConstantHistory.live.Clear();}
+    // Apply can restore VS/PS without passing through either shader setter.
+    // Replay and our own snapshots already resynchronize those bindings. Do
+    // the same for the live eye before its next constant upload/draw; otherwise
+    // live and replay interpret the same native registers as different shaders.
+    IDirect3DDevice9* device=nullptr;
+    if(sb && SUCCEEDED(sb->GetDevice(&device)) && device)SyncActiveShader(device);
+    else {
+        SetActiveVertexShaderMetadata(nullptr);
+        SetActivePixelShaderMetadata(nullptr);
+        RecLockGuard lock;
+        if(g_recActive)g_recOverflow=true;
+    }
+    if(device)device->Release();
     if (g_recActive) RecEmit(OP_ApplyStateBlock, 0, (uint32_t)(uintptr_t)sb);
-    return g_origSBApply ? g_origSBApply(sb) : D3D_OK;
+    return result;
 }
 
 static void PatchStateBlock(IDirect3DStateBlock9* sb) {
