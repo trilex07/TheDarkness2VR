@@ -96,10 +96,11 @@ struct Actions {
 // menu/tracking loss cancels capture once; reacquisition needs trigger release.
 class Capture {
     uint64_t frame_=0,surface_=0;
+    XrSpace space_=XR_NULL_HANDLE;
     bool down_=false,armed_=false;
     Actions Cancel() {
         Actions a;a.release=down_;a.surface=surface_;
-        down_=armed_=false;surface_=0;return a;
+        down_=armed_=false;surface_=0;space_=XR_NULL_HANDLE;return a;
     }
 public:
     Actions Reset(){frame_=0;return Cancel();}
@@ -107,6 +108,11 @@ public:
         Hit hit;
         if(!std::isfinite(aim.trigger)||aim.trigger<0||aim.trigger>1||!Project(surface,aim,hit))
             return Cancel();
+        // Matching new poses do not preserve a drag begun in another space.
+        // Cancel before duplicate-frame suppression so replacement cannot keep
+        // a synthetic button down until the next input poll.
+        if(space_ && space_!=surface.space)return Cancel();
+        space_=surface.space;
         if(aim.frame<frame_){frame_=aim.frame;return Cancel();}
         if(aim.frame==frame_)return {}; // same application frame cannot click twice
         frame_=aim.frame;

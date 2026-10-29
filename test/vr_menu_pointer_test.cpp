@@ -97,6 +97,19 @@ int main() {
     aim.menu=true;step(0);CHECK(step(1).press);
     aim.trigger=NAN;a=capture.Update(surface,aim);CHECK(a.release);CHECK(!capture.Reset().release);
     step(0);CHECK(step(1).press);a=capture.Reset();CHECK(a.release);CHECK(!capture.Reset().release);
+    // A reference-space replacement invalidates an in-flight native drag,
+    // even if the producer keeps the same surface identity and both new poses
+    // agree on the replacement space. Held trigger cannot reacquire the menu.
+    step(0);CHECK(step(1).press);
+    const auto oldSpace=surface.space;
+    surface.space=aim.space=(XrSpace)0x9876;
+    a=step(1);CHECK(a.release && !a.press && !a.captured && !a.visible);
+    CHECK(!step(1).press);step(0);CHECK(step(1).press);
+    surface.space=aim.space=oldSpace;
+    a=capture.Update(surface,aim);CHECK(a.release && !a.captured); // same frame, new space
+    CHECK(!capture.Update(surface,aim).release);
+    CHECK(!step(1).press);step(0);CHECK(step(1).press);
+    capture.Reset();
     for(unsigned cycle=0;cycle<10000;++cycle) {
         step(0);CHECK(step(1).press);CHECK(!step(1).press);
         CHECK(step(0).release);CHECK(!step(0).release);
