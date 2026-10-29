@@ -1950,6 +1950,8 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     // No driver/state reuse across frames. Capture retains exact original
     // upload boundaries so its per-record projection witnesses stay authoritative.
     static d2vr_replay_state::Cache stateCache;stateCache.Configure(g_replayStateFilter);
+    static d2vr_replay_state::Bindings bindings;bindings.Clear();
+    using Binding=d2vr_replay_state::Bindings;
     bool replayComplete=!g_recOverflow && (!g_replayBufferVersions || !g_bufferUnsafeAlias.load(std::memory_order_acquire));
     if(!ReplayInheritedBuffers(dev))replayComplete=false;
     bool batchEnabled = g_replayConstantBatch;
@@ -2042,10 +2044,11 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if(FAILED(g_orig.SetClipPlane(dev, r.a[0], (const float*)(dataBase + r.a[4]))))replayComplete=false;
             break;
         case OP_SetRenderState:
+            if(!IsConstantRenderStateBinding(r.a[0],r.a[1]))bindings.Clear();
             if(FAILED(stateCache.Forward(IsConstantRenderStateBinding(r.a[0],r.a[1])?d2vr_replay_state::Cache::Render(r.a[0]):-1,r.a[1],[&](){return g_orig.SetRenderState(dev, (D3DRENDERSTATETYPE)r.a[0], r.a[1]);})))replayComplete=false;
             break;
         case OP_SetTexture:
-            if(FAILED(g_orig.SetTexture(dev, r.a[0], (IDirect3DBaseTexture9*)(uintptr_t)r.a[1])))replayComplete=false;
+            if(FAILED(bindings.Forward(Binding::Texture(r.a[0]),r.a[1],0,0,[&](){return g_orig.SetTexture(dev, r.a[0], (IDirect3DBaseTexture9*)(uintptr_t)r.a[1]);})))replayComplete=false;
             if (r.a[0] < 16) replayTex[r.a[0]] = (const void*)(uintptr_t)r.a[1];
             break;
         case OP_SetTextureStageState:
@@ -2078,6 +2081,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_DrawPrimitiveUP: {
+            bindings.Invalidate(Binding::Stream(0));
             HOOK_MARK(900 + r.op);
             const void* data = (const void*)(dataBase + r.a[3]);
             const UiClipState clip = BeginScaledUiClip(dev);
@@ -2090,6 +2094,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_DrawIndexedPrimitiveUP: {
+            bindings.Invalidate(Binding::Stream(0));bindings.Invalidate(Binding::Indices);
             HOOK_MARK(900 + r.op);
             struct DipAux { uint32_t vbOff, stride, ibOff, idxCount, idxSize; };
             const DipAux* aux = (const DipAux*)(dataBase + r.a[5]);
@@ -2107,17 +2112,19 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_SetVertexDeclaration:
-            if(FAILED(g_orig.SetVertexDeclaration(dev, (IDirect3DVertexDeclaration9*)(uintptr_t)r.a[0])))replayComplete=false;
+            if(FAILED(bindings.Forward(Binding::Declaration,r.a[0],0,0,[&](){return g_orig.SetVertexDeclaration(dev, (IDirect3DVertexDeclaration9*)(uintptr_t)r.a[0]);})))replayComplete=false;
             break;
         case OP_SetFVF:
+            bindings.Invalidate(Binding::Declaration);
             if(FAILED(g_orig.SetFVF(dev, r.a[0])))replayComplete=false;
             break;
         case OP_SetVertexShader: {
             IDirect3DVertexShader9* sh = (IDirect3DVertexShader9*)(uintptr_t)r.a[0];
-            if(SUCCEEDED(g_orig.SetVertexShader(dev,sh))) {
-                SetActiveVertexShaderMetadata(sh);
-                g_replayVs = (const void*)sh;
-            } else replayComplete=false;
+            if(FAILED(bindings.Forward(Binding::VertexShader,r.a[0],0,0,[&](){
+                const HRESULT result=g_orig.SetVertexShader(dev,sh);
+                if(SUCCEEDED(result)){SetActiveVertexShaderMetadata(sh);g_replayVs=sh;}
+                return result;
+            })))replayComplete=false;
             break;
         }
         case OP_SetVSConstF: {
@@ -2157,27 +2164,36 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_SetVSConstB:
             if(FAILED(g_orig.SetVertexShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[4]), r.a[1])))replayComplete=false;
             break;
-        case OP_SetStreamSource:
-            if(FAILED(g_orig.SetStreamSource(dev, r.a[0], static_cast<IDirect3DVertexBuffer9*>(ReplayBuffer(
-                reinterpret_cast<IUnknown*>(uintptr_t(r.a[1])),replayComplete)), r.a[2], r.a[3])))replayComplete=false;
+        case OP_SetStreamSource: {
+            // Resolve/validate before filtering: identical source handles can
+            // become invalid through a failed or unsupported content update.
+            auto* buffer=static_cast<IDirect3DVertexBuffer9*>(ReplayBuffer(
+                reinterpret_cast<IUnknown*>(uintptr_t(r.a[1])),replayComplete));
+            if(FAILED(bindings.Forward(Binding::Stream(r.a[0]),uintptr_t(buffer),r.a[2],r.a[3],
+                [&](){return g_orig.SetStreamSource(dev,r.a[0],buffer,r.a[2],r.a[3]);})))replayComplete=false;
             break;
+        }
         case OP_SetStreamSourceFreq:
-            if(FAILED(g_orig.SetStreamSourceFreq(dev, r.a[0], r.a[1])))replayComplete=false;
+            if(FAILED(bindings.Forward(Binding::Frequency(r.a[0]),r.a[1],0,0,[&](){return g_orig.SetStreamSourceFreq(dev, r.a[0], r.a[1]);})))replayComplete=false;
             break;
         case OP_BufferWrite:
             if(!ReplayBufferWrite(r,dataBase))replayComplete=false;
             break;
-        case OP_SetIndices:
-            if(FAILED(g_orig.SetIndices(dev, static_cast<IDirect3DIndexBuffer9*>(ReplayBuffer(
-                reinterpret_cast<IUnknown*>(uintptr_t(r.a[0])),replayComplete)))))replayComplete=false;
+        case OP_SetIndices: {
+            auto* buffer=static_cast<IDirect3DIndexBuffer9*>(ReplayBuffer(
+                reinterpret_cast<IUnknown*>(uintptr_t(r.a[0])),replayComplete));
+            if(FAILED(bindings.Forward(Binding::Indices,uintptr_t(buffer),0,0,
+                [&](){return g_orig.SetIndices(dev,buffer);})))replayComplete=false;
             break;
+        }
         case OP_SetPixelShader:
             {
             const auto shader=(IDirect3DPixelShader9*)(uintptr_t)r.a[0];
-            if(SUCCEEDED(g_orig.SetPixelShader(dev,shader))) {
-                g_replayPs = shader;
-                SetActivePixelShaderMetadata(g_replayPs);
-            } else replayComplete=false;
+            if(FAILED(bindings.Forward(Binding::PixelShader,r.a[0],0,0,[&](){
+                const HRESULT result=g_orig.SetPixelShader(dev,shader);
+                if(SUCCEEDED(result)){g_replayPs=shader;SetActivePixelShaderMetadata(g_replayPs);}
+                return result;
+            })))replayComplete=false;
             }
             break;
         case OP_SetPSConstF: {
@@ -2249,7 +2265,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         case OP_UpdateTexture:
             break;
         case OP_ApplyStateBlock: {
-            stateCache.Clear();
+            stateCache.Clear();bindings.Clear();
             InvalidateShadowAtlasPass();
             HOOK_MARK(900 + r.op);
             IDirect3DStateBlock9* sb = (IDirect3DStateBlock9*)(uintptr_t)r.a[0];
@@ -2287,7 +2303,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 constants.Flush(sendConstants);
         }
         } __except (1) {
-            stateCache.Clear();
+            stateCache.Clear();bindings.Clear();
             replayComplete=false;
             constants.Abort(); constantWindow.Abort(); batchEnabled=false;
 #ifdef D2VR_MATCHED_CAPTURE

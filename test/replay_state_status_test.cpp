@@ -42,6 +42,7 @@ static bool Actual(const std::vector<Rec>& records){
     alignas(16) const uint8_t data[512]{};const uint8_t* dataBase=data;
     const void* replayTex[16]{};IDirect3DDevice9* dev=nullptr;
     d2vr_replay_state::Cache stateCache;
+    d2vr_replay_state::Bindings bindings;using Binding=d2vr_replay_state::Bindings;
     bool replayComplete=true;
     for(const auto& r:records)switch((RecOp)r.op){
 @CASES@

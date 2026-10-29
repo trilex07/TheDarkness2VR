@@ -8,6 +8,7 @@
 #include <thread>
 #include <vector>
 #include "../src/pixel_shader_metadata.h"
+#include "../src/replay_state_cache.h"
 #include "../src/composite_shader_patch.h"
 #define CHECK(x) do{if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 enum {SI_END=0xffff,SI_COMMENT=0xfffe,OP_SetPixelShader=1,OP_SetVertexShader=2};
@@ -71,6 +72,7 @@ template<class F> static HRESULT Create(IDirect3DDevice9* dev,const DWORD* code,
 static const void *g_replayVs=nullptr,*g_replayPs=nullptr;
 static bool ReplayBind(unsigned op,uintptr_t pointer) {
     bool replayComplete=true;auto dev=expectedDevice;
+    d2vr_replay_state::Bindings bindings;using Binding=d2vr_replay_state::Bindings;
     struct {uint32_t a[1];} r{{uint32_t(pointer)}};
     switch(op) {
 #include "actual_shader_replay.inl"

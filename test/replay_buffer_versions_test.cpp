@@ -127,6 +127,7 @@ static bool Replay(){
     RecLockGuard guard;g_recActive=false;
     if(g_bufferWritesApplied)return false;
     d2vr_replay_state::Cache stateCache;
+    d2vr_replay_state::Bindings bindings;using Binding=d2vr_replay_state::Bindings;
     bool replayComplete=!g_recOverflow && !g_bufferUnsafeAlias.load();IDirect3DDevice9* dev=device;const int eye=1;
     const uint8_t* dataBase=g_recData.data();
     if(!ReplayInheritedBuffers(dev))replayComplete=false;
