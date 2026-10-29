@@ -23,6 +23,7 @@
 #define XR_USE_GRAPHICS_API_D3D11
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
+#include "xr_display_refresh.h"
 
 #include <xinput.h>
 
@@ -1354,6 +1355,7 @@ ID3D11DeviceContext* g_ctx11 = nullptr;
 bool g_xrReady = false;
 bool g_xrRunning = false;
 XrSessionState g_xrSessionState = XR_SESSION_STATE_UNKNOWN;
+static d2vr_refresh::Display g_displayRefresh;
 
 XrSwapchain g_swapchain[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
 uint32_t g_scW = 0, g_scH = 0;
@@ -4352,17 +4354,24 @@ bool InitXR() {
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent && (!g_nativeImageGuard.enabled || !g_imagePresent.Ready() || !g_imagePresent.InPresentation())) return false;
 #endif
-    const char* exts[] = { XR_KHR_D3D11_ENABLE_EXTENSION_NAME };
+    const bool refreshAdvertised=g_displayRefresh.Discover(&xrEnumerateInstanceExtensionProperties);
+    const char* exts[] = { XR_KHR_D3D11_ENABLE_EXTENSION_NAME,XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME };
     XrVersion vers[] = { XR_MAKE_VERSION(1, 0, 34), XR_CURRENT_API_VERSION };
     XrResult r = XR_ERROR_RUNTIME_FAILURE;
-    for (XrVersion v : vers) {
-        XrInstanceCreateInfo ici{ XR_TYPE_INSTANCE_CREATE_INFO };
-        strcpy_s(ici.applicationInfo.applicationName, "Darkness2VR");
-        ici.applicationInfo.apiVersion = v;
-        ici.enabledExtensionCount = 1;
-        ici.enabledExtensionNames = exts;
-        r = xrCreateInstance(&ici, &g_xrInstance);
-        if (XR_SUCCEEDED(r)) break;
+    // An optional capability must not prevent the existing D3D11 session from
+    // starting. Retry the original extension list if its admission fails.
+    for(unsigned extensionAttempt=0;extensionAttempt<(refreshAdvertised?2u:1u);++extensionAttempt) {
+        const bool enableRefresh=refreshAdvertised && extensionAttempt==0;
+        for (XrVersion v : vers) {
+            XrInstanceCreateInfo ici{ XR_TYPE_INSTANCE_CREATE_INFO };
+            strcpy_s(ici.applicationInfo.applicationName, "Darkness2VR");
+            ici.applicationInfo.apiVersion = v;
+            ici.enabledExtensionCount = enableRefresh?2:1;
+            ici.enabledExtensionNames = exts;
+            r = xrCreateInstance(&ici, &g_xrInstance);
+            if (XR_SUCCEEDED(r)) {g_displayRefresh.Enable(enableRefresh);break;}
+        }
+        if(XR_SUCCEEDED(r))break;
     }
     if (XR_FAILED(r)) {
         Log("xrCreateInstance failed (%d) — connect headset / OpenXR runtime first", (int)r);
@@ -4460,6 +4469,8 @@ void PumpXR() {
         if (ev.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
             auto* s = reinterpret_cast<XrEventDataSessionStateChanged*>(&ev);
             g_xrSessionState=s->state;
+            if(s->state==XR_SESSION_STATE_LOSS_PENDING || s->state==XR_SESSION_STATE_EXITING)
+                g_displayRefresh.Stop();
             Log("[XRSession] state=%d",(int)s->state);
             if(s->state!=XR_SESSION_STATE_FOCUSED) {
                 ResetPoseInput(); PublishXrPad(nullptr);
@@ -4469,6 +4480,9 @@ void PumpXR() {
                 bi.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
                 if (XR_SUCCEEDED(xrBeginSession(g_xrSession, &bi))) {
                     g_xrRunning = true;
+                    g_displayRefresh.Start(g_xrInstance,g_xrSession,&xrGetInstanceProcAddr);
+                    Log("[DisplayRefresh] physicalHz=%.3f extensionEnabled=%d; zero=unknown; application pacing is separate; half-rate control unimplemented",
+                        double(g_displayRefresh.Hz()),int(g_displayRefresh.Enabled()));
                     g_anchorValid = false;
                     g_vrRefValid = false;
                     Log("XR session running (TestMode=%d SubmitMode=%d TrackingSubMode=%d)",
@@ -4482,10 +4496,15 @@ void PumpXR() {
                 if (g_gameHwnd) ShowWindow(g_gameHwnd, SW_SHOWNA);
                 xrEndSession(g_xrSession);
                 g_xrRunning = false;
+                g_displayRefresh.Stop();
                 g_trackedFrame.open=false;
                 PublishXrPad(nullptr);
                 for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.motion.valid=false; }
             }
+        } else if(ev.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
+            g_displayRefresh.Stop();
+        } else if(g_displayRefresh.Event(ev)) {
+            Log("[DisplayRefresh] changed physicalHz=%.3f; zero=unknown",double(g_displayRefresh.Hz()));
         } else if(ev.type==XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
             g_vrRefValid=false; g_anchorValid=false; g_lockedHeadValid=false;
             g_headGeometryReferenceValid=false; ResetPoseInput();
@@ -5226,8 +5245,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
         std::sort(intervals.begin(),intervals.end());
         const double scale=1000.0/(cadenceNow-cadenceStart);
         const double p95=intervals.empty() ? 0:intervals[(intervals.size()-1)*95/100];
-        Log("[XRCadence] layers=%.1f/s game-boundaries=%.1f/s world-bearing=%.1f/s boundary-p95=%.2fms runtimePeriod=%.3fms (not simulation FPS)",
-            cadenceSubmits*scale,cadencePresents*scale,cadenceWorld*scale,p95,fs.predictedDisplayPeriod/1000000.0);
+        Log("[XRCadence] layers=%.1f/s game-boundaries=%.1f/s world-bearing=%.1f/s boundary-p95=%.2fms runtimePeriod=%.3fms physicalHz=%.3f (zero=unknown; not simulation FPS)",
+            cadenceSubmits*scale,cadencePresents*scale,cadenceWorld*scale,p95,fs.predictedDisplayPeriod/1000000.0,double(g_displayRefresh.Hz()));
         cadenceStart = cadenceNow; cadenceSubmits=cadenceWorld=cadencePresents=0; intervals.clear();
     }
     static int endFail = 0;

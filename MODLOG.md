@@ -2121,3 +2121,23 @@ two-input scenarios. It checks sampled pixel equality, reader retirement,
 concurrent D3D9 work, joins, failure refusal and Reset/recreation. No game or
 OpenXR calls occur. Game CPU/GPU savings, latency, HMD image correctness and
 stable 90 FPS remain unproven.
+
+## 2026-10-29: separate physical refresh from application pacing
+
+The first adaptive-FPS prerequisite now reads physical Hz only through an
+advertised and enabled XR_FB_display_refresh_rate extension. Instance startup
+falls back to the original D3D11-only extension list if optional admission
+fails. A successful session query establishes the rate; refresh-change events
+update it. Stopped/lost sessions and invalid results invalidate it. Unsupported
+runtimes report zero/unknown, never an assumed 90 Hz or the inverse of an
+already throttled predictedDisplayPeriod. Discovery is bounded; queries occur
+on session start, with events thereafter, rather than on every frame.
+
+The actual adapter passes 360 x86 checks for discovery/list growth, unsupported
+functions, failed queries, session-loss results, fractional Hz, rate changes
+and stopped-session invalidation. This is a prerequisite, not an implemented
+OFF/AUTO/HALF menu or runtime half-rate control. No frame sleeps, dropped stereo
+eyes, display-rate requests or SteamVR settings are introduced.
+
+API contract: https://registry.khronos.org/OpenXR/specs/1.0/man/html/xrGetDisplayRefreshRateFB.html
+and https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrEventDataDisplayRefreshRateChangedFB.html
