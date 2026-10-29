@@ -2028,3 +2028,28 @@ A receipt once per changed rejected equipped identity records class/type,
 model and fire tables without a per-frame log stream. No angle bias or unsafe
 receiver admission was added. Native EXE/static tables and input routing stay
 unchanged. HMD aiming and menu flicker acceptance remain open.
+
+## 2026-10-29: controller shot matrix after native camera replacement
+
+Actual CFBBA0 ignores its incoming controller matrix on the camera-enabled
+branch: CFBC38..CFBD15 obtains native camera/avatar vectors and75C320 builds
+a new matrix, later passed by CFBD60 to C47570. The previous entry-only
+adapter could therefore pass all ABI tests yet fail to steer that branch.
+Ghidra exports TEMP/d2vr-left-weapon-contract.txt and
+TEMP/d2vr-shot-consumer-contract.txt confirm the data flow and full consumer.
+
+The equipped fire instance now publishes an immutable full CFBBA0 copy with
+all11 relative calls relocated and only CFBD60 redirected to the existing
+controller adapter. It calls original C47570 once after fresh ownership/pose
+validation. Native reference/query/no-shot/cleanup paths are preserved; no
+EXE, static table, ammo, animation or input mapping changes. Both full native
+fire and C47570 bodies are SHA-pinned before publication. Model code unchanged.
+
+The fixture executes the exact private551-byte CFBBA0 body3200 times against
+owned callees. It reproduces camera replacement of an already-correct incoming
+controller matrix, then checks final controller matrices for each hand,
+camera/fallback/no-shot branches, reference balances, unchanged five arguments
+and outgoing AL. Three absolute data operands and11 external calls are
+relocated only inside fixture-owned memory; original bytes stay outside Git.
+This strengthens CPU consumer evidence beyond the previous stub-only ABI test.
+Physical gun alignment, exact left gun admission and90FPS remain unverified.

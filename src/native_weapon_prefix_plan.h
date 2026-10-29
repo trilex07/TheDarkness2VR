@@ -25,6 +25,20 @@ inline const Block weaponHelpers[]={
     {reinterpret_cast<void*>(0x481F50),0x116,"53775fe72a7dd3c54f15e8ce8ab7d6a9faa15c0827cbf50cbf03b314cb383258"},
 };
 inline const Block weaponFireBlock{reinterpret_cast<void*>(0xCFBBA0),0x227,"b6aa8249b730a8a3d571fe611db42417d66c151f20b7984c545675a7ab4c910a"};
+inline const Call weaponFireCalls[]={
+    {0,0x49,0x4BF720},
+    {0,0x98,0xD30BF0},
+    {0,0xB0,0xD30BF0},
+    {0,0xED,0x402550},
+    {0,0x132,0x402550},
+    {0,0x152,0x75C320},
+    {0,0x1C0,0xC47570},
+    {0,0x1D6,0x402550},
+    {0,0x1EC,0xE12979},
+    {0,0x206,0x402550},
+    {0,0x21C,0xE12979},
+};
+inline const Block weaponShotConsumer{reinterpret_cast<void*>(0xC47570),0x35D,"223bfc40a7bf09bb59b9d594802aceedff4a04b3c753978612cab69da80660e2"};
 inline constexpr unsigned weaponModelTableCount=131;
 inline const char* weaponModelTableDigest="f9e351c2089296138ea67cca141ac7f6683c15d5493db0406d9fad1ceb5f6bd7";
 inline constexpr unsigned weaponFireTableCount=33;

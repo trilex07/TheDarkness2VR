@@ -16,6 +16,7 @@ def main():
     parser.add_argument("--exe", required=True, type=Path)
     parser.add_argument("--header", type=Path)
     parser.add_argument("--check-header", type=Path)
+    parser.add_argument("--fire-fixture-body", type=Path)
     args = parser.parse_args()
     assert hashlib.sha256(args.exe.read_bytes()).hexdigest() == cfg.EXE_SHA
     pe = pefile.PE(str(args.exe))
@@ -58,7 +59,7 @@ def main():
             helpers[-1] = (0x481F50, i.address + i.size - 0x481F50)
             break
     assert helpers[-1][1]
-    for address, size in helpers + [(FIRE, FIRE_SIZE)]:
+    for address, size in helpers + [(FIRE, FIRE_SIZE),(0xC47570,0x35D)]:
         for i in decoder.disasm(read(address, size), address):
             for operand in i.operands:
                 if operand.type == cs.x86.X86_OP_MEM and operand.mem.base == cs.x86.X86_REG_EBP:
@@ -73,7 +74,14 @@ def main():
                  "inline const Block weaponHelpers[]={"])
     text.extend('    {reinterpret_cast<void*>(0x%X),0x%X,"%s"},' %
                 (address, size, hashlib.sha256(read(address, size)).hexdigest()) for address, size in helpers)
-    text.extend(["};", 'inline const Block weaponFireBlock{reinterpret_cast<void*>(0xCFBBA0),0x227,"%s"};' % fire["sha256"]])
+    assert (0xCFBD60-FIRE,0xC47570) in fire['calls']
+    assert sum(target==0xC47570 for _,target in fire['calls'])==1
+    consumer=read(0xC47570,0x35D)
+    assert consumer[-3:]==bytes.fromhex('c21400')
+    text.extend(["};", 'inline const Block weaponFireBlock{reinterpret_cast<void*>(0xCFBBA0),0x227,"%s"};' % fire["sha256"],
+                 "inline const Call weaponFireCalls[]={"])
+    text.extend("    {0,0x%X,0x%X}," % c for c in fire['calls'])
+    text.extend(["};",'inline const Block weaponShotConsumer{reinterpret_cast<void*>(0xC47570),0x35D,"%s"};' % hashlib.sha256(consumer).hexdigest()])
     for name, table, count, slot, entry in [("weaponModel", 0xFD6BC0, 131, 0xF0, MODEL),
                                            ("weaponFire", 0x1010AE0, 33, 0x64, FIRE)]:
         assert int.from_bytes(read(table + slot, 4), "little") == entry
@@ -91,7 +99,11 @@ def main():
         assert args.check_header.read_text(encoding="utf-8-sig") == result
     if args.header:
         args.header.write_text(result, encoding="utf-8")
-    print(f"PASS native weapon CFG: {len(calls)} prefix calls,2 native early exits,original AD94A7 continuation;131+33 method tables;fire original ABI ret20; not runtime proof")
+    if args.fire_fixture_body:
+        destination=args.fire_fixture_body.resolve()
+        assert not destination.is_relative_to(Path(__file__).resolve().parents[1]), 'Keep original bytes outside Git'
+        destination.write_bytes(read(FIRE,FIRE_SIZE))
+    print(f"PASS native weapon CFG: {len(calls)} model prefix calls,2 native early exits,original AD94A7 continuation;{len(fire['calls'])} fire calls, final CFBD60->C47570;131+33 tables;ret20; not runtime proof")
 
 
 if __name__ == "__main__":

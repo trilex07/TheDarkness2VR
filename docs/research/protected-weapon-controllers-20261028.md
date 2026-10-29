@@ -13,18 +13,20 @@ trigger routing are unchanged. No FPS or physical headset result is claimed.
   Both early exits resume at original `AD95C3`. Dirty flags, world matrix,
   bounds, physics and action callbacks run at their original native PCs.
 - Fire class `1010AE0`, 33 methods, slot `64` -> `CFBBA0`.
-  A private instance-table adapter supplies the same controller matrix to
-  **original `CFBBA0` once**, preserving all five arguments and `RET 14h`.
-  This is a void thiscall method, not a boolean shortcut to `C47570`.
-  The original reference handling and `CFBD60 -> C47570` call remain native.
+  A private full copy preserves this method's native reference handling, camera
+  queries, no-shot branch and cleanup. Its final `CFBD60 -> C47570` call supplies
+  the controller matrix after native camera selection. All five arguments,
+  `RET 14h` and the consumer's outgoing return registers are retained. This is
+  not a shortcut around `CFBBA0`; its incoming matrix can be overwritten by the
+  camera branch, so the earlier entry-only adapter was insufficient.
 - Independent OpenXR aim spaces: primary slot uses right controller, secondary
   uses left. Head-reference-relative full rotation and position compose with
   the owner's native camera matrix. Reach is checked in metres; translation
   uses `GameUnitsPerMeter`. Peer tracking loss never gates the active hand.
 - Every consumption rechecks reciprocal selected-avatar/camera/inventory/gun,
   currently equipped model, current fire mode and fire receiver ownership.
-  Current tentacle acquisition/attachment/alternate target blocks the override,
-  preserving native held-enemy/prop animation and actions. No cached receiver
+  Tentacle acquisition/attachment/alternate targets remain separate from the
+  independently owned equipped gun. No cached receiver
   pointer can authorize a newly equipped gun or a fresh held target.
 - Both model/fire tables must be prepared and published before either resolver
   can apply. The gameplay sample recognizes owned model tables after publication.

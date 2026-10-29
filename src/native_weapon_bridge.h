@@ -7,8 +7,10 @@
 #include "native_image_guard.h"
 namespace d2vr_weapon_bridge {
 using Compare=int(__cdecl*)(const float*,const float*,float);
-// CFBBA0 is void thiscall with five stack arguments (RET 14h), not a bool
-// C47570 shortcut. Calling it preserves native reference/ammo/query handling.
+// C47570's final five-argument thiscall boundary (RET 14h), reached from the
+// private full CFBBA0 flow after its camera matrix selection. The assembly
+// forwards its outgoing return registers/flags unchanged. Never call this
+// consumer instead of executing CFBBA0's surrounding ownership/query logic.
 using Fire=void(__thiscall*)(void*,void*,const float*,uintptr_t,uintptr_t,uintptr_t);
 using ModelResolve=bool(*)(const float*,float*);
 using FireResolve=bool(*)(void*,void*,float*);
@@ -89,7 +91,7 @@ static __declspec(naked) void __fastcall FireEntry(void*,void*,void*,const float
         push ebx
         push dword ptr [ebp+8]
         mov ecx,esi
-        call dword ptr [fire] // original CFBBA0 once; callee removes 20 bytes
+        call dword ptr [fire] // original final consumer once; removes 20 bytes
         // Do not touch original outgoing FP state, volatile registers or flags.
         lea esp,[ebp-16]
         pop edi

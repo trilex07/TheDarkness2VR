@@ -2,7 +2,7 @@
 #include "native_weapon_bridge.h"
 #include "native_weapon_prefix_plan.h"
 static d2vr_native_view::InstanceTable g_protectedWeaponModelTable,g_protectedWeaponFireTable;
-static d2vr_native_clone::Code g_protectedWeaponModelCode;
+static d2vr_native_clone::Code g_protectedWeaponModelCode,g_protectedWeaponFireCode;
 static bool g_protectedWeaponReady=false,g_protectedWeaponPrepareAttempted=false;
 static bool ProtectedWeaponModelOwned(void* model) {
     return g_protectedWeaponReady && g_protectedWeaponModelTable.Owns(model);
@@ -119,21 +119,28 @@ static bool PrepareProtectedWeaponCode() {
     // class tables/header must match before any live-instance publication.
     if(!MatchesDigest(reinterpret_cast<void*>(0xFD6BBC),(weaponModelTableCount+1)*4,weaponModelTableDigest) ||
        !MatchesDigest(reinterpret_cast<void*>(0x1010ADC),(weaponFireTableCount+1)*4,weaponFireTableDigest) ||
-       !MatchesDigest(weaponFireBlock.source,weaponFireBlock.bytes,weaponFireBlock.sha256))return false;
+       !MatchesDigest(weaponFireBlock.source,weaponFireBlock.bytes,weaponFireBlock.sha256) ||
+       !MatchesDigest(weaponShotConsumer.source,weaponShotConsumer.bytes,weaponShotConsumer.sha256))return false;
     for(const auto& block:weaponHelpers)if(!MatchesDigest(block.source,block.bytes,block.sha256))return false;
     HMODULE self=nullptr;
     if(!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
         reinterpret_cast<LPCSTR>(d2vr_weapon_bridge::Bridge::ModelEntry()),&self) ||
        !d2vr_weapon_bridge::Bridge::Prepare(reinterpret_cast<d2vr_weapon_bridge::Compare>(0x481F50),
-           reinterpret_cast<d2vr_weapon_bridge::Fire>(0xCFBBA0),ResolveProtectedWeaponModel,
+           reinterpret_cast<d2vr_weapon_bridge::Fire>(0xC47570),ResolveProtectedWeaponModel,
            ResolveProtectedWeaponFire,g_nativeImageGuard))return false;
     const Override comparison{0,0x262,d2vr_weapon_bridge::Bridge::ModelEntry()};
+    // CFBBA0 can replace its incoming matrix using the native camera. Change
+    // only its final consumer call, after that computation. Its retained refs,
+    // camera queries, no-shot branch and cleanup still execute in native order.
+    const Override shot{0,0xCFBD60-0xCFBBA0,d2vr_weapon_bridge::Bridge::FireEntry()};
     if(!g_protectedWeaponModelCode.Prepare(&weaponModelBlock,1,weaponModelCalls,
         _countof(weaponModelCalls),&comparison,g_nativeImageGuard,nullptr,&weaponModelPrefix) ||
        !g_protectedWeaponModelTable.Prepare(reinterpret_cast<void**>(0xFD6BC0),weaponModelTableCount,
            0xF0/4,g_protectedWeaponModelCode.Entry(0),g_nativeImageGuard) ||
+       !g_protectedWeaponFireCode.Prepare(&weaponFireBlock,1,weaponFireCalls,
+           _countof(weaponFireCalls),&shot,g_nativeImageGuard) ||
        !g_protectedWeaponFireTable.Prepare(reinterpret_cast<void**>(0x1010AE0),weaponFireTableCount,
-           0x64/4,d2vr_weapon_bridge::Bridge::FireEntry(),g_nativeImageGuard))return false;
+           0x64/4,g_protectedWeaponFireCode.Entry(0),g_nativeImageGuard))return false;
     g_protectedWeaponReady=true;return true;
 }
 static void ReportProtectedWeaponRefusal(void* camera,unsigned slot) {
@@ -184,7 +191,7 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
         }
         const bool shot=g_protectedWeaponFireTable.Publish(fire,g_nativeImageGuard);
         const bool pose=shot && g_protectedWeaponModelTable.Publish(model,g_nativeImageGuard);
-        if(shot || pose)Log("[ProtectedWeapon] slot=%u model=%p fire=%p privatePose=%d privateShot=%d; independent aim spaces, original AD94A7 updates and CFBBA0 fire, HMD validation pending",slot,model,fire,int(pose),int(shot));
+        if(shot || pose)Log("[ProtectedWeapon] slot=%u model=%p fire=%p privatePose=%d privateShot=%d; independent aim spaces, original AD94A7 updates; native CFBBA0 flow with final C47570 controller ray, HMD validation pending",slot,model,fire,int(pose),int(shot));
     }
 }
 #else

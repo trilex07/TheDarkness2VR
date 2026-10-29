@@ -120,8 +120,9 @@ static void GrabFeedbackCases(){
     Reset();Word(grab,0x584,0);CHECK(CaptureNativeGameplay(camera));
     CHECK(g_nativeGameplay.grab==GrabFeedback::Empty && !g_nativeGameplay.alternateHeldTarget);
 }
+#include "native_pistol_fire_body.inl"
 int main(int argc,char** argv) {
-    CHECK(argc==2);const auto module=LoadLibraryA(argv[1]);CHECK(module);
+    CHECK(argc==2||argc==3);const auto module=LoadLibraryA(argv[1]);CHECK(module);
     const auto original=reinterpret_cast<d2vr_weapon_bridge::Fire>(GetProcAddress(module,"@OriginalFire@28"));
     const auto compare=reinterpret_cast<d2vr_weapon_bridge::Compare>(GetProcAddress(module,"OriginalCompare"));
     invoke=reinterpret_cast<Invoke>(GetProcAddress(module,"InvokeFire"));
@@ -232,5 +233,6 @@ int main(int argc,char** argv) {
         (i==0xF0/4 || g_protectedWeaponModelTable.Table()[i]==modelTable[i]));
     for(unsigned i=0;i<33;++i)CHECK(fireTable[i]==nullptr &&
         (i==0x64/4 || g_protectedWeaponFireTable.Table()[i]==fireTable[i]));
+    if(argc==3)NativePistolBody(argv[2],original,result);
     printf("PASS protected weapon actual source: %u checks; independent aims, scaled translation/rotation, fresh equipped/held ownership refusals, model recognition, 2000 fire + 2000 model native-vs-bridge comparisons, ABI/FP/LastError, original once, source tables unchanged; no HMD/FPS claim\n",checks);
 }
