@@ -225,3 +225,34 @@ documented in outdoor-cpu-packets-20261026.md. The recording arena already
 avoids resize value-initialization. Neither observation supports removing
 native resource work, disabling required synchronization, or enabling unsafe
 DirectRecordCopy. Current accepted Steam performance/rendering code is intact.
+
+
+## Native cursor API recovered, 2026-10-30
+
+Independent pinned-PE reads and complete Ghidra exports confirm MouseDeviceWin
+FC00C8 slots +6C -> 603190 and +70 -> C4B690. The first is a void thiscall getter
+with two output int pointers, reading +21C/+220; the second is a void thiscall
+setter taking two client-pixel integers. C4B690 uses the mouse-owned HWND at
++1E8, ClientToScreen and, when acquired (+7), SetCursorPos. It updates the native
+position after a successful warp, or directly while unacquired. Do not call it
+from a saved read-only snapshot or assume that a render-target pixel is a client
+pixel. No native call or input injection was performed here.
+
+The existing direct OS cursor route alone is insufficient: 585450 reads
+GetCursorPos only while unacquired. The acquired path's decoder 8A1470 (slot
++5C) consumes 20-byte events, accumulates offset 0/4 deltas into +21C/+220 and
+calls 787DF0. Its bool return tests event appData == 1; it is not a button-down
+flag. Offset 8 (wheel) is rewritten to event 9/10 and copied to the +230 pending
+slot for a following update. Preserve this native event lifecycle rather than
+manufacturing a guessed Flash MouseEvent or duplicating wheel transitions.
+
+This narrows the intended integration to the existing native cursor/input
+funnel. Actual submitted menu geometry, client/render coordinate mapping,
+main-menu admission and owner-thread/lifetime still require proof before routing
+controller events. The previous read-only snapshot does not establish them.
+No full native menu laser or FPS improvement is claimed.
+
+Private exports: TEMP/d2vr-menu-cursor-contract-20261030.txt,
+d2vr-menu-mouse-events-20261030.txt and d2vr-menu-mouse-dispatch-20261030.txt;
+each has the pinned EXE SHA and EVIDENCE COMPLETE. The existing input-service
+audit now checks the concrete vtable entries and complete getter bytes.

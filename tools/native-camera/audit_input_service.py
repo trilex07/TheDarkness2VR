@@ -154,8 +154,27 @@ def inspect(blob):
         raise ValueError("client initializer frame changed")
     if pe.at_va(0xC2CC18, 3) != bytes.fromhex("c21c00"):
         raise ValueError("client initializer argument cleanup changed")
+    # Concrete MouseDeviceWin API recovered from its pinned native table.
+    # These checks describe existing methods; they do not grant object lifetime
+    # or call/injection permission to a later reader of this static receipt.
+    mouse_methods = {0x5C: 0x8A1470, 0x6C: 0x603190, 0x70: 0xC4B690}
+    for slot, target in mouse_methods.items():
+        if struct.unpack("<I", pe.at_va(0xFC00C8 + slot, 4))[0] != target:
+            raise ValueError("native mouse method changed")
+    if pe.at_va(0x603190, 27) != bytes.fromhex("8b811c0200008b54240489028b81200200008b4c24088901c20800"):
+        raise ValueError("native mouse position getter changed")
     return {
         "status": "STATIC_CONTRACT_PASS", "exe_sha256": digest,
+        "native_mouse_cursor": {
+            "vtable": "0xFC00C8",
+            "get_position": "slot +0x6C, 0x603190; void thiscall(this, int* x, int* y)",
+            "set_position": "slot +0x70, 0xC4B690; void thiscall(this, int x, int y)",
+            "position_fields": ["0x21C", "0x220"],
+            "coordinates": "native HWND client pixels; not render-target pixels",
+            "event_decoder": "slot +0x5C, 0x8A1470; consumes one native 20-byte event",
+            "event_return": "entry appData equals 1; NOT button-down state",
+            "live_owner_thread_and_lifetime_verified": False,
+        },
         "framework_client_reference_offset": "0xA8",
         "reference_assignment": "0x7A8570; pointer to intrusive reference, not object",
         "client_initializer": "0xC2C1A0; this=client, seven stack arguments",
