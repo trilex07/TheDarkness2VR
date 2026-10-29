@@ -8,6 +8,7 @@
 #include "../../src/image_present_observer.h"
 #include "../../src/capture_present_witness.h"
 #include "../../src/frame_boundary.h"
+#include "../../src/vr_settings.h"
 #include "image_present_fixture.h"
 #include <cstdio>
 #include <cstdlib>
@@ -34,19 +35,38 @@ static XrInstance g_xrInstance=static_cast<XrInstance>(0x1110);
 static XrSession g_xrSession=static_cast<XrSession>(0x2220);
 static XrSessionState g_xrSessionState=XR_SESSION_STATE_SYNCHRONIZED;
 struct Frame {bool open=false;uint64_t id=0;} g_trackedFrame;
-struct Hand {bool valid=true;struct {bool valid=true;} motion;} g_hands[2];
+struct Hand {bool valid=true,gripValid=true,aimValid=true;struct {bool valid=true;} motion;} g_hands[2];
+static d2vr_settings::Panel g_vrSettings;
+static d2vr_settings::ToggleAction g_vrSettingsToggle;
+static unsigned settingsReleases=0;
+static void ReleaseVrSettingsRenderer(){++settingsReleases;}
+static struct {void DiscardFrames(){}} g_adaptiveFPS;
+static XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance,const char*,PFN_xrVoidFunction*){return XR_ERROR_FUNCTION_UNSUPPORTED;}
+static struct {
+    void Start(XrInstance,XrSession,PFN_xrGetInstanceProcAddr){}void Stop(){}
+    float Hz()const{return 0;}bool Enabled()const{return false;}
+    bool Event(const XrEventDataBuffer&){return false;}
+} g_displayRefresh;
 static struct Chord {unsigned held=0;} g_recenterChord;
+static struct Chord g_triangleRecenter;
+static uint64_t BeginAdaptivePresentation(){return 1;}
+static void EndAdaptivePresentation(uint64_t,HRESULT,bool){}
 static unsigned inputResets=0,inputClears=0,eventPolls=0,sessionBegins=0,sessionEnds=0;
 static unsigned frameLeaves=0,frameWaits=0,frameBegins=0,frameEnds=0,recordReleases=0;
 static unsigned captureReturns=0,captureRejects=0,gpuReleases=0;
 static uint64_t timestamp=1;
 static std::deque<XrSessionState> events;
-static bool referencePending=false,qualified=true;
+static bool referencePending=false,instancePending=false,qualified=true;
 static void ResetPoseInput(){++inputResets;}
 static void PublishXrPad(void*){++inputClears;}
 static XrResult xrPollEvent(XrInstance instance,XrEventDataBuffer* buffer){
     Check(instance==g_xrInstance && g_imagePresent.OwnsCurrentNativePresent());
     ++eventPolls;
+    if(instancePending){
+        instancePending=false;
+        *reinterpret_cast<XrEventDataInstanceLossPending*>(buffer)={XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING};
+        return XR_SUCCESS;
+    }
     if(referencePending){
         referencePending=false;
         *reinterpret_cast<XrEventDataReferenceSpaceChangePending*>(buffer)={XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING};
@@ -60,7 +80,7 @@ static XrResult xrPollEvent(XrInstance instance,XrEventDataBuffer* buffer){
 static XrResult xrBeginSession(XrSession session,const XrSessionBeginInfo*){
     Check(session==g_xrSession);++sessionBegins;return XR_SUCCESS;
 }
-static XrResult xrEndSession(XrSession session){Check(session==g_xrSession);++sessionEnds;return XR_SUCCESS;}
+static XrResult xrEndSession(XrSession session){Check(session==g_xrSession);Check(settingsReleases==sessionEnds+1);++sessionEnds;return XR_SUCCESS;}
 namespace d2vr_cpu_sync {
 enum Kind {BoundaryWork};
 struct Scope {explicit Scope(Kind){}};
@@ -144,14 +164,20 @@ int main(int argc,char** argv){
     const auto resetPolls=eventPolls;Present(S_PRESENT_OCCLUDED);Check(eventPolls==resetPolls+1);
 
     // Existing PumpXR lifecycle remains intact even with frame admission shut.
+    Check(g_vrSettings.Toggle({{0,0,0,1},{0,1.6f,0}},static_cast<XrSpace>(0x3330)));
+    g_vrSettingsToggle.Update(true,false);
     g_trackedFrame.open=true;events={XR_SESSION_STATE_STOPPING};
     Present(S_PRESENT_OCCLUDED);
     Check(sessionEnds==1 && !g_xrRunning && !g_trackedFrame.open);
     Check(!g_hands[0].valid && !g_hands[1].motion.valid);
+    Check(!g_vrSettings.Open()&&!g_vrSettingsToggle.Update(true,true));
     events={XR_SESSION_STATE_READY,XR_SESSION_STATE_SYNCHRONIZED,XR_SESSION_STATE_FOCUSED};
     Present(S_PRESENT_OCCLUDED);Check(sessionBegins==2 && g_xrRunning);
-    referencePending=true;Present(S_PRESENT_OCCLUDED);
+    Check(g_vrSettings.Toggle({{0,0,0,1},{0,1.6f,0}},static_cast<XrSpace>(0x3330)));
+    referencePending=true;Present(S_PRESENT_OCCLUDED);Check(!g_vrSettings.Open());
     Check(!g_vrRefValid && !g_lockedHeadValid && !g_headGeometryReferenceValid && !g_lastWorldHeadContextValid);
+    Check(g_vrSettings.Toggle({{0,0,0,1},{0,1.6f,0}},static_cast<XrSpace>(0x3330)));
+    instancePending=true;Present(S_PRESENT_OCCLUDED);Check(!g_vrSettings.Open());
     Check(frameWaits==frameBegins && frameBegins==frameEnds);
 
     // Foreign thread/fault must forward without touching render-owned XR.

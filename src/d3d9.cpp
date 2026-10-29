@@ -25,6 +25,7 @@
 #include <openxr/openxr_platform.h>
 #include "xr_display_refresh.h"
 #include "adaptive_fps.h"
+#include "vr_settings.h"
 
 #include <xinput.h>
 
@@ -313,6 +314,7 @@ int g_depthViz = 0;              // F5 toggles live depth map visualization
 float g_cinemaDistanceM = 2.0f;
 float g_cinemaWidthM = 2.1f;
 int g_enableVRGamepad = 1;
+static int g_vrSettingsToggleKey=VK_INSERT; // [Input] VRSettingsKey; 0 disables
 int g_remapPhysical = 1;
 int g_forceWindowedReset = 0;
 
@@ -904,6 +906,12 @@ void LoadConfig() {
         if (v > 0.5f && v < 20.0f) g_cinemaWidthM = v;
     }
     g_enableVRGamepad = GetPrivateProfileIntA("Input", "EnableVRGamepad", 1, chosenIni);
+    g_vrSettingsToggleKey=GetPrivateProfileIntA("Input","VRSettingsKey",VK_INSERT,chosenIni);
+    if(g_vrSettingsToggleKey<0 || g_vrSettingsToggleKey>254 ||
+       (g_vrSettingsToggleKey>=VK_F1 && g_vrSettingsToggleKey<=VK_F12)) {
+        Log("[VRSettings] toggle binding conflicts/invalid; preserving INSERT default");
+        g_vrSettingsToggleKey=VK_INSERT;
+    }
     g_remapPhysical = GetPrivateProfileIntA("Input", "RemapPhysicalPorts", 1, chosenIni);
     g_headLookMode = GetPrivateProfileIntA("Input", "HeadLookMode", 1, chosenIni);
     if (g_headLookMode < 0 || g_headLookMode > 3) g_headLookMode = 1;
@@ -3608,6 +3616,8 @@ struct TrackedHand {
     d2vr_input::Motion motion;
 };
 TrackedHand g_hands[2];
+static d2vr_settings::Panel g_vrSettings;
+static d2vr_settings::ToggleAction g_vrSettingsToggle;
 d2vr_input::RecenterChord g_recenterChord;
 d2vr_input::ContextTriangle g_triangleRecenter;
 struct GestureState {
@@ -3910,7 +3920,10 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         }
     }
     // XR_SESSION_NOT_FOCUSED is positive but actions must not be forwarded.
-    if (syncResult != XR_SUCCESS) { ResetPoseInput(); return false; }
+    if (syncResult != XR_SUCCESS) {
+        g_vrSettings.Close();g_vrSettingsToggle.Update(false,false);
+        ResetPoseInput();return false;
+    }
 
     float lx = 0, ly = 0, rx = 0, ry = 0, lt = 0, rt = 0;
     const bool haveL = ReadVec2(g_actLeftStick, g_pathHandLeft, &lx, &ly);
@@ -3931,6 +3944,30 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if (ReadBool(g_actX, g_pathHandLeft))  gp.wButtons |= XINPUT_GAMEPAD_X;
     bool triangleActive=false;
     const bool triangleDown=ReadBool(g_actY,g_pathHandLeft,&triangleActive);
+    const bool menuDown=ReadBool(g_actMenu,g_pathHandLeft);
+    const bool viewDown=ReadBool(g_actView,g_pathHandLeft);
+    bool leftActive=false,rightActive=false;
+    const bool l3=ReadBool(g_actStickL,g_pathHandLeft,&leftActive);
+    const bool r3=ReadBool(g_actStickR,g_pathHandRight,&rightActive);
+    // Menu input ownership is decided before triangle/recenter/gesture actions.
+    // In particular resetting gestures must not re-fire a held L3+R3 chord.
+    const bool focused=g_xrSessionState==XR_SESSION_STATE_FOCUSED;
+    const bool settingsDown=g_vrSettingsToggleKey &&
+        (GetAsyncKeyState(g_vrSettingsToggleKey)&0x8000)!=0;
+    if(g_vrSettingsToggle.Update(focused,settingsDown) && g_haveViews)
+        g_vrSettings.Toggle(HeadCenterPose(g_eyePose[0],g_eyePose[1]),g_xrSpace);
+    d2vr_menu::Aim settingsAim;
+    settingsAim.frame=g_trackedFrame.id;settingsAim.space=g_xrSpace;
+    settingsAim.pose=g_hands[1].aim;settingsAim.tracked=g_hands[1].aimValid;
+    settingsAim.menu=focused;settingsAim.trigger=rt;
+    settingsAim.back=(gp.wButtons&XINPUT_GAMEPAD_B)!=0;
+    settingsAim.time=GetTickCount64()*.001;
+    g_vrSettings.Input(settingsAim,g_adaptiveFPSMode);
+    const bool rawButtons=gp.wButtons || triangleDown || menuDown || viewDown || l3 || r3;
+    if(g_vrSettings.OwnInput(d2vr_settings::Neutral(g_hands[1].aimValid,
+        rawButtons?1u:0u,lt,rt,lx,ly,rx,ry,g_hands[0].squeeze,g_hands[1].squeeze))) {
+        ResetPoseInput();out->Gamepad={};return true;
+    }
     // A native-confirmed character/retained-target hold already supplies the
     // action context. Do not require a second grip press (stock LB) just to Y.
     const bool triangleModifier=NativeHeldActionContext() ||
@@ -3940,11 +3977,8 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if(triangle.action)gp.wButtons|=XINPUT_GAMEPAD_Y;
     if(triangle.tap)gp.wButtons|=XINPUT_GAMEPAD_START;
     if(triangle.recenter)RequestRecenter("VR triangle hold");
-    if (ReadBool(g_actMenu, g_pathHandLeft)) gp.wButtons |= XINPUT_GAMEPAD_START;
-    if (ReadBool(g_actView, g_pathHandLeft)) gp.wButtons |= XINPUT_GAMEPAD_BACK;
-    bool leftActive=false,rightActive=false;
-    const bool l3=ReadBool(g_actStickL,g_pathHandLeft,&leftActive);
-    const bool r3=ReadBool(g_actStickR,g_pathHandRight,&rightActive);
+    if (menuDown) gp.wButtons |= XINPUT_GAMEPAD_START;
+    if (viewDown) gp.wButtons |= XINPUT_GAMEPAD_BACK;
     if(l3) gp.wButtons |= XINPUT_GAMEPAD_LEFT_THUMB;
     if(r3) gp.wButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
     static int lastStickState=-1;
@@ -4528,6 +4562,7 @@ bool InitXR() {
     return true;
 }
 
+static void ReleaseVrSettingsRenderer();
 void PumpXR() {
     XrEventDataBuffer ev{ XR_TYPE_EVENT_DATA_BUFFER };
     while (xrPollEvent(g_xrInstance, &ev) == XR_SUCCESS) {
@@ -4538,6 +4573,8 @@ void PumpXR() {
                 g_displayRefresh.Stop();
             Log("[XRSession] state=%d",(int)s->state);
             if(s->state!=XR_SESSION_STATE_FOCUSED) {
+                g_vrSettings.Close();
+                g_vrSettingsToggle.Update(false,false);
                 g_adaptiveFPS.DiscardFrames();
                 ResetPoseInput(); PublishXrPad(nullptr);
             }
@@ -4559,6 +4596,7 @@ void PumpXR() {
                     }
                 }
             } else if (s->state == XR_SESSION_STATE_STOPPING) {
+                ReleaseVrSettingsRenderer();
                 if (g_gameHwnd) ShowWindow(g_gameHwnd, SW_SHOWNA);
                 xrEndSession(g_xrSession);
                 g_xrRunning = false;
@@ -4568,11 +4606,14 @@ void PumpXR() {
                 for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.motion.valid=false; }
             }
         } else if(ev.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
+            g_vrSettings.Close();g_vrSettingsToggle.Update(false,false);
             g_adaptiveFPS.DiscardFrames();
             g_displayRefresh.Stop();
         } else if(g_displayRefresh.Event(ev)) {
             Log("[DisplayRefresh] changed physicalHz=%.3f; zero=unknown",double(g_displayRefresh.Hz()));
         } else if(ev.type==XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
+            g_vrSettings.Close();
+            g_vrSettingsToggle.Update(false,false);
             g_vrRefValid=false; g_anchorValid=false; g_lockedHeadValid=false;
             g_headGeometryReferenceValid=false; ResetPoseInput();
             g_lastWorldHeadContextValid=false;
@@ -4941,6 +4982,8 @@ static bool WriteTextureToSwapchain(XrSwapchain sc, ID3D11Texture2D** scImages, 
     return ok && releaseResult==XR_SUCCESS;
 }
 
+#include "vr_settings_renderer.inl"
+
 void SubmitXR(IDirect3DDevice9* dev) {
     if (g_disableOpenXR) return;
     g_lastStage = 20;
@@ -4958,7 +5001,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
         Log("[WorldActivity] active=%d (render heuristic; native gameplay/menu state unverified)",(int)g_in3DGameplayMode);
     }
 
-    const XrCompositionLayerBaseHeader* layers[1] = { nullptr };
+    const XrCompositionLayerBaseHeader* layers[2] = { nullptr,nullptr };
+    XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     uint32_t layerCount = 0;
     XrCompositionLayerQuad quad{ XR_TYPE_COMPOSITION_LAYER_QUAD };
     XrCompositionLayerProjection proj{ XR_TYPE_COMPOSITION_LAYER_PROJECTION };
@@ -5286,6 +5330,17 @@ void SubmitXR(IDirect3DDevice9* dev) {
         }
     }
 
+    const uint32_t worldLayerCount=layerCount;
+    bool settingsSubmitted=false;
+    if(g_vrSettings.Open()) {
+        const auto settingsResult=g_xrSessionState!=XR_SESSION_STATE_FOCUSED ? VrSettingsRender::Failed :
+            !layerCount || !fs.shouldRender ? VrSettingsRender::Pending : RenderVrSettings(settingsQuad);
+        if(settingsResult==VrSettingsRender::Ready) {
+            layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&settingsQuad);
+            settingsSubmitted=true;
+        } else if(settingsResult==VrSettingsRender::Pending)g_vrSettings.SuspendSurface();
+        else g_vrSettings.Submitted(false);
+    }
     XrFrameEndInfo fei{ XR_TYPE_FRAME_END_INFO };
     fei.displayTime = fs.predictedDisplayTime;
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -5298,7 +5353,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
 #endif
         endR=xrEndFrame(g_xrSession, &fei);
     }
-    AdaptiveStereoSubmitted(endR,havePixels,layerCount);
+    if(settingsSubmitted)g_vrSettings.Submitted(endR==XR_SUCCESS);
+    AdaptiveStereoSubmitted(endR,havePixels,worldLayerCount);
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1 && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
 #endif

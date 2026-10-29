@@ -34,7 +34,7 @@ try {
     } else { '' }
     $cmd = "`"$vcvars`" x86 && cl /nologo /LD /EHsc /W3 /O2 /Zi /MD /std:c++17 " +
            $captureDefine + "/I`"$inc`" /Fe:d3d9.dll src\d3d9.cpp " + $observerSources +
-           "/link /DEBUG /OPT:REF /OPT:ICF /MAP:d3d9.map /DEF:d3d9.def /LIBPATH:`"$libDir`" openxr_loader.lib dxgi.lib d3d11.lib user32.lib shell32.lib xinput.lib"
+           "/link /DEBUG /OPT:REF /OPT:ICF /MAP:d3d9.map /DEF:d3d9.def /LIBPATH:`"$libDir`" openxr_loader.lib dxgi.lib d3d11.lib user32.lib gdi32.lib shell32.lib xinput.lib"
     cmd /c $cmd
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
     Write-Host "Built: $(Join-Path $here 'd3d9.dll')"
