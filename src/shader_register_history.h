@@ -11,16 +11,30 @@ struct Bank {
     float values[256*4]{};
     uint64_t valid[4]{};
     void Clear(){for(auto& word:valid)word=0;}
+private:
+    // Caller validates the 256-register range. Touch at most four bitmap words,
+    // rather than rebuilding one bit for every row of a bone-palette upload.
+    void SetValidity(unsigned first,unsigned count,bool present) {
+        while(count) {
+            const unsigned bit=first%64;
+            const unsigned rows=count<64-bit ? count : 64-bit;
+            const uint64_t mask=(~uint64_t(0)>>(64-rows))<<bit;
+            if(present)valid[first/64]|=mask;
+            else valid[first/64]&=~mask;
+            first+=rows;count-=rows;
+        }
+    }
+public:
     void Invalidate(unsigned first,unsigned count) {
         if(first>256 || count>256-first){Clear();return;}
-        for(unsigned i=first;i<first+count;++i)valid[i/64]&=~(uint64_t(1)<<(i%64));
+        SetValidity(first,count,false);
     }
     bool Write(unsigned first,unsigned count,const void* owned,size_t bytes) {
         if(first>256 || count>256-first || bytes!=size_t(count)*16 || (!owned && count)) {
             Invalidate(first,count);return false;
         }
         if(count)std::memcpy(values+first*4,owned,bytes);
-        for(unsigned i=first;i<first+count;++i)valid[i/64]|=uint64_t(1)<<(i%64);
+        SetValidity(first,count,true);
         return true;
     }
     bool Matrix(int first,float out[16])const {
