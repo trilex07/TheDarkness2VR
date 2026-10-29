@@ -2392,3 +2392,43 @@ creates a reference wrapper. 008460E0 creates MouseDeviceWin, inserts it through
 a read-only lookup for menu injection. Live manager ownership, native menu mode
 and the actually submitted interactive surface remain required before wiring
 the existing pointer core. No native call or input hook added on this evidence.
+
+## 2026-10-29: distinguish menu input ownership from platform factories
+
+Read-only D46B Ghidra exports completed; private output remains outside Git.
+Framework FC8930+124 dispatches 6C8080 -> C1FC50, which creates GraphicsSysImpl.
+Its +128 dispatches 70D5F0 -> 40E8B0, which creates SoundSysImpl; neither is an
+input getter. +12C/8B7800 returns the HWND at +F8. Base FC6800+128/E1391F is
+__purecall. 9F4580 separately creates InputMgrWin through 63C950 or the
+625670/8D89A0 paths, then passes services into client initialization C2C1A0.
+Do not execute those factories to recover the existing manager.
+
+C2C1A0 receives a client, not the outer framework. It stores distinct service
+references at +2C4/+2D0/+374; their offsets alone do not establish input type.
+The exact input
+argument-to-field mapping still needs an independent calling-convention proof:
+the decompiler's inferred stack arguments are inconsistent. A raw code search
+also finds +374 in BFA900/AA07C0, but those methods' receiver classes are not
+established. The private file named client-input-getter-confirmed does NOT
+confirm that interpretation. No production field reader was added.
+
+SWIG registration tables associate DA5FF0 with GameRulesImpl and DD2100 with
+HumanPlayer; both IsPauseMenuShowing wrappers invoke the typed receiver's +80.
+Their runtime SWIG type slots are 10F361C/11009EC, not live singleton addresses.
+RegionMgr FC7D00+13C/490D30 returns a reference stored at +BC, but its concrete
+receiver type and connection to HumanPlayer remain unproven. Do not call +80
+on a guessed object. InputMgrWin+68/466710 is a timed update; +88/53EB30 invokes
+acquisition helpers, and +B0/81D980 dispatches input processing. None proves
+menu visibility. Native UI still has no renderer-owned finite menu plane.
+
+Evidence SHA256: framework-input-create 728cddf55198d1235cb739b517d26a68311a324d1cab493d5526b82f2856c900;
+framework-input-owned 5c694ed4843d9818ae41058d65a1a92887d8a100918d1b000bf6bba5c5514ba6;
+menu-pause-receiver-owned 7d06ff735361d5b88972667699f0dfc2adeb302eb93387b133acde0c2d457d57.
+
+The previously missing snapshot receipt executables were quarantined by
+Bitdefender: quarantine metadata 40b309c8-cf3a-4d7e-a3a7-e686ed783d8b.dat and
+e5460c49-ddde-4412-91d3-09c72e1c7492.dat identify the current and baseline test
+paths and Gen:Variant.Draftor.34994. Their assertions remain NOT RUN. No restore,
+security change or alternate executable retry was made. This supersedes the
+earlier unknown-component note; it does not invalidate the separate completed
+live-stateblock regression. No game launch, Steam change or FPS claim.
