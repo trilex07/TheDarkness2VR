@@ -2,6 +2,7 @@
 // Only the D3D9 driver is doubled. Lock returns writable memory; draws consume
 // the bound bytes immediately. This proves ordering, not hardware timings.
 #include <d3d9.h>
+#include "replay_state_cache.h"
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -124,6 +125,7 @@ static void End(){RecLockGuard guard;g_recActive=false;FinishBufferRecording();g
 static bool Replay(){
     RecLockGuard guard;g_recActive=false;
     if(g_bufferWritesApplied)return false;
+    d2vr_replay_state::Cache stateCache;
     bool replayComplete=!g_recOverflow && !g_bufferUnsafeAlias.load();IDirect3DDevice9* dev=device;const int eye=1;
     const uint8_t* dataBase=g_recData.data();
     if(!ReplayInheritedBuffers(dev))replayComplete=false;
