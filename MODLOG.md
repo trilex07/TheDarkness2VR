@@ -2276,3 +2276,19 @@ Validation: 9339 actual-source x86 ownership/ABI/failure checks pass, including
 20 combinations of recording state, existing invalidation and driver status.
 Both production and DiagnosticCapture x86 DLL builds pass. No runtime FPS or
 headset improvement is claimed; the installed candidate is unchanged.
+
+## 2026-10-29: keep an equipped pistol's human socket in shot aim space
+
+Fresh installed-83fdb07 receipts accept both right (stage 32) and left (33)
+controller matrices. The user confirms independent left hits but reports an
+upward, misaligned visible barrel. The secondary fire action is published with
+an empty optional +12C model. CopyProtectedWeaponHandPose previously required
+that model to be published too, so this exact case fell back to controller
+grip while its shot used aim. Select aim for the already-owned human palette
+from the reciprocal equipped gun/fire contract independently of the optional
+model. No unknown model is admitted or written, and the shot path is unchanged.
+
+Validation: 122025 actual-source weapon checks (including absent/unpublished/
+unknown optional models with independent rotated aim), 3200 native-body fire
+fixture executions, and 2207 actual protected-hands checks pass. Visual barrel
+alignment and remaining animation/socket offsets still require headset proof.

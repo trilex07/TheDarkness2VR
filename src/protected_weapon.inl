@@ -112,8 +112,13 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
 static bool CopyProtectedWeaponHandPose(DWORD camera,unsigned hand,XrPosef& pose) {
     if(hand>=2 || !ProtectedWeaponAvailable() || !g_hands[hand].aimValid)return false;
     void *gun=nullptr,*model=nullptr,*fire=nullptr;
+    // A live secondary pistol can have no separate +12C model. Its selected
+    // human weapon socket still needs the same aim space as the owned shot;
+    // falling back to grip rotates the visible gun away from its actual ray.
+    // This selects a pose for our already-owned human palette only. It neither
+    // admits nor writes the optional (possibly unknown) model instance.
     if(!ProtectedWeaponOwner(reinterpret_cast<void*>(camera),1-hand,gun,model,fire) ||
-       !ProtectedWeaponModelOwned(model) || !ProtectedWeaponFireOwned(fire))return false;
+       !ProtectedWeaponFireOwned(fire))return false;
     pose=g_hands[hand].aim;return true;
 }
 static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {

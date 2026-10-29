@@ -218,7 +218,8 @@ int main(int argc,char** argv) {
         CHECK(ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*slot,shot));
         CHECK(std::fabs(shot[8])>.99f && std::fabs(shot[10])<.001f);
         CHECK(Near(shot[12],slot==0?10.5f:9.6f));
-        XrPosef pose{};CHECK(!CopyProtectedWeaponHandPose(Ptr(camera),1-slot,pose));
+        XrPosef pose{};CHECK(CopyProtectedWeaponHandPose(Ptr(camera),1-slot,pose));
+        CHECK(!memcmp(&pose,&g_hands[1-slot].aim,sizeof(pose)));
         // Missing model relaxes no gun, receiver, slot or tracking ownership.
         CHECK(!ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*(1-slot),shot));
         Ref(fires[slot],0x4C,guns[1-slot]);
