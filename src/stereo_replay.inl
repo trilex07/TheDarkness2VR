@@ -1323,6 +1323,9 @@ static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWO
 }
 static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, const D3DRECT* rects,
                                             DWORD flags, D3DCOLOR color, float z, DWORD st) {
+    // Clear is legal outside BeginScene. Capture its pre-state and command
+    // before the native call, rather than losing the next frame's background.
+    RecordPreSceneClear(dev);
     if (g_recActive && rects && count) {
         RecEmitData(OP_Clear,rects,sizeof(D3DRECT)*count,flags,color,(uint32_t&)z,st,{},4,count);
     } else if (g_recActive) {

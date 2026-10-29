@@ -2001,3 +2001,30 @@ shoulder targets, rigid lengths, wrist orientation and untouched other bones.
 Actual protected packer regression58811 checks and private native B1E500 skin
 arithmetic pass. This proves CPU geometry and packing, not HMD appearance or
 the cause of every reported hand interruption. No performance saving claimed.
+
+## 2026-10-29: pre-scene clears and derived equipped Gun admission
+
+User acceptance narrows remaining flicker to menus/pause and reports an upward,
+unresponsive left pistol in dual wield. Retained d3d9.log contains a protected
+publication for slot0 only, not proof of the left gun's concrete rejected type.
+
+Clear is legal before BeginScene. The recorder previously started only at
+BeginScene, losing those clears; right replay could retain prior history while
+the live eye had cleared its target. A pending frame now starts at the first
+native render-thread Clear or BeginScene. Clear captures pre-state before
+forwarding and remains in the same stream at BeginScene. Presentation internals,
+other threads and other submission modes cannot open recording. A failed
+pre-clear snapshot latches overflow even if BeginScene later captures state.
+Actual-source x86 fixture9009 checks/1000 sequences passes; confirmation that
+this explains the user's menu flicker remains a runtime acceptance item.
+
+Read-only Ghidra export TEMP/d2vr-gun-type-contract.txt confirms native
+CFBBE4 tests IsA(1119658) and4BF720 follows instance+4, descriptor+0C. Protected
+weapon ownership now accepts this Gun lineage with a bounded, SEH-guarded
+walk, rather than requiring only concrete1010E30. Exact pinned model/fire
+classes and all reciprocal equipped ownership checks remain required. This
+fixes a valid derived-gun exclusion; the actual left gun's type is unconfirmed.
+A receipt once per changed rejected equipped identity records class/type,
+model and fire tables without a per-frame log stream. No angle bias or unsafe
+receiver admission was added. Native EXE/static tables and input routing stay
+unchanged. HMD aiming and menu flicker acceptance remain open.

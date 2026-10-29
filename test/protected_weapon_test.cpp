@@ -146,6 +146,20 @@ int main(int argc,char** argv) {
         CHECK(Near(shot[12],slot==0?10.5f:9.6f) && Near(shot[14],slot==0?30.4f:30.3f));
     }
     Reset();g_gameUnitsPerMeter=100;alignas(16) float world[16];
+    // An equipped Gun descendant still owns the exact pinned model/fire
+    // classes. A different concrete gun vptr must not strand the left pistol.
+    Reset();DWORD derivedType[4]={0,0,0,0x1119658};
+    Word(guns[1],0,0x1010E34);Word(guns[1],4,Ptr(derivedType));
+    CHECK(CaptureNativeGameplay(camera));
+    CHECK(ResolveProtectedWeaponModel(reinterpret_cast<float*>(models[1]+0x140),world));
+    CHECK(Near(world[12],9.6f));
+    CHECK(ResolveProtectedWeaponFire(fires[1],inventory+0xBC,world));
+    XrPosef leftPose{};CHECK(CopyProtectedWeaponHandPose(Ptr(camera),0,leftPose));
+    CHECK(Near(leftPose.position.x,-.4f));
+    derivedType[3]=0;CHECK(!ResolveProtectedWeaponFire(fires[1],inventory+0xBC,world));
+    derivedType[3]=Ptr(derivedType);CHECK(!ProtectedGunType(guns[1])); // bounded malformed chain
+    Word(guns[1],4,1);CHECK(!ProtectedGunType(guns[1]));
+    Reset();g_gameUnitsPerMeter=100;
     CHECK(ResolveProtectedWeaponFire(fires[0],inventory+0xB0,world));CHECK(Near(world[12],60) && Near(world[14],70));
     Reset();g_hands[1].aim.orientation={0,.70710678f,0,.70710678f};
     CHECK(ResolveProtectedWeaponFire(fires[0],inventory+0xB0,world));CHECK(std::fabs(world[8])>.99f && std::fabs(world[10])<.001f);

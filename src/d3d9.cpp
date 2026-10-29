@@ -356,7 +356,8 @@ int g_suppressDesktopPresent = 0; // opt-in: skip desktop Present when OpenXR ha
 int g_disableOpenXR = 0;          // research: never call InitXR / xrWaitFrame (trace-only runs)
 static volatile LONG g_fovProbeInstalled = 0;
 static volatile LONG g_xrSubmittedThisFrame = 0;
-static volatile LONG g_needRecBegin = 1; // SubmitMode 4: open recording on next BeginScene, not mid-frame EndScene
+static volatile LONG g_needRecBegin = 1; // Next native Clear/BeginScene, never mid-frame EndScene.
+static bool g_preSceneClearMissed=false;
 
 void LogInit() {
     InitializeCriticalSection(&g_logLock);
@@ -1614,6 +1615,7 @@ static void QueryPreloadTick() {
 static void NativeViewProjectionObserved(const float* inverse);
 #endif
 static bool NativeTentacleHeadAttachmentAllowed();
+static void RecordPreSceneClear(IDirect3DDevice9* dev);
 #include "stereo_replay.inl"
 
 static void UpdateHeadGeometry(const XrPosef& head) {
@@ -5813,6 +5815,7 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
     if (g_submitMode == 4 && g_stereoMode >= 1) {
         d2vr_replay::LightEndOfWindowSnapshot(dev);   // diagnostic only (LightReadback)
         InterlockedExchange(&g_needRecBegin, 1);
+        g_preSceneClearMissed=false;
     } else if (d2vr_replay::g_recActive) {
         d2vr_replay::g_recActive = false;
         d2vr_replay::g_rec.clear();
@@ -5845,6 +5848,16 @@ static void ApplyBoundaryDecision(IDirect3DDevice9* dev, const d2vr_frame::Decis
     // Leave at the hook's return, after the original Present HRESULT is known.
 }
 
+static void RecordPreSceneClear(IDirect3DDevice9* dev) {
+    if(g_insidePresentation || g_submitMode!=4 || g_stereoMode<1 ||
+       GetCurrentThreadId()!=g_renderThreadId ||
+       !InterlockedCompareExchange(&g_needRecBegin,0,0))return;
+    InterlockedExchange(&g_needRecBegin,0);
+    d2vr_replay::RecBeginFrame(dev);
+    if(d2vr_replay::g_recActive)g_gpuTiming.Begin(dev);
+    else g_preSceneClearMissed=true;
+}
+
 HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
     if (g_insidePresentation) return g_origBeginScene(dev);
     g_renderThreadId = GetCurrentThreadId();
@@ -5871,6 +5884,7 @@ HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
             g_gpuTiming.Begin(dev);
         }
         d2vr_replay::RecEmit(d2vr_replay::OP_BeginScene, 0);
+        if(g_preSceneClearMissed)d2vr_replay::g_recOverflow=true;
     }
     HRESULT hrBS = g_origBeginScene(dev);
     if (FAILED(hrBS)) Log("!!! BeginScene FAILED hr=0x%08lX (game may stop rendering)", hrBS);

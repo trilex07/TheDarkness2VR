@@ -19,6 +19,21 @@ static bool ProtectedWeaponAvailable() {
         !g_protectedRightTentacle.paused && !g_protectedLeftTentacle.paused &&
         g_headGeometry && g_headGeometryReferenceValid;
 }
+static bool ProtectedGunType(void* weapon) {
+    if(!weapon)return false;
+    __try {
+        if(*static_cast<DWORD*>(weapon)==0x1010E30)return true;
+        // CFBBA0 itself admits Gun descendants with native IsA(1119658).
+        // 4BF720 walks instance+4 -> descriptor+0C; concrete vptr equality
+        // unnecessarily excludes derived guns with the same base layout.
+        DWORD type=*reinterpret_cast<DWORD*>(static_cast<BYTE*>(weapon)+4);
+        for(unsigned depth=0;type && depth<32;++depth) {
+            if(type==0x1119658)return true;
+            type=*reinterpret_cast<DWORD*>(type+0xC);
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+    return false;
+}
 // Called only while a native receiver is live on this render thread. Rewalk
 // the owner's equipped slot each time; a cached model identity cannot admit a
 // dropped/replaced gun or a newly held enemy. Nothing retains instance pointers.
@@ -28,7 +43,7 @@ static bool ProtectedWeaponOwner(void* camera,unsigned slot,void*& gun,void*& mo
         auto avatar=**reinterpret_cast<BYTE***>(static_cast<BYTE*>(camera)+0x30);
         auto inventory=**reinterpret_cast<BYTE***>(avatar+0x630);
         auto weapon=**reinterpret_cast<BYTE***>(inventory+0xB0+12*slot);
-        if(!weapon || *reinterpret_cast<DWORD*>(weapon)!=0x1010E30 ||
+        if(!ProtectedGunType(weapon) ||
            **reinterpret_cast<BYTE***>(weapon+0x980)!=avatar)return false;
         auto entity=**reinterpret_cast<BYTE***>(weapon+0x12C);
         if(!entity || (*reinterpret_cast<DWORD*>(entity)!=0xFD6BC0 && !ProtectedWeaponModelOwned(entity)))return false;
@@ -121,13 +136,44 @@ static bool PrepareProtectedWeaponCode() {
            0x64/4,d2vr_weapon_bridge::Bridge::FireEntry(),g_nativeImageGuard))return false;
     g_protectedWeaponReady=true;return true;
 }
+static void ReportProtectedWeaponRefusal(void* camera,unsigned slot) {
+    // One receipt per changed equipped identity/type, not a per-frame trace.
+    // This distinguishes an unsupported gun/model/fire variant from bad aim.
+    static DWORD previous[2][6]{};
+    DWORD state[6]{};
+    __try {
+        auto avatar=**reinterpret_cast<BYTE***>(static_cast<BYTE*>(camera)+0x30);
+        auto inventory=**reinterpret_cast<BYTE***>(avatar+0x630);
+        auto gun=**reinterpret_cast<BYTE***>(inventory+0xB0+12*slot);
+        if(!gun)return;
+        state[0]=DWORD(reinterpret_cast<uintptr_t>(gun));
+        state[1]=*reinterpret_cast<DWORD*>(gun);state[2]=*reinterpret_cast<DWORD*>(gun+4);
+        if(ProtectedGunType(gun)) {
+            auto model=**reinterpret_cast<BYTE***>(gun+0x12C);
+            state[3]=model?*reinterpret_cast<DWORD*>(model):0;
+            const DWORD mode=*reinterpret_cast<DWORD*>(gun+0xA78);
+            if(mode<4) {
+                auto parts=*reinterpret_cast<BYTE**>(gun+0xA64);
+                auto fire=**reinterpret_cast<BYTE***>(parts+48*mode+0xC);
+                state[4]=fire?*reinterpret_cast<DWORD*>(fire):0;
+                state[5]=fire?*reinterpret_cast<DWORD*>(fire+4):0;
+            }
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER){return;}
+    if(std::memcmp(previous[slot],state,sizeof(state))) {
+        std::memcpy(previous[slot],state,sizeof(state));
+        Log("[ProtectedWeapon] REFUSED slot=%u gun=%08lX gunTable=%08lX type=%08lX modelTable=%08lX fireTable=%08lX fireType=%08lX; native retained",slot,state[0],state[1],state[2],state[3],state[4],state[5]);
+    }
+}
 static void PrepareProtectedWeaponForCamera(void* camera) {
     if(!g_protectedTrackedHands || !g_nativeImageGuard.enabled || !g_nativePlayerOwnerAdmitted ||
        GetCurrentThreadId()!=g_renderThreadId || !ProtectedAimCameraOwned(camera) || !NativeAimOwnerMatches(camera))return;
     for(unsigned slot=0;slot<2;++slot) {
         void *gun=nullptr,*model=nullptr,*fire=nullptr;
-        if(!ProtectedWeaponOwner(camera,slot,gun,model,fire) ||
-           (ProtectedWeaponModelOwned(model) && ProtectedWeaponFireOwned(fire)))continue;
+        if(!ProtectedWeaponOwner(camera,slot,gun,model,fire)) {
+            ReportProtectedWeaponRefusal(camera,slot);continue;
+        }
+        if(ProtectedWeaponModelOwned(model) && ProtectedWeaponFireOwned(fire))continue;
         if(!PrepareProtectedWeaponCode()) {
             static bool reported=false;
             if(!reported) {
