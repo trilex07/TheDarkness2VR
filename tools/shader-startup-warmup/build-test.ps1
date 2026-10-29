@@ -12,4 +12,8 @@ try {
  if($LASTEXITCODE -ne 0){throw 'compile failed'}
  if($Package){& .\test.exe $Package}else{& .\test.exe}
  if($LASTEXITCODE -ne 0){throw 'test failed'}
+ cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 `"$here\demand_test.cpp`" /Fe:demand_test.exe"
+ if($LASTEXITCODE -ne 0){throw 'demand compile failed'}
+ & .\demand_test.exe
+ if($LASTEXITCODE -ne 0){throw 'demand test failed'}
 } finally {Pop-Location}

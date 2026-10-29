@@ -82,24 +82,30 @@ static unsigned __stdcall WriteArchive(void* value) {
     return 0;
 }
 static std::unique_ptr<State> PrepareState(IDirect3DDevice9* device,
-    const std::wstring& path,const std::wstring& seed,unsigned copies=1) {
+    const std::wstring& path,const std::wstring& seed,unsigned copies=1,
+    const std::wstring& legacy=L"") {
         copies=copies==2?2:1;
         auto s=std::make_unique<State>(device,path,copies);
         auto archive=ReadArchive(s->path);
         const bool alreadyPersisted=!archive.empty();
+        if(archive.empty() && !legacy.empty()) archive=ReadArchive(legacy);
         if(archive.empty()) archive=ReadArchive(seed);
         unsigned ready=0,failed=0;bool budgetStop=false;
         const auto start=GetTickCount64();
         if(!archive.empty()) {
             // Cover every known bytecode once before spending the remaining
             // startup budget on a spare. Slower drivers retain broad coverage.
-            for(unsigned copy=0;copy<copies;++copy) {
+            const bool demand=archive[0]==DemandMagic;
+            for(unsigned copy=0;copy<MaxCopies;++copy) {
             size_t offset=2;
             for(uint32_t i=0;i<archive[1];++i) {
+                const unsigned quota=std::max(copies,demand?archive[offset++]:1u);
                 const uint32_t words=archive[offset++];
                 std::vector<uint32_t> code(archive.begin()+offset,archive.begin()+offset+words);offset+=words;
-                if(!copy) s->pool.Remember(device,code);
+                if(!copy) s->pool.Remember(device,code,quota);
+                if(copy>=quota) continue;
                 if(failed) continue; // no repeated driver creation after rejection/device loss
+                if(ready>=MaxObjects) {budgetStop=true;continue;}
                 if(GetTickCount64()-start>=10000) {budgetStop=true;continue;}
                 IUnknown* object=nullptr;HRESULT hr;
                 if(code[0]==0xfffe0300u) {
@@ -121,7 +127,7 @@ static std::unique_ptr<State> PrepareState(IDirect3DDevice9* device,
         if(alreadyPersisted) s->saved.store(s->pool.Version());
         Log("[ShaderPreload] startup ready=%u entries=%zu failed=%u budgetStop=%d elapsedMs=%llu; one-use owned objects, exact bytecode+device match",
             ready,s->pool.Size(),failed,int(budgetStop),GetTickCount64()-start);
-        Log("[ShaderPreload] copiesPerCode=%u maximumObjects=%zu; independent creation references, no live refill",copies,MaxShaders*size_t(copies));
+        Log("[ShaderPreload] minimumCopies=%u learnedMaximum=%u maximumObjects=%u; independent creation references, no live refill",copies,MaxCopies,MaxObjects);
         return s;
 }
 static void Initialize(IDirect3DDevice9* device) {
@@ -133,7 +139,9 @@ static void Initialize(IDirect3DDevice9* device) {
     if(FAILED(SHGetFolderPathW(nullptr,CSIDL_LOCAL_APPDATA,nullptr,SHGFP_TYPE_CURRENT,base))) return;
     try {
         const std::wstring directory=std::wstring(base)+L"\\Darkness2VR\\";
-        state.store(PrepareState(device,directory+L"shader-preload.bin",directory+L"startup-shaders.bin",g_startupShaderCopies).release());
+        // Keep the old archive intact for immediate rollback to older DLLs.
+        state.store(PrepareState(device,directory+L"shader-demand.bin",directory+L"startup-shaders.bin",g_startupShaderCopies,
+            directory+L"shader-preload.bin").release());
     } catch(...) {Log("[ShaderPreload] initialization failed; native creation retained");}
 }
 
@@ -166,6 +174,7 @@ static HRESULT Create(IDirect3DDevice9* device,const DWORD* code,Shader** out,Cr
             if(SUCCEEDED((*out)->GetFunction(validated.data(),&bytes)) && bytes<=validated.size()*4 && !(bytes&3)) {
                 validated.resize(bytes/4);
                 if(!s->pool.Remember(device,validated)) ++s->captureFailures;
+                else s->pool.ObserveCreation(device,validated);
             } else ++s->captureFailures;
         } else ++s->captureFailures;
     } catch(...) {++s->captureFailures;}
