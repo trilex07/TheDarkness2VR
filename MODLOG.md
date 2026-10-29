@@ -2177,3 +2177,33 @@ comfort and action alignment require user validation. The legacy experimental
 head-attached profile remains available. Offline tests cover both eyes and live
 draws across 30 head poses, 3 shaders and 7 mesh offsets, with Empty/Busy feedback:
 3780 disabled scopes preserve the exact world matrix without device queries.
+
+## 2026-10-29: menu pointer geometry, capture and navigation core
+
+Added a renderer-supplied menu-surface contract and real 6DoF ray intersection.
+The caller must supply the actual submitted surface, native cursor rectangle,
+reference space and application frame; no guessed plane or gameplay heuristic
+is admitted. Pixel mapping includes edges and translated/rotated controllers.
+Trigger hysteresis acquires only inside the menu, keeps slider capture outside,
+and cancels once on tracking/context loss. A held trigger cannot click on
+reacquisition. Back is edge-triggered and works without aiming at the plane;
+scroll uses application time with a deadzone, reversal reset and no resume burst.
+Native integration must merge physical mouse ownership and avoid duplicating
+the existing gamepad Back route. These headers are not yet included by the DLL.
+
+The x86 /W4 /WX regression passes 181360 checks: independent Rodrigues/target-ray
+geometry oracle, 20000 6DoF cases, 10000 click cycles, drag/context cancellation,
+held Back on reacquisition, and equal-duration scrolling at 36/45/60/72/90/120
+application FPS. Native UI, cursor, laser rendering and HMD validation are NOT RUN.
+No Steam deployment or performance improvement follows from this component.
+
+Retained SHA-pinned native evidence identifies mouse update 585450 and generic
+device update 9A5D90. The latter forwards DirectInput GetDeviceState at 9A5E3A
+and GetDeviceData at 9A5E6E, with 20-byte event records. The +7 byte is set after
+Acquire and cleared on failed reads; it is not a proven menu-mode flag. The
+ScreenToClient caller 5854C6 writes the native client cursor at +21C/+220.
+Lua IsPauseMenuShowing wrappers DA5FF0/DD2100 call a typed receiver's +80 virtual
+method; neither wrapper establishes a global receiver. The Flash MouseEvent
+string consumers 44BFF0/78D400 initialize ActionScript values, not a proven
+physical input delivery path. Do not use these references as menu-state or
+click-injection contracts. Private disassembly remains outside Git.
