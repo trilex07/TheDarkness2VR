@@ -124,13 +124,24 @@ struct Motion {
     Vec3 last{}, velocity{};
     double lastTime=0;
     bool valid=false;
-    void Update(bool tracked, Vec3 position, double time) {
+    void Update(bool tracked, Vec3 position, double time,const Vec3* locatedVelocity=nullptr) {
+        tracked=tracked && std::isfinite(time) && std::isfinite(position.x) &&
+            std::isfinite(position.y) && std::isfinite(position.z);
         const double dt=time-lastTime;
         velocity={};
         if (tracked && valid && dt>=.002 && dt<=.1) {
             Vec3 d=Difference(position,last);
             // Reject reacquisition jumps, never turn them into a throw/slash.
-            if (Length(d)<.5f) velocity={float(d.x/dt),float(d.y/dt),float(d.z/dt)};
+            if (Length(d)<.5f) {
+                velocity={float(d.x/dt),float(d.y/dt),float(d.z/dt)};
+                // Runtime velocity belongs to this located grip, base space
+                // and predicted time. Avoid differentiating predicted poses
+                // across uneven game frames when the runtime supplies it.
+                // Recovery/gap/jump gates apply to either velocity source.
+                if(locatedVelocity && std::isfinite(locatedVelocity->x) &&
+                   std::isfinite(locatedVelocity->y) && std::isfinite(locatedVelocity->z) &&
+                   std::isfinite(Length(*locatedVelocity)))velocity=*locatedVelocity;
+            }
         }
         valid=tracked; last=position; lastTime=time;
     }

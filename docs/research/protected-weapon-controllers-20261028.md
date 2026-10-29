@@ -116,3 +116,30 @@ overrides are described in profiles/controller-playtest-fixes. Sleeve cutting
 remains unimplemented: the two captured human-arm materials do not yet identify
 sleeve triangles. These are offline corrections awaiting the user's HMD test;
 no physical grip, native attachment continuity or performance improvement claimed.
+
+## Located grip velocity, 2026-10-29
+
+LocateTrackedHands previously ignored runtime velocity and differentiated predicted
+grip positions over game-frame intervals. That is an interval average, not the
+instantaneous motion estimate at release. It now chains XrSpaceVelocity onto the
+existing grip xrLocateSpace call and uses linearVelocity only with LINEAR_VALID,
+tracked grip and finite output. There are still two locate calls per active hand
+(grip and aim), no extra sampling call, allocation or per-frame diagnostics.
+The [OpenXR contract](https://registry.khronos.org/OpenXR/specs/1.1/man/html/XrSpaceVelocity.html)
+defines velocity in the locate's base space, in metres per second. Motion's
+first-sample/recovery, 2–100 ms interval and 0.5 m jump gates apply to both sources.
+Unavailable or nonfinite velocity retains the old position-difference fallback.
+Nonfinite pose/time is rejected. Powered-stroke selection, native throw ownership,
+native magnitude/spin, the character branch exclusion and aim assist are unchanged.
+
+The actual LocateTrackedHands fixture fails commit 2e9b887 at line81: a valid
+runtime velocity is lost when adjacent predicted positions coincide. The correction
+passes 2,756 checks across both hands, action/location failures, missing/invalid
+velocity, recovery, gaps, jumps and numeric faults. A known accelerating trajectory
+checks the instantaneous derivative at 40/45/72/90/120 Hz; actual located output
+also drives the existing Tentacles recognizer through a single powered release at
+those rates. These are deterministic CPU/OpenXR-boundary fixtures, not measured
+headset motion or game performance. Existing hand isolation752, gesture774,
+protected native throw218 and 2,000 native-vs-bridge ABI comparisons pass. Both
+production and diagnostic x86 DLLs build. The new build is packaged separately;
+the installed 2e9b887 candidate is retained for the user's consolidated test.

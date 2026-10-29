@@ -3939,6 +3939,8 @@ static void LocateTrackedHands() {
         gi.action=g_actAimPose[h];
         const bool aimActive=XR_SUCCEEDED(xrGetActionStatePose(g_xrSession,&gi,&aimState)) && aimState.isActive;
         XrSpaceLocation grip{XR_TYPE_SPACE_LOCATION}, aim{XR_TYPE_SPACE_LOCATION};
+        XrSpaceVelocity gripVelocity{XR_TYPE_SPACE_VELOCITY};
+        grip.next=&gripVelocity;
         // Each action owns its tracking result. A right slash needs grip
         // motion, not an aiming ray; native ray consumers still require both.
         hand.gripValid=gripActive && g_haveViews &&
@@ -3952,7 +3954,11 @@ static void LocateTrackedHands() {
         if(hand.gripValid)hand.grip=grip.pose;
         if(hand.aimValid)hand.aim=aim.pose;
         const auto& p=hand.grip.position;
-        hand.motion.Update(hand.gripValid,{p.x,p.y,p.z},time);
+        d2vr_input::Vec3 velocity{};
+        const bool haveVelocity=hand.gripValid &&
+            (gripVelocity.velocityFlags&XR_SPACE_VELOCITY_LINEAR_VALID_BIT)!=0;
+        if(haveVelocity)velocity={gripVelocity.linearVelocity.x,gripVelocity.linearVelocity.y,gripVelocity.linearVelocity.z};
+        hand.motion.Update(hand.gripValid,{p.x,p.y,p.z},time,haveVelocity?&velocity:nullptr);
     }
     if ((g_trackedFrame.id%300)==0) {
         for (int h=0; h<2; ++h) {
