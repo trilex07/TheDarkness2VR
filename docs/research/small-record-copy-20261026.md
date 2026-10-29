@@ -100,3 +100,28 @@ number nor the microbenchmark's27% translates into a claimed FPS improvement.
 Do not add it to overlapping WOW64/query samples. The outdoor average20.429ms
 still exceeds11.11ms by9.318ms; a controlled game comparison is required before
 any measured budget reduction or FIXED/90Hz claim.
+
+## Incomplete payload admission, 2026-10-29
+
+Actual recorder regression reproduced a separate correctness defect: copying a
+64-byte VS matrix across an unreadable page produced a readable prefix/zero
+tail, but RecEmitData certified all four rows from arena length alone. The
+pre-change test fails `g_recOverflow && g_rec.empty() && !reference.valid`
+(small_record_copy_test.cpp, line74). This is not evidence of its frequency in
+the user's run or proof that it explains observed right-eye flicker.
+
+Copy/SafeMemcpy/LegacyCopy now return full-copy receipts without changing their
+byte output, fallback algorithm, guard-page handling or startup admission.
+Successful legacy fallback after a failed/short RPM remains valid. RecPushLocked
+marks the existing recording failure flag for an incomplete or sanity-clamped
+packet; RecEmitData refuses to mark its raw VS rows valid. Failed packets cannot
+publish records or certify a replay pair. A fresh valid recording recovers.
+Original live driver calls/HRESULTs and lifetime rules are unchanged. This adds
+no query, allocation, permission cache, readback, diagnostic timer or INI key.
+
+PASS: actual x86 recorder/copy6133 byte/range checks; native source/ABI9239;
+actual UP hooks/replay4377 checks, including unreadable vertex/index pages,
+both index formats, preserved guard flags, original call exactly once and
+next-stream recovery. Both production and DiagnosticCapture x86 builds PASS.
+The change is a payload-integrity correction; FPS saving and HMD effect remain
+unmeasured. Dynamic VB/IB versioning and draw-inherited constants remain open.

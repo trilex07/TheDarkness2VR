@@ -43,34 +43,39 @@ inline size_t ClampReadableBytes(const void* p, size_t bytes) {
     }
     return done;
 }
-inline void SafeMemcpy(void* dst, const void* src, size_t bytes) {
+inline bool SafeMemcpy(void* dst, const void* src, size_t bytes) {
     __try {
         memcpy(dst, src, bytes);
+        return true;
     } __except (1) {
         memset(dst, 0, bytes);
+        return false;
     }
 }
-inline void LegacyCopy(void* dst, const void* data, size_t bytes) {
+inline bool LegacyCopy(void* dst, const void* data, size_t bytes) {
     const size_t readable = ClampReadableBytes(data, bytes);
     if (readable < bytes) {
         memset(dst, 0, bytes);
         if (readable) SafeMemcpy(dst, data, readable);
+        return false;
     } else {
-        SafeMemcpy(dst, data, bytes);
+        return SafeMemcpy(dst, data, bytes);
     }
 }
 
-inline void Copy(void* dst, const void* data, size_t bytes, bool admitted,
+// Output remains the legacy readable-prefix/zero-tail representation on error.
+// Only a full successful copy certifies an owned replay payload.
+inline bool Copy(void* dst, const void* data, size_t bytes, bool admitted,
                  ReadMemory readMemory = &ReadProcessMemory,size_t limit=kSmallLimit) {
-    if (!bytes) return;
+    if (!bytes) return true;
     if (admitted && bytes <= (limit>kWideLimit?kWideLimit:limit)) {
         SIZE_T copied = 0;
-        if (readMemory(GetCurrentProcess(), data, dst, bytes, &copied) && copied == bytes) return;
+        if (readMemory(GetCurrentProcess(), data, dst, bytes, &copied) && copied == bytes) return true;
         // RPM does not preserve the readable prefix on every failed/partial
         // read. Discard any output before using the original prefix/zero policy.
         memset(dst, 0, bytes);
     }
-    LegacyCopy(dst, data, bytes);
+    return LegacyCopy(dst, data, bytes);
 }
 
 // Probe only our allocation. A different OS policy, allocation failure or any

@@ -99,6 +99,34 @@ int main() {
     CHECK(Replay() && rendered==expected && driverCalls==2);
     for(size_t n=0;n<page;++n)CHECK(g_recData[n]==0); // arena prefix initialized despite nonzeroing allocator
     VirtualFree(data,0,MEM_RELEASE);
+    // A sane pointer/range can still cross an unreadable page. Never publish
+    // the readable-prefix/zero-tail storage as valid deferred geometry.
+    data=static_cast<uint8_t*>(VirtualAlloc(nullptr,page*2,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));CHECK(data);
+    std::vector<uint8_t> validVertices(48,0x39);
+    uint16_t validIndices[3]={0,1,2};
+    for(DWORD protection:{PAGE_NOACCESS,PAGE_READWRITE|PAGE_GUARD}) {
+        CHECK(VirtualProtect(data+page,page,protection,&old));
+        Reset();driverResult=D3DERR_INVALIDCALL;
+        CHECK(Hook_DrawPrimitiveUP(nullptr,D3DPT_TRIANGLELIST,1,data+page-16,16)==D3DERR_INVALIDCALL);
+        CHECK(g_recOverflow && g_rec.empty() && driverCalls==1 && !Replay());
+        Reset();driverResult=D3DERR_INVALIDCALL;
+        CHECK(Hook_DrawIndexedPrimitiveUP(nullptr,D3DPT_TRIANGLELIST,0,3,1,validIndices,D3DFMT_INDEX16,
+            data+page-16,16)==D3DERR_INVALIDCALL);
+        CHECK(g_recOverflow && g_rec.empty() && driverCalls==1 && !Replay());
+        for(D3DFORMAT format:{D3DFMT_INDEX16,D3DFMT_INDEX32}) {
+            Reset();driverResult=D3DERR_INVALIDCALL;
+            CHECK(Hook_DrawIndexedPrimitiveUP(nullptr,D3DPT_TRIANGLELIST,0,3,1,data+page-2,format,
+                validVertices.data(),16)==D3DERR_INVALIDCALL);
+            CHECK(g_recOverflow && g_rec.empty() && driverCalls==1 && !Replay());
+        }
+        MEMORY_BASIC_INFORMATION protectedPage{};
+        CHECK(VirtualQuery(data+page,&protectedPage,sizeof(protectedPage)));
+        CHECK(protectedPage.Protect==protection);
+        CHECK(VirtualProtect(data+page,page,PAGE_READWRITE,&old));
+        Reset();CHECK(Hook_DrawPrimitiveUP(nullptr,D3DPT_TRIANGLELIST,1,validVertices.data(),16)==D3D_OK);
+        CHECK(!g_recOverflow && g_rec.size()==1 && Replay() && driverCalls==2);
+    }
+    VirtualFree(data,0,MEM_RELEASE);
     d2vr_up_geometry::Plan untouched;untouched.vertices=77;
     for(unsigned type=1;type<=6;++type) {
         CHECK(!d2vr_up_geometry::NonIndexed(D3DPRIMITIVETYPE(type),UINT32_MAX,UINT32_MAX,untouched));

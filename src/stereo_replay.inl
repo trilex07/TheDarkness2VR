@@ -547,12 +547,13 @@ static inline bool RecOnRenderThread() {
 
 // Caller holds g_recLock until the payload and its command are both published.
 static inline uint32_t RecPushLocked(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {}) {
-    if (bytes > (size_t)8 * 1024 * 1024) bytes = 0;   // sanity clamp
+    if (bytes > (size_t)8 * 1024 * 1024) {g_recOverflow=true;bytes=0;} // incomplete packet
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
     if (bytes && !d2vr_native_constants::Copy(proof,g_recData.data()+off,data,bytes)) {
-        d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),
-            &ReadProcessMemory,g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit);
+        if(!d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),
+            &ReadProcessMemory,g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit))
+            g_recOverflow=true;
     }
     return off;
 }
@@ -656,7 +657,7 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
     }
     uint32_t off = RecPushLocked(data, bytes, proof);
     if(op==OP_SetVSConstF) {
-        const bool complete=uint64_t(off)+bytes<=g_recData.size();
+        const bool complete=!g_recOverflow && uint64_t(off)+bytes<=g_recData.size();
         if(complete)g_vsConstantHistory.live.Write(a0,a1,g_recData.data()+off,bytes);
         else g_vsConstantHistory.live.Invalidate(a0,a1);
         if(reference)*reference=d2vr_shader_registers::Reference(g_vsConstantHistory.live,referenceBase,auxiliaryBase,a0,a1);

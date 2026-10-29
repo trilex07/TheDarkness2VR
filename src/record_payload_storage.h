@@ -8,7 +8,8 @@
 namespace d2vr_record_payload {
 // Only the byte arena uses default initialization. RecPush holds its lock and
 // fills every appended byte before publishing a record. Copy failures explicitly
-// supply the legacy readable prefix/zero tail. No uninitialized payload escapes.
+// supply the legacy readable prefix/zero tail and reject the recording. No
+// uninitialized payload escapes and zero padding cannot certify valid data.
 template<class T> struct Allocator : std::allocator<T> {
     using value_type=T;
     template<class U> struct rebind {using other=Allocator<U>;};
