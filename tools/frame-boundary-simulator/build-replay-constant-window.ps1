@@ -7,7 +7,7 @@ $src=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw
 $main=Get-Content -LiteralPath (Join-Path $repo 'src\d3d9.cpp') -Raw
 if($main -notmatch 'g_replayConstantWindow = GetPrivateProfileIntA\("Render", "ReplayConstantWindow", 0, chosenIni\)' -or
    $src -notmatch 'const bool windowEnabled = batchEnabled && g_replayConstantWindow;' -or
-   $src -notmatch 'bindWindowEnabled && IsConstantMaterialBinding\(r.op\)' -or
+   $src -notmatch 'bindWindowEnabled && IsConstantMaterialBinding\(r.op,&r\)' -or
    $src -notmatch 'constantWindow.Abort\(\); batchEnabled=false;') {throw 'Default/barrier/abort contract changed'}
 $begin=$src.IndexOf('    bool replayComplete=!g_recOverflow;',[StringComparison]::Ordinal)
 $cases=$src.IndexOf('        switch ((RecOp)r.op) {',$begin,[StringComparison]::Ordinal)
@@ -22,7 +22,7 @@ $end=$src.IndexOf('    g_recLock.store(0,std::memory_order_release);',$footer,[S
 if(@($begin,$cases,$vs,$vsEnd,$ps,$psEnd,$bindVS,$bindPS,$footer,$end) | Where-Object {$_ -lt 0}){throw 'Actual replay source boundaries missing'}
 # Compile actual admission, forwarding lambda, float cases, look-ahead, SEH and
 # receipt aggregation. Non-float commands become observers of the driver banks.
-$helperBegin=$src.IndexOf('static bool IsConstantMaterialBinding(unsigned op)',[StringComparison]::Ordinal)
+$helperBegin=$src.IndexOf('static bool IsConstantRenderStateBinding(',[StringComparison]::Ordinal)
 $helperEnd=$src.IndexOf('static bool ReplayStream(', $helperBegin,[StringComparison]::Ordinal)
 if($helperBegin -lt 0 -or $helperEnd -lt 0){throw 'Actual binding classifier missing'}
 [IO.File]::WriteAllText((Join-Path $out 'actual_constant_binding_helpers.inl'),$src.Substring($helperBegin,$helperEnd-$helperBegin))
@@ -33,14 +33,17 @@ $partialBegin=$src.IndexOf('static constexpr UINT kVertexStereoUploadRows=',[Str
 $partialEnd=$src.IndexOf('// ------------------------------------------------------------- recording hooks',$partialBegin,[StringComparison]::Ordinal)
 if($partialBegin -lt 0 -or $partialEnd -lt 0){throw 'Actual partial WVP helper missing'}
 [IO.File]::WriteAllText((Join-Path $out 'actual_partial_wvp.inl'),$src.Substring($partialBegin,$partialEnd-$partialBegin))
-$extraCases=foreach($name in @('SetStreamSource','SetStreamSourceFreq','SetIndices','SetVertexDeclaration','SetViewport','SetScissorRect','SetVSConstI','SetVSConstB','SetPSConstI','SetPSConstB')) {
+$extraCases=foreach($name in @('SetRenderState','SetStreamSource','SetStreamSourceFreq','SetIndices','SetVertexDeclaration','SetViewport','SetScissorRect','SetVSConstI','SetVSConstB','SetPSConstI','SetPSConstB')) {
         $case=[regex]::Match($src.Substring($cases),"(?s)        case OP_${name}:.*?(?=        case |        default:)")
-        if(!$case.Success){throw "Missing actual binding case $name"};$case.Value
+        if(!$case.Success){throw "Missing actual binding case $name"}
+        if($name -eq 'SetRenderState') {
+            $case.Value.Replace('g_orig.SetRenderState(', 'if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks(); g_orig.SetRenderState(')
+        } else {$case.Value}
     }
 $actual=$src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
     $src.Substring($bindVS,$vsEnd-$bindVS) + $src.Substring($bindPS,$psEnd-$bindPS) +
     ($extraCases -join "`n") +
-    "        default: if(!IsConstantMaterialBinding(r.op)) CheckBanks(); break;`n        }`n" + $src.Substring($footer,$end-$footer)
+    "        default: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks(); break;`n        }`n" + $src.Substring($footer,$end-$footer)
 [IO.File]::WriteAllText((Join-Path $out 'actual_replay_float_loop.inl'),$actual)
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

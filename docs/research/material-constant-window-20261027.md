@@ -91,3 +91,39 @@ makes four, with identical float banks and independent state at both draws.
 This is a constructed regression, not measured graphics-driver or game savings.
 Both x86 DLL builds pass. Existing runtime has not been rerun, so no additional
 ms/frame saving, 90 FPS result or side-visibility/flicker fix is claimed.
+
+## Validated public render states, 2026-10-29
+
+The next extension admits an explicit state-and-value whitelist for ordinary
+depth, stencil, blending, color masks and related boolean render states. The
+[public D3D9 render-state contract](https://learn.microsoft.com/en-us/windows/win32/direct3d9/d3drenderstatetype)
+defines their setup values separately from float shader registers. Float writes
+may now span these setters under ReplayConstantBindWindow, while each render-state
+setter keeps its original position and arguments. Transforming a float packet
+still happens at its original upload. No state/value cache, allocation, extra
+device query, record pass or worker is introduced.
+
+POINTSIZE, adaptive tessellation (including vendor RESZ/ATOC-style commands),
+unknown state IDs, invalid enum/mask values, state blocks, draw and resource
+operations remain barriers. Both the immediate barrier check and look-ahead use
+the full recorded state/value, so a later command-like state cannot be crossed.
+The existing last-float flush keeps driver exceptions at the float command;
+each native render-state setter still executes once after an upload exception.
+The existing handling of render-state HRESULTs is preserved.
+
+The retained installed ddd2e9d log's endPair7800 window has 181356 vertex and
+149267 pixel constant API entries over 120 streams: about 2755 per replay image.
+It does not retain state/float adjacency, so it cannot predict this extension's
+game savings. Actual-loop x86 regressions pass 58286 checks per DLL flavor,
+including the existing 96 streams / 576096 records. A constructed 16-float,
+16-render-state sequence goes from 16 float API calls to two, with exact constant
+bits, state and setter order at the draw, including all 16 setter-failure
+positions. Sixteen command-like/invalid cases retain all 16 float calls. The
+SEH case faults at the final float command, makes one driver entry, rejects the
+pair and forwards all 16 render-state setters once. Adjacent packet regression
+passes 80190 checks / 360000 input operations. Both x86 DLL builds pass.
+
+This is an offline batching correction awaiting consolidated runtime testing.
+No measured driver-time reduction, 1 ms saving, right-eye artifact closure or
+stable 90 FPS is claimed. Installed 2e9b887 is retained; the combined next package
+also contains 7f60631's located grip velocity.

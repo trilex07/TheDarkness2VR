@@ -706,7 +706,7 @@ void LoadConfig() {
     d2vr_native_constants::enabled = g_nativeOwnedConstantCopyRequested;
     g_nativeOwnedMaterialCopyRequested = GetPrivateProfileIntA("Render", "NativeOwnedMaterialCopy", 0, chosenIni)!=0;
     d2vr_native_constants::materialEnabled = g_nativeOwnedMaterialCopyRequested;
-    if(g_replayConstantBindWindow) Log("[ReplayConstantBindWindow] requested=1; material bindings only; draw/shader/resource/stateblock barriers retained");
+    if(g_replayConstantBindWindow) Log("[ReplayConstantBindWindow] requested=1; independent bindings + validated public render states; draw/resource/stateblock/vendor-command barriers retained");
     if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;

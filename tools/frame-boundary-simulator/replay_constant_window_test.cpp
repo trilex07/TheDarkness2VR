@@ -42,8 +42,8 @@ using VsInfo=Vs;
 static Vs* g_activeVs=&vertexMetadata;
 static bool bindingTransforms=false,collectReference=false,checkBindingSnapshots=false;
 static std::vector<std::array<const void*,2>> expectedBindings;
-static std::array<uint32_t,10> otherState{};
-static std::vector<std::array<uint32_t,10>> expectedState;
+static std::array<uint32_t,11> otherState{};
+static std::vector<std::array<uint32_t,11>> expectedState;
 static std::vector<std::vector<uint32_t>> stateOrder;
 static unsigned stateCalls=0,stateFailAt=0;
 static bool checkOtherState=false;
@@ -67,6 +67,7 @@ static HRESULT VSI(void*,UINT first,const int* p,UINT n){return State(6,{first,n
 static HRESULT VSB(void*,UINT first,const BOOL* p,UINT n){return State(7,{first,n},p,n*4);}
 static HRESULT PSI(void*,UINT first,const int* p,UINT n){return State(8,{first,n},p,n*16);}
 static HRESULT PSB(void*,UINT first,const BOOL* p,UINT n){return State(9,{first,n},p,n*4);}
+static HRESULT RenderState(void*,D3DRENDERSTATETYPE state,DWORD value){return State(10,{unsigned(state),value});}
 static void InvalidateShadowAtlasPass(){}
 static int activeWvpBase=-1;
 static int ActiveWvpRegister(Vs*){return activeWvpBase;}
@@ -105,11 +106,12 @@ static bool CompensatePsConstants(float* dst,const float* src,UINT,UINT n,int in
 }
 [[maybe_unused]] static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT){}
 static void Log(const char*,...){}
-#define HOOK_MARK(value) ((void)0)
+static LONG hookMark=0,faultMark=0;
+#define HOOK_MARK(value) (hookMark=(value))
 static HRESULT Submit(bool vertex,UINT first,const float* values,UINT count){
     ++apiCalls;
     if(vertex){lastVsFirst=first;lastVsCount=count;}
-    if(throwAt && apiCalls==throwAt)RaiseException(0xe0420011,0,0,nullptr);
+    if(throwAt && apiCalls==throwAt){faultMark=hookMark;RaiseException(0xe0420011,0,0,nullptr);}
     if(rejectAt && apiCalls==rejectAt){++apiFail;return D3DERR_INVALIDCALL;}
     const unsigned limit=vertex?256:224;
     if(!values || !count || first>=limit || count>limit-first){++apiFail;return D3DERR_INVALIDCALL;}
@@ -124,7 +126,8 @@ static struct {decltype(&VS) SetVertexShaderConstantF=VS;decltype(&PS) SetPixelS
     decltype(&Indices) SetIndices=Indices;decltype(&Declaration) SetVertexDeclaration=Declaration;
     decltype(&Viewport) SetViewport=Viewport;decltype(&Scissor) SetScissorRect=Scissor;
     decltype(&VSI) SetVertexShaderConstantI=VSI;decltype(&VSB) SetVertexShaderConstantB=VSB;
-    decltype(&PSI) SetPixelShaderConstantI=PSI;decltype(&PSB) SetPixelShaderConstantB=PSB;} g_orig;
+    decltype(&PSI) SetPixelShaderConstantI=PSI;decltype(&PSB) SetPixelShaderConstantB=PSB;
+    decltype(&RenderState) SetRenderState=RenderState;} g_orig;
 static void CheckBanks(){
     if(collectReference){expected.push_back(driver);expectedBindings.push_back({g_replayVs,g_replayPs});expectedState.push_back(otherState);++checkAt;++checks;return;}
     assert(checkAt<expected.size());
@@ -147,7 +150,7 @@ static void Build(){
     for(unsigned i=0;i<6000;++i){
         Rec r;
         if(i%7==6){r.op=1+Random()%18;if(r.op==OP_SetVSConstF || r.op==OP_SetPSConstF)r.op=36;
-            if(!IsConstantMaterialBinding(r.op))expected.push_back(ref);g_rec.push_back(r);continue;}
+            if(!IsConstantMaterialBinding(r.op,&r))expected.push_back(ref);g_rec.push_back(r);continue;}
         r.op=(Random()%3)?OP_SetVSConstF:OP_SetPSConstF;
         r.a[0]=Random()%256;r.a[1]=Random()%69;
         if(i%19==0)r.a[0]=0; // projection/partial ranges and duplicated overlaps
@@ -357,8 +360,70 @@ static void PartialReplay(){
     assert(!Actual() && apiCalls==1 && apiFail==1);++checks;
     rejectAt=0;activeWvpBase=activeStpBase=-1;g_vsConstantHistory.Clear();
 }
+static void RenderStateReduction(){
+    const std::pair<unsigned,unsigned> safe[]={
+        {D3DRS_ZENABLE,D3DZB_TRUE},{D3DRS_ZWRITEENABLE,0},{D3DRS_ALPHABLENDENABLE,1},
+        {D3DRS_SRCBLEND,D3DBLEND_SRCALPHA},{D3DRS_DESTBLEND,D3DBLEND_INVSRCALPHA},
+        {D3DRS_CULLMODE,D3DCULL_CCW},{D3DRS_ZFUNC,D3DCMP_LESSEQUAL},
+        {D3DRS_STENCILENABLE,1},{D3DRS_STENCILFAIL,D3DSTENCILOP_REPLACE},
+        {D3DRS_CCW_STENCILFUNC,D3DCMP_ALWAYS},{D3DRS_BLENDOP,D3DBLENDOP_ADD},
+        {D3DRS_COLORWRITEENABLE,15},{D3DRS_COLORWRITEENABLE3,0},
+        {D3DRS_ALPHAREF,255},{D3DRS_STENCILMASK,0xffffffffu},{D3DRS_SRGBWRITEENABLE,0}};
+    const std::pair<unsigned,unsigned> unsafe[]={
+        {D3DRS_POINTSIZE,MAKEFOURCC('R','E','S','Z')},
+        {D3DRS_ADAPTIVETESS_Y,MAKEFOURCC('A','T','O','C')},
+        {D3DRS_POINTSIZE,0x3f800000},{D3DRS_DEBUGMONITORTOKEN,0},
+        {0xffffffffu,1},{0,0},{D3DRS_ZENABLE,3},{D3DRS_ZWRITEENABLE,2},
+        {D3DRS_CULLMODE,0},{D3DRS_CULLMODE,4},{D3DRS_ZFUNC,0},
+        {D3DRS_STENCILPASS,9},{D3DRS_COLORWRITEENABLE,16},
+        {D3DRS_ALPHAREF,256},{D3DRS_BLENDOP,0},{D3DRS_SRCBLEND,D3DBLEND_BOTHSRCALPHA}};
+    for(auto pair:safe){assert(IsConstantRenderStateBinding(pair.first,pair.second));++checks;}
+    for(auto pair:unsafe){assert(!IsConstantRenderStateBinding(pair.first,pair.second));++checks;}
+    capture=false;compensate=false;checkOtherState=true;
+    unsigned reduction[4]{};
+    for(unsigned guarded=0;guarded<2;++guarded){
+        g_rec.clear();arena.assign(2048,0);
+        for(unsigned i=0;i<16;++i){
+            Rec upload;upload.op=i%2?OP_SetPSConstF:OP_SetVSConstF;
+            upload.a[0]=i/2;upload.a[1]=1;upload.a[4]=i*16;
+            uint32_t data[4]={i+17,i+91,i+53,i+193};memcpy(arena.data()+i*16,data,16);
+            g_rec.push_back(upload);
+            Rec state;state.op=OP_SetRenderState;
+            const auto pair=guarded?unsafe[i]:safe[i];state.a[0]=pair.first;state.a[1]=pair.second;
+            g_rec.push_back(state);
+        }
+        Rec draw;draw.op=OP_DrawIndexedPrimitive;g_rec.push_back(draw);
+        for(stateFailAt=0;stateFailAt<=16;++stateFailAt){
+            expected.clear();expectedBindings.clear();expectedState.clear();
+            std::vector<std::vector<uint32_t>> referenceOrder;
+            for(unsigned mode=0;mode<4;++mode){
+                driver={};otherState={};stateOrder.clear();stateCalls=apiCalls=apiFail=checkAt=0;
+                g_vsConstantHistory.Clear();g_activeVs=&vertexMetadata;vertexMetadata.hash=0;
+                g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
+                collectReference=mode==0;
+                assert(Actual()); // unchanged render-state HRESULT handling
+                assert(checkAt==(guarded?17u:1u) && stateCalls==16 && !apiFail);
+                if(!mode)referenceOrder=stateOrder;else assert(stateOrder==referenceOrder);
+                reduction[mode]=apiCalls;++checks;
+            }
+            if(!guarded)assert(reduction[0]==16 && reduction[1]==16 && reduction[2]==16 && reduction[3]==2);
+            else for(auto count:reduction)assert(count==16); // command-like/invalid state stays a barrier
+            ++checks;
+        }
+    }
+    stateFailAt=0;
+    // Restore safe states, then raise at the deferred driver's entry. The
+    // exception remains attributed to the final FLOAT command, not a later
+    // render-state setter; native state commands still execute exactly once.
+    for(unsigned i=0;i<16;++i){auto& r=g_rec[i*2+1];r.a[0]=safe[i].first;r.a[1]=safe[i].second;}
+    driver={};otherState={};stateOrder.clear();stateCalls=apiCalls=apiFail=checkAt=0;
+    g_vsConstantHistory.Clear();g_replayConstantBatch=g_replayConstantWindow=g_replayConstantBindWindow=true;
+    collectReference=true;checkOtherState=false;throwAt=1;faultMark=0;
+    assert(!Actual());assert(apiCalls==1 && stateCalls==16 && faultMark==10000+OP_SetPSConstF);++checks;
+    throwAt=0;collectReference=false;otherState={};g_replayConstantBindWindow=false;
+}
 int main(){
-    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();unsigned streams=0,records=0;
+    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();RenderStateReduction();unsigned streams=0,records=0;
     for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
     for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
@@ -390,5 +455,5 @@ int main(){
 #ifdef D2VR_MATCHED_CAPTURE
     assert(g_constantUploadWindow.counts.exceptions==1 && g_constantUploadWindow.counts.calls[0]==1);
 #endif
-    printf("PASS actual replay float loop: %u streams / %u records / %u checks; OFF/adjacent/window/independent-bind/capture, shader+viewport-dependent transformed bits, shader 8->4 and independent 20->4 setters, exact setter args/order/state at draws, failed/null binds, caps, failures, forwarding receipts, SEH no retry\n",streams,records,checks);
+    printf("PASS actual replay float loop: %u streams / %u records / %u checks; OFF/adjacent/window/independent-bind/capture, shader+viewport-dependent transformed bits, shader 8->4, independent 20->4, public RS 16->2 setters; exact setter args/order/state at draws, vendor/invalid RS barriers, failed/null binds, caps, failures, forwarding receipts, SEH at float/no retry\n",streams,records,checks);
 }

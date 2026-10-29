@@ -1838,9 +1838,40 @@ static void LightEndOfWindowSnapshot(IDirect3DDevice9* dev) {
 // Stream/declaration/viewport/scissor setters and the separate integer/boolean
 // banks likewise do not consume or modify float registers. Keep RT, draw,
 // resource-content mutation, FVF/transform and state-block commands as barriers.
-static bool IsConstantMaterialBinding(unsigned op) {
-    // SetRenderState is deliberately excluded: vendor FourCC states can trigger
-    // operations (for example depth resolves), rather than merely bind state.
+static bool IsConstantRenderStateBinding(unsigned state,unsigned value) {
+    // Value-aware public D3D9 state only. In particular POINTSIZE and adaptive
+    // tessellation states can carry vendor commands such as RESZ/ATOC; neither
+    // these nor unknown/invalid enum values may defer a preceding float upload.
+    switch(state) {
+    case D3DRS_ZWRITEENABLE: case D3DRS_ALPHATESTENABLE: case D3DRS_LASTPIXEL:
+    case D3DRS_DITHERENABLE: case D3DRS_ALPHABLENDENABLE: case D3DRS_FOGENABLE:
+    case D3DRS_SPECULARENABLE: case D3DRS_RANGEFOGENABLE: case D3DRS_STENCILENABLE:
+    case D3DRS_CLIPPING: case D3DRS_MULTISAMPLEANTIALIAS: case D3DRS_SCISSORTESTENABLE:
+    case D3DRS_ANTIALIASEDLINEENABLE: case D3DRS_TWOSIDEDSTENCILMODE:
+    case D3DRS_SRGBWRITEENABLE: case D3DRS_SEPARATEALPHABLENDENABLE:
+        return value<=1;
+    case D3DRS_ZENABLE:return value<=D3DZB_USEW;
+    case D3DRS_CULLMODE:return value>=D3DCULL_NONE && value<=D3DCULL_CCW;
+    case D3DRS_ZFUNC: case D3DRS_ALPHAFUNC: case D3DRS_STENCILFUNC: case D3DRS_CCW_STENCILFUNC:
+        return value>=D3DCMP_NEVER && value<=D3DCMP_ALWAYS;
+    case D3DRS_STENCILFAIL: case D3DRS_STENCILZFAIL: case D3DRS_STENCILPASS:
+    case D3DRS_CCW_STENCILFAIL: case D3DRS_CCW_STENCILZFAIL: case D3DRS_CCW_STENCILPASS:
+        return value>=D3DSTENCILOP_KEEP && value<=D3DSTENCILOP_DECR;
+    case D3DRS_BLENDOP: case D3DRS_BLENDOPALPHA:
+        return value>=D3DBLENDOP_ADD && value<=D3DBLENDOP_MAX;
+    case D3DRS_SRCBLEND: case D3DRS_DESTBLEND: case D3DRS_SRCBLENDALPHA: case D3DRS_DESTBLENDALPHA:
+        return (value>=D3DBLEND_ZERO && value<=D3DBLEND_SRCALPHASAT) ||
+            (value>=D3DBLEND_BLENDFACTOR && value<=D3DBLEND_INVSRCCOLOR2);
+    case D3DRS_COLORWRITEENABLE: case D3DRS_COLORWRITEENABLE1:
+    case D3DRS_COLORWRITEENABLE2: case D3DRS_COLORWRITEENABLE3:return value<=15;
+    case D3DRS_ALPHAREF:return value<=255;
+    case D3DRS_STENCILREF: case D3DRS_STENCILMASK: case D3DRS_STENCILWRITEMASK:return true;
+    default:return false;
+    }
+}
+static bool IsConstantMaterialBinding(unsigned op,const Rec* command=nullptr) {
+    if(op==OP_SetRenderState)return command &&
+        IsConstantRenderStateBinding(command->a[0],command->a[1]);
     switch(op) {
     case OP_SetTexture: case OP_SetTextureStageState: case OP_SetSamplerState:
     case OP_SetVertexShader: case OP_SetPixelShader:
@@ -1855,7 +1886,7 @@ static bool MoreFloatBeforeBarrier(size_t at) {
     for(size_t j=at+1;j<g_rec.size();++j) {
         const unsigned op=g_rec[j].op;
         if(op==OP_SetVSConstF || op==OP_SetPSConstF) return true;
-        if(!IsConstantMaterialBinding(op)) return false;
+        if(!IsConstantMaterialBinding(op,&g_rec[j])) return false;
     }
     return false;
 }
@@ -1922,7 +1953,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         HOOK_MARK(10000 + (LONG)r.op);
         __try {
         if (windowEnabled && r.op!=OP_SetVSConstF && r.op!=OP_SetPSConstF &&
-            !(bindWindowEnabled && IsConstantMaterialBinding(r.op)))
+            !(bindWindowEnabled && IsConstantMaterialBinding(r.op,&r)))
             constantWindow.Flush(sendConstants);
         if (batchEnabled && !windowEnabled) constants.Barrier(
             r.op==OP_SetVSConstF ? d2vr_replay_batch::Stage::Vertex :

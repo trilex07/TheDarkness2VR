@@ -3,10 +3,11 @@
 
 namespace d2vr_replay_batch {
 // Opt-in extension, independent from the adjacent-packet A/B. No device-state
-// cache: dirty/value banks live ONLY until the next non-float command. Transform
+// cache: dirty/value banks live ONLY until the caller's next barrier. Transform
 // each original packet first, then retain the final bits for each register.
 // VS/PS banks are independent D3D9 state. There is no draw, query, state-block,
-// shader bind or resource mutation between these writes and their barrier.
+// or resource mutation between these writes and their barrier. The caller may
+// admit only independent bindings, including validated public render states.
 class ConstantWindow {
     float values_[2][256 * 4]; // no initialization/read of unowned register holes
     bool dirty_[2][256];
