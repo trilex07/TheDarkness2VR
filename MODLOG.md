@@ -2089,3 +2089,35 @@ failure-only locking and sticky refusal after a subsequent successful call.
 Pre-scene writes pass 9129 checks; actual replay surface and state receipt
 regressions also pass. These are CPU fault-injection fixtures, not evidence
 that this error occurs in the user's menu. No performance saving is claimed.
+
+## 2026-10-29: independent shared inputs for same-frame stereo
+
+The deferred transfer worker previously reused one D3D9Ex/D3D11 shared input
+for both eyes. Submitting the right copy therefore waited for the left GPU
+reader even after reclaiming the CPU context lease. The worker route now uses
+one input per eye, each with its own D3D9 producer query, D3D11 reader query,
+fence identity and retained packet. Only the prior reader of the selected
+input can block its next overwrite. Both images still come from the current
+application frame; simulation, tracking, stereo replay and XR sequencing stay
+unchanged. This removes a dependency, not a synchronization proof.
+
+Two slots require the existing worker, deferred-reader and last-consumer-fence
+options. Serial and nondeferred modes retain one slot. Extra allocation failure
+keeps the original fenced route and is not retried until Reset; it cannot accrue
+primary capture failures. Resize drains the context lease and retires that
+slot. Global teardown verifies both readers before freeing either resource
+lifetime; failed reads retain resources and refuse reuse/Reset. Legacy untracked
+readers are also fenced at resize/teardown. The extra input uses 29,200,512 bytes
+(about 27.85 MiB) at 2676x2728, excluding driver metadata. Copy count is unchanged.
+
+Actual owner/packet-building code passes 22,908 x86 CPU checks, including 1000
+two-eye sequences, independent source/query identities, exact packet selection
+in worker modes 1/3, original one-slot routing, own-reader refusal, retained jobs,
+all seven creation failures, no repeated optional allocation, failed queue
+publication, resize and legacy teardown. Existing reader-fence protocol passes
+2000 worker jobs. Both DLL variants build. The real x86 D3D9Ex/D3D11 interop
+fixture passes 2000 eye transfers, including 1000 at 2676x2728 and both new
+two-input scenarios. It checks sampled pixel equality, reader retirement,
+concurrent D3D9 work, joins, failure refusal and Reset/recreation. No game or
+OpenXR calls occur. Game CPU/GPU savings, latency, HMD image correctness and
+stable 90 FPS remain unproven.

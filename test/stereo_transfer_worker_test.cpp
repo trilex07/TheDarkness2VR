@@ -37,20 +37,27 @@ static Ref<ID3DBlob> Compile(const char* source,const char* target) {
     HR(hr);return Adopt(code);
 }
 static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceContext* ctx,
-                     bool deferred=false,UINT width=64,UINT height=64,bool ownerProducer=false) {
+                     bool deferred=false,UINT width=64,UINT height=64,bool ownerProducer=false,bool split=false) {
     IDirect3DSurface9* rtRaw=nullptr;
     HR(dev9->CreateRenderTarget(width,height,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rtRaw,nullptr));
     auto rt=Adopt(rtRaw); HR(dev9->SetRenderTarget(0,rt.Get()));
-    HANDLE sharedHandle=nullptr; IDirect3DTexture9* texRaw=nullptr;
-    HR(dev9->CreateTexture(width,height,1,D3DUSAGE_RENDERTARGET,D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT,&texRaw,&sharedHandle));
-    auto shared9=Adopt(texRaw); IDirect3DSurface9* surfRaw=nullptr;
-    HR(shared9->GetSurfaceLevel(0,&surfRaw));auto surf=Adopt(surfRaw);
-    IDirect3DQuery9* q9Raw=nullptr;HR(dev9->CreateQuery(D3DQUERYTYPE_EVENT,&q9Raw));auto q9=Adopt(q9Raw);
-    ID3D11Texture2D* tex11Raw=nullptr;
-    HR(dev11->OpenSharedResource(sharedHandle,__uuidof(ID3D11Texture2D),reinterpret_cast<void**>(&tex11Raw)));
-    auto shared11=Adopt(tex11Raw);
-    ID3D11ShaderResourceView* srvRaw=nullptr;HR(dev11->CreateShaderResourceView(shared11.Get(),nullptr,&srvRaw));auto srv=Adopt(srvRaw);
-    D3D11_TEXTURE2D_DESC td{};shared11->GetDesc(&td);
+    struct Input {
+        Ref<IDirect3DTexture9> tex9;Ref<IDirect3DSurface9> surface;
+        Ref<IDirect3DQuery9> producer;Ref<ID3D11Texture2D> tex11;
+        Ref<ID3D11ShaderResourceView> srv;Ref<ID3D11Query> reader;
+        d2vr_shared_reader::Fence fence;
+        std::shared_ptr<d2vr_transfer::Job> retained;
+    } inputs[2];
+    for(unsigned i=0;i<(split?2u:1u);++i) {
+        auto& in=inputs[i];HANDLE handle=nullptr;IDirect3DTexture9* tex=nullptr;
+        HR(dev9->CreateTexture(width,height,1,D3DUSAGE_RENDERTARGET,D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT,&tex,&handle));in.tex9=Adopt(tex);
+        IDirect3DSurface9* surface=nullptr;HR(tex->GetSurfaceLevel(0,&surface));in.surface=Adopt(surface);
+        IDirect3DQuery9* producer=nullptr;HR(dev9->CreateQuery(D3DQUERYTYPE_EVENT,&producer));in.producer=Adopt(producer);
+        ID3D11Texture2D* image=nullptr;HR(dev11->OpenSharedResource(handle,__uuidof(ID3D11Texture2D),reinterpret_cast<void**>(&image)));in.tex11=Adopt(image);
+        ID3D11ShaderResourceView* srv=nullptr;HR(dev11->CreateShaderResourceView(image,nullptr,&srv));in.srv=Adopt(srv);
+        ID3D11Query* reader=nullptr;D3D11_QUERY_DESC desc{D3D11_QUERY_EVENT,0};HR(dev11->CreateQuery(&desc,&reader));in.reader=Adopt(reader);
+    }
+    D3D11_TEXTURE2D_DESC td{};inputs[0].tex11->GetDesc(&td);
     td.MiscFlags=0;td.BindFlags=D3D11_BIND_RENDER_TARGET;td.Usage=D3D11_USAGE_DEFAULT;td.CPUAccessFlags=0;
     Ref<ID3D11Texture2D> eyes[2];Ref<ID3D11RenderTargetView> targets[2];
     for(int e=0;e<2;++e) {
@@ -59,8 +66,6 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     }
     td.BindFlags=0;td.Usage=D3D11_USAGE_STAGING;td.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
     ID3D11Texture2D* stageRaw=nullptr;HR(dev11->CreateTexture2D(&td,nullptr,&stageRaw));auto stage=Adopt(stageRaw);
-    ID3D11Query* q11Raw=nullptr;D3D11_QUERY_DESC qd{D3D11_QUERY_EVENT,0};
-    HR(dev11->CreateQuery(&qd,&q11Raw));auto q11=Adopt(q11Raw);
     D3D11_BUFFER_DESC bd{};bd.ByteWidth=112;bd.Usage=D3D11_USAGE_DYNAMIC;
     bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;bd.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE;
     ID3D11Buffer* bufferRaw=nullptr;HR(dev11->CreateBuffer(&bd,nullptr,&bufferRaw));auto buffer=Adopt(bufferRaw);
@@ -74,19 +79,22 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     D3D11_RASTERIZER_DESC rd{};rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.DepthClipEnable=TRUE;
     ID3D11RasterizerState* rasterRaw=nullptr;HR(dev11->CreateRasterizerState(&rd,&rasterRaw));auto raster=Adopt(rasterRaw);
     d2vr_transfer::Queue queue;bool fault=false;
-    d2vr_shared_reader::Fence fence;
-    std::shared_ptr<d2vr_transfer::Job> retained;
-    ReaderOps readerOps{ctx,q11.Get()};
+    auto inputFor=[&](const std::shared_ptr<d2vr_transfer::Job>& job)->Input& {
+        for(auto& in:inputs)if(in.srv.Get()==job->source.Get())return in;
+        CHECK(false);return inputs[0];
+    };
     auto track=[&](const std::shared_ptr<d2vr_transfer::Job>& job) {
         if(!deferred)return;
-        CHECK(!retained);retained=job;CHECK(fence.TrackIssuedRead(readerOps));
+        auto& in=inputFor(job);ReaderOps ops{ctx,in.reader.Get()};
+        CHECK(!in.retained);in.retained=job;CHECK(in.fence.TrackIssuedRead(ops));
     };
     auto packet=[&](int eye) {
         auto j=std::make_shared<d2vr_transfer::Job>();
-        if(!ownerProducer)j->producer=q9;
-        j->producerComplete=ownerProducer;j->reader=q11;j->context=Ref<ID3D11DeviceContext>(ctx);
+        auto& in=inputs[split?eye:0];
+        if(!ownerProducer)j->producer=in.producer;
+        j->producerComplete=ownerProducer;j->reader=in.reader;j->context=Ref<ID3D11DeviceContext>(ctx);
         j->target=targets[eye];j->constants=buffer;j->vs=vs;j->ps=ps;
-        j->sampler=sampler;j->raster=raster;j->source=srv;
+        j->sampler=sampler;j->raster=raster;j->source=in.srv;
         j->size=112;j->width=width;j->height=height;j->deferReader=deferred;
         float tint[4]={1,1,1,1};memcpy(j->bytes.data(),tint,sizeof(tint));return j;
     };
@@ -94,13 +102,16 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         CHECK(job->readerSubmitted && job->result==S_OK);
         if(!deferred) {CHECK(job->readerComplete);return;}
         CHECK(!job->readerComplete);
-        CHECK(retained==job && fence.pending);
-        CHECK(fence.Wait(true,readerOps));CHECK(!fence.pending && !readerOps.ends);
-        retained.reset();
+        auto& in=inputFor(job);ReaderOps readerOps{ctx,in.reader.Get()};
+        CHECK(in.retained==job && in.fence.pending);
+        CHECK(in.fence.Wait(true,readerOps));CHECK(!in.fence.pending && !readerOps.ends);
+        in.retained.reset();
     };
-    auto issue=[&] {
-        CHECK(!retained && !fence.pending); // native overwrite cannot bypass retirement
-        HR(dev9->StretchRect(rt.Get(),nullptr,surf.Get(),nullptr,D3DTEXF_NONE));
+    auto issue=[&](int eye) {
+        auto& in=inputs[split?eye:0];
+        auto& q9=in.producer;
+        CHECK(!in.retained && !in.fence.pending); // native overwrite cannot bypass retirement
+        HR(dev9->StretchRect(rt.Get(),nullptr,in.surface.Get(),nullptr,D3DTEXF_NONE));
         HR(q9->Issue(D3DISSUE_END));
         HRESULT flushed=q9->GetData(nullptr,0,D3DGETDATA_FLUSH);
         CHECK(flushed==S_OK || flushed==S_FALSE);
@@ -124,7 +135,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     for(unsigned frame=0;frame<100;++frame) {
         const DWORD left=0xff000000|(frame+1)<<16|0x002233;
         const DWORD right=0xff000000|0x00bb0000|(frame+1)<<8|0x000055;
-        HR(dev9->ColorFill(rt.Get(),nullptr,left));issue();
+        HR(dev9->ColorFill(rt.Get(),nullptr,left));issue(0);
         auto l=packet(0);
         {
             d2vr_transfer::Pending pending;CHECK(pending.Start(queue,l,fault));track(l);
@@ -135,16 +146,22 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         CHECK(!fault && l->thread!=GetCurrentThreadId());
         // Same-context eye copies may be queued before reader completion.
         // Map is a test readback gate; production must still fence shared reuse.
-        if(frame%2) {verify(0,left);retire(l);}
-        else {retire(l);verify(0,left);}
-        l.reset();
-        issue();auto r=packet(1);
+        if(!split) {
+            if(frame%2) {verify(0,left);retire(l);}
+            else {retire(l);verify(0,left);}
+            l.reset();
+        }
+        // The second input may be written while the first reader receipt is
+        // still pending. No wait/map/poll of the first input precedes this copy.
+        if(split)CHECK(inputs[0].retained==l && inputs[0].fence.pending);
+        issue(1);auto r=packet(1);
         {
             d2vr_transfer::Pending pending;CHECK(pending.Start(queue,r,fault));track(r);
             HR(dev9->ColorFill(rt.Get(),nullptr,left)); // restore live image in parallel
             CHECK(pending.Finish());
         }
         CHECK(!fault);verify(1,right);verify(0,left);retire(r);r.reset();
+        if(split){retire(l);l.reset();}
     }
     // A completed receipt must carry no D3D9 interface; an uncompleted one
     // must carry its exact query. Reject both contradictory packets.
@@ -168,7 +185,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     queue.Stop();ctx->ClearState();ctx->Flush();
     IDirect3DSurface9* bb=nullptr;HR(dev9->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&bb));
     HR(dev9->SetRenderTarget(0,bb));bb->Release();
-    printf("PASS interop scenario deferred=%d size=%ux%u: 200 eye transfers, pixels and explicit reader retirement\n",int(deferred),width,height);
+    printf("PASS interop scenario deferred=%d split=%d size=%ux%u: 200 eye transfers, pixels and explicit reader retirement\n",int(deferred),int(split),width,height);
 }
 int main() {
     static_assert(sizeof(void*)==4,"x86 required");
@@ -206,7 +223,9 @@ int main() {
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true);
     HR(d9->ResetEx(&pp,nullptr));
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,true);
     ctx={};d11={};d9={};api={};DestroyWindow(window);FreeLibrary(module);
-    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 1600 eye transfers (800 at 2676x2728), native0x50+D3D11-only and MT0x54 workers, sampled pixel equality, concurrent D3D9 work, RAII join, failure latch, Reset/recreate");
+    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 2000 eye transfers (1000 at 2676x2728), including two independent shared inputs, native0x50+D3D11-only and MT0x54 workers, sampled pixel equality, concurrent D3D9 work, RAII join, failure latch, Reset/recreate");
     std::puts("No game/OpenXR/Steam calls; this does not prove frame-time improvement or headset acceptance.");
 }

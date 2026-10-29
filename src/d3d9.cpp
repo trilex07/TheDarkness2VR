@@ -3041,178 +3041,7 @@ static void DumpEyeFramesIfRequested() {
 // The old path (GetRenderTargetData -> sysmem -> memcpy -> D3D11) stalls the CPU waiting
 // for the GPU twice per frame (GPU idle, FPS low). D3D9Ex shared textures let D3D11 read
 // the backbuffer copy with zero CPU involvement.
-IDirect3DTexture9* g_sharedTex9 = nullptr;
-IDirect3DSurface9* g_sharedSurf9 = nullptr;
-ID3D11Texture2D* g_sharedTex11 = nullptr;
-ID3D11ShaderResourceView* g_sharedSRV11 = nullptr;
-HANDLE g_sharedHandle = nullptr;
-UINT g_sharedW = 0, g_sharedH = 0;
-int g_zeroCopyFailures = 0;
-IDirect3DQuery9* g_sharedFence9 = nullptr;
-ID3D11Query* g_sharedFence11 = nullptr;
-static d2vr_shared_reader::Fence g_sharedReaderFence;
-static d2vr_transfer::Queue* g_stereoTransferQueue=nullptr;
-static DWORD g_stereoTransferOwner=0;
-static IDirect3DDevice9* g_stereoTransferDevice=nullptr; // identity only; jobs retain their own COM resources
-static bool g_stereoTransferFault=false;
-// Retain the entire packet across CPU completion until its GPU read completes.
-static std::shared_ptr<d2vr_transfer::Job> g_deferredTransferReader;
-struct SharedReaderFenceOps {
-    bool Valid() const {return g_ctx11 && g_sharedFence11;}
-    const void* Context() const {return g_ctx11;}
-    const void* Query() const {return g_sharedFence11;}
-    uint32_t Thread() const {return GetCurrentThreadId();}
-    void End() {g_ctx11->End(g_sharedFence11);}
-    void Flush() {g_ctx11->Flush();}
-    d2vr_shared_reader::Poll GetData() {
-        // Fence submits an unflushed pending event once; transferred worker
-        // events were already Flushed before the context lease was returned.
-        const HRESULT hr=g_ctx11->GetData(g_sharedFence11,nullptr,0,D3D11_ASYNC_GETDATA_DONOTFLUSH);
-        return hr==S_OK ? d2vr_shared_reader::Poll::Ready :
-            hr==S_FALSE ? d2vr_shared_reader::Poll::Pending : d2vr_shared_reader::Poll::Failed;
-    }
-    uint64_t Now() const {return GetTickCount64();}
-    void PauseThread() {SwitchToThread();}
-};
-static bool CanReadSharedUpload(ID3D11ShaderResourceView* source) {
-    SharedReaderFenceOps ops;
-    return source!=g_sharedSRV11 || g_sharedReaderFence.CanRead(ops);
-}
-static bool SealSharedUpload(ID3D11ShaderResourceView* source) {
-    SharedReaderFenceOps ops;
-    return source!=g_sharedSRV11 || g_sharedReaderFence.SealRead(ops);
-}
-static bool WaitSharedReader();
-static bool ReleaseSharedCapture() {
-    // A resource lifetime must not end underneath an outstanding interop job.
-    if(g_stereoTransferQueue) g_stereoTransferQueue->Drain();
-    if(g_deferredTransferReader && !WaitSharedReader()) {
-        g_stereoTransferFault=true;
-        Log("[StereoTransferWorker] deferred reader incomplete; retain resources and refuse Reset/reuse");
-        return false;
-    }
-    if (g_sharedFence9) g_sharedFence9->Release();
-    if (g_sharedFence11) g_sharedFence11->Release();
-    if (g_sharedSRV11) g_sharedSRV11->Release();
-    if (g_sharedTex11) g_sharedTex11->Release();
-    if (g_sharedSurf9) g_sharedSurf9->Release();
-    if (g_sharedTex9) g_sharedTex9->Release();
-    g_sharedFence9 = nullptr; g_sharedFence11 = nullptr;
-    g_sharedSRV11 = nullptr; g_sharedTex11 = nullptr;
-    g_sharedSurf9 = nullptr; g_sharedTex9 = nullptr;
-    g_sharedHandle = nullptr; g_sharedW = g_sharedH = 0;
-    g_sharedReaderFence.Reset();
-    g_stereoTransferFault=false;
-    return true;
-}
-
-static bool WaitSharedReader() {
-#ifdef D2VR_MATCHED_CAPTURE
-    d2vr_cpu_sync::Scope cpuReader(d2vr_cpu_sync::SharedReader);
-#endif
-    SharedReaderFenceOps ops;
-    if(g_deferredTransferReader) {
-        // Pending::Finish/queue Drain must reclaim the immediate context first.
-        // Failure retains BOTH the query dependency and the packet references.
-        if(!g_sharedReaderFence.pending || !g_sharedReaderFence.Wait(true,ops)) return false;
-        g_deferredTransferReader.reset();
-        return true;
-    }
-    return g_sharedReaderFence.Wait(g_lastConsumerReaderFence,ops);
-}
-
-static bool EnsureSharedCapture(IDirect3DDevice9* dev) {
-    if(g_stereoTransferFault) return false;
-    if (!g_zeroCopyEnabled) return false;
-    if (!dev || !g_dev11 || g_zeroCopyFailures > 2) return false;
-
-    // shared texture must match the backbuffer size/format
-    IDirect3DSurface9* bb = nullptr;
-    if (FAILED(dev->GetRenderTarget(0, &bb)) || !bb) return false;
-    D3DSURFACE_DESC bd{};
-    bb->GetDesc(&bd);
-#ifdef D2VR_MATCHED_CAPTURE
-    ObserveProtectedSourceSize(bd.Width,bd.Height,unsigned(bd.Format));
-#endif
-    bb->Release();
-    if (g_sharedSurf9 && g_sharedSRV11) {
-        if (bd.Width != g_sharedW || bd.Height != g_sharedH) {
-            if (!WaitSharedReader()) return false;
-            ReleaseSharedCapture();
-        } else if (g_sharedFence9 && g_sharedFence11) return true;
-    }
-
-    if (!g_sharedTex9) {
-        HANDLE shared = nullptr;
-        HRESULT hr = dev->CreateTexture(bd.Width, bd.Height, 1, D3DUSAGE_RENDERTARGET,
-                                        D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_sharedTex9, &shared);
-        if (FAILED(hr) || !g_sharedTex9) {
-            ++g_zeroCopyFailures;
-            Log("[ZeroCopy] CreateTexture(shared) failed hr=0x%08lX - using CPU capture", hr);
-            return false;
-        }
-        g_sharedHandle = shared;
-        g_sharedTex9->GetSurfaceLevel(0, &g_sharedSurf9);
-        g_sharedW = bd.Width;
-        g_sharedH = bd.Height;
-    }
-    if (!g_sharedTex11) {
-        HRESULT hr = g_dev11->OpenSharedResource(g_sharedHandle, __uuidof(ID3D11Texture2D),
-                                                 reinterpret_cast<void**>(&g_sharedTex11));
-        if (FAILED(hr) || !g_sharedTex11) {
-            ++g_zeroCopyFailures;
-            Log("[ZeroCopy] OpenSharedResource failed hr=0x%08lX - using CPU capture", hr);
-            return false;
-        }
-        if (FAILED(g_dev11->CreateShaderResourceView(g_sharedTex11, nullptr, &g_sharedSRV11))) {
-            ++g_zeroCopyFailures; ReleaseSharedCapture(); return false;
-        }
-        Log("[ZeroCopy] shared capture texture ready %ux%u (D3D9Ex -> D3D11)", g_sharedW, g_sharedH);
-    }
-    D3D11_QUERY_DESC q{D3D11_QUERY_EVENT, 0};
-    if (!g_sharedFence11 && FAILED(g_dev11->CreateQuery(&q, &g_sharedFence11))) return false;
-    if (!g_sharedFence9 && FAILED(dev->CreateQuery(D3DQUERYTYPE_EVENT, &g_sharedFence9))) return false;
-    return g_sharedSurf9 && g_sharedSRV11 && g_sharedFence9 && g_sharedFence11;
-}
-
-static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=false) {
-#ifdef D2VR_MATCHED_CAPTURE
-    d2vr_cpu_sync::Scope cpuCapture(d2vr_cpu_sync::SharedCapture);
-#endif
-    if (g_stereoTransferFault || !g_sharedSurf9 || !g_sharedFence9 || !WaitSharedReader()) return false;
-    IDirect3DSurface9* src = nullptr;
-    // Darkness II renders offscreen; check active RenderTarget0 first
-    if (FAILED(dev->GetRenderTarget(0, &src)) || !src) {
-        if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &src)) || !src) return false;
-    }
-#ifdef D2VR_MATCHED_CAPTURE
-    MatchedCaptureInput(src,false);
-#endif
-    HRESULT hr = dev->StretchRect(src, nullptr, g_sharedSurf9, nullptr, D3DTEXF_NONE);
-    src->Release();
-    if (FAILED(hr)) return false;
-
-    // GPU fence: D3D9Ex and D3D11 run on separate queues; flush D3D9 batch before D3D11 reads
-#ifdef D2VR_MATCHED_CAPTURE
-    d2vr_cpu_sync::Scope cpuProducer(d2vr_cpu_sync::D3D9Fence);
-#endif
-    if (FAILED(g_sharedFence9->Issue(D3DISSUE_END))) return false;
-    if(deferProducer) {
-        // Submit on the original thread; worker only polls this issued query.
-        hr=g_sharedFence9->GetData(nullptr,0,D3DGETDATA_FLUSH);
-        g_srcW=g_sharedW; g_srcH=g_sharedH;
-        return hr==S_OK || hr==S_FALSE;
-    }
-    const ULONGLONG start = GetTickCount64();
-    hr=g_sharedFence9->GetData(nullptr,0,D3DGETDATA_FLUSH);
-    while (hr == S_FALSE) {
-        if (GetTickCount64() - start > 2000) return false;
-        SwitchToThread();
-        hr=g_sharedFence9->GetData(nullptr,0,0);
-    }
-    g_srcW = g_sharedW; g_srcH = g_sharedH;
-    return hr == S_OK;
-}
+#include "shared_capture.inl"
 
 static bool StereoTransferAvailable(IDirect3DDevice9* dev) {
     if((g_stereoTransferMode!=1 && g_stereoTransferMode!=3) || g_stereoTransferFault) return false;
@@ -3235,39 +3064,41 @@ static bool StereoTransferAvailable(IDirect3DDevice9* dev) {
 }
 
 static bool StartStereoTransfer(IDirect3DDevice9* dev,int eye,d2vr_transfer::Pending& pending,
-    std::shared_ptr<d2vr_transfer::Job>& job) {
-    if(!EnsureD11StereoPipeline() || !g_eyeRTV[eye] || !g_sharedSRV11) return false;
+    std::shared_ptr<d2vr_transfer::Job>& job,unsigned capture=0) {
+    if(eye<0 || eye>1 || capture>=2)return false;
+    auto& slot=g_sharedCapture[capture];
+    if(!EnsureD11StereoPipeline() || !g_eyeRTV[eye] || !slot.srv11) return false;
     EnsureDepthTexture11();
     // No global scene/camera state is consulted by the worker.
-    ID3D11ShaderResourceView* saved=g_uploadSRV; g_uploadSRV=g_sharedSRV11;
+    ID3D11ShaderResourceView* saved=g_uploadSRV; g_uploadSRV=slot.srv11;
     const auto constants=PrepareStereoEyeConstants(eye,g_eyeFov[eye],1,1,1,0,0);
     g_uploadSRV=saved;
     try { job=std::make_shared<d2vr_transfer::Job>(); } catch(...) { return false; }
     using namespace d2vr_transfer;
-    if(g_stereoTransferMode!=3)job->producer=Ref<IDirect3DQuery9>(g_sharedFence9);
+    if(g_stereoTransferMode!=3)job->producer=Ref<IDirect3DQuery9>(slot.producer);
     job->context=Ref<ID3D11DeviceContext>(g_ctx11);
-    job->reader=Ref<ID3D11Query>(g_sharedFence11);
+    job->reader=Ref<ID3D11Query>(slot.reader);
     job->target=Ref<ID3D11RenderTargetView>(g_eyeRTV[eye]);
     job->constants=Ref<ID3D11Buffer>(g_stereoCB11);
     job->vs=Ref<ID3D11VertexShader>(g_stereoVS11);
     job->ps=Ref<ID3D11PixelShader>(g_stereoPS11);
     job->raster=Ref<ID3D11RasterizerState>(g_stereoRS11);
     job->sampler=Ref<ID3D11SamplerState>(g_stereoSamp11);
-    job->source=Ref<ID3D11ShaderResourceView>(g_sharedSRV11);
+    job->source=Ref<ID3D11ShaderResourceView>(slot.srv11);
     job->depth=Ref<ID3D11ShaderResourceView>(g_depthSRV11);
     static_assert(sizeof(constants)<=256,"worker packet constants too small");
     memcpy(job->bytes.data(),&constants,sizeof(constants)); job->size=sizeof(constants);
     job->width=g_eyeCacheW; job->height=g_eyeCacheH;
     job->deferReader=g_deferStereoTransferReader && g_lastConsumerReaderFence;
-    if(!CaptureBackbufferToShared(dev,g_stereoTransferMode!=3)) { job.reset(); return false; }
+    if(!CaptureBackbufferToShared(dev,g_stereoTransferMode!=3,capture)) { job.reset(); return false; }
     job->producerComplete=g_stereoTransferMode==3;
     if(!pending.Start(*g_stereoTransferQueue,job,g_stereoTransferFault)) {
         g_stereoTransferFault=true; return false;
     }
     if(job->deferReader) {
-        g_deferredTransferReader=job;
-        SharedReaderFenceOps ops;
-        if(!g_sharedReaderFence.TrackIssuedRead(ops)) {g_stereoTransferFault=true;return false;}
+        slot.deferred=job;
+        SharedReaderFenceOps ops{slot};
+        if(!slot.fence.TrackIssuedRead(ops)) {g_stereoTransferFault=true;return false;}
     }
     return true;
 }
@@ -3444,7 +3275,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     }
 #endif
     // Seal engine commands BEFORE our own capture/transfer calls. In particular,
-    // the left-eye StretchRect into g_sharedSurf9 must never enter the replay:
+    // the left-eye StretchRect into its capture slot must never enter the replay:
     // replaying that copy overwrites the shared texture while D3D11 may still
     // be reading the left eye, bypassing CaptureBackbufferToShared's reader fence.
     d2vr_replay::g_recActive = false;
@@ -3518,6 +3349,16 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     }
     const bool zeroCopy = EnsureSharedCapture(dev);
     const bool transferWorker=zeroCopy && StereoTransferAvailable(dev);
+    // Prepare the second slot while the owner still holds its D3D11 context.
+    // Failure keeps the established one-slot route; no pending read is bypassed.
+    const bool splitCapture=transferWorker && g_deferStereoTransferReader &&
+        g_lastConsumerReaderFence && PrepareSplitSharedCapture(dev);
+    const unsigned rightCapture=splitCapture?1u:0u;
+    static int reportedSplit=-1;
+    if(reportedSplit!=int(splitCapture)) {
+        reportedSplit=int(splitCapture);
+        Log("[SharedCapture] eyeSlots=%u; exact per-slot reader fences; same-frame images, no added frame latency",splitCapture?2u:1u);
+    }
     d2vr_transfer::Pending leftTransfer,rightTransfer;
     std::shared_ptr<d2vr_transfer::Job> leftJob,rightJob;
 
@@ -3529,7 +3370,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         (zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev));
     if(!transferWorker) {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
-        if (zeroCopy) g_uploadSRV = g_sharedSRV11;
+        if (zeroCopy) g_uploadSRV = g_sharedCapture[0].srv11;
         if (eye0Ok) eye0Ok = RenderStereoEyeD11(0, g_eyeFov[0], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
         g_uploadSRV = saved;
     }
@@ -3569,7 +3410,8 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     QueryPerformanceCounter(&perf[2]);
 
     // This interval used D3D9 only. Reclaim the D3D11 immediate context.
-    // CaptureBackbufferToShared fences a deferred reader before right overwrite.
+    // With split inputs the right copy waits only its own prior reader;
+    // fallback slot zero retains the original left-reader overwrite fence.
     if(leftTransfer.Active()) eye0Ok=FinishStereoTransfer(leftTransfer,leftJob) && eye0Ok;
     leftJob.reset();
 
@@ -3577,11 +3419,11 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     matched_capture::Source(dev,1);
 #endif
     bool eye1Ok = FinishRightEyeHistory(dev, liveEnd.targets[0], replayOk, historyOk);
-    if (eye1Ok) eye1Ok = transferWorker ? StartStereoTransfer(dev,1,rightTransfer,rightJob) :
+    if (eye1Ok) eye1Ok = transferWorker ? StartStereoTransfer(dev,1,rightTransfer,rightJob,rightCapture) :
         (zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev));
     if(!transferWorker) {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
-        if (zeroCopy) g_uploadSRV = g_sharedSRV11;
+        if (zeroCopy) g_uploadSRV = g_sharedCapture[0].srv11;
         if (eye1Ok) eye1Ok = RenderStereoEyeD11(1, g_eyeFov[1], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
         g_uploadSRV = saved;
     }
