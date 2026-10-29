@@ -12,10 +12,12 @@ function Extract([string]$path,[string]$signature){
  throw 'Unclosed function'
 }
 $main=Join-Path $repo 'src/d3d9.cpp'
-$body=Extract $main "static void RecordPreSceneClear(IDirect3DDevice9* dev) {"
+$body=Extract $main "static void RecordPreSceneWrite(IDirect3DDevice9* dev) {"
 $body+="`n"+(Extract (Join-Path $repo 'src/stereo_replay.inl') 'static HRESULT STDMETHODCALLTYPE Hook_Clear(')
+$body+="`n"+(Extract (Join-Path $repo 'src/stereo_replay.inl') 'static HRESULT STDMETHODCALLTYPE Hook_StretchRect(')
+$body+="`n"+(Extract (Join-Path $repo 'src/stereo_replay.inl') 'static HRESULT STDMETHODCALLTYPE Hook_ColorFill(')
 $mainText=Get-Content -LiteralPath $main -Raw
-if($mainText -notmatch 'if\(g_preSceneClearMissed\)d2vr_replay::g_recOverflow=true;'){throw 'Missing fail-closed BeginScene publication gate'}
+if($mainText -notmatch 'if\(g_preSceneWriteMissed\)d2vr_replay::g_recOverflow=true;'){throw 'Missing fail-closed BeginScene publication gate'}
 $generated=Join-Path $env:TEMP 'd2vr-pre-scene-clear.cpp'
 (Get-Content (Join-Path $PSScriptRoot 'pre_scene_clear_test.cpp') -Raw).Replace('@IMPLEMENTATION@',$body)|Set-Content -LiteralPath $generated -Encoding utf8
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

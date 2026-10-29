@@ -1325,7 +1325,7 @@ static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, 
                                             DWORD flags, D3DCOLOR color, float z, DWORD st) {
     // Clear is legal outside BeginScene. Capture its pre-state and command
     // before the native call, rather than losing the next frame's background.
-    RecordPreSceneClear(dev);
+    RecordPreSceneWrite(dev);
     if (g_recActive && rects && count) {
         RecEmitData(OP_Clear,rects,sizeof(D3DRECT)*count,flags,color,(uint32_t&)z,st,{},4,count);
     } else if (g_recActive) {
@@ -1724,6 +1724,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetPSConstB(IDirect3DDevice9* dev, UINT s,
 }
 static HRESULT STDMETHODCALLTYPE Hook_StretchRect(IDirect3DDevice9* dev, IDirect3DSurface9* a, const RECT* ra,
     IDirect3DSurface9* b, const RECT* rb, D3DTEXTUREFILTERTYPE f) {
+    RecordPreSceneWrite(dev);
     if (g_recActive) {
         uint32_t oa = 0, ob = 0;
         if (ra) oa = RecPush(ra, sizeof(RECT));
@@ -1733,6 +1734,7 @@ static HRESULT STDMETHODCALLTYPE Hook_StretchRect(IDirect3DDevice9* dev, IDirect
     return g_orig.StretchRect(dev, a, ra, b, rb, f);
 }
 static HRESULT STDMETHODCALLTYPE Hook_ColorFill(IDirect3DDevice9* dev, IDirect3DSurface9* s, const RECT* r, D3DCOLOR c) {
+    RecordPreSceneWrite(dev);
     if (g_recActive) {
         uint32_t off = 0;
         if (r) off = RecPush(r, sizeof(RECT));

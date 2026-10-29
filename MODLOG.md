@@ -2053,3 +2053,19 @@ and outgoing AL. Three absolute data operands and11 external calls are
 relocated only inside fixture-owned memory; original bytes stay outside Git.
 This strengthens CPU consumer evidence beyond the previous stub-only ABI test.
 Physical gun alignment, exact left gun admission and90FPS remain unverified.
+
+## 2026-10-29: retain pre-scene surface copies and fills
+
+The pre-scene capture fix covered Clear only. Existing ColorFill and
+StretchRect hooks still recorded solely when a packet was already active,
+so a copy/fill before the first BeginScene was forwarded live and omitted
+from right-eye replay. Both hooks now use the same guarded packet opener
+before their native call. It captures once, keeps command/rectangle ordering,
+and retains the capture-failure refusal through BeginScene. Shared texture
+uploads, replay execution, frame boundaries and synchronization are unchanged.
+
+The actual-hook x86 fixture passes 9129 checks, including full and rectangular
+copies/fills, mixed write order, exactly one capture, forwarding, render-thread
+and presentation gates, and capture failure. This proves a missing-command
+case; retained game evidence does not establish that this case caused the
+user's menu flicker. No headset or frame-time improvement is claimed.
