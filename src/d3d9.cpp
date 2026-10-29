@@ -1937,7 +1937,7 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
     d2vr_shader_registers::Reference rawReference;
     if(!(g_hookMask&8) || !d2vr_replay::g_recActive) {
         d2vr_replay::RecLockGuard lock;
-        d2vr_replay::g_vsConstantHistory.live.Invalidate(StartRegister,Vector4fCount);
+        d2vr_replay::g_vsConstantHistory.InvalidateUnrecorded(StartRegister,Vector4fCount);
     }
 #ifdef D2VR_MATCHED_CAPTURE
     CameraUploadWitness cameraSample;

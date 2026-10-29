@@ -21,7 +21,7 @@ static const unsigned char* arena=nullptr;
 static unsigned mask=0;
 static bool nullBinding=false;
 static unsigned bankClears=0,shaderSyncs=0;
-static struct {struct {void Clear(){++bankClears;}} replay;} g_vsConstantHistory;
+static struct {void ReplayStateBlock(){++bankClears;}} g_vsConstantHistory;
 static void SyncActiveShader(IDirect3DDevice9*){++shaderSyncs;}
 static HRESULT STDMETHODCALLTYPE ApplyBlock(IDirect3DStateBlock9* block){CHECK(block==(IDirect3DStateBlock9*)0x3000);return Receipt(OP_ApplyStateBlock);}
 static auto g_origSBApply=&ApplyBlock;

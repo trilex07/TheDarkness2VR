@@ -96,8 +96,7 @@ static HRESULT Bind(void*,void* p){
 static void SetActiveVertexShaderMetadata(IDirect3DVertexShader9* p){
     vertexMetadata.hash=uint32_t(reinterpret_cast<uintptr_t>(p));g_activeVs=p?&vertexMetadata:nullptr;
 }
-static void SetActivePixelShaderMetadata(const void* p){g_activePsInverse=int(reinterpret_cast<uintptr_t>(p));}
-static const uint32_t kShadowLightPsHash=0xC4D1FB10u;
+static void SetActivePixelShaderMetadata(const void* p){g_activePsInverse=int(reinterpret_cast<uintptr_t>(p));}static const uint32_t kShadowLightPsHash=0xC4D1FB10u;
 static std::unordered_map<const void*,uint32_t> g_psHashByPtr;
 static bool CompensatePsConstants(float* dst,const float* src,UINT,UINT n,int inverse,int,const Params&){
     if(!compensate || !n || n>224)return false;
@@ -245,7 +244,7 @@ static void BindingReduction(){
             Rec binding;binding.op=9+i%3;g_rec.push_back(binding);
         }
         Rec barrier;barrier.op=36;g_rec.push_back(barrier);expected.push_back(final);
-        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};
+        driver={};apiCalls=apiFail=checkAt=0;g_constantUploadWindow={};g_vsConstantHistory.Clear();
         g_replayConstantBatch=g_replayConstantWindow=true;g_replayConstantBindWindow=extended!=0;
         Actual();counts[extended]=apiCalls;assert(checkAt==1 && !apiFail);
     }
@@ -356,9 +355,52 @@ static void PartialReplay(){
         assert(!memcmp(observed,raw,sizeof(raw)) && !memcmp(arena.data(),partial,16));++checks;
     }
     // A rejected completed upload keeps the eye incomplete and is not retried.
-    g_rec.pop_back();rejectAt=1;checkAt=apiCalls=apiFail=0;
+    g_rec.pop_back();rejectAt=1;checkAt=apiCalls=apiFail=0;g_vsConstantHistory.eyeCarry.Clear();
     assert(!Actual() && apiCalls==1 && apiFail==1);++checks;
     rejectAt=0;activeWvpBase=activeStpBase=-1;g_vsConstantHistory.Clear();
+}
+// Frame N-1 uploads WVP at c0; frame N draws without re-uploading it. The
+// frame-start state block restores the LIVE eye's adjusted c0, so the replay
+// eye must reinstate its own materialized registers before the first draw.
+static void InheritedAcrossFrames(){
+    capture=compensate=bindingTransforms=collectReference=checkOtherState=checkBindingSnapshots=false;
+    g_activeVs=&vertexMetadata;g_recOverflow=false;activeWvpBase=0;activeStpBase=-1;
+    g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
+    uint32_t raw[16];for(unsigned i=0;i<16;++i)raw[i]=0x3f100000+i*7;
+    uint32_t left[16],right[16];memcpy(left,raw,sizeof(raw));memcpy(right,raw,sizeof(raw));
+    left[0]^=0x40000;right[0]^=0x10000;
+    // 0 inherited, 1 unrecorded live write, 2 rejected previous replay,
+    // 3 recording never replayed, 4 state block applied during the replay.
+    for(unsigned variant=0;variant<5;++variant)for(unsigned mode=0;mode<4;++mode){
+        g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
+        g_vsConstantHistory.Clear();driver={};checkAt=apiCalls=apiFail=0;
+        // Frame N-1: recorded upload followed by a draw.
+        arena.assign(64,0);memcpy(arena.data(),raw,sizeof(raw));
+        g_vsConstantHistory.live.Write(0,4,raw,sizeof(raw));
+        g_vsConstantHistory.BeginRecord();
+        g_rec.clear();Rec upload;upload.op=OP_SetVSConstF;upload.a[0]=0;upload.a[1]=4;upload.a[4]=0;
+        g_rec.push_back(upload);Rec draw;draw.op=OP_DrawIndexedPrimitive;g_rec.push_back(draw);
+        Banks first;if(variant!=2)memcpy(first.vs.data(),right,sizeof(right));expected={first};
+        rejectAt=variant==2?1:0;
+        assert(Actual()==(variant!=2) && checkAt==1);++checks;
+        rejectAt=0;
+        // The replay loop's ApplyStateBlock case calls this (build-script contract).
+        if(variant==4){g_vsConstantHistory.BeginReplay();g_vsConstantHistory.ReplayStateBlock();g_vsConstantHistory.EndReplay(true);}
+        // Live-end restore, then frame N starts with the live eye's c0 on the device.
+        memcpy(driver.vs.data(),left,sizeof(left));
+        if(variant==1)g_vsConstantHistory.InvalidateUnrecorded(0,1);
+        if(variant==3)g_vsConstantHistory.BeginRecord();
+        g_vsConstantHistory.BeginRecord();
+        g_rec.clear();g_rec.push_back(draw);
+        Banks inherited;memcpy(inherited.vs.data(),variant?left:right,sizeof(right));
+        expected={inherited};checkAt=apiCalls=apiFail=0;
+        assert(Actual() && checkAt==1 && !apiFail);
+        if(variant==0)assert(apiCalls==1 && lastVsFirst==0 && lastVsCount==4);
+        else if(variant==1)assert(apiCalls==1 && lastVsFirst==1 && lastVsCount==3);
+        else assert(apiCalls==0);
+        ++checks;
+    }
+    activeWvpBase=-1;g_vsConstantHistory.Clear();g_replayConstantBindWindow=false;
 }
 static void RenderStateReduction(){
     const std::pair<unsigned,unsigned> safe[]={
@@ -423,7 +465,7 @@ static void RenderStateReduction(){
     throwAt=0;collectReference=false;otherState={};g_replayConstantBindWindow=false;
 }
 int main(){
-    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();RenderStateReduction();unsigned streams=0,records=0;
+    HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();InheritedAcrossFrames();RenderStateReduction();unsigned streams=0,records=0;
     for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
     for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
@@ -449,7 +491,7 @@ int main(){
     g_rec.clear();arena.assign(16*4,0);Rec one;one.op=OP_SetVSConstF;one.a[1]=4;g_rec.push_back(one);
     capture=false;g_replayConstantBatch=true;g_replayConstantWindow=true;
     g_frameStart.vertexFloatLimit=256;g_frameStart.pixelFloatLimit=224;
-    d2vr_cpu_sync::timing.enabled=true;g_constantUploadWindow={};apiCalls=0;throwAt=1;
+    d2vr_cpu_sync::timing.enabled=true;g_constantUploadWindow={};apiCalls=0;throwAt=1;g_vsConstantHistory.Clear();
     assert(!Actual());throwAt=0;
     assert(apiCalls==1);
 #ifdef D2VR_MATCHED_CAPTURE

@@ -267,3 +267,31 @@ path and no CPU readback or new explicit synchronization. Driver/GPU cost and
 in-game artifact improvement remain unmeasured. Do not describe this as a
 performance optimization, complete stereo repair or90FPS result. No SteamVR
 settings or installed game files changed in this step.
+
+## Frame-inherited vertex registers, 2026-10-29
+
+Replay starts by applying the frame-start D3DSBT_ALL block. Its VS float
+registers are the LIVE eye's materialized values (left-adjusted WVP/STP from
+the previous frame, restored by liveEnd). A draw that inherits a matrix
+uploaded in an earlier frame therefore rendered the right eye with the left
+matrix. The actual replay loop fails `InheritedAcrossFrames` (variant 0)
+before this change: the frame-N draw observes left c0.
+
+History now keeps the replay eye's forwarded VS rows (eyeNext) and commits
+them after a complete replay (eyeCarry). The next replay re-sends valid carried
+rows once, after the frame-start restore and before the first record, in
+contiguous runs bounded by the device limit. Unrecorded live writes invalidate
+their rows; an unrecorded live state-block Apply, a replay state-block Apply,
+a rejected replay, a recording that never reached replay, Reset and live-end
+restore failure clear it. Both eyes now inherit their own previous-frame values.
+
+PASS: actual replay float loop production/diagnostic 96 streams / 576096
+records / 58366 checks (inheritance, unrecorded row, rejected replay,
+unreplayed recording, state-block refusal across four grouping modes); replay
+surface status, projection history, register bank, live state-block sync,
+tentacle scope, eye history and both x86 DLL builds. Six suites that already
+fail on 7543d92 (shadow draw, state snapshot link, UP geometry, projection
+estimate, PS payload, sampler caps) are unchanged. Cost: two 4 KiB bank copies
+and at most a few SetVertexShaderConstantF runs per replay. Runtime frequency of
+cross-frame inheritance in DarknessII.exe is unmeasured; PS constant
+inheritance and dynamic VB/IB/texture content versions remain open.

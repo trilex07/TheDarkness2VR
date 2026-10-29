@@ -40,6 +40,8 @@ $extraCases=foreach($name in @('SetRenderState','SetStreamSource','SetStreamSour
             $case.Value.Replace('case OP_SetRenderState:', 'case OP_SetRenderState: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks();')
         } else {$case.Value}
     }
+$block=[regex]::Match($src.Substring($cases),"(?s)        case OP_ApplyStateBlock: \{.*?(?=        default:)")
+if(!$block.Success -or $block.Value -notmatch 'g_vsConstantHistory\.ReplayStateBlock\(\);'){throw 'Replay state block must drop replay-eye register knowledge'}
 $actual=$src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
     $src.Substring($bindVS,$vsEnd-$bindVS) + $src.Substring($bindPS,$psEnd-$bindPS) +
     ($extraCases -join "`n") +
