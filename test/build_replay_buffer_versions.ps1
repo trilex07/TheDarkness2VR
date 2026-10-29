@@ -16,11 +16,14 @@ function FunctionText([string]$name) {
     if($depth -ne 0){throw "Unbalanced function $name"}
     $source.Substring($start,$end-$start)
 }
+$lock=[regex]::Match($source,'(?s)static std::atomic<LONG> g_recLock.*?struct RecLockGuard \{.*?\n\};').Value
+if(-not $lock){throw 'Recorder lock source missing'}
 $enum=[regex]::Match($source,'(?s)enum RecOp : uint16_t \{.*?\};').Value
 $record=[regex]::Match($source,'(?s)struct Rec \{.*?\};').Value
-$functions=foreach($name in 'RecEmitLocked','RecEmit','Hook_SetStreamSource','Hook_SetIndices','Hook_DrawPrimitive','Hook_DrawIndexedPrimitive') {FunctionText $name}
+$records=foreach($name in 'RecEmitLocked','RecEmit') {FunctionText $name}
+$hooks=foreach($name in 'Hook_SetStreamSource','Hook_SetIndices','Hook_DrawPrimitive','Hook_DrawIndexedPrimitive') {FunctionText $name}
 $replay=$source.Substring($source.IndexOf('static bool ReplayStream('))
-$cases=foreach($op in 'SetStreamSource','SetIndices','DrawPrimitive','DrawIndexedPrimitive') {
+$cases=foreach($op in 'SetStreamSource','SetIndices','DrawPrimitive','DrawIndexedPrimitive','BufferWrite') {
     $case=[regex]::Match($replay,"(?s)        case OP_${op}:.*?(?=        case |        default:)")
     if(-not $case.Success){throw "Missing actual replay case $op"}
     $case.Value
@@ -29,7 +32,7 @@ $fixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'replay_buffer_versio
 $out=Join-Path $env:TEMP 'd2vr-replay-buffer-versions'
 New-Item -ItemType Directory -Force -Path $out|Out-Null
 $generated=Join-Path $out 'actual.cpp'
-$fixture.Replace('@ENUM@',$enum).Replace('@RECORD@',$record).Replace('@FUNCTIONS@',($functions -join "`n")).Replace('@CASES@',($cases -join "`n"))|Set-Content -LiteralPath $generated -Encoding UTF8
+$fixture.Replace('@LOCK@',$lock).Replace('@ENUM@',$enum).Replace('@RECORD@',$record).Replace('@RECORD_FUNCTIONS@',($records -join "`n")).Replace('@HOOK_FUNCTIONS@',($hooks -join "`n")).Replace('@CASES@',($cases -join "`n"))|Set-Content -LiteralPath $generated -Encoding UTF8
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
 $exe=Join-Path $out 'test.exe'

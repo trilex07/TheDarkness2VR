@@ -61,7 +61,7 @@ static void NoteDraw(){}
 template<class... A> static void Emit(A...){}
 }
 @IMPLEMENTATION@
-#define RUN(name,...) do{Expect(__VA_ARGS__);CHECK(Hook_##name(__VA_ARGS__)==status);CHECK(calls==1);CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));CHECK(locks==unsigned(active&&FAILED(status)));CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;}while(0)
+#define RUN(name,...) do{Expect(__VA_ARGS__);CHECK(Hook_##name(__VA_ARGS__)==status);CHECK(calls==1);CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));CHECK(locks==((!std::strcmp(#name,"DrawPrimitive")||!std::strcmp(#name,"DrawIndexedPrimitive"))?1u:unsigned(active&&FAILED(status))));CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;}while(0)
 int main(){
     auto* dev=reinterpret_cast<IDirect3DDevice9*>(0x1000);
     auto* surface=reinterpret_cast<IDirect3DSurface9*>(0x2000);

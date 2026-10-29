@@ -5,6 +5,7 @@
 #include <cstring>
 #include <vector>
 #define CHECK(x) do {if(!(x)){std::printf("FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
+static bool ReplayInheritedBuffers(IDirect3DDevice9*){return true;}
 @ENUM@
 struct Rec {unsigned op,n,a[6];};
 static HRESULT result=0;

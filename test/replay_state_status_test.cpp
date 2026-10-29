@@ -7,6 +7,7 @@
 #include <vector>
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
+static IUnknown* ReplayBuffer(IUnknown* p,bool&){return p;}
 @ENUM@
 struct Rec {unsigned op=0,n=0,a[6]{};};
 static unsigned calls=0,failAt=0;
