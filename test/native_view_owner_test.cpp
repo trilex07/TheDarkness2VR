@@ -9,6 +9,10 @@
 static unsigned checks=0,captures=0,aims=0,throws=0,hands=0,weapons=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL %u line%d\n",checks,__LINE__);exit(1);}}while(0)
 static bool g_nativePlayerOwnerAdmitted=true,g_imagePreservingInput=true,g_protectedGestureActions=true;
+static bool g_imagePreservingPresent=true;
+static unsigned pauseObservations=0;
+static void* pauseManager=nullptr;
+static void ObserveNativePauseState(void* manager){++pauseObservations;pauseManager=manager;SetLastError(17);}
 static bool g_haveViews=true,g_in3DGameplayMode=true;
 static int g_submitMode=4,g_stereoMode=1;
 static DWORD g_renderThreadId=0;
@@ -43,6 +47,7 @@ static void Word(void* p,unsigned offset,uint32_t value){memcpy(static_cast<unsi
 static void Ref(void* p,unsigned offset,unsigned block,void* object){blocks[block]=object;Word(p,offset,uint32_t(uintptr_t(&blocks[block])));}
 static void Reset(){
     g_nativePlayerViewFrame=0;g_nativePlayerViewRenderer=0;captures=aims=throws=hands=weapons=getters=releases=0;
+    pauseObservations=0;pauseManager=nullptr;g_imagePreservingPresent=true;
     getWrongResult=false;
     g_nativePlayerOwnerAdmitted=g_imagePreservingInput=g_protectedGestureActions=true;
     g_haveViews=g_in3DGameplayMode=g_nativeImageGuard.enabled=g_trackedFrame.open=readCamera=captureOK=true;
@@ -60,6 +65,7 @@ static void Observe(){void* reference=&sceneBlock;SetLastError(0x87654321);Obser
 template<class F> static void Reject(F change){Reset();change();Observe();CHECK(!g_nativePlayerViewFrame && !g_nativePlayerViewRenderer && !aims && !throws && !hands && !weapons);}
 int main(){
     Reset();Observe();CHECK(captures==1 && aims==1 && throws==1 && hands==1 && weapons==1);
+    CHECK(pauseObservations==1 && pauseManager==manager);
     CHECK(g_nativePlayerViewFrame==17 && g_nativePlayerViewRenderer==uintptr_t(renderer));
     CHECK(getters==1 && releases==1);
     // No renderer+460 override exists in this actual callback fixture.
@@ -77,6 +83,11 @@ int main(){
     Reject([]{Word(manager,0x1c8,uint32_t(uintptr_t(&avatarBlock)));});
     Reset();Observe();readCamera=false;Observe();CHECK(!g_nativePlayerViewFrame && !g_nativePlayerViewRenderer);
     Reset();g_renderThreadId++;Observe();CHECK(!captures && !aims && !throws && !hands && !weapons);
+    CHECK(!pauseObservations);
+    Reset();g_nativePlayerOwnerAdmitted=false;Observe();CHECK(!pauseObservations);
+    Reset();g_nativeImageGuard.enabled=false;Observe();CHECK(!pauseObservations);
+    Reset();g_imagePreservingPresent=false;Observe();CHECK(!pauseObservations && captures==1);
+    Reset();g_in3DGameplayMode=false;Observe();CHECK(pauseObservations==1 && !captures);
     Reset();Word(camera,0,ProtectedAimCameraTable());Observe();CHECK(aims==1 && throws==1 && weapons==1);
     // Native avatar references remain balanced even if downstream preparation throws.
     Reset();

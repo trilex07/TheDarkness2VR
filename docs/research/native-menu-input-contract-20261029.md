@@ -149,6 +149,50 @@ Independent PE read verifies the vtable slot and all 18 getter bytes. No new
 DLL, native patch, Steam deployment or performance result follows from this
 static contract.
 
+## Concrete native pause predicate, 2026-10-29
+
+The previous uncertainty about the concrete implementation is now resolved
+statically. Pinned registration EB2280 names GameRulesImpl, constructs its
+descriptor at 10F3E80 and installs FAA470. Descriptor factory A6BDA0 allocates
+450 bytes, sets the descriptor through 456960 and constructs through 4AC3A0.
+That constructor installs instance vtable FD8240. Its +80 slot is A4D340,
+matching the already recovered IsPauseMenuShowing wrapper dispatch.
+
+The complete 29-byte predicate returns true exactly when the low byte at
+receiver+198 is zero and the first word through the reference at receiver+EC
+is nonzero. The nonzero +198 case short-circuits without reading +EC. The
+meaning of that suppressing byte beyond this predicate is not inferred.
+Several other static vtable slots reference the same method; unknown override
+methods remain unsupported rather than being interpreted as this class.
+
+ObservePause implements this read-only predicate after checking the exact
+RegionMgr type/getter, following +BC through the intrusive reference, and
+checking the actual rules object's +80 method. The existing owned view callback
+passes its current manager directly: no saved manager address or singleton
+scan is needed. Diagnostic builds make at most eight attempts, one second
+apart, stopping on the first equal pair. The full loaded predicate bytes must
+match. The NativePauseState receipt records its result, with lifetimeLease=0,
+surface=UNKNOWN and injection=OFF. No native method is called and the result
+does not yet route input. Production performs no observation.
+
+This is an instantaneous snapshot, not a lifetime or coherent cross-field
+transaction. In particular, equal reads do not rule out an ABA replacement.
+It does not establish the main-menu state or a rendered menu plane, and does
+not make the complete native menu laser ready. Live observation remains NOT RUN.
+
+Actual-source x86 snapshot checks: 113 PASS, including short-circuit reads,
+neighboring nonzero bytes, inherited method slots, missing references, unknown
+overrides, overflow and unchanged output on refusal. Existing player-owner graph
+4167 and actual view callback 143 checks PASS, including observer thread/image
+gates, unchanged gameplay preparation and LastError preservation. Both full x86
+builds PASS. The installed EXE SHA, full predicate and both getter slots match.
+No FPS improvement or headset acceptance is claimed.
+
+Private complete Ghidra exports are TEMP/d2vr-menu-rules-registration-20261029.txt,
+rules-factory-body, rules-instance and pause-predicate with the same prefix/date.
+Each ends in EVIDENCE COMPLETE; no extracted executable or decompilation is
+committed.
+
 ## Performance priority decision
 
 The retained zero-loss outdoor capture 20261027T141205Z-c4e8bb85 has inclusive

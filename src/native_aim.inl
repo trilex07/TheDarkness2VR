@@ -1,5 +1,6 @@
 #include "native_player_camera_owner.h"
 static bool g_nativePlayerOwnerAdmitted=false;
+static void ObserveNativePauseState(void* manager);
 static bool ProtectedAimCameraOwned(void* camera);
 static DWORD ProtectedAimCameraTable();
 static bool PrepareProtectedAimCamera(void* camera);
@@ -253,6 +254,8 @@ static void ReleaseSelectedLocalPlayer(uint32_t ref) {
 static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* manager) {
 #ifdef D2VR_MATCHED_CAPTURE
     if(GetCurrentThreadId()!=g_renderThreadId)return;
+    if(g_nativePlayerOwnerAdmitted && g_nativeImageGuard.enabled && g_imagePreservingPresent)
+        ObserveNativePauseState(manager);
     g_nativePlayerViewFrame=0;g_nativePlayerViewRenderer=0;g_nativePlayerViewCamera=0;
     if(!g_nativePlayerOwnerAdmitted || !g_imagePreservingInput || !g_protectedGestureActions ||
        !g_nativeImageGuard.enabled || !g_trackedFrame.open || !g_trackedFrame.id || !g_haveViews || !g_in3DGameplayMode ||
