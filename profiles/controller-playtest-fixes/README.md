@@ -20,10 +20,16 @@ Reload dwell is at HMD-relative upper-leg height (1.05 m below the head,
 0.23 m laterally). Existing tracking, pause, trigger, dwell and rearm gates remain.
 The native gamepad reload action is still shared between equipped weapons.
 
-Sleeve removal is **not implemented**. The retained capture has a 2,860-vertex
-human-arm candidate with two materials, but no proven material-to-sleeve mapping
-or selective triangle ownership. It is insufficient to delete either draw or
-collapse bones safely. Original meshes, textures and game caches are untouched.
+Sleeve removal is a separate, reversible original-asset correction implemented
+by `tools/hands_only_asset.py`. The stock resource identifies separate hand and
+sleeve index ranges across all five LODs. Only sleeve triangles are degenerated;
+hand indices, vertices, skin weights, skeleton and textures remain original.
+It applies to normal FPJackieArms, not special asylum/crucifixion avatars.
+Install and rollback require the private prepared asset package and a closed
+game; see the original-hands section in
+`docs/research/protected-weapon-controllers-20261028.md`. DLL/INI overrides alone
+do not remove sleeves. Installation has been verified by extracting the modified
+resource back from the game cache; appearance in the headset remains untested.
 
 Offline x86 checks: protected hands 58,828 including exact native skin arithmetic;
 protected weapon/native sampler 74,795; tentacle draw scope 19,069; actual gesture
