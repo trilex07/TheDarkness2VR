@@ -9,7 +9,7 @@ using BOOL=int;
 constexpr int FALSE=0,D3DTEXF_NONE=0;
 struct D3DSURFACE_DESC {unsigned Width=10,Height=10,Format=1,MultiSampleType=0,MultiSampleQuality=0;};
 struct IDirect3DSurface9 {
-    unsigned refs=1,pixel=0;bool owned=false;
+    unsigned refs=1,pixel=0,untouchedPixel=0;bool owned=false;
     void AddRef(){++refs;}
     void Release(){CHECK(refs);if(!--refs && owned)delete this;}
     HRESULT GetDesc(D3DSURFACE_DESC* d){*d=D3DSURFACE_DESC{};return 0;}
@@ -17,7 +17,7 @@ struct IDirect3DSurface9 {
 struct IDirect3DDevice9 {
     bool failCopy=false,failCreate=false;unsigned copies=0;
     HRESULT StretchRect(IDirect3DSurface9* src,void*,IDirect3DSurface9* dst,void*,int) {
-        ++copies;if(failCopy)return -1;dst->pixel=src->pixel;return 0;
+        ++copies;if(failCopy)return -1;dst->pixel=src->pixel;dst->untouchedPixel=src->untouchedPixel;return 0;
     }
     HRESULT CreateRenderTarget(unsigned,unsigned,unsigned,unsigned,unsigned,BOOL,IDirect3DSurface9** output,void*) {
         if(failCreate)return -1;*output=new IDirect3DSurface9;(*output)->owned=true;return 0;
@@ -43,16 +43,22 @@ template<class... A> static HRESULT DrawIndexedPrimitiveUPWithDiffuse(A...){++dr
 int main() {
     IDirect3DDevice9 dev;IDirect3DSurface9 output,other;
     for(unsigned frame=1;frame<=1000;++frame) {
-        output.pixel=2*frame;CHECK(g_rightColorHistory.Save(&dev,&output));
-        output.pixel=2*frame+1; // current live/left pixels
+        output.pixel=output.untouchedPixel=2*frame;CHECK(g_rightColorHistory.Save(&dev,&output));
+        output.pixel=output.untouchedPixel=2*frame+1; // current live/left pixels
         const unsigned copies=dev.copies;
         g_hadWorldDrawThisFrame=true;
         CHECK(SeedActualCaller(&dev,&output));
-        CHECK(output.pixel==2*frame+1 && dev.copies==copies); // world draw regenerates right
+        CHECK(output.pixel==2*frame && dev.copies==copies+1);
+        // A perspective world draw need not regenerate every pixel. Model a
+        // scissored/occluded draw: its untouched area must retain the RIGHT eye.
+        output.pixel=2*frame+10000;
+        CHECK(output.untouchedPixel==2*frame);
+        CHECK(SaveActualCaller(&dev,&output,true,true));
+        output.pixel=output.untouchedPixel=2*frame+1;
         g_hadWorldDrawThisFrame=false;
         CHECK(SeedActualCaller(&dev,&output));
-        CHECK(output.pixel==2*frame && dev.copies==copies+1); // camera-only/UI must seed right
-        output.pixel+=10000;CHECK(g_rightColorHistory.Save(&dev,&output)); // right UI composited
+        CHECK(output.pixel==2*frame+10000 && output.untouchedPixel==2*frame);
+        CHECK(g_rightColorHistory.Save(&dev,&output)); // right UI composited
         output.pixel=3;CHECK(SeedRightEyeBackground(&dev,&output,false));
         CHECK(output.pixel==2*frame+10000);
     }
@@ -98,6 +104,6 @@ int main() {
         drawResult=failure?-1:0;CHECK(ActualDraw(&dev,op)==!failure);
     }
     CHECK(drawCalls==8 && clipRestores==8);
-    std::puts("PASS actual-source right-eye history:1000 world/camera-only/UI segments +1000 rejected UI segments; failure invalidation, target switch, world recovery, Reset; four draw HRESULTs and clip restoration; simulated pixels, not HMD evidence");
+    std::puts("PASS actual-source right-eye history:1000 partial-world/camera-only/UI segments +1000 rejected UI segments; untouched right pixels, failure invalidation, target switch, world recovery, Reset; four draw HRESULTs and clip restoration; simulated pixels, not HMD evidence");
     return 0;
 }

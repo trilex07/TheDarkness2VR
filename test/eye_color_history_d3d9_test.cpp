@@ -43,7 +43,15 @@ int main(int argc,char**) {
         for(unsigned i=0;i<cycles;++i) {
             const D3DCOLOR right=0xff001100+i,left=0xff220000+i;
             Fill(dev,target,right);CHECK(FinishRightEyeHistory(dev,target,true,true));
-            Fill(dev,target,left);CHECK(SeedRightEyeBackground(dev,target,true));Pixels(dev,target,left);
+            Fill(dev,target,left);CHECK(SeedRightEyeBackground(dev,target,true));Pixels(dev,target,right);
+            // A world draw can be scissored or cover only a small object. The
+            // rest of the color target must retain right-eye background pixels.
+            RECT worldRect{0,0,8,8};CHECK(SUCCEEDED(dev->ColorFill(target,&worldRect,0xffabcdef)));
+            Pixels(dev,target,right,true);
+            CHECK(FinishRightEyeHistory(dev,target,true,true));
+            Fill(dev,target,left);CHECK(SeedRightEyeBackground(dev,target,true));Pixels(dev,target,right,true);
+            // Complete world regeneration replaces the seed normally.
+            Fill(dev,target,right);CHECK(FinishRightEyeHistory(dev,target,true,true));
             CHECK(SeedRightEyeBackground(dev,target,false));Pixels(dev,target,right);
             RECT rect{0,0,8,8};CHECK(SUCCEEDED(dev->ColorFill(target,&rect,0xffabcdef)));
             CHECK(FinishRightEyeHistory(dev,target,true,true));

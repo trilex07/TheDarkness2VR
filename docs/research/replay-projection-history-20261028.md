@@ -234,3 +234,36 @@ receipts and INVALIDCALL/DEVICELOST at every position. Surface/status passes
 128 streams /896 calls including EndScene. Actual float replay passes 58286
 checks /576096 records per production/diagnostic flavor. History publication
 passes 1000 mixed and1000 rejected segments. Both x86 DLL flavors build.
+
+## Partial world draws preserve right-eye background, 2026-10-29
+
+`SeedRightEyeBackground` previously skipped its restore whenever the recording
+contained a perspective world draw. That flag proves neither full-screen color
+coverage nor a full-target clear: geometry, scissor, depth and alpha tests can
+leave pixels unchanged. The initial replay surface contains the completed live
+left eye, so the untouched area inherited left-eye pixels even with valid right
+history. This is a concrete replay continuity defect, independently of dynamic
+VB/IB content versions. It is not proof of the cause of the reported flicker.
+
+Available matching right history is now restored for both world and UI segments.
+A complete world render overwrites that seed; a partial render retains its own
+eye outside the modified area. Existing target-switch, missing-history, failure
+invalidation, fresh-world recovery and Reset behavior are preserved. In
+particular, recovery after rejected history still relies on the existing world
+activity condition and is not a new proof of full regeneration.
+
+The actual-source CPU fixture fails old `0020039` at generated line148, then
+passes 1000 partial-world/UI sequences and 1000 rejected UI sequences after the
+change. It checks untouched pixels, save/reseed, failure, target identity and
+recovery. A separate actual-source x86 D3D9 REF fixture passes 42 cycles at
+64x48, 257x129 and native2676x2728, with complete pixel readbacks, partial color
+updates, full overwrites, invalid-copy rejection and three Reset cycles. It
+loads system D3D9 in a hidden window, uses software REF and never calls Present.
+Projection/activity regression143200 and both x86 DLL builds also pass.
+
+This adds one full-surface GPU copy to world-containing segments with valid
+matching history. It adds no resource allocation in the established-target
+path and no CPU readback or new explicit synchronization. Driver/GPU cost and
+in-game artifact improvement remain unmeasured. Do not describe this as a
+performance optimization, complete stereo repair or90FPS result. No SteamVR
+settings or installed game files changed in this step.

@@ -3296,8 +3296,9 @@ static bool FinishStereoTransfer(d2vr_transfer::Pending& pending,
 bool CopyFrame(IDirect3DDevice9* dev);
 bool EnsureSwapchains(UINT w, UINT h);
 
-// Keep the right output across scene segments. Restoring the live (left)
-// pixels alone makes a later UI-only replay inherit the wrong eye's world.
+// Keep the right output across scene segments. A draw can leave untouched
+// pixels even when it uses a perspective world matrix (scissor, depth, alpha
+// rejection or limited geometry). Those pixels must not inherit the left eye.
 struct EyeColorHistory {
     IDirect3DSurface9* target = nullptr;
     IDirect3DSurface9* pixels = nullptr;
@@ -3337,10 +3338,12 @@ struct EyeColorHistory {
 static EyeColorHistory g_rightColorHistory;
 static bool SeedRightEyeBackground(IDirect3DDevice9* dev, IDirect3DSurface9* output,
                                    bool hasWorldDraw) {
-    // Camera constants alone do not regenerate opposite-eye world pixels.
-    // Carry right-eye history when no live world draw was issued; actual
-    // world renders still start from current pixels and regenerate the eye.
-    return hasWorldDraw || g_rightColorHistory.Restore(dev, output);
+    // Preserve the existing fresh-world recovery after a rejected segment.
+    // Otherwise always carry available right-eye history: the world activity
+    // flag proves neither full-screen coverage nor a full color clear. A full
+    // replay will overwrite the seed; a partial replay needs its untouched area.
+    if(hasWorldDraw && g_rightColorHistory.rejected)return true;
+    return g_rightColorHistory.Restore(dev, output);
 }
 static bool FinishRightEyeHistory(IDirect3DDevice9* dev, IDirect3DSurface9* output,
                                  bool replayOk, bool historyOk) {
