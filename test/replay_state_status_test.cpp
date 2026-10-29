@@ -1,12 +1,15 @@
 #define NOMINMAX
 #include <windows.h>
 #include <d3d9.h>
+@STATE_CACHE@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
+// Receipt fixture forwards all RS; the actual float-loop suite validates public/vendor classification.
+static bool IsConstantRenderStateBinding(unsigned,unsigned){return false;}
 static IUnknown* ReplayBuffer(IUnknown* p,bool&){return p;}
 @ENUM@
 struct Rec {unsigned op=0,n=0,a[6]{};};
@@ -38,6 +41,7 @@ static void SetActivePixelShaderMetadata(const void*){}
 static bool Actual(const std::vector<Rec>& records){
     alignas(16) const uint8_t data[512]{};const uint8_t* dataBase=data;
     const void* replayTex[16]{};IDirect3DDevice9* dev=nullptr;
+    d2vr_replay_state::Cache stateCache;
     bool replayComplete=true;
     for(const auto& r:records)switch((RecOp)r.op){
 @CASES@
@@ -54,7 +58,7 @@ int main(){
     std::vector<Rec> records;std::vector<unsigned> expected;
     for(unsigned op:ops){Rec r;r.op=op;r.n=1;r.a[0]=0;r.a[1]=1;r.a[4]=64;records.push_back(r);expected.push_back(op);}
     // A later successful command must never erase an earlier failure.
-    records.push_back(records[4]);expected.push_back(OP_SetRenderState);
+    auto later=records[4];later.a[1]=2;records.push_back(later);expected.push_back(OP_SetRenderState);
     unsigned streams=0,attempts=0;
     for(unsigned positive=0;positive<2;++positive)for(unsigned negative=0;negative<2;++negative)
     for(failAt=0;failAt<=records.size();++failAt){
