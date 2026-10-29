@@ -709,7 +709,7 @@ struct OrigFns {
 };
 static OrigFns g_orig;
 #include "replay_buffers.inl"
-static void BeginBufferRecording() { g_bufferFrameOpen=true;g_bufferWritesApplied=false;g_bufferUnsafeAlias.store(false,std::memory_order_release); }
+static void BeginBufferRecording() { g_bufferFrameOpen=g_replayBufferVersions;g_bufferWritesApplied=false;g_bufferUnsafeAlias.store(false,std::memory_order_release); }
 
 // ------------------------------------------------------------- state
 static StereoParams g_stereo;          // current eye params (live pass = eye 0)
@@ -1594,6 +1594,13 @@ static void EndScaledUiClip(IDirect3DDevice9* dev, const UiClipState& state) {
 
 static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
+    if(!g_replayBufferVersions) {
+        // Exact pre-versioning path: no recorder lock spans a native Draw.
+        if(g_recActive)RecEmit(OP_DrawPrimitive, 0, t, sv, pc);
+        const UiClipState clip=BeginScaledUiClip(dev);
+        const HRESULT hr=RecordLiveResult(DrawPrimitiveWithDiffuse(dev, t, sv, pc));
+        EndScaledUiClip(dev,clip);return hr;
+    }
     // Keep native consumption ordered with worker-thread buffer Unlock records.
     RecLockGuard guard;
     if (g_recActive) RecEmitLocked(OP_DrawPrimitive, 0, t, sv, pc);
@@ -1606,6 +1613,13 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPR
 static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
+    if(!g_replayBufferVersions) {
+        // Exact pre-versioning path: no recorder lock spans a native Draw.
+        if(g_recActive)RecEmit(OP_DrawIndexedPrimitive, 0, t, (uint32_t)bvi, mvi, nv, si, pc);
+        const UiClipState clip=BeginScaledUiClip(dev);
+        const HRESULT hr=RecordLiveResult(DrawIndexedPrimitiveWithDiffuse(dev, t, bvi, mvi, nv, si, pc));
+        EndScaledUiClip(dev,clip);return hr;
+    }
     // Keep native consumption ordered with worker-thread buffer Unlock records.
     RecLockGuard guard;
     if (g_recActive) RecEmitLocked(OP_DrawIndexedPrimitive, 0, t, (uint32_t)bvi, mvi, nv, si, pc);
@@ -1922,7 +1936,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     while (!g_recLock.compare_exchange_weak(expectedLock,1,std::memory_order_acquire,std::memory_order_relaxed)) {
         expectedLock=0;Sleep(0);
     }
-    if(g_bufferWritesApplied) {
+    if(g_replayBufferVersions && g_bufferWritesApplied) {
         g_recLock.store(0,std::memory_order_release);g_replayEye=-1;return false;
     }
     BeginReplayBufferLookups();
@@ -1936,10 +1950,10 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     }
     // No driver/state reuse across frames. Capture retains exact original
     // upload boundaries so its per-record projection witnesses stay authoritative.
-    static d2vr_replay_state::Cache stateCache;stateCache.Clear();
-    static d2vr_replay_state::Bindings bindings;bindings.Clear();
+    static d2vr_replay_state::Cache stateCache;stateCache.Configure(g_replayStateFilter);
+    static d2vr_replay_state::Bindings bindings;bindings.Configure(g_replayBindingFilter);
     using Binding=d2vr_replay_state::Bindings;
-    bool replayComplete=!g_recOverflow && !g_bufferUnsafeAlias.load(std::memory_order_acquire);
+    bool replayComplete=!g_recOverflow && (!g_replayBufferVersions || !g_bufferUnsafeAlias.load(std::memory_order_acquire));
     if(!ReplayInheritedBuffers(dev))replayComplete=false;
     bool batchEnabled = g_replayConstantBatch;
 #ifdef D2VR_MATCHED_CAPTURE
@@ -2317,11 +2331,11 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         g_constantUploadWindow.captureBypass += g_replayConstantBatch && MatchedCaptureRecordingActive();
     }
 #endif
-    if(g_bufferUnsafeAlias.load(std::memory_order_acquire))replayComplete=false;
+    if(g_replayBufferVersions && g_bufferUnsafeAlias.load(std::memory_order_acquire))replayComplete=false;
     g_bufferWritesApplied=true;
     g_vsConstantHistory.EndReplay(replayComplete);
     g_psEyeHistory.EndReplay(replayComplete);
-    ClearReplayBufferLookups();
+    if(g_replayBufferVersions)ClearReplayBufferLookups();
     g_recLock.store(0,std::memory_order_release);
     g_replayEye = -1;
     return replayComplete;
@@ -2416,7 +2430,7 @@ static HRESULT STDMETHODCALLTYPE Hook_EndStateBlock(IDirect3DDevice9* dev, IDire
 // ------------------------------------------------------------- hook installation
 static bool InstallReplayHooks(void* dev) {
     D3DCAPS9 bufferCaps{};
-    if(SUCCEEDED(static_cast<IDirect3DDevice9*>(dev)->GetDeviceCaps(&bufferCaps)))
+    if(g_replayBufferVersions && SUCCEEDED(static_cast<IDirect3DDevice9*>(dev)->GetDeviceCaps(&bufferCaps)))
         g_bufferMaxStreams=std::min<UINT>(16,bufferCaps.MaxStreams);
     struct Slot { int idx; void** dst; void* hook; const char* name; };
 #define ORIG(field) ((void**)&g_orig.field)
@@ -2461,6 +2475,7 @@ static bool InstallReplayHooks(void* dev) {
     int ok = 0;
     int installed = 0;
     for (Slot& s : slots) {
+        if(!g_replayBufferVersions && (s.idx==26 || s.idx==27))continue;
         const bool wantRecordHooks = (g_hookMask & 1) != 0;
         const bool wantVsHooks = (s.idx == 91 || s.idx == 92) ? ((g_hookMask & 4) != 0) : wantRecordHooks;
         if (!wantVsHooks) continue;

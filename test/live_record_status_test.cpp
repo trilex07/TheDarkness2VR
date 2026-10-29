@@ -1,3 +1,4 @@
+static bool g_replayBufferVersions=true;
 #include <windows.h>
 #include <d3d9.h>
 #include <cstdint>
@@ -61,7 +62,7 @@ static void NoteDraw(){}
 template<class... A> static void Emit(A...){}
 }
 @IMPLEMENTATION@
-#define RUN(name,...) do{Expect(__VA_ARGS__);CHECK(Hook_##name(__VA_ARGS__)==status);CHECK(calls==1);CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));CHECK(locks==((!std::strcmp(#name,"DrawPrimitive")||!std::strcmp(#name,"DrawIndexedPrimitive"))?1u:unsigned(active&&FAILED(status))));CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;}while(0)
+#define RUN(name,...) do{Expect(__VA_ARGS__);CHECK(Hook_##name(__VA_ARGS__)==status);CHECK(calls==1);CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));CHECK(locks==((!std::strcmp(#name,"DrawPrimitive")||!std::strcmp(#name,"DrawIndexedPrimitive"))&&g_replayBufferVersions?1u:unsigned(active&&FAILED(status))));CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;}while(0)
 int main(){
     auto* dev=reinterpret_cast<IDirect3DDevice9*>(0x1000);
     auto* surface=reinterpret_cast<IDirect3DSurface9*>(0x2000);
@@ -70,9 +71,9 @@ int main(){
     auto* declaration=reinterpret_cast<IDirect3DVertexDeclaration9*>(0x5000);
     RECT rect{2,3,8,9};D3DRECT clearRect{1,2,7,8};D3DMATRIX matrix{};
     D3DVIEWPORT9 viewport{1,2,64,48,0.25f,0.75f};float plane[4]{1,2,3,4};int values[4]{1,2,3,4};
-    for(bool active:{false,true})for(bool oldOverflow:{false,true})
+    for(bool versions:{false,true})for(bool active:{false,true})for(bool oldOverflow:{false,true})
     for(HRESULT result:{S_OK,S_FALSE,D3DERR_INVALIDCALL,D3DERR_DEVICELOST,E_OUTOFMEMORY}){
-        g_recActive=active;g_recOverflow=oldOverflow;status=result;
+        g_replayBufferVersions=versions;g_recActive=active;g_recOverflow=oldOverflow;status=result;
         RUN(SetRenderTarget,dev,0u,surface);
         RUN(Clear,dev,1u,&clearRect,DWORD(D3DCLEAR_TARGET),D3DCOLOR(0x12345678),0.375f,7u);
         RUN(SetTransform,dev,D3DTS_WORLD,&matrix);
@@ -108,7 +109,7 @@ int main(){
         CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));
         CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;
     }
-    CHECK(clipBegins==80 && clipEnds==clipBegins);
+    CHECK(clipBegins==160 && clipEnds==clipBegins);
     // Intentional draw suppression still returns success without calling the
     // driver or making a previously complete recording invalid.
     skipDraw=true;g_recActive=true;g_recOverflow=false;status=D3DERR_DEVICELOST;
@@ -121,5 +122,5 @@ int main(){
     CHECK(g_recOverflow&&records==1);
     status=S_OK;Expect(dev,surface,&rect,D3DCOLOR(7));
     CHECK(Hook_ColorFill(dev,surface,&rect,7)==S_OK&&g_recOverflow&&records==0);
-    printf("PASS actual live hooks: %u checks, 24 APIs x 20 recording/status cases; four draw paths including UP, clip cleanup, intentional suppression, exact arguments/HRESULT/one forward, sticky incomplete packet; CPU fixture, not game evidence\n",checks);
+    printf("PASS actual live hooks: %u checks, 24 APIs x 40 versioning/recording/status cases; four draw paths including UP, clip cleanup, intentional suppression, exact arguments/HRESULT/one forward, sticky incomplete packet; CPU fixture, not game evidence\n",checks);
 }

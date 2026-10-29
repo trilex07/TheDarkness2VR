@@ -90,6 +90,7 @@ static void ClearReplayBufferLookups() {
     }
 }
 static void BeginReplayBufferLookups() {
+    if(!g_replayBufferVersions)return;
     ClearReplayBufferLookups();g_replayBufferLookupActive=true;
 }
 static BufferVersion* ReplayBufferInfo(IUnknown* source) {
@@ -290,6 +291,7 @@ static bool ReplayBufferWrite(const Rec& record,const uint8_t* data) {
         UploadBufferRange(version,record.a[1],record.n,record.a[2],data+record.a[3]);
 }
 static IUnknown* ReplayBuffer(IUnknown* object,bool& complete) {
+    if(!g_replayBufferVersions)return object;
     if(!object)return nullptr;
     auto version=ReplayBufferInfo(object);
     if(!version) {
@@ -304,6 +306,7 @@ static IUnknown* ReplayBuffer(IUnknown* object,bool& complete) {
     return version->dynamic?version->replica:object;
 }
 static bool ReplayInheritedBuffers(IDirect3DDevice9* dev) {
+    if(!g_replayBufferVersions)return true;
     bool complete=true;
     // Stream limit cached at installation. No per-draw getters.
     for(UINT slot=0;slot<g_bufferMaxStreams;++slot) {
@@ -331,13 +334,16 @@ static void AdvanceBufferWrites() {
     g_bufferWritesApplied=true;
 }
 static void FinishBufferRecording() {
+    if(!g_replayBufferVersions)return;
     AdvanceBufferWrites();
     g_bufferFrameOpen=false;g_bufferFrameBytes=0;
 }
 static void CloseBufferFrame() {
+    if(!g_replayBufferVersions)return;
     RecLockGuard guard;g_recActive=false;FinishBufferRecording();
 }
 static void ResetBufferReplicas() {
+    if(!g_replayBufferVersions)return;
     RecLockGuard guard;ClearReplayBufferLookups();
     BufferVersion* pending[kBufferObjectLimit];size_t count=0;
     AcquireSRWLockExclusive(&g_bufferRegistryLock);
