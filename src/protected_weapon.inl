@@ -45,8 +45,6 @@ static bool ProtectedWeaponOwner(void* camera,unsigned slot,void*& gun,void*& mo
         auto weapon=**reinterpret_cast<BYTE***>(inventory+0xB0+12*slot);
         if(!ProtectedGunType(weapon) ||
            **reinterpret_cast<BYTE***>(weapon+0x980)!=avatar)return false;
-        auto entity=**reinterpret_cast<BYTE***>(weapon+0x12C);
-        if(!entity || (*reinterpret_cast<DWORD*>(entity)!=0xFD6BC0 && !ProtectedWeaponModelOwned(entity)))return false;
         const DWORD mode=*reinterpret_cast<DWORD*>(weapon+0xA78);
         if(mode>=4)return false;
         auto parts=*reinterpret_cast<BYTE**>(weapon+0xA64);
@@ -54,7 +52,14 @@ static bool ProtectedWeaponOwner(void* camera,unsigned slot,void*& gun,void*& mo
         if(!action || (*reinterpret_cast<DWORD*>(action)!=0x1010AE0 && !ProtectedWeaponFireOwned(action)) ||
            *reinterpret_cast<DWORD*>(action+4)!=0x11193F0 ||
            **reinterpret_cast<BYTE***>(action+0x4C)!=weapon)return false;
-        gun=weapon;model=entity;fire=action;return true;
+        // The shot action owns its equipped gun independently of the optional
+        // +12C model reference. The live secondary pistol can have an empty
+        // reference here. Never let that strand its proven fire action on the
+        // common camera ray, and never admit an unknown model to fix a shot.
+        gun=weapon;fire=action;model=nullptr;
+        auto entity=**reinterpret_cast<BYTE***>(weapon+0x12C);
+        if(entity && (*reinterpret_cast<DWORD*>(entity)==0xFD6BC0 || ProtectedWeaponModelOwned(entity)))model=entity;
+        return true;
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float* world) {
@@ -71,7 +76,8 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
             void *gun=nullptr,*equippedModel=nullptr,*equippedFire=nullptr;
             if(!ProtectedWeaponOwner(camera,slot,gun,equippedModel,equippedFire) ||
                (model && model!=equippedModel) || (fire && fire!=equippedFire))continue;
-            if(!ProtectedWeaponModelOwned(equippedModel) || !ProtectedWeaponFireOwned(equippedFire))return false;
+            if(!ProtectedWeaponFireOwned(equippedFire) ||
+               (model && !ProtectedWeaponModelOwned(equippedModel)))return false;
             if(fire && (!weaponRef || **static_cast<void***>(weaponRef)!=gun || !ProtectedWeaponFireOwned(fire)))return false;
             if(model && !ProtectedWeaponModelOwned(model))return false;
             const unsigned hand=1-slot;
@@ -180,7 +186,9 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
         if(!ProtectedWeaponOwner(camera,slot,gun,model,fire)) {
             ReportProtectedWeaponRefusal(camera,slot);continue;
         }
-        if(ProtectedWeaponModelOwned(model) && ProtectedWeaponFireOwned(fire))continue;
+        const bool needsShot=!ProtectedWeaponFireOwned(fire);
+        const bool needsPose=model && !ProtectedWeaponModelOwned(model);
+        if(!needsShot && !needsPose)continue;
         if(!PrepareProtectedWeaponCode()) {
             static bool reported=false;
             if(!reported) {
@@ -189,8 +197,8 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
             }
             return;
         }
-        const bool shot=g_protectedWeaponFireTable.Publish(fire,g_nativeImageGuard);
-        const bool pose=shot && g_protectedWeaponModelTable.Publish(model,g_nativeImageGuard);
+        const bool shot=!needsShot || g_protectedWeaponFireTable.Publish(fire,g_nativeImageGuard);
+        const bool pose=shot && model && (!needsPose || g_protectedWeaponModelTable.Publish(model,g_nativeImageGuard));
         if(shot || pose)Log("[ProtectedWeapon] slot=%u model=%p fire=%p privatePose=%d privateShot=%d; independent aim spaces, original AD94A7 updates; native CFBBA0 flow with final C47570 controller ray, HMD validation pending",slot,model,fire,int(pose),int(shot));
     }
 }

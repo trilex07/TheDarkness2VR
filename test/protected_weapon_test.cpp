@@ -14,7 +14,8 @@
 #include "../src/native_weapon_prefix_plan.h"
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line%d %s\n",__LINE__,#x);exit(1);}}while(0)
-static void Log(const char*,...){}
+static unsigned logCalls=0;
+static void Log(const char*,...){++logCalls;}
 static ULONGLONG clockMs=1000;
 static ULONGLONG Clock(){return clockMs;}
 static bool g_protectedTrackedHands=true,g_nativePlayerOwnerAdmitted=true;
@@ -138,6 +139,15 @@ int main(int argc,char** argv) {
     CHECK(g_protectedWeaponModelTable.Prepare(modelTable,131,0xF0/4,d2vr_weapon_bridge::Bridge::ModelEntry(),g_nativeImageGuard));
     CHECK(g_protectedWeaponFireTable.Prepare(fireTable,33,0x64/4,d2vr_weapon_bridge::Bridge::FireEntry(),g_nativeImageGuard));
     g_protectedWeaponReady=true;
+    for(unsigned slot=0;slot<2;++slot) {
+        Reset();Ref(guns[slot],0x12C,nullptr);
+        const auto logged=logCalls;
+        PrepareProtectedWeaponForCamera(camera);CHECK(logCalls==logged);
+        CHECK(ProtectedWeaponFireOwned(fires[slot]));
+        Ref(fires[slot],0x4C,guns[1-slot]);
+        *reinterpret_cast<void***>(fires[slot])=fireTable;
+        PrepareProtectedWeaponForCamera(camera);CHECK(!ProtectedWeaponFireOwned(fires[slot]));
+    }
     GrabFeedbackCases();
     for(unsigned slot=0;slot<2;++slot) {
         Reset();g_hands[slot].aimValid=false; // peer loss must not gate this slot's 1-slot controller
@@ -193,7 +203,27 @@ int main(int argc,char** argv) {
         CHECK(!ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*slot,shot));
         CHECK(!CopyProtectedWeaponHandPose(Ptr(camera),1-slot,pose));
     }
-    Reject([]{*reinterpret_cast<void***>(models[0])=modelTable;});
+    // Live secondary gun: +12C is empty, while the reciprocal fire action is
+    // still owned. Its ray must follow LEFT aim even if right tracking is lost.
+    for(unsigned slot=0;slot<2;++slot)for(unsigned missing=0;missing<3;++missing) {
+        Reset();
+        if(missing==0)Ref(guns[slot],0x12C,nullptr);
+        if(missing==1)*reinterpret_cast<void***>(models[slot])=modelTable;
+        if(missing==2)Word(models[slot],0,0x12345678);
+        g_hands[slot].aimValid=false;
+        g_hands[1-slot].aim.orientation={0,.70710678f,0,.70710678f};
+        float shot[16],unchanged[16];Matrix(shot,7,8,9);memcpy(unchanged,shot,64);
+        CHECK(!ResolveProtectedWeaponModel(reinterpret_cast<float*>(models[slot]+0x140),shot));
+        CHECK(!memcmp(shot,unchanged,64));
+        CHECK(ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*slot,shot));
+        CHECK(std::fabs(shot[8])>.99f && std::fabs(shot[10])<.001f);
+        CHECK(Near(shot[12],slot==0?10.5f:9.6f));
+        XrPosef pose{};CHECK(!CopyProtectedWeaponHandPose(Ptr(camera),1-slot,pose));
+        // Missing model relaxes no gun, receiver, slot or tracking ownership.
+        CHECK(!ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*(1-slot),shot));
+        Ref(fires[slot],0x4C,guns[1-slot]);
+        CHECK(!ResolveProtectedWeaponFire(fires[slot],inventory+0xB0+12*slot,shot));
+    }
     // Actual bridge: unchanged and tracked matrices, five arguments, native
     // receiver, stack cleanup, result registers/flags, FPU and LastError.
     alignas(16) BYTE nativeIncoming[512];State nativeState{},bridgeState{};
@@ -234,5 +264,15 @@ int main(int argc,char** argv) {
     for(unsigned i=0;i<33;++i)CHECK(fireTable[i]==nullptr &&
         (i==0x64/4 || g_protectedWeaponFireTable.Table()[i]==fireTable[i]));
     if(argc==3)NativePistolBody(argv[2],original,result);
+    for(unsigned slot=0;slot<2;++slot) {
+        Reset();Ref(guns[slot],0x12C,nullptr);
+        g_hands[slot].aimValid=false;
+        g_hands[1-slot].aim.orientation={0,.70710678f,0,.70710678f};
+        CHECK(invoke(d2vr_weapon_bridge::Bridge::FireEntry(),fires[slot],inventory+0xB0+12*slot,stock,&bridgeState)==0x5a5a1234);
+        const auto matrix=static_cast<const float*>(result(1));
+        CHECK(std::fabs(matrix[8])>.99f && std::fabs(matrix[10])<.001f);
+        CHECK(Near(matrix[12],slot==0?10.5f:9.6f));
+        const auto args=static_cast<const uintptr_t*>(result(2));CHECK(args[0]==Ptr(fires[slot]) && args[1]==Ptr(inventory+0xB0+12*slot));
+    }
     printf("PASS protected weapon actual source: %u checks; independent aims, scaled translation/rotation, fresh equipped/held ownership refusals, model recognition, 2000 fire + 2000 model native-vs-bridge comparisons, ABI/FP/LastError, original once, source tables unchanged; no HMD/FPS claim\n",checks);
 }

@@ -25,13 +25,13 @@ struct IDirect3DDevice9 {
     IDirect3DVertexBuffer9 vb;IDirect3DIndexBuffer9 ib;
     float matrix[16]{};UINT offset=0,stride=40;
     bool noVB=false,noIB=false,failGet=false,failSet=false;
-    unsigned sets=0,indexQueries=0;
+    unsigned sets=0,indexQueries=0,streamQueries=0,constantQueries=0;
     HRESULT GetStreamSource(UINT stream,IDirect3DVertexBuffer9** out,UINT* off,UINT* st){
-        CHECK(stream==0);*out=noVB?nullptr:&vb;*off=offset;*st=stride;
+        ++streamQueries;CHECK(stream==0);*out=noVB?nullptr:&vb;*off=offset;*st=stride;
         if(*out)++vb.refs;return noVB?E_FAIL:S_OK;
     }
     HRESULT GetIndices(IDirect3DIndexBuffer9** out){++indexQueries;*out=noIB?nullptr:&ib;if(*out)++ib.refs;return noIB?E_FAIL:S_OK;}
-    HRESULT GetVertexShaderConstantF(UINT start,float* out,UINT count){CHECK(start==0 && count==4);memcpy(out,matrix,64);return failGet?E_FAIL:S_OK;}
+    HRESULT GetVertexShaderConstantF(UINT start,float* out,UINT count){++constantQueries;CHECK(start==0 && count==4);memcpy(out,matrix,64);return failGet?E_FAIL:S_OK;}
 };
 struct StereoParams {bool headGeometry=true;float inverseHeadClip[16]{};} params;
 static bool g_headAttachedTentacles=true,shadow=false;
@@ -67,6 +67,17 @@ int main(){
             IDirect3DDevice9 dev;dev.offset=offset;shader.hash=hash;g_replayEye=eye;memcpy(dev.matrix,original,64);
             {TentacleHeadScope scope(&dev);CHECK(scope.applied && Equal(dev.matrix,attached));CHECK(dev.sets==1);}
             CHECK(Equal(dev.matrix,original) && dev.sets==2 && !dev.vb.refs && !dev.ib.refs);
+            // Corrected candidate uses the ordinary world transform even if
+            // grab refs become empty while a native execution owns the target.
+            // No guessed execution timer or modification of target animation.
+            const auto streams=dev.streamQueries,indices=dev.indexQueries,constants=dev.constantQueries;
+            g_headAttachedTentacles=false;
+            for(bool feedback:{false,true}) {
+                headAttachmentAllowed=feedback;
+                {TentacleHeadScope scope(&dev);CHECK(!scope.applied && Equal(dev.matrix,original));}
+                CHECK(dev.sets==2 && dev.streamQueries==streams && dev.indexQueries==indices && dev.constantQueries==constants);
+            }
+            headAttachmentAllowed=g_headAttachedTentacles=true;
         }
     }
     IDirect3DDevice9 dev;memcpy(dev.matrix,attached,64);
@@ -103,5 +114,5 @@ int main(){
     dev.matrix[13]=NAN;{TentacleHeadScope scope(&dev);CHECK(!scope.applied);}dev.matrix[13]=0;
     dev.failSet=true;{TentacleHeadScope scope(&dev);CHECK(!scope.applied && Equal(dev.matrix,attached));}
     CHECK(!dev.vb.refs && !dev.ib.refs);
-    std::printf("PASS actual tentacle head scope: %u checks, 1890 mesh/shader/eye/pose scopes; restoration and foreign mesh/failure rejection. No HMD claim.\n",checks);
+    std::printf("PASS actual tentacle head scope: %u checks,1890 enabled +3780 disabled mesh/shader/eye/pose scopes; world matrices unchanged and no extra device queries in corrected profile, restoration and foreign mesh/failure rejection. No HMD claim.\n",checks);
 }

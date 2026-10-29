@@ -2141,3 +2141,39 @@ eyes, display-rate requests or SteamVR settings are introduced.
 
 API contract: https://registry.khronos.org/OpenXR/specs/1.0/man/html/xrGetDisplayRefreshRateFB.html
 and https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrEventDataDisplayRefreshRateChangedFB.html
+
+## 2026-10-29: secondary shot without a primary-model reference
+
+The new real-game log publishes the right gun's private shot route but refuses
+the secondary gun: its +12C model reference is empty, while its fire table and
+type are the pinned 1010AE0 / 11193F0. WeaponOwner incorrectly made that optional
+model a prerequisite for admitting the separately owned firing action. Resolve
+also required the model to have a private table before applying any shot ray.
+Both gates now distinguish model and shot ownership. Slot identity, reciprocal
+avatar/gun/action references, selected fire mode/type, tracking and native
+consumer contracts remain required. Unknown models are never published. An
+empty model cannot block an otherwise proven equipped shot action. Repeated
+preparation of an already owned fire-only gun does not republish or log per frame.
+
+Actual-source x86 regressions pass 121991 checks including absent, unpublished
+and foreign models, independent left/right rays with peer tracking lost, wrong
+slot/receiver refusal, and the actual final-consumer bridge with an absent
+model. Existing 3200 copied native CFBBA0 executions and ABI comparisons pass.
+Positive initial publication of a previously stock fire action remains a game
+validation item; fixtures do not load the game's live instance tables.
+
+## 2026-10-29: native world-space tentacles throughout executions
+
+User feedback distinguishes correct ordinary holds/prop pickup from separation
+during an action on a held enemy. Installed Render.HeadAttachedTentacles=1
+cancels the world head transform only on tentacle draws whenever sampled grab
+references are Empty. Those references do not prove that a native execution
+has finished owning the victim. Both current candidate profiles now use the
+existing supported HeadAttachedTentacles=0 path, preserving native world-space
+tentacle transforms for the entire sequence, including reference handoff.
+No enemy transform, physics, animation, controller input or execution timer is
+modified. Idle tentacles also retain their native world-space transform; headset
+comfort and action alignment require user validation. The legacy experimental
+head-attached profile remains available. Offline tests cover both eyes and live
+draws across 30 head poses, 3 shaders and 7 mesh offsets, with Empty/Busy feedback:
+3780 disabled scopes preserve the exact world matrix without device queries.
