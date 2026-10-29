@@ -42,10 +42,42 @@ It prints a static receipt and explicitly leaves live-object/type, menu state,
 menu surface and injection admission false. The correct installed EXE passes;
 a changed image is rejected. No game process, DLL, INI or Steam settings change.
 
-Next: establish the existing framework's live ownership/lifetime, then verify
-the input receiver type and cursor/event contract. The game's actual submitted
-menu surface and pause/menu state are separate requirements; the already
-implemented compositor settings quad cannot certify them.
+## Existing window to framework ownership route
+
+The framework is allocated by 560550 and retained in the main program loop
+9C3E40; there is no proven fixed global framework pointer. The main-window
+configuration method 40DEC0 writes D993C0 at configuration+44 (WndProc) and
+the framework pointer at +48 (creation parameter). C27160 passes graphics+18C
+to D14750, which copies both fields verbatim to graphics+1D0/+1D4. A0B540
+uses these fields for window registration and CreateWindowExA.
+
+On WM_CREATE, D993C0 obtains the creation parameter from CREATESTRUCTA,
+stores it in GWLP_USERDATA (-21), and stores the same HWND at framework+F8.
+Subsequent messages retrieve that userdata before calling the framework's
+message handler. 40A300 is an auxiliary dialog, not this ownership route.
+The framework constructor selects FC8930; the Windows input-manager
+constructor AAE390 selects FBFCD0. The manager's mouse reference is stored
+at +A44 by 8460E0/84BBA0; mouse constructor 821400 selects FC00C8. Reference
+assignment is not a lookup and must not be called to discover an object.
+
+Optional `--pid <existing-game-pid>` now reads the HWND userdata, validates
+framework type and HWND mirror, follows both reference indirections, and
+validates the input-manager type. It opens only query/VM_READ access and
+compares loaded instruction ranges against the pinned file. Two matching
+chain reads bracketed by window-identity checks yield a **read-only snapshot**,
+not a lifetime lease or permission to write input. There is no process launch,
+native call, hook, polling loop or memory mutation. No matching snapshot exits
+with failure. The game was closed during this work: live observation NOT RUN.
+
+Four ownership tests PASS, including invalid pointers, field overflow,
+unreadable memory, wrong HWND/types and mistaken reference/object indirections.
+The installed EXE static audit PASS; altered-image and invalid-PID rejection
+PASS. No C++ source changed, so no new DLL/build/deployment was produced.
+
+Next: observe the existing receiver during the consolidated authorized game
+session, then establish a valid input lifetime and menu-only event contract.
+The game's actual submitted menu surface and pause/menu state are separate
+requirements; the existing compositor settings quad cannot certify them.
 
 ## Performance priority decision
 

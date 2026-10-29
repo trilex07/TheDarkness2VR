@@ -2538,3 +2538,23 @@ WOW64-only memset bucket remains unattributed to individual native callers;
 record arena initialization was already removed. Preserve the current accepted
 Steam DLL 28657E6A76964493FEDF6F6BB9C1C8E8976B0F94578147C1AB32F52537DE6784,
 DirectRecordCopy OFF, and the separately deployed cb2cd4c Polish repair.
+
+## 2026-10-29: existing HWND exposes native framework ownership
+
+40DEC0 configures D993C0 and the framework creation parameter. C27160/D14750
+copy them into graphics+1D0/+1D4, consumed by A0B540. D993C0's WM_CREATE
+stores the framework in GWLP_USERDATA and HWND in framework+F8. The pointer
+chain can therefore be observed without a new EXE hook or factory call.
+Window userdata alone is insufficient: audit_input_service.py optionally
+verifies the pinned loaded code, both reference indirections, framework and
+Windows input-manager types, HWND mirror and matching repeated snapshots.
+The query/VM_READ-only observation is not a lifetime lease or menu-state proof.
+Missing snapshots exit with failure; no process launch or input writes.
+
+Four ownership tests PASS (including wrong type/window, reference/object
+confusion, invalid pointer, overflow and unreadable memory). Installed static
+audit PASS; changed image and invalid PID rejected. Live snapshot NOT RUN:
+game closed. The earlier minidump captures no framework heap instance and does
+not close this gate. No C++/DLL/INI changes or runtime performance claim.
+Native menu surface/state and safe input lifetime remain unresolved; details
+in docs/research/native-menu-input-contract-20261029.md.
