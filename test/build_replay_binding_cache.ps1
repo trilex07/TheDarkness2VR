@@ -1,6 +1,10 @@
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $source=Get-Content (Join-Path $repo 'src/stereo_replay.inl') -Raw
+$config=Get-Content (Join-Path $repo 'src/d3d9.cpp') -Raw
+$ini=Get-Content (Join-Path $repo 'Darkness2VR.ini') -Raw
+if($config -notmatch 'g_replayBindingFilter = false;' -or $config -notmatch '"ReplayBindingFilter", 0, chosenIni' -or $ini -notmatch 'ReplayBindingFilter=0') {throw 'Binding filter must stay independently OFF by default'}
+if($source -notmatch 'bindings.Configure\(g_replayBindingFilter\)') {throw 'Replay must use the configured binding gate'}
 $enum=[regex]::Match($source,'(?s)enum RecOp : uint16_t \{.*?\};').Value
 $replay=$source.Substring($source.IndexOf('static bool ReplayStream('))
 $ops=@('SetTexture','SetVertexDeclaration','SetFVF','SetVertexShader','SetStreamSource','SetStreamSourceFreq','SetIndices','SetPixelShader','DrawPrimitiveUP','DrawIndexedPrimitiveUP','ApplyStateBlock','BufferWrite','SetRenderState')

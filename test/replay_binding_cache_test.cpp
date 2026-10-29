@@ -51,14 +51,9 @@ static UiClipState BeginScaledUiClip(IDirect3DDevice9*){return {};}
 static void EndScaledUiClip(IDirect3DDevice9*,UiClipState){}
 static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9*,D3DPRIMITIVETYPE,UINT,const void*,UINT){state[Binding::Stream(0)]={};return S_OK;}
 static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9*,D3DPRIMITIVETYPE,UINT,UINT,UINT,const void*,D3DFORMAT,const void*,UINT){state[Binding::Stream(0)]={};state[Binding::Indices]={};return S_OK;}
-struct HarnessBindings {
- Binding cache;bool enabled;
- void Clear(){cache.Clear();}void Invalidate(int key){cache.Invalidate(key);}
- template<class F>long Forward(int key,uintptr_t a,uintptr_t b,uintptr_t c,F&& f){return enabled?cache.Forward(key,a,b,c,f):f();}
-};
 static bool Actual(const std::vector<Rec>& records,bool enabled){
  state={};observed.clear();calls=metadata=resolves=0;bufferValid=true;
- d2vr_replay_state::Cache stateCache;HarnessBindings bindings{{},enabled};
+ d2vr_replay_state::Cache stateCache;Binding bindings;bindings.Configure(enabled);
  IDirect3DDevice9* dev=nullptr;const void* replayTex[16]{};
  const uint8_t arena[512]{};const uint8_t* dataBase=arena;bool replayComplete=true;
  for(const auto& r:records)switch((RecOp)r.op){

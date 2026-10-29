@@ -29,6 +29,7 @@ public:
 // Exact bindings inside one replay. The command ledger/snapshots already own
 // every identity until replay ends. Never retain this knowledge across restores.
 class Bindings {
+    bool enabled_=true;
     struct Entry {uintptr_t a=0,b=0,c=0;};
     Entry values_[57];
     uint64_t valid_=0;
@@ -38,9 +39,11 @@ public:
     static int Stream(unsigned slot){return slot<16?int(21+slot):-1;}
     static int Frequency(unsigned slot){return slot<16?int(37+slot):-1;}
     static constexpr int Indices=56;
+    void Configure(bool enabled){enabled_=enabled;Clear();}
     void Clear(){valid_=0;}
     void Invalidate(int key){if(key>=0 && key<=Indices)valid_&=~(uint64_t(1)<<key);}
     template<class Send> long Forward(int key,uintptr_t a,uintptr_t b,uintptr_t c,Send&& send){
+        if(!enabled_)return send();
         if(key<0 || key>Indices){Clear();return send();}
         const uint64_t bit=uint64_t(1)<<key;
         auto& entry=values_[key];

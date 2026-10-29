@@ -90,6 +90,7 @@ static void ClearReplayBufferLookups() {
     }
 }
 static void BeginReplayBufferLookups() {
+    if(!g_replayBufferVersions)return;
     ClearReplayBufferLookups();g_replayBufferLookupActive=true;
 }
 static BufferVersion* ReplayBufferInfo(IUnknown* source) {

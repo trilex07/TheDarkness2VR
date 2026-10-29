@@ -1951,7 +1951,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     // No driver/state reuse across frames. Capture retains exact original
     // upload boundaries so its per-record projection witnesses stay authoritative.
     static d2vr_replay_state::Cache stateCache;stateCache.Configure(g_replayStateFilter);
-    static d2vr_replay_state::Bindings bindings;bindings.Clear();
+    static d2vr_replay_state::Bindings bindings;bindings.Configure(g_replayBindingFilter);
     using Binding=d2vr_replay_state::Bindings;
     bool replayComplete=!g_recOverflow && (!g_replayBufferVersions || !g_bufferUnsafeAlias.load(std::memory_order_acquire));
     if(!ReplayInheritedBuffers(dev))replayComplete=false;
@@ -2335,7 +2335,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     g_bufferWritesApplied=true;
     g_vsConstantHistory.EndReplay(replayComplete);
     g_psEyeHistory.EndReplay(replayComplete);
-    ClearReplayBufferLookups();
+    if(g_replayBufferVersions)ClearReplayBufferLookups();
     g_recLock.store(0,std::memory_order_release);
     g_replayEye = -1;
     return replayComplete;

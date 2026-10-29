@@ -335,11 +335,12 @@ int main(){
     // Disabled startup path must not dereference the supplied device/resource,
     // scan inherited bindings, or mark writes applied. No driver object needed.
     g_replayBufferVersions=false;
+    const auto beforeDisabledQueries=privateQueries;BeginReplayBufferLookups();CHECK(!g_replayBufferLookupActive);
     bool complete=true;auto* untouched=reinterpret_cast<IUnknown*>(0x1234);
     CHECK(ReplayBuffer(untouched,complete)==untouched && complete);
     CHECK(ReplayInheritedBuffers(nullptr));
     g_bufferFrameOpen=false;g_bufferWritesApplied=false;
     FinishBufferRecording();CloseBufferFrame();ResetBufferReplicas();
-    CHECK(!g_bufferFrameOpen && !g_bufferWritesApplied);
+    CHECK(!g_bufferFrameOpen && !g_bufferWritesApplied && privateQueries==beforeDisabledQueries);
     std::puts("PASS disabled buffer path: original identity, no inherited scan or replica lifecycle");
 }
