@@ -39,7 +39,7 @@ static int g_lightRbBudget=0;
 static IDirect3DPixelShader9* g_replayPs=nullptr;
 static const void* replayTex[16]{};
 static void LightInputReadback(IDirect3DDevice9*,IDirect3DPixelShader9*,const void**,int){CHECK(false);}
-static size_t liveBuffers=0,driverLocks=0;
+static size_t liveBuffers=0,driverLocks=0,privateQueries=0;
 struct DriverBuffer {
     void** table;
     ULONG refs=1;
@@ -73,7 +73,7 @@ static HRESULT STDMETHODCALLTYPE DriverSetPrivate(IUnknown* object,REFGUID,const
     return D3D_OK;
 }
 static HRESULT STDMETHODCALLTYPE DriverGetPrivate(IUnknown* object,REFGUID key,void* data,DWORD* bytes){
-    auto b=reinterpret_cast<DriverBuffer*>(object);CHECK(*bytes==4);
+    auto b=reinterpret_cast<DriverBuffer*>(object);++privateQueries;CHECK(*bytes==4);
     if(key.Data1==0x447458e9) {if(!b->metadata)return D3DERR_NOTFOUND;b->metadata->AddRef();std::memcpy(data,&b->metadata,4);}
     else {if(!b->tag)return D3DERR_NOTFOUND;std::memcpy(data,&b->tag,4);}
     return D3D_OK;
@@ -126,6 +126,7 @@ static void End(){RecLockGuard guard;g_recActive=false;FinishBufferRecording();g
 static bool Replay(){
     RecLockGuard guard;g_recActive=false;
     if(g_bufferWritesApplied)return false;
+    BeginReplayBufferLookups();
     d2vr_replay_state::Cache stateCache;
     d2vr_replay_state::Bindings bindings;using Binding=d2vr_replay_state::Bindings;
     bool replayComplete=!g_recOverflow && !g_bufferUnsafeAlias.load();IDirect3DDevice9* dev=device;const int eye=1;
@@ -135,7 +136,7 @@ static bool Replay(){
 @CASES@
     default:CHECK(false);
     }
-    g_bufferWritesApplied=true;
+    g_bufferWritesApplied=true;ClearReplayBufferLookups();
     return replayComplete;
 }
 static void BufferCases(){
@@ -268,6 +269,60 @@ static void Benchmark(){
     std::printf("BENCH inherited binding scan: %.3f us/apply (16 streams, one bound); no per-draw scan.\n",remapMs*1000);
     g_orig.SetStreamSource(device,0,nullptr,0,0);native->Release();vb->Release();
 }
+static void ReplayLookupCases(){
+    RecLockGuard guard;
+    auto vb=VB();auto object=static_cast<IUnknown*>(vb);auto version=BufferInfo(object);
+    const auto before=privateQueries;BeginReplayBufferLookups();bool complete=true;
+    for(unsigned i=0;i<10000;++i)CHECK(ReplayBuffer(object,complete)==version->replica && complete);
+    CHECK(privateQueries-before==1 && reinterpret_cast<DriverBuffer*>(object)->refs==2);
+    version->valid=false;CHECK(!ReplayBuffer(object,complete) && !complete);version->valid=true;
+    complete=true;version->locks=1;CHECK(!ReplayBuffer(object,complete) && !complete);version->locks=0;
+    complete=true;version->unsupportedAlias.store(true);CHECK(!ReplayBuffer(object,complete) && !complete);version->unsupportedAlias.store(false);
+    ClearReplayBufferLookups();ClearReplayBufferLookups();CHECK(vb->Release()==0);
+    // A cached source cannot die or recycle its address during this replay.
+    vb=VB();object=vb;BeginReplayBufferLookups();complete=true;CHECK(ReplayBuffer(object,complete));
+    CHECK(vb->Release()==1);ClearReplayBufferLookups();CHECK(!liveBuffers);
+    // Collisions replace references without leaking or shortening native owners.
+    std::vector<IDirect3DVertexBuffer9*> buffers;
+    for(unsigned i=0;i<300;++i)buffers.push_back(VB(16));
+    BeginReplayBufferLookups();
+    for(auto buffer:buffers){complete=true;CHECK(ReplayBuffer(buffer,complete) && complete);}
+    ClearReplayBufferLookups();
+    for(auto buffer:buffers)CHECK(buffer->Release()==0);
+    CHECK(!liveBuffers && !g_bufferObjects);
+    // Unknowns cannot become successful merely because a lookup was attempted.
+    DriverCreateVB(device,16,0,0,D3DPOOL_DEFAULT,&vb,nullptr);
+    BeginReplayBufferLookups();complete=true;CHECK(!ReplayBuffer(vb,complete) && !complete);
+    complete=true;CHECK(!ReplayBuffer(vb,complete) && !complete);ClearReplayBufferLookups();vb->Release();
+    puts("PASS replay metadata lookup: live validity/locks/alias rejection on hits, source pin/release, collisions, unknowns, idempotent teardown");
+}
+static void ReplayLookupResetCase(){
+    auto vb=VB();
+    {RecLockGuard guard;BeginReplayBufferLookups();bool complete=true;CHECK(ReplayBuffer(vb,complete));}
+    ResetBufferReplicas();
+    CHECK(!g_replayBufferLookupActive && reinterpret_cast<DriverBuffer*>(vb)->refs==1);
+    {RecLockGuard guard;bool complete=true;CHECK(!ReplayBuffer(vb,complete) && !complete);}
+    CHECK(vb->Release()==0 && !liveBuffers && !g_bufferObjects);
+    puts("PASS Reset drains replay metadata pins before dropping replicas");
+}
+static void ReplayLookupBenchmark(){
+    RecLockGuard guard;
+    auto vb=VB();bool complete=true;constexpr unsigned frames=1000,binds=4000;
+    for(bool cached:{false,true}){
+        const auto before=privateQueries,allocBefore=allocations.load();
+        const auto start=std::chrono::steady_clock::now();
+        for(unsigned f=0;f<frames;++f){
+            if(cached)BeginReplayBufferLookups();
+            for(unsigned i=0;i<binds;++i)CHECK(ReplayBuffer(vb,complete));
+            if(cached)ClearReplayBufferLookups();
+        }
+        CHECK(complete && allocations.load()==allocBefore);
+        printf("BENCH actual buffer lookup %s %.3f ms/frame, %.0f private-data calls/frame, zero allocations; cache %zu bytes; driver/GPU excluded\n",
+            cached?"memoized":"baseline",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count()/frames,
+            double(privateQueries-before)/frames,sizeof(g_replayBufferLookups));
+    }
+    vb->Release();
+}
 int main(){
     static_assert(sizeof(void*)==4,"x86 packets");
     driverTable[0]=reinterpret_cast<void*>(&DriverQuery);driverTable[1]=reinterpret_cast<void*>(&DriverAddRef);driverTable[2]=reinterpret_cast<void*>(&DriverRelease);
@@ -276,7 +331,7 @@ int main(){
     deviceTable[101]=reinterpret_cast<void*>(&DriverGetStream);deviceTable[105]=reinterpret_cast<void*>(&DriverGetIndices);
     g_createVB=&DriverCreateVB;g_createIB=&DriverCreateIB;
     g_rec.reserve(4096);g_recData.reserve(4u<<20);observed.reserve(16);
-    BufferCases();LifecycleCases();BoundaryCases();Benchmark();CHECK(!liveBuffers && !g_bufferObjects);
+    BufferCases();LifecycleCases();BoundaryCases();Benchmark();ReplayLookupCases();ReplayLookupResetCase();ReplayLookupBenchmark();CHECK(!liveBuffers && !g_bufferObjects);
     // Disabled startup path must not dereference the supplied device/resource,
     // scan inherited bindings, or mark writes applied. No driver object needed.
     g_replayBufferVersions=false;

@@ -5,6 +5,8 @@
 static std::atomic<bool> g_bufferUnsafeAlias{false};
 static bool g_bufferWritesApplied=false;
 static bool g_replayBufferVersions=true,g_replayStateFilter=true;
+static void BeginReplayBufferLookups(){}
+static void ClearReplayBufferLookups(){}
 template<class T>static T* ReplayBuffer(T* p,bool&){return p;}
 template<class T>static bool ReplayInheritedBuffers(T*){return true;}
 #include <windows.h>

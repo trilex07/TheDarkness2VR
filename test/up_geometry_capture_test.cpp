@@ -11,6 +11,7 @@
 #include "@REPO@/src/small_record_copy.h"
 #include "@REPO@/src/record_payload_storage.h"
 #include "@REPO@/src/frame_resource_refs.h"
+#include "@REPO@/src/replay_state_cache.h"
 static unsigned checks=0,driverCalls=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL %u line %d: %s\n",checks,__LINE__,#x);exit(1);}}while(0)
 #define HOOK_MARK(x) ((void)0)
@@ -55,6 +56,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9*,D3DPRIMITIVET
 static bool Replay() {
     const uint8_t* dataBase=g_recData.data();IDirect3DDevice9* dev=nullptr;
     bool replayComplete=!g_recOverflow;
+    d2vr_replay_state::Cache stateCache;d2vr_replay_state::Bindings bindings;using Binding=d2vr_replay_state::Bindings;
     for(const auto& r:g_rec)switch((RecOp)r.op) {
 @CASES@
     default:CHECK(false);
