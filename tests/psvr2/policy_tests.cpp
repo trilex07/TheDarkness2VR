@@ -135,45 +135,50 @@ int main() {
     HandInput strike{};
     strike.firearm = Firearm::Pistol;
     strike.fireDown = true;
+    strike.fireHeldMilliseconds = 10;
     strike.tentacle = TentacleCue::Strike;
-    const auto strikeCmd = selectHand(gates, strike, TriggerHand::Right);
-    require(strikeCmd.effect == TriggerEffect::Feedback && strikeCmd.position == 3
-        && strikeCmd.strength == 8 && strikeCmd.hand == TriggerHand::Right
-        && validTriggerCommand(strikeCmd), "tentacle strike");
+    const auto strikeTrigger = selectHand(gates, strike, TriggerHand::Right);
+    const auto strikeBuzz = tentacleHaptic(TentacleCue::Strike);
+    require(strikeTrigger.effect == TriggerEffect::Vibration
+        && strikeTrigger.hand == TriggerHand::Right
+        && gripHapticActive(strikeBuzz) && strikeBuzz.amplitude == 0.95f
+        && strikeBuzz.frequency == 100.f, "strike vibrates the grip and keeps the shot");
 
-    HandInput grip{};
-    grip.tentacle = TentacleCue::Grip;
-    const auto gripCmd = selectHand(gates, grip, TriggerHand::Left);
-    require(gripCmd.effect == TriggerEffect::Weapon && gripCmd.startPosition == 2
-        && gripCmd.endPosition == 5 && gripCmd.strength == 6
-        && validTriggerCommand(gripCmd), "tentacle grip");
+    const auto gripBuzz = tentacleHaptic(TentacleCue::Grip);
+    const auto throwBuzz = tentacleHaptic(TentacleCue::Throw);
+    const auto eatBuzz = tentacleHaptic(TentacleCue::Eat);
+    const auto impaleBuzz = tentacleHaptic(TentacleCue::Impale);
+    require(gripHapticActive(gripBuzz) && gripBuzz.frequency == 35.f, "grip hold vibrates");
+    require(gripHapticActive(throwBuzz) && throwBuzz.amplitude == 0.85f, "throw vibrates");
+    require(gripHapticActive(eatBuzz) && eatBuzz.frequency == 28.f, "eat vibrates");
+    require(gripHapticActive(impaleBuzz) && impaleBuzz.frequency == 140.f, "impale vibrates");
+    require(!gripHapticActive(tentacleHaptic(TentacleCue::None)), "idle grip is silent");
 
-    grip.tentacle = TentacleCue::Throw;
-    const auto throwCmd = selectHand(gates, grip, TriggerHand::Left);
-    require(throwCmd.effect == TriggerEffect::Vibration && throwCmd.position == 5
-        && throwCmd.amplitude == 8 && throwCmd.frequency == 20
-        && validTriggerCommand(throwCmd), "tentacle throw");
+    HandInput eating{};
+    eating.firearm = Firearm::Pistol;
+    eating.reloading = true;
+    eating.tentacle = TentacleCue::Eat;
+    require(selectHand(gates, eating, TriggerHand::Left).offReason == TriggerOffReason::Reload
+        && gripHapticActive(eatBuzz), "eat vibrates without a trigger wall");
 
-    grip.tentacle = TentacleCue::Eat;
-    grip.reloading = true;
-    grip.firearm = Firearm::Pistol;
-    const auto eatCmd = selectHand(gates, grip, TriggerHand::Left);
-    require(eatCmd.effect == TriggerEffect::Feedback && eatCmd.position == 1
-        && eatCmd.strength == 8 && validTriggerCommand(eatCmd), "eat beats reload");
-
-    grip.tentacle = TentacleCue::Impale;
-    const auto impaleCmd = selectHand(gates, grip, TriggerHand::Left);
-    require(impaleCmd.effect == TriggerEffect::SlopeFeedback
-        && impaleCmd.startPosition == 2 && impaleCmd.endPosition == 7
-        && impaleCmd.startStrength == 3 && impaleCmd.endStrength == 8
-        && validTriggerCommand(impaleCmd), "impale slope");
+    const auto pistolBuzz = weaponHaptic(Firearm::Pistol, true, 10);
+    const auto smgBuzz = weaponHaptic(Firearm::Smg, true, 200);
+    const auto shotgunBuzz = weaponHaptic(Firearm::Shotgun, true, 20);
+    require(gripHapticActive(pistolBuzz) && gripHapticActive(smgBuzz)
+        && gripHapticActive(shotgunBuzz)
+        && !gripHapticActive(weaponHaptic(Firearm::Pistol, false, 10)),
+        "gun fire adds grip vibration");
+    const auto both = combineGripHaptic(strikeBuzz, pistolBuzz);
+    require(both.amplitude == strikeBuzz.amplitude, "stronger grip vibration wins");
 
     HandInput rightGun{};
     rightGun.firearm = Firearm::Pistol;
-    require(selectHand(gates, grip, TriggerHand::Left).effect == TriggerEffect::SlopeFeedback
+    HandInput leftHold{};
+    leftHold.tentacle = TentacleCue::Grip;
+    require(selectHand(gates, leftHold, TriggerHand::Left).offReason
+            == TriggerOffReason::UnsupportedWeapon
         && selectHand(gates, rightGun, TriggerHand::Right).effect == TriggerEffect::Weapon,
-        "impale leaves the other gun");
-    strike.tentacle = TentacleCue::Strike;
+        "grip vibration leaves the other trigger");
     auto hidden = gates;
     hidden.openXrFocused = false;
     require(selectHand(hidden, strike, TriggerHand::Right).offReason

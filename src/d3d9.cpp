@@ -2806,7 +2806,8 @@ XrAction g_actStickR = XR_NULL_HANDLE;
 XrPath g_pathHandLeft = XR_NULL_PATH;
 XrPath g_pathHandRight = XR_NULL_PATH;
 bool g_padActionsReady = false;
-XrAction g_actGripPose[2]{}, g_actAimPose[2]{}, g_actSqueeze[2]{};
+XrAction g_actGripPose[2]{}, g_actAimPose[2]{}, g_actSqueeze[2]{}, g_actHaptic[2]{};
+bool g_gripHapticOn[2]{};
 XrSpace g_handGripSpace[2]{}, g_handAimSpace[2]{};
 struct TrackedHand {
     XrPosef grip{}, aim{};
@@ -2825,7 +2826,40 @@ struct GestureState {
 };
 static GestureState g_gestures;
 static d2vr_input::Tentacles g_tentacles;
+static void StopGripHaptics() {
+    if (!g_xrSession) return;
+    for (int hand = 0; hand < 2; ++hand) {
+        if (!g_gripHapticOn[hand] || !g_actHaptic[hand]) continue;
+        XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
+        info.action = g_actHaptic[hand];
+        info.subactionPath = hand ? g_pathHandRight : g_pathHandLeft;
+        xrStopHapticFeedback(g_xrSession, &info);
+        g_gripHapticOn[hand] = false;
+    }
+}
+
+static void ApplyGripHaptic(int hand, const d2vr::psvr2::GripHaptic& haptic) {
+    if (!g_xrSession || !g_actHaptic[hand]) return;
+    XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
+    info.action = g_actHaptic[hand];
+    info.subactionPath = hand ? g_pathHandRight : g_pathHandLeft;
+    if (!d2vr::psvr2::gripHapticActive(haptic)) {
+        if (!g_gripHapticOn[hand]) return;
+        xrStopHapticFeedback(g_xrSession, &info);
+        g_gripHapticOn[hand] = false;
+        return;
+    }
+    XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
+    vibration.amplitude = haptic.amplitude;
+    vibration.frequency = haptic.frequency;
+    vibration.duration = static_cast<XrDuration>(haptic.durationNanoseconds);
+    if (XR_SUCCEEDED(xrApplyHapticFeedback(
+            g_xrSession, &info, reinterpret_cast<const XrHapticBaseHeader*>(&vibration))))
+        g_gripHapticOn[hand] = true;
+}
+
 static void ResetPoseInput() {
+    StopGripHaptics();
     g_gestures={}; g_recenterChord={}; g_tentacles={};
     g_tentacleAimVisible=false; g_aimMarkerValid[0]=g_aimMarkerValid[1]=false;
     ResetNativeAim();
@@ -2874,6 +2908,10 @@ static bool SuggestBindings(const char* profile, const XrActionSuggestedBinding*
             sprintf_s(path, "%s/input/squeeze/value", hand);
             all.push_back({g_actSqueeze[h],XrPathFrom(path)});
         }
+        if (g_actHaptic[h]) {
+            sprintf_s(path, "%s/output/haptic", hand);
+            all.push_back({g_actHaptic[h], XrPathFrom(path)});
+        }
     }
     XrInteractionProfileSuggestedBinding ipb{ XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
     ipb.interactionProfile = XrPathFrom(profile);
@@ -2908,6 +2946,9 @@ bool InitXrGamepadActions() {
         if (!CreatePadAction(g_padActionSet,name,XR_ACTION_TYPE_POSE_INPUT,hand,&g_actAimPose[h])) return false;
         sprintf_s(name,"%s_squeeze",h ? "right" : "left");
         if (!CreatePadAction(g_padActionSet,name,XR_ACTION_TYPE_FLOAT_INPUT,hand,&g_actSqueeze[h])) return false;
+        sprintf_s(name,"%s_haptic",h ? "right" : "left");
+        if (!CreatePadAction(g_padActionSet,name,XR_ACTION_TYPE_VIBRATION_OUTPUT,hand,&g_actHaptic[h]))
+            Log("grip haptic action unavailable on %s", h ? "right" : "left");
         XrActionSpaceCreateInfo space{XR_TYPE_ACTION_SPACE_CREATE_INFO};
         space.subactionPath=hand; space.poseInActionSpace.orientation.w=1;
         space.action=g_actGripPose[h];
@@ -2954,6 +2995,8 @@ bool InitXrGamepadActions() {
         { g_actStickR,     XrPathFrom("/user/hand/right/input/thumbstick/click") },
     };
     SuggestBindings(touch, touchB, static_cast<uint32_t>(sizeof(touchB) / sizeof(touchB[0])));
+    SuggestBindings("/interaction_profiles/sony/psvr2_sense_controller", touchB,
+        static_cast<uint32_t>(sizeof(touchB) / sizeof(touchB[0])));
 
     const char* index = "/interaction_profiles/valve/index_controller";
     XrActionSuggestedBinding indexB[] = {
@@ -3069,7 +3112,10 @@ static void LocateTrackedHands() {
 }
 
 static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
-    if (!g_adaptiveTriggers) return;
+    if (!g_adaptiveTriggers) {
+        StopGripHaptics();
+        return;
+    }
     const auto started = d2vr::psvr2::ClientStart();
     static int announced = -1;
     const int announcement = started == d2vr::psvr2::ClientStartResult::Disabled ? 0 : 1;
@@ -3078,7 +3124,7 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         Log("[PSVR2] adaptive triggers %s", announcement
             ? "client started" : "inactive (bridge env unset)");
     }
-    if (!d2vr::psvr2::ClientRunning()) return;
+    const bool triggerClient = d2vr::psvr2::ClientRunning();
 
     using namespace d2vr::psvr2;
     FrameGates gates{};
@@ -3163,6 +3209,13 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         const bool pulled = analog[hand] >= 64;
         if (!pulled) fireSince[hand] = 0;
         else if (!fireSince[hand]) fireSince[hand] = now ? now : 1;
+        const auto held = fireSince[hand] ? now - fireSince[hand] : 0;
+        GripHaptic haptic = tentacleHaptic(cues[hand]);
+        if (gates.openXrFocused && gates.gameplayActive && pulled && !reloading)
+            haptic = combineGripHaptic(haptic, weaponHaptic(kinds[hand], true, held));
+        ApplyGripHaptic(hand, gates.openXrFocused && gates.gameplayActive
+            ? haptic : GripHaptic{});
+        if (!triggerClient) continue;
         const auto which = hand ? TriggerHand::Right : TriggerHand::Left;
         if (gates.openXrFocused && gates.gameplayActive
             && noteFirearmChange(latch[hand], kinds[hand])) {
@@ -3173,7 +3226,7 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         HandInput input{};
         input.firearm = kinds[hand];
         input.fireDown = pulled;
-        input.fireHeldMilliseconds = fireSince[hand] ? now - fireSince[hand] : 0;
+        input.fireHeldMilliseconds = held;
         input.reloading = reloading;
         input.tentacle = cues[hand];
         Submit(selectHand(gates, input, which));

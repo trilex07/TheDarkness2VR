@@ -101,7 +101,8 @@ struct FrameGates {
     TriggerOffReason inactiveReason{TriggerOffReason::Loading};
 };
 
-// Demon-arm cues. They replace the firearm profile on the hand that is acting.
+// Demon-arm cues. The grip has no resistance motor, so these are vibration
+// only. Firearm resistance stays on the trigger.
 enum class TentacleCue : std::uint8_t {
     None = 0,
     Strike, // right-arm slash
@@ -335,22 +336,64 @@ inline const char* tentacleCueName(TentacleCue cue) {
     return "unknown";
 }
 
-inline TriggerCommand tentacleProfile(TriggerHand hand, TentacleCue cue) {
+// Controller grip vibration. Amplitude is 0 when the hand should be silent.
+// Duration is short so a held cue is reapplied each input tick and stops
+// as soon as the cue ends.
+struct GripHaptic {
+    float amplitude{};
+    float frequency{};
+    std::uint64_t durationNanoseconds{};
+};
+
+inline bool gripHapticActive(const GripHaptic& haptic) {
+    return haptic.amplitude > 0.f && haptic.amplitude <= 1.f
+        && haptic.frequency > 0.f && haptic.durationNanoseconds > 0;
+}
+
+inline GripHaptic tentacleHaptic(TentacleCue cue) {
     switch (cue) {
-    case TentacleCue::Strike:
-        return feedbackCommand(hand, 3, 8);
-    case TentacleCue::Grip:
-        return weaponCommand(hand, 2, 5, 6);
-    case TentacleCue::Throw:
-        return vibrationCommand(hand, 5, 8, 20);
-    case TentacleCue::Eat:
-        return feedbackCommand(hand, 1, 8);
-    case TentacleCue::Impale:
-        return slopeFeedbackCommand(hand, 2, 7, 3, 8);
-    case TentacleCue::None:
+    case TentacleCue::Strike: return {0.95f, 100.f, 80000000};
+    case TentacleCue::Grip: return {0.40f, 35.f, 50000000};
+    case TentacleCue::Throw: return {0.85f, 70.f, 90000000};
+    case TentacleCue::Eat: return {0.75f, 28.f, 50000000};
+    case TentacleCue::Impale: return {0.90f, 140.f, 50000000};
+    case TentacleCue::None: break;
+    }
+    return {};
+}
+
+inline GripHaptic weaponHaptic(
+    Firearm firearm, bool firing, std::uint64_t heldMilliseconds) {
+    if (!firing) return {};
+    switch (firearm) {
+    case Firearm::Pistol:
+        if (heldMilliseconds < 80) return {0.60f, 85.f, 60000000};
+        break;
+    case Firearm::Smg:
+        return {0.45f, 60.f, 40000000};
+    case Firearm::Rifle:
+    case Firearm::Automatic:
+        return {0.55f, 48.f, 40000000};
+    case Firearm::Burst:
+        if (heldMilliseconds < 160) return {0.55f, 48.f, 40000000};
+        break;
+    case Firearm::Shotgun:
+        if (heldMilliseconds < 110) return {0.85f, 36.f, 100000000};
+        break;
+    case Firearm::Charged:
+        if (heldMilliseconds < 180) return {0.70f, 64.f, 80000000};
+        break;
+    case Firearm::None:
         break;
     }
-    return offCommand(hand, TriggerOffReason::UnsupportedWeapon);
+    return {};
+}
+
+inline GripHaptic combineGripHaptic(const GripHaptic& left, const GripHaptic& right) {
+    const bool leftOn = gripHapticActive(left);
+    const bool rightOn = gripHapticActive(right);
+    if (leftOn && rightOn) return left.amplitude >= right.amplitude ? left : right;
+    return leftOn ? left : rightOn ? right : GripHaptic{};
 }
 
 inline TriggerCommand idleProfile(TriggerHand hand, Firearm firearm) {
@@ -413,8 +456,6 @@ inline TriggerCommand selectHand(
         return offCommand(which, TriggerOffReason::Unfocused);
     if (!gates.gameplayActive)
         return offCommand(which, gates.inactiveReason);
-    if (hand.tentacle != TentacleCue::None)
-        return tentacleProfile(which, hand.tentacle);
     if (hand.reloading)
         return offCommand(which, TriggerOffReason::Reload);
 
