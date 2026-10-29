@@ -1984,3 +1984,20 @@ unchanged character target; +590 and legacy character overrides stay excluded.
 Native speed/W, spin, animation, reference ownership and body fanout are retained.
 Private Ghidra output: TEMP/d2vr-character-throw-75ad20.txt. Source/ABI/native
 consumer regressions pass; full enemy lifecycle and HMD acceptance remain open.
+
+## 2026-10-29: keep tracked wrists attached through fully folded arm poses
+
+PoseArm previously rejected controller targets within abs(upper-lower)+1mm,
+including every target less than5mm from the shoulder. Valid tracking could
+therefore leave the arm at its previous/native pose. The analytical solver now
+translates the shoulder by the minimum distance to the inner reach boundary,
+as it already did for the outer boundary, while retaining the exact wrist pose
+and both rigid segment lengths. A coincident target uses the native arm axis;
+root, peer arm and demon/attachment bones remain outside the edit scope.
+
+The new regression fails on the preceding solver. Ten x86 randomized seeds
+pass50240 geometry cases each, including either segment being longer, exact
+shoulder targets, rigid lengths, wrist orientation and untouched other bones.
+Actual protected packer regression58811 checks and private native B1E500 skin
+arithmetic pass. This proves CPU geometry and packing, not HMD appearance or
+the cause of every reported hand interruption. No performance saving claimed.

@@ -203,8 +203,13 @@ int main(int argc,char** argv){
         memcpy(once,palette,sizeof(once));
         for(unsigned n=0;n<100;++n){CHECK(Apply());CHECK(!memcmp(once,palette,sizeof(once)));}
     }
-    // Neither an unreachable arm nor its failed solve may suppress its peer.
-    Reset();g_hands[1].grip.position={.15f,0,0};CHECK(Apply());CHECK(Near(palette[5][12],-.5f));Untouched(24,130);
+    // A controller at its shoulder still reaches its exact pose, with a rigid
+    // folded arm; it must not leave the stock wrist behind or affect its peer.
+    Reset();g_hands[1].grip.position={.15f,0,0};CHECK(Apply());
+    CHECK(Near(palette[27][12],.15f));CHECK(Near(palette[5][12],-.5f));
+    CHECK(std::fabs(d2vr_hands::Length(d2vr_hands::Position(palette[26])-d2vr_hands::Position(palette[25]))-.3f)<.001f);
+    CHECK(std::fabs(d2vr_hands::Length(d2vr_hands::Position(palette[27])-d2vr_hands::Position(palette[26]))-.3f)<.001f);
+    Untouched(0,2);Untouched(46,130);
     Reject([]{g_hands[0].gripValid=g_hands[1].gripValid=false;});
     for(bool alternate:{false,true}) {
         Reset();g_nativeGameplay.grab=d2vr_input::GrabFeedback::Busy;g_nativeGameplay.alternateHeldTarget=alternate;

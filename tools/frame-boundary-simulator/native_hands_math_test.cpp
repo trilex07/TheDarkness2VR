@@ -121,14 +121,24 @@ int main(int argc,char** argv) {
     constexpr unsigned insideCases=2048;
     for(unsigned k=0;k<insideCases;++k) {
         float bones[130][16];for(auto& bone:bones) Matrix(bone,{0,0,0});
-        const float upper=Range(rng,.33f,.48f),lower=Range(rng,.10f,.18f);
+        float upper=Range(rng,.33f,.48f),lower=Range(rng,.10f,.18f);
+        if(k%2)std::swap(upper,lower);
         const V elbow={upper,0,0},wrist={upper+lower,0,0};
         Matrix(bones[25],{0,0,0});Matrix(bones[26],elbow);
         Matrix(bones[27],wrist);Matrix(bones[44],elbow);
-        float target[16];Matrix(target,Unit(rng)*Range(rng,.01f,upper-lower-.01f));
+        float target[16];Matrix(target,k%4 ? Unit(rng)*Range(rng,.0001f,std::fabs(upper-lower)-.01f):V{0,0,0},Range(rng,-3.f,3.f));
         float original[130][16];std::memcpy(original,bones,sizeof(bones));
-        Check(!d2vr_hands::PoseArm(bones,25,26,27,44,45,target),"unreachable folded arm rejected",k);
-        Check(std::memcmp(bones,original,sizeof(bones))==0,"folded arm no mutation",k);
+        Check(d2vr_hands::PoseArm(bones,25,26,27,44,45,target),"folded controller target solved",k);
+        Check(Near(d2vr_hands::Position(bones[27]),d2vr_hands::Position(target)),"folded wrist target",k);
+        Check(std::fabs(Distance(d2vr_hands::Position(bones[25]),d2vr_hands::Position(bones[26]))-upper)<.001f,"folded upper length",k);
+        Check(std::fabs(Distance(d2vr_hands::Position(bones[26]),d2vr_hands::Position(bones[27]))-lower)<.001f,"folded lower length",k);
+        const float displacement=std::fabs(upper-lower)+.001f-d2vr_hands::Length(d2vr_hands::Position(target));
+        Check(std::fabs(d2vr_hands::Length(d2vr_hands::Position(bones[25]))-displacement)<.001f,"minimum folded shoulder translation",k);
+        for(unsigned c=0;c<16;++c)Check(std::fabs(bones[27][c]-target[c])<.001f,"folded full wrist pose",k);
+        for(unsigned i=0;i<130;++i) {
+            if(i<25 || i>45)Check(!std::memcmp(bones[i],original[i],64),"folded scope preserved",k);
+            else Check(d2vr_hands::Valid(bones[i]),"folded rigid finite bone",k);
+        }
     }
     constexpr unsigned oppositeCases=2048;
     for(unsigned k=0;k<oppositeCases;++k) {
