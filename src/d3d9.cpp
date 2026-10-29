@@ -1407,6 +1407,11 @@ XrSwapchain g_swapchain[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
 uint32_t g_scW = 0, g_scH = 0;
 ID3D11Texture2D** g_scImages[2] = { nullptr, nullptr };
 uint32_t g_scCount[2] = { 0, 0 };
+struct SwapchainWriteState {
+    uint32_t index=0;
+    bool acquired=false,waited=false,publishable=false;
+};
+static SwapchainWriteState g_scWrite[2];
 
 ID3D11Texture2D* g_eyeCache[2] = { nullptr, nullptr };
 ID3D11RenderTargetView* g_eyeRTV[2] = { nullptr, nullptr };
@@ -4594,9 +4599,10 @@ bool EnsureSwapchains(UINT w, UINT h) {
     g_eyeCacheW=g_eyeCacheH=0;
     for (int e = 0; e < 2; ++e) {
         if (g_swapchain[e]) {
-            xrDestroySwapchain(g_swapchain[e]);
+            if(XR_FAILED(xrDestroySwapchain(g_swapchain[e])))return false;
             g_swapchain[e] = XR_NULL_HANDLE;
         }
+        g_scWrite[e]={};
         if (g_scImages[e]) {
             delete[] g_scImages[e];
             g_scImages[e] = nullptr;
@@ -4891,27 +4897,40 @@ static bool WriteTextureToSwapchain(XrSwapchain sc, ID3D11Texture2D** scImages, 
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::Scope cpuSwapchain(d2vr_cpu_sync::XrSwapchainTotal);
 #endif
-    uint32_t idx = 0;
-    XrSwapchainImageAcquireInfo ai{ XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
-    if (XR_FAILED(xrAcquireSwapchainImage(sc, &ai, &idx))) return false;
+    const unsigned eye=sc && sc==g_swapchain[0]?0u:sc && sc==g_swapchain[1]?1u:2u;
+    if(eye>=2 || !scImages || scImages!=g_scImages[eye] || !g_scCount[eye] || !srcTex || !g_ctx11)return false;
+    auto& state=g_scWrite[eye];
+    if(!state.acquired) {
+        XrSwapchainImageAcquireInfo ai{ XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+        const XrResult acquired=xrAcquireSwapchainImage(sc,&ai,&state.index);
+        if(XR_FAILED(acquired))return false;
+        state.acquired=true;state.waited=false;state.publishable=acquired==XR_SUCCESS;
+    }
     XrSwapchainImageWaitInfo wi{ XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
     wi.timeout = XR_INFINITE_DURATION;
-    bool ok = false;
-    XrResult waitResult;
-    {
+    if(!state.waited) {
+        XrResult waitResult;
+        {
 #ifdef D2VR_MATCHED_CAPTURE
         d2vr_cpu_sync::Scope cpuSwapWait(d2vr_cpu_sync::XrSwapWait);
 #endif
-        waitResult=xrWaitSwapchainImage(sc, &wi);
+            waitResult=xrWaitSwapchainImage(sc, &wi);
+        }
+        // TIMEOUT_EXPIRED is positive but grants no image access. Keep this
+        // acquisition and retry its wait next frame, never acquire another or
+        // release an image that has not become available (OpenXR rendering spec).
+        if(XR_FAILED(waitResult) || waitResult==XR_TIMEOUT_EXPIRED)return false;
+        state.waited=true;state.publishable=state.publishable && waitResult==XR_SUCCESS;
     }
-    if (XR_SUCCEEDED(waitResult)) {
-        g_ctx11->CopyResource(scImages[idx], srcTex);
-        ok = true;
-    }
+    const bool ok=state.publishable && state.index<g_scCount[eye] && scImages[state.index];
+    if(ok)g_ctx11->CopyResource(scImages[state.index],srcTex);
     XrSwapchainImageReleaseInfo ri{ XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
     const XrResult releaseResult = xrReleaseSwapchainImage(sc, &ri);
+    // Failed release retains the waited acquisition; retry release without a
+    // second wait. Successful session-loss cleanup still cannot publish a pair.
+    if(XR_SUCCEEDED(releaseResult))state={};
     // A copied image is not available to the compositor until release succeeds.
-    return ok && XR_SUCCEEDED(releaseResult);
+    return ok && releaseResult==XR_SUCCESS;
 }
 
 void SubmitXR(IDirect3DDevice9* dev) {

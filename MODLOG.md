@@ -2292,3 +2292,29 @@ Validation: 122025 actual-source weapon checks (including absent/unpublished/
 unknown optional models with independent rotated aim), 3200 native-body fire
 fixture executions, and 2207 actual protected-hands checks pass. Visual barrel
 alignment and remaining animation/socket offsets still require headset proof.
+
+## 2026-10-29: preserve OpenXR swapchain image ownership across failed waits
+
+WriteTextureToSwapchain treated any nonnegative wait result as write permission
+(including XR_TIMEOUT_EXPIRED), and released even after a failed wait. Keep one
+acquisition per eye until its wait succeeds without timeout; retry that wait
+without a second acquire. A release failure retains the waited acquisition and
+retries release without another wait. Session-loss cleanup is balanced but does
+not qualify a submitted pair. Validate image indices, texture arrays and context
+before copying. Successful swapchain destruction resets the lease; failed
+destruction cannot erase it. Normal writes retain the same A/W/copy/R call count.
+
+Basis: Khronos OpenXR-Docs rendering.adoc (xrWaitSwapchainImage and
+xrReleaseSwapchainImage), and hello_xr/openxr_program.cpp lifecycle comparison:
+https://github.com/KhronosGroup/OpenXR-Docs/blob/main/specification/sources/chapters/rendering.adoc
+https://github.com/KhronosGroup/OpenXR-SDK-Source/blob/main/src/tests/hello_xr/openxr_program.cpp
+No external implementation code copied. UEVR's inspected OpenXR implementation
+keeps pipeline frame metadata and explicit begin/sync state, but its repository
+LICENSE is all-rights-reserved: no code imported. Its Unreal integration does
+not directly replace this D3D9 recorder or establish a SteamVR OpenXR half-rate API.
+
+Validation: 12129 actual-source x86 checks, including 2000 alternating eye
+writes, timeout and error retries, independent eye leases, release retries,
+session-loss statuses, bounds and reset. Production and DiagnosticCapture x86
+DLL builds pass. No timeout/failure occurrence in the user's session, flicker
+root cause, runtime performance saving or headset acceptance is claimed.
