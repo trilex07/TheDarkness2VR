@@ -132,15 +132,20 @@ def atomic(path, data):
         stage.unlink(missing_ok=True)
 
 
-def prepare(header_path, body_path, output):
+def prepare(header_path, body_path, output, closed_wrist=False):
     header, body = header_path.read_bytes(), body_path.read_bytes()
     result, hands, sleeves = patch(header, body)
+    geometry = None
+    if closed_wrist:
+        import closed_wrist_mesh
+        result, geometry = closed_wrist_mesh.patch(header, body)
     output.mkdir(parents=True, exist_ok=False)
     for name, data in [('original-header.bin', header), ('original-body.bin', body),
                        ('hands-only-body.bin', result)]:
         (output / name).write_bytes(data)
     receipt = dict(resource=RESOURCE, original=BODY_SHA, modified=sha(result),
                    handRanges=hands, sleeveRanges=sleeves, textures='unchanged',
+                   variant='closed-wrist' if closed_wrist else 'sleeves-only', geometry=geometry,
                    status='PREPARED_NOT_RUNTIME_VALIDATED')
     (output / 'asset.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
     print(json.dumps(receipt))
@@ -151,17 +156,28 @@ def install(cache_dir, package, backup):
     require(file_hash(cache_dir.parent / 'DarknessII.exe').hexdigest() == EXE_SHA, 'EXE mismatch')
     original = (package / 'original-body.bin').read_bytes()
     result, _, _ = patch((package / 'original-header.bin').read_bytes(), original)
+    sleeves_only = result
+    asset = json.loads((package / 'asset.json').read_text(encoding='utf-8'))
+    variant = asset.get('variant', 'sleeves-only')
+    require(variant in {'sleeves-only', 'closed-wrist'}, 'Unknown prepared variant')
+    if variant == 'closed-wrist':
+        import closed_wrist_mesh
+        result, _ = closed_wrist_mesh.patch((package / 'original-header.bin').read_bytes(), original)
     require((package / 'hands-only-body.bin').read_bytes() == result, 'Prepared payload mismatch')
     cache, toc = cache_dir / 'B.Misc.cache', cache_dir / 'B.Misc.toc'
     before_toc = toc.read_bytes()
     at, offset, zsize, size, pad = toc_entry(before_toc)
-    require((offset, zsize, size, pad) == (ENTRY_OFFSET, ENTRY_SIZE, len(original), 0),
-            'Resource is already modified or unsupported')
+    stock_entry = (offset, zsize, size, pad) == (ENTRY_OFFSET, ENTRY_SIZE, len(original), 0)
+    previous_sleeves = variant == 'closed-wrist' and (zsize, size, pad) == (len(original), len(original), 0)
+    require(stock_entry or previous_sleeves, 'Resource is already modified or unsupported')
     length = cache.stat().st_size
     require(offset + zsize <= length, 'Resource outside cache')
     with open(cache, 'rb') as f:
-        f.seek(offset)
-        require(sha(f.read(zsize)) == ENTRY_SHA, 'Compressed stock resource preimage mismatch')
+        f.seek(ENTRY_OFFSET)
+        require(sha(f.read(ENTRY_SIZE)) == ENTRY_SHA, 'Compressed stock resource preimage mismatch')
+        if not stock_entry:
+            f.seek(offset)
+            require(f.read(size) == sleeves_only, 'Previous hands-only resource mismatch')
     digest = file_hash(cache)
     before_cache_hash = digest.hexdigest(); digest.update(result)
     after_toc = bytearray(before_toc)
@@ -240,10 +256,11 @@ if __name__ == '__main__':
     commands = parser.add_subparsers(dest='command', required=True)
     p = commands.add_parser('prepare')
     for name in ['header', 'body', 'output']: p.add_argument('--' + name, type=Path, required=True)
+    p.add_argument('--closed-wrist', action='store_true')
     p = commands.add_parser('install')
     for name in ['cache-dir', 'package', 'backup']: p.add_argument('--' + name, type=Path, required=True)
     p = commands.add_parser('rollback'); p.add_argument('--receipt', type=Path, required=True)
     args = parser.parse_args()
-    if args.command == 'prepare': prepare(args.header, args.body, args.output)
+    if args.command == 'prepare': prepare(args.header, args.body, args.output, args.closed_wrist)
     elif args.command == 'install': install(args.cache_dir, args.package, args.backup)
     else: rollback(args.receipt)

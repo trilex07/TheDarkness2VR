@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import struct
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
@@ -119,6 +120,41 @@ class HandsOnly(unittest.TestCase):
             with path.open('r+b') as f: f.truncate(len(original) + 17)
             m.rollback(root / 'backup' / 'receipt.json')
             self.assertEqual(path.read_bytes(), original)
+
+    def test_closed_wrist_upgrade_and_rollback_preserves_previous_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);cache,package,_=self.setup_install(root)
+            m.install(cache,package,root/'sleeve-backup')
+            before_cache=(cache/'B.Misc.cache').read_bytes()
+            before_toc=(cache/'B.Misc.toc').read_bytes()
+            closed=bytearray(m.patch(self.header,self.body)[0]);closed[100]^=1
+            fake=types.SimpleNamespace(patch=lambda h,b:(bytes(closed),{'fixture':True}))
+            with patch.dict('sys.modules',{'closed_wrist_mesh':fake}):
+                m.prepare(root/'header',root/'body',root/'closed',True)
+                m.install(cache,root/'closed',root/'closed-backup')
+                _,off,_,size,_=m.toc_entry((cache/'B.Misc.toc').read_bytes())
+                self.assertEqual((cache/'B.Misc.cache').read_bytes()[off:off+size],bytes(closed))
+                with self.assertRaisesRegex(ValueError,'Previous hands-only'):
+                    m.install(cache,root/'closed',root/'again')
+            m.rollback(root/'closed-backup'/'receipt.json')
+            self.assertEqual((cache/'B.Misc.cache').read_bytes(),before_cache)
+            self.assertEqual((cache/'B.Misc.toc').read_bytes(),before_toc)
+
+    def test_closed_upgrade_refuses_foreign_previous_payload_without_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);cache,package,_=self.setup_install(root)
+            m.install(cache,package,root/'sleeve-backup')
+            data=bytearray((cache/'B.Misc.cache').read_bytes());data[-1]^=1
+            (cache/'B.Misc.cache').write_bytes(data)
+            before_toc=(cache/'B.Misc.toc').read_bytes()
+            fake=types.SimpleNamespace(patch=lambda h,b:(m.patch(h,b)[0],{}))
+            with patch.dict('sys.modules',{'closed_wrist_mesh':fake}):
+                m.prepare(root/'header',root/'body',root/'closed',True)
+                with self.assertRaisesRegex(ValueError,'Previous hands-only'):
+                    m.install(cache,root/'closed',root/'closed-backup')
+            self.assertFalse((root/'closed-backup').exists())
+            self.assertEqual((cache/'B.Misc.cache').read_bytes(),data)
+            self.assertEqual((cache/'B.Misc.toc').read_bytes(),before_toc)
 
 
 if __name__ == '__main__': unittest.main()

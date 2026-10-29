@@ -2318,3 +2318,27 @@ writes, timeout and error retries, independent eye leases, release retries,
 session-loss statuses, bounds and reset. Production and DiagnosticCapture x86
 DLL builds pass. No timeout/failure occurrence in the user's session, flicker
 root cause, runtime performance saving or headset acceptance is claimed.
+
+## 2026-10-29: close the original hands immediately behind their wrists
+
+The user accepts af9cdd7's independent aim and barrel alignment. Preserve that
+installed DLL. The previous sleeve-only asset retained exposed forearms and an
+open wrist. Clip the SHA-pinned original hand material at the actual inverse-bind
+wrist joints, with a 5 mm cuff toward each elbow, and cap each cut contour in all
+five LODs. Preserve original textures, kept vertices, skeleton, buffer sizes and
+native draw bounds. Reuse removed forearm vertex/index slots; no runtime CPU
+clipping, new draw or shader is introduced. Do not distribute extracted assets.
+
+Validation: three private stock-geometry tests pass, including closed LOD0 mesh,
+closed cut contours in every LOD, valid skin weights, exact retained vertices,
+unchanged skeleton/layout, original draw bounds and deterministic preimage
+refusal. Eight generated transaction tests pass, including sleeve-only upgrade,
+exact rollback to that previous candidate, interrupted append and foreign-data
+refusal. Lower stock LODs retain their existing simplification holes away from
+the wrist; this change closes the new cut, not unrelated stock topology.
+
+Installed with fresh elevated game-closed CIM check and recovery receipt in
+backups/closed-wrist-20261029T150240 under the private runtime root. Prepared
+payload SHA256: 71781234a1851232a74876504ccda0d8a86365dc358efcefc11d79454b47a936.
+This is an asset-only update; no C++ rebuild or new x86 result is claimed.
+Headset appearance and articulation require the user's next test.
