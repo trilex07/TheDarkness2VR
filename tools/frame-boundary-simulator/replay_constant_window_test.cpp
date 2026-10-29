@@ -324,8 +324,8 @@ static void IndependentBindingReduction(){
             g_replayVs=g_replayPs=nullptr;g_activePsInverse=-1;
             g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
             collectReference=mode==0;
-            // Preserve existing replay's HRESULT contract for these setters.
-            assert(Actual());assert(checkAt==2 && stateCalls==20 && !apiFail && arena==owned);
+            // State failures invalidate the pair without changing command order.
+            assert(Actual()==(stateFailAt==0));assert(checkAt==2 && stateCalls==20 && !apiFail && arena==owned);
             if(mode==0)referenceOrder=stateOrder;else assert(stateOrder==referenceOrder);
             calls[mode]=apiCalls;++checks;
         }
@@ -401,7 +401,7 @@ static void RenderStateReduction(){
                 g_vsConstantHistory.Clear();g_activeVs=&vertexMetadata;vertexMetadata.hash=0;
                 g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
                 collectReference=mode==0;
-                assert(Actual()); // unchanged render-state HRESULT handling
+                assert(Actual()==(stateFailAt==0));
                 assert(checkAt==(guarded?17u:1u) && stateCalls==16 && !apiFail);
                 if(!mode)referenceOrder=stateOrder;else assert(stateOrder==referenceOrder);
                 reduction[mode]=apiCalls;++checks;

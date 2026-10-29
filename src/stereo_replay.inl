@@ -1968,10 +1968,10 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if(FAILED(g_orig.SetDepthStencilSurface(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0])))replayComplete=false;
             break;
         case OP_BeginScene:
-            g_orig.BeginScene(dev);
+            if(FAILED(g_orig.BeginScene(dev)))replayComplete=false;
             break;
         case OP_EndScene:
-            g_orig.EndScene(dev);
+            if(FAILED(g_orig.EndScene(dev)))replayComplete=false;
             break;
         case OP_Clear: {
             const D3DRECT* rects = r.n ? (const D3DRECT*)(dataBase + r.a[4]) : nullptr;
@@ -1980,30 +1980,30 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_SetTransform:
-            g_orig.SetTransform(dev, (D3DTRANSFORMSTATETYPE)r.a[0], (const D3DMATRIX*)(dataBase + r.a[1]));
+            if(FAILED(g_orig.SetTransform(dev, (D3DTRANSFORMSTATETYPE)r.a[0], (const D3DMATRIX*)(dataBase + r.a[1]))))replayComplete=false;
             break;
         case OP_SetViewport:
             InvalidateShadowAtlasPass();
-            g_orig.SetViewport(dev, (const D3DVIEWPORT9*)(dataBase + r.a[0]));
+            if(FAILED(g_orig.SetViewport(dev, (const D3DVIEWPORT9*)(dataBase + r.a[0]))))replayComplete=false;
             break;
         case OP_SetClipPlane:
-            g_orig.SetClipPlane(dev, r.a[0], (const float*)(dataBase + r.a[4]));
+            if(FAILED(g_orig.SetClipPlane(dev, r.a[0], (const float*)(dataBase + r.a[4]))))replayComplete=false;
             break;
         case OP_SetRenderState:
-            g_orig.SetRenderState(dev, (D3DRENDERSTATETYPE)r.a[0], r.a[1]);
+            if(FAILED(g_orig.SetRenderState(dev, (D3DRENDERSTATETYPE)r.a[0], r.a[1])))replayComplete=false;
             break;
         case OP_SetTexture:
-            g_orig.SetTexture(dev, r.a[0], (IDirect3DBaseTexture9*)(uintptr_t)r.a[1]);
+            if(FAILED(g_orig.SetTexture(dev, r.a[0], (IDirect3DBaseTexture9*)(uintptr_t)r.a[1])))replayComplete=false;
             if (r.a[0] < 16) replayTex[r.a[0]] = (const void*)(uintptr_t)r.a[1];
             break;
         case OP_SetTextureStageState:
-            g_orig.SetTextureStageState(dev, r.a[0], (D3DTEXTURESTAGESTATETYPE)r.a[1], r.a[2]);
+            if(FAILED(g_orig.SetTextureStageState(dev, r.a[0], (D3DTEXTURESTAGESTATETYPE)r.a[1], r.a[2])))replayComplete=false;
             break;
         case OP_SetSamplerState:
-            g_orig.SetSamplerState(dev, r.a[0], (D3DSAMPLERSTATETYPE)r.a[1], r.a[2]);
+            if(FAILED(g_orig.SetSamplerState(dev, r.a[0], (D3DSAMPLERSTATETYPE)r.a[1], r.a[2])))replayComplete=false;
             break;
         case OP_SetScissorRect:
-            g_orig.SetScissorRect(dev, r.n ? (const RECT*)(dataBase + r.a[0]) : nullptr);
+            if(FAILED(g_orig.SetScissorRect(dev, r.n ? (const RECT*)(dataBase + r.a[0]) : nullptr)))replayComplete=false;
             break;
         case OP_DrawPrimitive: {
             if (g_lightRbBudget > 0) LightInputReadback(dev, g_replayPs, replayTex, eye);
@@ -2043,10 +2043,10 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_SetVertexDeclaration:
-            g_orig.SetVertexDeclaration(dev, (IDirect3DVertexDeclaration9*)(uintptr_t)r.a[0]);
+            if(FAILED(g_orig.SetVertexDeclaration(dev, (IDirect3DVertexDeclaration9*)(uintptr_t)r.a[0])))replayComplete=false;
             break;
         case OP_SetFVF:
-            g_orig.SetFVF(dev, r.a[0]);
+            if(FAILED(g_orig.SetFVF(dev, r.a[0])))replayComplete=false;
             break;
         case OP_SetVertexShader: {
             IDirect3DVertexShader9* sh = (IDirect3DVertexShader9*)(uintptr_t)r.a[0];
@@ -2087,19 +2087,19 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_SetVSConstI:
-            g_orig.SetVertexShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[4]), r.a[1]);
+            if(FAILED(g_orig.SetVertexShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[4]), r.a[1])))replayComplete=false;
             break;
         case OP_SetVSConstB:
-            g_orig.SetVertexShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[4]), r.a[1]);
+            if(FAILED(g_orig.SetVertexShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[4]), r.a[1])))replayComplete=false;
             break;
         case OP_SetStreamSource:
-            g_orig.SetStreamSource(dev, r.a[0], (IDirect3DVertexBuffer9*)(uintptr_t)r.a[1], r.a[2], r.a[3]);
+            if(FAILED(g_orig.SetStreamSource(dev, r.a[0], (IDirect3DVertexBuffer9*)(uintptr_t)r.a[1], r.a[2], r.a[3])))replayComplete=false;
             break;
         case OP_SetStreamSourceFreq:
-            g_orig.SetStreamSourceFreq(dev, r.a[0], r.a[1]);
+            if(FAILED(g_orig.SetStreamSourceFreq(dev, r.a[0], r.a[1])))replayComplete=false;
             break;
         case OP_SetIndices:
-            g_orig.SetIndices(dev, (IDirect3DIndexBuffer9*)(uintptr_t)r.a[0]);
+            if(FAILED(g_orig.SetIndices(dev, (IDirect3DIndexBuffer9*)(uintptr_t)r.a[0])))replayComplete=false;
             break;
         case OP_SetPixelShader:
             {
@@ -2150,10 +2150,10 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             break;
         }
         case OP_SetPSConstI:
-            g_orig.SetPixelShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[4]), r.a[1]);
+            if(FAILED(g_orig.SetPixelShaderConstantI(dev, r.a[0], (const int*)(dataBase + r.a[4]), r.a[1])))replayComplete=false;
             break;
         case OP_SetPSConstB:
-            g_orig.SetPixelShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[4]), r.a[1]);
+            if(FAILED(g_orig.SetPixelShaderConstantB(dev, r.a[0], (const BOOL*)(dataBase + r.a[4]), r.a[1])))replayComplete=false;
             break;
         case OP_StretchRect:
             if(FAILED(g_orig.StretchRect(dev, (IDirect3DSurface9*)(uintptr_t)r.a[0],

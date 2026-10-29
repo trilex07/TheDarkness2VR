@@ -61,7 +61,7 @@ static bool Actual(const std::vector<Rec>& records,const unsigned char* dataBase
 int main() {
     unsigned char bytes[64]{};arena=bytes;
     const std::vector<unsigned> expected={OP_SetRenderTarget,OP_SetDepthStencilSurface,OP_Clear,OP_StretchRect,OP_ColorFill,OP_ApplyStateBlock,OP_EndScene};
-    for(mask=0;mask<4;++mask)for(unsigned nullCase=0;nullCase<2;++nullCase)for(unsigned status=0;status<2;++status)for(failAt=0;failAt<=6;++failAt) {
+    for(mask=0;mask<4;++mask)for(unsigned nullCase=0;nullCase<2;++nullCase)for(unsigned status=0;status<2;++status)for(failAt=0;failAt<=7;++failAt) {
         nullBinding=nullCase!=0;result=status?S_FALSE:D3D_OK;
         uint32_t z;const float depth=0.375f;std::memcpy(&z,&depth,4);
         const std::vector<Rec> records={
@@ -80,5 +80,5 @@ int main() {
     CHECK(!Actual({{OP_ApplyStateBlock,0,{0}}},bytes) && calls.empty());
     g_origSBApply=nullptr;
     CHECK(!Actual({{OP_ApplyStateBlock,0,{0x3000}}},bytes) && calls.empty());
-    std::puts("PASS actual-source replay surface/state-block status:112 streams,784 calls; each of six failures sticky through EndScene; no retries; null/unavailable block, null bindings, rectangle flags, exact arguments, D3D_OK/S_FALSE");
+    std::puts("PASS actual-source replay surface/state-block status:128 streams,896 calls; each of seven failures sticky including EndScene; no retries; null/unavailable block, null bindings, rectangle flags, exact arguments, D3D_OK/S_FALSE");
 }

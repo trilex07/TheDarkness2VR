@@ -218,3 +218,19 @@ Actual recorder6109checks cover locked auxiliary capture, original bytes,
 owned lifetime and inactive/stale refusal. Both x86 builds pass. Dynamic VB/IB
 contents, draw-inherited matrices without an upload and partial previous-frame
 matrices remain open. No real-game, GPU/HMD or90FPS claim is made.
+
+## State API failure receipts, 2026-10-29
+
+ReplayStream now includes the HRESULT of 19 previously unchecked scene/state
+operations in its sticky completion result. Calls, arguments and ordering are
+unchanged; cleanup continues once after a failure. A later successful operation
+cannot publish a failed image as complete. Existing right-eye history and pair
+publication already reject this false result. Runtime failure incidence and its
+contribution to flicker are unknown; this is not a measured flicker/FPS fix.
+
+The actual-source state fixture fails old 39f4525 at line169 and now passes
+184 checks /92 streams /2024 calls over 21 API kinds, positive S_OK/S_FALSE
+receipts and INVALIDCALL/DEVICELOST at every position. Surface/status passes
+128 streams /896 calls including EndScene. Actual float replay passes 58286
+checks /576096 records per production/diagnostic flavor. History publication
+passes 1000 mixed and1000 rejected segments. Both x86 DLL flavors build.

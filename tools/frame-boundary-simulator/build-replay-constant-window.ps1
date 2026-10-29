@@ -37,7 +37,7 @@ $extraCases=foreach($name in @('SetRenderState','SetStreamSource','SetStreamSour
         $case=[regex]::Match($src.Substring($cases),"(?s)        case OP_${name}:.*?(?=        case |        default:)")
         if(!$case.Success){throw "Missing actual binding case $name"}
         if($name -eq 'SetRenderState') {
-            $case.Value.Replace('g_orig.SetRenderState(', 'if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks(); g_orig.SetRenderState(')
+            $case.Value.Replace('case OP_SetRenderState:', 'case OP_SetRenderState: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks();')
         } else {$case.Value}
     }
 $actual=$src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
