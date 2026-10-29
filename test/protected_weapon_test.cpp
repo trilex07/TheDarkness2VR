@@ -86,6 +86,36 @@ template<class Mutation> static void Reject(Mutation change) {
     CHECK(!memcmp(out,before,64));
     CHECK(!ResolveProtectedWeaponFire(fires[0],inventory+0xB0,out));CHECK(!memcmp(out,before,64));
 }
+static void GrabFeedbackCases(){
+    using d2vr_input::GrabFeedback;
+    for(unsigned field:{0x558u,0x580u,0x584u,0x590u}){
+        Reset();CHECK(g_nativeGameplay.grab==GrabFeedback::Empty && !g_nativeGameplay.alternateHeldTarget);
+        Ref(grab,field,avatar);CHECK(CaptureNativeGameplay(camera));
+        CHECK(g_nativeGameplay.grab==GrabFeedback::Busy);
+        CHECK(g_nativeGameplay.alternateHeldTarget==(field==0x584 || field==0x590));
+        // Drive the real recognizer from the real native sampler, rather than
+        // mocking an already-consistent Busy/alternate pair.
+        d2vr_input::Tentacles gesture;
+        auto step=[&](double time,float grip,float x,float speed){
+            return gesture.Update(true,false,true,false,grip,0,{x,0,0},{speed,0,0},{},time,
+                g_nativeGameplay.grab,{0,0,-1});
+        };
+        CHECK(!step(0,0,0,0).leftButton);
+        const auto hold=step(.02,1,0,0);CHECK(!hold.grab && !hold.leftButton);
+        // A held target stays held beyond the empty/acquisition grace period.
+        for(unsigned i=2;i<=40;++i)CHECK(!step(i*.02,1,0,0).leftButton);
+        CHECK(!step(.82,1,.18f,2).leftButton);CHECK(!step(.84,1,.22f,2).leftButton);
+        CHECK(!step(.86,1,.26f,2).leftButton);CHECK(!step(.88,1,.30f,2).leftButton);
+        const auto release=step(.90,0,.34f,0);CHECK(release.throwObject && release.leftButton);
+        CHECK(!step(1.04,0,.34f,0).leftButton);
+        Ref(grab,field,nullptr);CHECK(CaptureNativeGameplay(camera));
+        CHECK(g_nativeGameplay.grab==GrabFeedback::Empty && !g_nativeGameplay.alternateHeldTarget);
+    }
+    // The optional character reference itself may be null, as in the native
+    // no-target path. It is not a corrupt entire gameplay sample.
+    Reset();Word(grab,0x584,0);CHECK(CaptureNativeGameplay(camera));
+    CHECK(g_nativeGameplay.grab==GrabFeedback::Empty && !g_nativeGameplay.alternateHeldTarget);
+}
 int main(int argc,char** argv) {
     CHECK(argc==2);const auto module=LoadLibraryA(argv[1]);CHECK(module);
     const auto original=reinterpret_cast<d2vr_weapon_bridge::Fire>(GetProcAddress(module,"@OriginalFire@28"));
@@ -103,6 +133,7 @@ int main(int argc,char** argv) {
     CHECK(g_protectedWeaponModelTable.Prepare(modelTable,131,0xF0/4,d2vr_weapon_bridge::Bridge::ModelEntry(),g_nativeImageGuard));
     CHECK(g_protectedWeaponFireTable.Prepare(fireTable,33,0x64/4,d2vr_weapon_bridge::Bridge::FireEntry(),g_nativeImageGuard));
     g_protectedWeaponReady=true;
+    GrabFeedbackCases();
     for(unsigned slot=0;slot<2;++slot) {
         Reset();g_hands[slot].aimValid=false; // peer loss must not gate this slot's 1-slot controller
         alignas(16) float model[16],shot[16];

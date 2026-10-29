@@ -74,3 +74,19 @@ both wrists, invalid-scale no-write behavior, and unchanged tentacle bones.
 58,246 hand checks and 74,467 weapon checks pass, including the existing exact
 native skin arithmetic fixture. This corrects a nondefault-scale pose mismatch;
 it is not an FPS improvement or a physical headset acceptance result.
+
+## Held-character sampler consistency, 2026-10-29
+
+CaptureNativeGameplay previously classified Busy from +558/+580/+590 but
+classified alternateHeldTarget from +584 as well. A character held only in
++584 therefore published Empty plus alternateHeldTarget. The real gesture
+recognizer could reacquire that target or discard hold intent after its empty
+grace period. The new actual-sampler-to-recognizer regression fails the old
+implementation at protected_weapon_test.cpp line94 (expected Busy).
+
+An alternate held target now also publishes Busy. Nullable +584 handling,
+ownership checks and ordinary-prop aim/velocity exclusions remain intact.
+The x86 actual-source fixture passes 74711 checks, including four separately
+populated native target fields, sustained grip, one release stroke and return
+to Empty. Existing throw218 and left-aim461 checks pass. Both DLL flavors build.
+These CPU fixtures do not validate native enemy lifecycle or headset behavior.

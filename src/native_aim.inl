@@ -175,6 +175,10 @@ static bool CaptureNativeGameplay(void* self) {
                     s.alternateHeldTarget=(alternateCharacter && *alternateCharacter) ||
                         (retainedTarget && *retainedTarget) ||
                         (s.grabEntity && *((BYTE*)s.grabEntity+0x24));
+                    // A character can live solely in +584. Publish the same
+                    // held state to the gesture recognizer as to native aim;
+                    // otherwise it reacquires or forgets an already held enemy.
+                    if(s.alternateHeldTarget)s.grab=d2vr_input::GrabFeedback::Busy;
                 }
             }
         }
@@ -208,7 +212,7 @@ static bool CaptureNativeGameplay(void* self) {
     static int last=-1;
     const int state=int(s.grab);
     if(s.camera && state!=last) {
-        last=state; Log("[NativeGrab] state=%s (558 acquisition / 580 attachment / 590 retained target)",
+        last=state; Log("[NativeGrab] state=%s (558 acquisition / 580 attachment / 584 character / 590 retained target)",
             state==0 ? "unknown":state==1 ? "empty":"busy");
     }
     static bool lastAlternate=false;
