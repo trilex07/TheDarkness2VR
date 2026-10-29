@@ -143,3 +143,41 @@ headset motion or game performance. Existing hand isolation752, gesture774,
 protected native throw218 and 2,000 native-vs-bridge ABI comparisons pass. Both
 production and diagnostic x86 DLLs build. The new build is packaged separately;
 the installed 2e9b887 candidate is retained for the user's consolidated test.
+
+## Original hands without sleeves, 2026-10-29
+
+The stock H.Misc resource `/D2/Characters/Camera/FPJackieArms_skel.fbx`
+explicitly assigns HandRevised and SleeveRevised materials and separate index
+ranges for five LODs. Its B.Misc payload contains byte-identical copies of the
+114400-byte VB and85818-byte IB retained in the matched stock frame. This
+identifies the original asset without guessing shader hashes or bone weights.
+The actual private geometry preview confirms that the second part is sleeves.
+
+`tools/hands_only_asset.py` pins the extracted header/body and compressed cache
+preimages. It degenerates only the3500 sleeve triangles across all five LODs,
+retaining each triangle's first index inside the original draw's vertex range.
+Every hand index, vertex, skin weight, skeleton byte and texture stays original.
+No model data is distributed in Git. Only the normal FPJackieArms model is
+changed; asylum/crucifixion and other avatars are not silently replaced.
+
+Installation appends the206112-byte modified cooked resource as an uncompressed
+entry (zsize=size) and atomically redirects only its existing B.Misc TOC record.
+The entire original cache prefix is untouched. A recovery receipt and original
+TOC are written before mutation. Rollback verifies before/after file hashes,
+refuses foreign changes, restores the TOC and removes only the appended tail.
+A verified partial append is also recoverable. No EXE, shader, runtime settings,
+SteamVR setting or DLL change is required by this asset correction.
+
+Six generated-data tests cover all LOD triangles, hand/vertex preservation,
+foreign preimages, repeated application refusal, exact install/extract/rollback,
+failed TOC replacement, partial appends and refusal after external mutation.
+Actual stock preparation and geometry preview pass. Native rendering and wrist
+appearance still require the user's headset test; offline removal is not proof
+of in-game acceptance.
+
+Private preparation:
+`python tools/hands_only_asset.py prepare --header <extracted H asset> --body <extracted B asset> --output <new private package>`.
+Closed-game install:
+`python tools/hands_only_asset.py install --cache-dir <game/Cache.Windows> --package <private package> --backup <new backup directory>`.
+Recovery:
+`python tools/hands_only_asset.py rollback --receipt <backup/receipt.json>`.
