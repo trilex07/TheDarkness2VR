@@ -19,6 +19,7 @@ struct NativeGameplaySample {
     ULONGLONG time=0;
     d2vr_input::GrabFeedback grab=d2vr_input::GrabFeedback::Unknown;
     DWORD camera=0,inventory=0,entities[2]{}; // primary/right, secondary/left
+    unsigned char firearm[2]{}; // same slots: [0] right, [1] left
     bool offHandEquipped=false;
     DWORD grabFire=0,grabEntity=0;
 };
@@ -135,6 +136,7 @@ static void CaptureNativeGameplay(void* self) {
         for(int hand=0;hand<2;++hand) {
             auto gun=**(BYTE***)(inventory+0xB0+12*hand);
             if(!gun || *(DWORD*)gun!=0x1010E30 || **(BYTE***)(gun+0x980)!=avatar) continue;
+            s.firearm[hand]=d2vr::psvr2::ObserveFirearm(gun);
             auto entity=**(BYTE***)(gun+0xE0+0x4C); // native A1DA90(0,0)
             if(entity && *(DWORD*)entity==0xFD6BC0) s.entities[hand]=(DWORD)(uintptr_t)entity;
         }
