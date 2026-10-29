@@ -30,6 +30,21 @@ def weights(vertex):
             for bone in vertex[32:36] if any(vertex[36+i] for i in range(4) if vertex[32+i]==bone)}
 
 
+def hand_palette(header):
+    # SHA-pinned cooked header: the HandRevised1 submesh has its own 34-entry
+    # bone remap. Vertex UBYTE4 indices address THIS table, not the 42 bind
+    # matrices/name records. The following sleeve table has 12 entries.
+    at=2721
+    stock.require(len(header)==2992 and struct.unpack_from('<I',header,at)[0]==34,
+                  'Unexpected hand palette layout')
+    palette=struct.unpack_from('<34I',header,at+4)
+    stock.require(len(set(palette))==34 and all(i<42 for i in palette) and
+                  struct.unpack_from('<I',header,at+4+34*4)[0]==12,
+                  'Invalid hand palette remap')
+    stock.require(palette.index(1)==19 and palette.index(26)==1,'Unexpected wrist remap')
+    return palette
+
+
 def blend(a,b,t,position):
     result=bytearray(a if t<.5 else b)
     struct.pack_into('<3f',result,0,*position)
@@ -54,8 +69,8 @@ def blend(a,b,t,position):
 
 def patch(header,body):
     output,hands,sleeves=stock.patch(header,body)
-    # Bone palette order comes from the pinned header, not the live avatar's
-    # different 130-bone numbering. Verify the two wrists and elbows explicitly.
+    # Skeleton order comes from the pinned header, not the live avatar's
+    # different 130-bone numbering. Submesh vertex indices are remapped below.
     names=[];at=header.index(b'GAME_L1_TWIST2')-4
     for _ in range(42):
         n=struct.unpack_from('<I',header,at)[0];at+=4
@@ -63,6 +78,7 @@ def patch(header,body):
     stock.require([names[i] for i in (1,5,26,22)]==
                   ['GAME_L1_ARM3','GAME_L1_ARM2','GAME_R1_ARM3','GAME_R1_ARM2'],
                   'Unexpected native wrist palette')
+    palette=hand_palette(header)
     planes=[]
     for wrist,elbow in ((1,5),(26,22)):
         origin=bind_origin(body,wrist);axis=sub(origin,bind_origin(body,elbow))
@@ -129,11 +145,12 @@ def patch(header,body):
             stock.require(len(loop)==len(graph),'Multiple cut contours')
             ids=[representative[k] for k in loop]
             center=planes[hand][0]
-            # The cap uses the actual wrist joint so it remains attached during
-            # wrist articulation. Its border shares exact cut positions/weights.
+            # Use the wrist's SUBMESH palette index. Skeleton index 1/26 here
+            # selected the other wrist/a finger and stretched the cap between
+            # independently tracked hands. Stock border weights stay unchanged.
             center_data=bytearray(new_vertices[ids[0]])
             struct.pack_into('<3f',center_data,0,*center)
-            center_data[32:36]=bytes([1 if hand==0 else 26,0,0,0])
+            center_data[32:36]=bytes([palette.index(1 if hand==0 else 26),0,0,0])
             center_data[36:40]=bytes([255,0,0,0])
             middle=allocate(('center',hand),bytes(center_data))
             for a,b in zip(ids,ids[1:]+ids[:1]):
@@ -154,4 +171,5 @@ def patch(header,body):
         stock.require(result[stock.VB_OFFSET+index*40:stock.VB_OFFSET+(index+1)*40]==vertices[index],
                       'Retained hand vertex changed')
     return bytes(result),dict(lods=stats,newVertices=len(new_vertices),retainedVertices=len(kept),
-                              cuffMillimetres=5,textures='original unchanged',planes=planes)
+                              cuffMillimetres=5,textures='original unchanged',planes=planes,
+                              capSkinning='submesh-palette',wristVertexIndices=[palette.index(1),palette.index(26)])

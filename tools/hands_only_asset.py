@@ -20,6 +20,7 @@ RESOURCE = '/D2/Characters/Camera/FPJackieArms_skel.fbx'
 VB_OFFSET, VB_SIZE, IB_OFFSET, INDEX_COUNT = 5894, 114400, 120294, 42909
 ENTRY_OFFSET, ENTRY_SIZE = 91129648, 176296
 ENTRY_SHA = '70590e21d645601e7168cd31d56f54c14df6dea35ce56f97cc53186c231b44a6'
+PREVIOUS_CLOSED_WRIST_SHA = '71781234a1851232a74876504ccda0d8a86365dc358efcefc11d79454b47a936'
 
 
 def sha(data):
@@ -177,7 +178,9 @@ def install(cache_dir, package, backup):
         require(sha(f.read(ENTRY_SIZE)) == ENTRY_SHA, 'Compressed stock resource preimage mismatch')
         if not stock_entry:
             f.seek(offset)
-            require(f.read(size) == sleeves_only, 'Previous hands-only resource mismatch')
+            previous=f.read(size)
+            require(previous == sleeves_only or sha(previous) == PREVIOUS_CLOSED_WRIST_SHA,
+                    'Previous hands-only resource mismatch')
     digest = file_hash(cache)
     before_cache_hash = digest.hexdigest(); digest.update(result)
     after_toc = bytearray(before_toc)

@@ -156,5 +156,27 @@ class HandsOnly(unittest.TestCase):
             self.assertEqual((cache/'B.Misc.cache').read_bytes(),data)
             self.assertEqual((cache/'B.Misc.toc').read_bytes(),before_toc)
 
+    def test_known_closed_skinning_upgrade_rolls_back_exactly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);cache,package,_=self.setup_install(root)
+            m.install(cache,package,root/'sleeve-backup')
+            broken=bytearray(m.patch(self.header,self.body)[0]);broken[100]^=1
+            fixed=bytearray(broken);fixed[101]^=1
+            fake=types.SimpleNamespace(patch=lambda h,b:(bytes(broken),{}))
+            with patch.dict('sys.modules',{'closed_wrist_mesh':fake}):
+                m.prepare(root/'header',root/'body',root/'broken',True)
+                m.install(cache,root/'broken',root/'broken-backup')
+                before_cache=(cache/'B.Misc.cache').read_bytes()
+                before_toc=(cache/'B.Misc.toc').read_bytes()
+                fake.patch=lambda h,b:(bytes(fixed),{})
+                with patch.object(m,'PREVIOUS_CLOSED_WRIST_SHA',m.sha(broken)):
+                    m.prepare(root/'header',root/'body',root/'fixed',True)
+                    m.install(cache,root/'fixed',root/'fixed-backup')
+                _,off,_,size,_=m.toc_entry((cache/'B.Misc.toc').read_bytes())
+                self.assertEqual((cache/'B.Misc.cache').read_bytes()[off:off+size],fixed)
+                m.rollback(root/'fixed-backup'/'receipt.json')
+                self.assertEqual((cache/'B.Misc.cache').read_bytes(),before_cache)
+                self.assertEqual((cache/'B.Misc.toc').read_bytes(),before_toc)
+
 
 if __name__ == '__main__': unittest.main()

@@ -49,7 +49,7 @@ class Geometry(unittest.TestCase):
             at=stock.VB_OFFSET+i*40;old=self.body[at:at+40];new=self.result[at:at+40]
             if new!=old:
                 self.assertEqual(sum(new[36:40]),255)
-                self.assertTrue(all(b<42 for b,w in zip(new[32:36],new[36:40]) if w))
+                self.assertTrue(all(b<34 for b,w in zip(new[32:36],new[36:40]) if w))
             p=struct.unpack_from('<3f',old);origin,axis=self.stats['planes'][0 if p[0]<0 else 1]
             hand_referenced=any(i in struct.unpack_from('<'+'H'*c,self.body,stock.IB_OFFSET+s*2)
                                 for s,c in stock.ranges(self.header,b'/HandRevised1'))
@@ -63,6 +63,40 @@ class Geometry(unittest.TestCase):
         self.assertEqual(mesh.patch(self.header,self.body)[0],self.result)
         for h,b in [(self.header+b'x',self.body),(self.header,self.result)]:
             with self.assertRaisesRegex(ValueError,'preimage'):mesh.patch(h,b)
+
+    def test_cap_palette_independent_hand_motion_and_narrow_change(self):
+        previous=(self.package/'hands-only-body.bin').read_bytes()
+        changed=[i for i,(a,b) in enumerate(zip(previous,self.result)) if a!=b]
+        self.assertEqual(len(changed),2)
+        palette=mesh.hand_palette(self.header)
+        centers=[]
+        for at in changed:
+            self.assertEqual((at-stock.VB_OFFSET)%40,32)
+            base=at-32;v=self.result[base:base+40]
+            p=struct.unpack_from('<3f',v);hand=0 if p[0]<0 else 1
+            wrist=(1,26)[hand]
+            self.assertEqual(palette[v[32]],wrist)
+            self.assertEqual(v[36:40],bytes([255,0,0,0]))
+            centers.append((base-stock.VB_OFFSET)//40)
+            # Linear-blend skinning under independent bone translations. At
+            # bind pose all transforms are identity, which hid the old defect.
+            for frame in range(1,65):
+                deltas={bone:(bone*.01*frame,(-1 if bone==1 else 1)*frame*.02,0)
+                        for bone in palette}
+                def skin(vertex):
+                    return tuple(p[k]+sum(deltas[palette[b]][k]*w/255
+                        for b,w in zip(vertex[32:36],vertex[36:40])) for k in range(3))
+                expected=tuple(p[k]+deltas[wrist][k] for k in range(3))
+                self.assertEqual(skin(v),expected)
+                self.assertNotEqual(skin(previous[base:base+40]),expected)
+        for start,count in stock.ranges(self.header,b'/HandRevised1'):
+            indices=struct.unpack_from('<'+'H'*count,self.result,stock.IB_OFFSET+start*2)
+            for center in centers:self.assertIn(center,indices)
+
+    def test_palette_rejects_wrong_wrist_mapping(self):
+        header=bytearray(self.header)
+        struct.pack_into('<I',header,2721+4+19*4,26)
+        with self.assertRaises(ValueError):mesh.hand_palette(header)
 
 
 if __name__=='__main__':
