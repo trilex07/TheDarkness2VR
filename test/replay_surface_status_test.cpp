@@ -55,6 +55,7 @@ struct Original {
 } g_orig;
 static bool Actual(const std::vector<Rec>& records,const unsigned char* dataBase) {
     d2vr_replay_state::Cache stateCache;
+    d2vr_replay_state::Bindings bindings;
     bool replayComplete=true;
     IDirect3DDevice9* dev=nullptr;
     for(const auto& r:records) switch((RecOp)r.op) {

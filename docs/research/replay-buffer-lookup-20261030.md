@@ -1,0 +1,9 @@
+# Bounded replay buffer metadata lookup
+
+Source change: replay-only 128-slot direct-mapped metadata memoization. Each occupied slot pins the exact original source interface until eviction/replay end. Only positive metadata is cached; mutable valid/locks/alias/replica state is checked on every binding and upload. Native Lock/Unlock still fetch current private data. State blocks do not invalidate immutable metadata ownership. Reset drains the pins before replicas. The private GUID is mod-owned and assigned once by TrackBuffer; native resources own their metadata for their lifetime.
+
+No extra buffer copies, readback, GPU fences, hot-path allocations or registry locks. Static storage is 1,024 bytes on x86, at most 128 additional source references plus a transient replacement reference. Explicit teardown avoids COM calls from static destruction. The existing recording lock serializes access.
+
+Actual buffer-source fixture: all six consistency cases, NOOVERWRITE, offsets, inherited bindings, failed writes, worker uploads, quotas and Reset PASS. Added repeated-hit validity/locks/alias rejection, pinned owner release, 300-resource collisions, unknown buffer refusal, idempotent teardown and Reset with a populated cache PASS. 4,000 repeated bindings/frame: private-data calls 4,000 -> 1; CPU mock 0.020 -> 0.006 ms/frame; zero allocations. Driver and GPU excluded. Full 1 MiB/frame range capture+mock replay remains ~0.067 ms/frame with zero steady allocations.
+
+Production and diagnostic x86 DLL builds and actual source replay state/surface/float/UP/right-eye-history regressions PASS. No Steam deployment or live FPS claim. MAIN's new 213bb4f7 recovery quarantines the versioning candidate following an unisolated runtime hang/CPU report; the follow-up integration preserves that OFF default. This memoization does not resolve the native driver Lock/reentrancy risk.

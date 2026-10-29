@@ -1925,6 +1925,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     if(g_bufferWritesApplied) {
         g_recLock.store(0,std::memory_order_release);g_replayEye=-1;return false;
     }
+    BeginReplayBufferLookups();
     const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)
     g_vsConstantHistory.BeginReplay();
     g_psEyeHistory.BeginReplay();
@@ -2320,6 +2321,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     g_bufferWritesApplied=true;
     g_vsConstantHistory.EndReplay(replayComplete);
     g_psEyeHistory.EndReplay(replayComplete);
+    ClearReplayBufferLookups();
     g_recLock.store(0,std::memory_order_release);
     g_replayEye = -1;
     return replayComplete;

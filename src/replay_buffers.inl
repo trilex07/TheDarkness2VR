@@ -76,6 +76,35 @@ static BufferVersion* BufferInfo(IUnknown* object) {
     // own reference for its lifetime; all callers already own the source.
     version->Release();return version;
 }
+// Source resources exclusively own their private metadata for their lifetime.
+// Pin the source while memoizing that pointer, only under the replay lock. Keep
+// checking mutable validity/locks/alias state at each use; never cache decisions.
+struct ReplayBufferLookup {IUnknown* source=nullptr;BufferVersion* version=nullptr;};
+static ReplayBufferLookup g_replayBufferLookups[128]{};
+static bool g_replayBufferLookupActive=false;
+static void ClearReplayBufferLookups() {
+    g_replayBufferLookupActive=false;
+    for(auto& entry:g_replayBufferLookups) {
+        auto source=entry.source;entry={};
+        if(source)source->Release();
+    }
+}
+static void BeginReplayBufferLookups() {
+    ClearReplayBufferLookups();g_replayBufferLookupActive=true;
+}
+static BufferVersion* ReplayBufferInfo(IUnknown* source) {
+    if(!source || !g_replayBufferLookupActive)return BufferInfo(source);
+    auto& entry=g_replayBufferLookups[((uintptr_t(source)>>4)*2654435761u)&127];
+    if(entry.source==source)return entry.version;
+    auto version=BufferInfo(source);
+    if(version) {
+        // Only positive metadata is memoized. Unknown and replica-tagged
+        // resources retain their existing validation path on every access.
+        source->AddRef();auto previous=entry.source;entry={source,version};
+        if(previous)previous->Release();
+    }
+    return version;
+}
 static void DropBufferReplica(BufferVersion* version) {
     auto replica=version->replica;version->replica=nullptr;
     AcquireSRWLockExclusive(&g_bufferRegistryLock);
@@ -256,13 +285,13 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateIB(IDirect3DDevice9* dev,UINT size,D
     return hr;
 }
 static bool ReplayBufferWrite(const Rec& record,const uint8_t* data) {
-    auto version=BufferInfo(reinterpret_cast<IUnknown*>(uintptr_t(record.a[0])));
+    auto version=ReplayBufferInfo(reinterpret_cast<IUnknown*>(uintptr_t(record.a[0])));
     return record.n && uint64_t(record.a[3])+record.n<=g_recData.size() &&
         UploadBufferRange(version,record.a[1],record.n,record.a[2],data+record.a[3]);
 }
 static IUnknown* ReplayBuffer(IUnknown* object,bool& complete) {
     if(!object)return nullptr;
-    auto version=BufferInfo(object);
+    auto version=ReplayBufferInfo(object);
     if(!version) {
         DWORD tag=0,bytes=sizeof(tag);
         if(SUCCEEDED(static_cast<IDirect3DResource9*>(object)->GetPrivateData(kReplayBufferTag,&tag,&bytes)) &&
@@ -309,7 +338,7 @@ static void CloseBufferFrame() {
     RecLockGuard guard;g_recActive=false;FinishBufferRecording();
 }
 static void ResetBufferReplicas() {
-    RecLockGuard guard;
+    RecLockGuard guard;ClearReplayBufferLookups();
     BufferVersion* pending[kBufferObjectLimit];size_t count=0;
     AcquireSRWLockExclusive(&g_bufferRegistryLock);
     for(auto version=g_bufferRegistry;version;version=version->next)if(version->dynamic) {

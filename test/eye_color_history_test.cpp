@@ -7,6 +7,8 @@ using BOOL=int;
 #define FAILED(x) ((x)<0)
 #define SUCCEEDED(x) ((x)>=0)
 constexpr int FALSE=0,D3DTEXF_NONE=0;
+// Public D3D9 enum values used by the extracted replay draw cases.
+constexpr unsigned D3DRS_SCISSORTESTENABLE=174,D3DSAMP_MINFILTER=6,D3DSAMP_MAXANISOTROPY=10;
 struct D3DSURFACE_DESC {unsigned Width=10,Height=10,Format=1,MultiSampleType=0,MultiSampleQuality=0;};
 struct IDirect3DSurface9 {
     unsigned refs=1,pixel=0,untouchedPixel=0;bool owned=false;
