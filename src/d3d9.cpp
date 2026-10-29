@@ -3548,10 +3548,11 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         liveEnd.Release(); g_blitPass = 0; g_eyePairReady = false; return;
     }
     const bool historyOk = SeedRightEyeBackground(dev, liveEnd.targets[0], g_hadWorldDrawThisFrame);
-    d2vr_replay::g_frameStart.Apply(dev);
+    const bool frameStateOk=d2vr_replay::g_frameStart.Apply(dev);
+    if(!frameStateOk)warnEarly("frame-start state restore failed");
     g_gpuTiming.MarkLiveEnd();
     d2vr_replay::InvalidateShadowAtlasPass();
-    const bool replayOk=d2vr_replay::ReplayStream(dev, 1, sp1);
+    const bool replayOk=frameStateOk && d2vr_replay::ReplayStream(dev, 1, sp1);
     if(!replayOk) {
         static unsigned rejectedReplays=0;
         if(++rejectedReplays<=8 || rejectedReplays%600==0)
@@ -3579,7 +3580,12 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     g_blitPass = 0;
     if (FAILED(dev->StretchRect(g_liveColorBackup, nullptr, liveEnd.targets[0], nullptr, D3DTEXF_NONE)))
         eye1Ok = false;
-    liveEnd.Apply(dev);
+    if(!liveEnd.Apply(dev)) {
+        eye1Ok=false;
+        d2vr_replay::RecLockGuard lock;
+        d2vr_replay::g_vsConstantHistory.Clear();
+        warnEarly("live-end state restore failed");
+    }
     d2vr_replay::InvalidateShadowAtlasPass();
     liveEnd.Release(g_reuseStateSnapshots);
     // Return the worker's context lease before XR/NIS or capture readback.

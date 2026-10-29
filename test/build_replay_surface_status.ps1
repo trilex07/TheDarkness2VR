@@ -5,7 +5,7 @@ $enum=[regex]::Match($source,'(?s)enum RecOp : uint16_t \{.*?\};').Value
 $begin=$source.IndexOf('static bool ReplayStream(')
 if($begin -lt 0 -or -not $enum){throw 'Replay source boundaries missing'}
 $replay=$source.Substring($begin)
-$cases=foreach($op in 'SetRenderTarget','SetDepthStencilSurface','Clear','StretchRect','ColorFill','EndScene') {
+$cases=foreach($op in 'SetRenderTarget','SetDepthStencilSurface','Clear','StretchRect','ColorFill','ApplyStateBlock','EndScene') {
     $case=[regex]::Match($replay,"(?s)        case OP_${op}:.*?(?=        case |        default:)")
     if(-not $case.Success){throw "Missing actual case $op"}
     $case.Value

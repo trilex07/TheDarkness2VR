@@ -148,3 +148,41 @@ Partial STP/previous matrices and matrices inherited by a draw with no current
 upload remain separate work. Dynamic VB/IB content versions and partial world
 history restoration remain open. CULL admission is unchanged. Neither stable
 90 FPS nor permanent disappearance of side clipping/right-eye flicker is proven.
+
+## Snapshot and recorded state-block receipts, 2026-10-29
+
+DeviceSnapshot::Apply returned void and discarded every render-target, depth
+and state-block HRESULT. Replay proceeded after a failed frame-start restore;
+the right-eye receipt could remain successful after live-end restoration
+failed. Recorded ApplyStateBlock likewise ignored failure or an unavailable
+original function. These are concrete error-propagation defects, not evidence
+that the retained successful game runs experienced these API failures.
+
+Apply now reports aggregate success while still attempting every restore in
+the original RT/depth/state-block order. A failed frame-start restore skips
+replay, drains any pending left transfer and follows normal live-pixel/state
+recovery; it cannot save/publish a successful replay eye. Failed live-end
+restoration rejects the pair and clears raw register knowledge under the
+existing lock. Capture rejects actual getter failures and releases partial
+references, while accepting normal D3DERR_NOTFOUND for optional MRT/depth.
+Snapshot ownership and mandatory RT0 are checked before any restore.
+Recorded block failures mark replay incomplete and retain bank invalidation
+and shader resynchronization. No new normal-path API call or lock is added.
+
+The actual old snapshot failed CPU receipt check 37, line 43, when the first
+RT restore was rejected. The corrected actual snapshot passes 2521 checks:
+all six restore failures, both original/virtual Apply routes, S_OK/S_FALSE,
+optional attachments, all seven fresh capture failures, wrong owner, reusable
+capture recovery and reference balance. The fixture substitutes COM interface
+types with CPU fakes; it does not create a D3D device. Recorded surface/block
+tests pass 112 streams / 784 calls, including every checked failure, null or
+unavailable block and no retries. Right-eye history tests pass 1000 mixed
+segments plus1000 rejected segments. Both x86 DLL builds pass. The existing
+hardware snapshot test was not run during this turn.
+
+Inherited WVP/STP at a draw with no current upload remains unresolved: a
+replay-only forced upload could disagree with the live eye's inherited head
+transform. It needs coherent live/replay materialized-register ownership,
+not an unconditional extra setter on every draw. No such speculative upload
+or cache was added here. No HMD, performance or permanent-flicker claim follows
+from these CPU failure regressions.

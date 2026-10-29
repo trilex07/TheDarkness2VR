@@ -480,21 +480,32 @@ struct DeviceSnapshot {
         targetCount = std::min<DWORD>(4, caps.NumSimultaneousRTs);
         vertexFloatLimit = caps.MaxVertexShaderConst;
         pixelFloatLimit = D3DSHADER_VERSION_MAJOR(caps.PixelShaderVersion)>=3 ? 224 : 32;
-        if (FAILED(dev->CreateStateBlock(D3DSBT_ALL, &state))) return false;
+        if (FAILED(dev->CreateStateBlock(D3DSBT_ALL, &state)) || !state) {Release();return false;}
         owner=dev;
         }
-        for (DWORD i = 0; i < targetCount; ++i) dev->GetRenderTarget(i, &targets[i]);
-        dev->GetDepthStencilSurface(&depth);
+        for (DWORD i = 0; i < targetCount; ++i) {
+            const HRESULT result=dev->GetRenderTarget(i, &targets[i]);
+            if(FAILED(result) && !(i && result==D3DERR_NOTFOUND && !targets[i])) {
+                Release();return false;
+            }
+        }
+        const HRESULT depthResult=dev->GetDepthStencilSurface(&depth);
+        if(FAILED(depthResult) && !(depthResult==D3DERR_NOTFOUND && !depth)) {Release();return false;}
         if(!targets[0]) {Release();return false;}
         return true;
     }
-    void Apply(IDirect3DDevice9* dev) {
-        if (!state) return;
-        for (DWORD i = 0; i < targetCount; ++i) dev->SetRenderTarget(i, targets[i]);
-        dev->SetDepthStencilSurface(depth);
+    bool Apply(IDirect3DDevice9* dev) {
+        if (!state || owner!=dev || !targets[0]) return false;
+        bool complete=true;
+        // Drain the whole restore even after failure; never short-circuit the
+        // remaining targets, depth or state block during live-state recovery.
+        for (DWORD i = 0; i < targetCount; ++i)
+            if(FAILED(dev->SetRenderTarget(i, targets[i])))complete=false;
+        if(FAILED(dev->SetDepthStencilSurface(depth)))complete=false;
         // Apply state AFTER RTs because SetRenderTarget resets the viewport.
-        if (g_origSBApply) g_origSBApply(state); else state->Apply();
+        if(FAILED(g_origSBApply ? g_origSBApply(state):state->Apply()))complete=false;
         SyncActiveShader(dev);
+        return complete;
     }
 };
 static DeviceSnapshot g_frameStart;
@@ -2116,7 +2127,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             IDirect3DStateBlock9* sb = (IDirect3DStateBlock9*)(uintptr_t)r.a[0];
             // call the ORIGINAL Apply: the vtable points at our hook which would try to
             // record while the record lock is held here -> deadlock
-            if (sb && g_origSBApply) g_origSBApply(sb);
+            if (!sb || !g_origSBApply || FAILED(g_origSBApply(sb)))replayComplete=false;
             g_vsConstantHistory.replay.Clear();
             SyncActiveShader(dev);
             HOOK_MARK(1900 + r.op);
