@@ -22,6 +22,7 @@ struct NativeGameplaySample {
     unsigned char firearm[2]{}; // same slots: [0] right, [1] left
     bool offHandEquipped=false;
     DWORD grabFire=0,grabEntity=0;
+    unsigned char demonHold=0; // 1 object, 2 character held for an execution
 };
 static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
 static NativeGameplaySample g_nativeGameplay;
@@ -126,8 +127,10 @@ static void CaptureNativeGameplay(void* self) {
                 auto fire=**(BYTE***)(parts+48*mode+0xC);
                 if(fire && *(DWORD*)fire==0x1004FE8 && *(DWORD*)(fire+4)==0x11126F0 &&
                    **(BYTE***)(fire+0x4C)==weapon) {
-                    const bool busy=**(DWORD**)(fire+0x558) || **(DWORD**)(fire+0x580) || **(DWORD**)(fire+0x590);
+                    const bool character=**(DWORD**)(fire+0x584)!=0;
+                    const bool busy=**(DWORD**)(fire+0x558) || **(DWORD**)(fire+0x580) || **(DWORD**)(fire+0x590) || character;
                     s.grab=busy ? d2vr_input::GrabFeedback::Busy:d2vr_input::GrabFeedback::Empty;
+                    s.demonHold=character ? 2 : busy ? 1 : 0;
                     s.grabFire=(DWORD)(uintptr_t)fire;
                     s.grabEntity=**(DWORD**)(fire+0x580);
                 }

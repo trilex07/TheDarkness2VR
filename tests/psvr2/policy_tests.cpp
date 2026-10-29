@@ -131,5 +131,52 @@ int main() {
         "disabled");
     require(selectHand(gates, HandInput{}, TriggerHand::Left).offReason
         == TriggerOffReason::UnsupportedWeapon, "empty hand");
+
+    HandInput strike{};
+    strike.firearm = Firearm::Pistol;
+    strike.fireDown = true;
+    strike.tentacle = TentacleCue::Strike;
+    const auto strikeCmd = selectHand(gates, strike, TriggerHand::Right);
+    require(strikeCmd.effect == TriggerEffect::Feedback && strikeCmd.position == 3
+        && strikeCmd.strength == 8 && strikeCmd.hand == TriggerHand::Right
+        && validTriggerCommand(strikeCmd), "tentacle strike");
+
+    HandInput grip{};
+    grip.tentacle = TentacleCue::Grip;
+    const auto gripCmd = selectHand(gates, grip, TriggerHand::Left);
+    require(gripCmd.effect == TriggerEffect::Weapon && gripCmd.startPosition == 2
+        && gripCmd.endPosition == 5 && gripCmd.strength == 6
+        && validTriggerCommand(gripCmd), "tentacle grip");
+
+    grip.tentacle = TentacleCue::Throw;
+    const auto throwCmd = selectHand(gates, grip, TriggerHand::Left);
+    require(throwCmd.effect == TriggerEffect::Vibration && throwCmd.position == 5
+        && throwCmd.amplitude == 8 && throwCmd.frequency == 20
+        && validTriggerCommand(throwCmd), "tentacle throw");
+
+    grip.tentacle = TentacleCue::Eat;
+    grip.reloading = true;
+    grip.firearm = Firearm::Pistol;
+    const auto eatCmd = selectHand(gates, grip, TriggerHand::Left);
+    require(eatCmd.effect == TriggerEffect::Feedback && eatCmd.position == 1
+        && eatCmd.strength == 8 && validTriggerCommand(eatCmd), "eat beats reload");
+
+    grip.tentacle = TentacleCue::Impale;
+    const auto impaleCmd = selectHand(gates, grip, TriggerHand::Left);
+    require(impaleCmd.effect == TriggerEffect::SlopeFeedback
+        && impaleCmd.startPosition == 2 && impaleCmd.endPosition == 7
+        && impaleCmd.startStrength == 3 && impaleCmd.endStrength == 8
+        && validTriggerCommand(impaleCmd), "impale slope");
+
+    HandInput rightGun{};
+    rightGun.firearm = Firearm::Pistol;
+    require(selectHand(gates, grip, TriggerHand::Left).effect == TriggerEffect::SlopeFeedback
+        && selectHand(gates, rightGun, TriggerHand::Right).effect == TriggerEffect::Weapon,
+        "impale leaves the other gun");
+    strike.tentacle = TentacleCue::Strike;
+    auto hidden = gates;
+    hidden.openXrFocused = false;
+    require(selectHand(hidden, strike, TriggerHand::Right).offReason
+        == TriggerOffReason::Unfocused, "focus loss clears a strike");
     return failures == 0 ? 0 : 1;
 }

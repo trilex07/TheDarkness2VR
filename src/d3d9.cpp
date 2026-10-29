@@ -3090,11 +3090,13 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
     gates.inactiveReason = menu ? TriggerOffReason::Menu : TriggerOffReason::Loading;
 
     unsigned char observed[2]{};
+    unsigned char demonHold = 0;
     if (gates.openXrFocused && gates.gameplayActive) {
         NativeGameplaySample sample{};
         if (CopyNativeGameplay(sample)) {
             observed[0] = sample.firearm[0];
             observed[1] = sample.firearm[1];
+            demonHold = sample.demonHold;
         }
     }
     const Firearm kinds[2] = {
@@ -3104,11 +3106,45 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
     static WeaponLatch latch[2]{};
     static ULONGLONG fireSince[2]{};
     static ULONGLONG reloadUntil = 0;
+    static ULONGLONG xSince = 0;
+    static ULONGLONG eatUntil = 0;
+    static ULONGLONG impaleUntil = 0;
+    static ULONGLONG throwUntil = 0;
+    static bool wasThrowAck = false;
+    static bool wasHolding = false;
     static unsigned char loggedKind[2]{0xff, 0xff};
+    static unsigned char loggedCue[2]{0xff, 0xff};
     const ULONGLONG now = GetTickCount64();
-    if ((g_gestures.reloadUntil && now < g_gestures.reloadUntil)
-        || (gp && (gp->wButtons & XINPUT_GAMEPAD_X) != 0))
-        reloadUntil = now + 400;
+    const bool xDown = gp && (gp->wButtons & XINPUT_GAMEPAD_X) != 0;
+    const bool characterHeld = demonHold == 2;
+    if (!xDown) xSince = 0;
+    else if (!xSince) xSince = now ? now : 1;
+    const bool xHeld = xSince && now - xSince >= 280;
+    const bool hipReload = g_gestures.reloadUntil && now < g_gestures.reloadUntil;
+    if (hipReload || (xDown && !xHeld && !characterHeld)) reloadUntil = now + 400;
+    if (xHeld || (characterHeld && xDown)) reloadUntil = 0;
+    if (characterHeld && gp && (gp->wButtons & XINPUT_GAMEPAD_A) != 0)
+        impaleUntil = now + 700;
+    if (xHeld || (characterHeld && xDown)) eatUntil = now + 700;
+    const bool holding = (g_tentacleBridge && g_tentacles.holdingIntent) || demonHold != 0
+        || (!g_tentacleBridge && g_gestures.grabbed);
+    const bool throwAck = g_tentacleBridge && g_tentacles.awaitingThrowAck;
+    if ((throwAck && !wasThrowAck) || (!g_tentacleBridge && wasHolding && !holding
+        && d2vr_input::Length(g_hands[0].motion.velocity) > .8f)) {
+        throwUntil = now + 140;
+        eatUntil = impaleUntil = 0;
+    }
+    wasThrowAck = throwAck;
+    wasHolding = holding;
+    d2vr::psvr2::TentacleCue cues[2]{};
+    if (gates.openXrFocused && gates.gameplayActive) {
+        if (now < eatUntil) cues[0] = d2vr::psvr2::TentacleCue::Eat;
+        else if (now < impaleUntil) cues[0] = d2vr::psvr2::TentacleCue::Impale;
+        else if (now < throwUntil) cues[0] = d2vr::psvr2::TentacleCue::Throw;
+        else if (holding) cues[0] = d2vr::psvr2::TentacleCue::Grip;
+        if (gp && (gp->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0)
+            cues[1] = d2vr::psvr2::TentacleCue::Strike;
+    }
     const bool reloading = now < reloadUntil;
     const BYTE analog[2] = {
         static_cast<BYTE>(gp ? gp->bLeftTrigger : 0),
@@ -3117,6 +3153,12 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         if (loggedKind[hand] != static_cast<unsigned char>(kinds[hand])) {
             loggedKind[hand] = static_cast<unsigned char>(kinds[hand]);
             Log("[PSVR2] %s firearm=%s", hand ? "right" : "left", firearmName(kinds[hand]));
+        }
+        if (loggedCue[hand] != static_cast<unsigned char>(cues[hand])) {
+            loggedCue[hand] = static_cast<unsigned char>(cues[hand]);
+            if (cues[hand] != d2vr::psvr2::TentacleCue::None)
+                Log("[PSVR2] %s tentacle=%s", hand ? "right" : "left",
+                    tentacleCueName(cues[hand]));
         }
         const bool pulled = analog[hand] >= 64;
         if (!pulled) fireSince[hand] = 0;
@@ -3133,6 +3175,7 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         input.fireDown = pulled;
         input.fireHeldMilliseconds = fireSince[hand] ? now - fireSince[hand] : 0;
         input.reloading = reloading;
+        input.tentacle = cues[hand];
         Submit(selectHand(gates, input, which));
     }
 }

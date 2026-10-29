@@ -101,12 +101,23 @@ struct FrameGates {
     TriggerOffReason inactiveReason{TriggerOffReason::Loading};
 };
 
+// Demon-arm cues. They replace the firearm profile on the hand that is acting.
+enum class TentacleCue : std::uint8_t {
+    None = 0,
+    Strike, // right-arm slash
+    Grip,   // left arm closed on an object or enemy
+    Throw,  // release / throw
+    Eat,    // heart or X execution
+    Impale, // A execution, the stab
+};
+
 struct HandInput {
     Firearm firearm{Firearm::None};
     bool fireDown{};
     std::uint64_t fireHeldMilliseconds{};
     bool reloading{};
     AmmoGate ammo{AmmoGate::Unknown};
+    TentacleCue tentacle{TentacleCue::None};
 };
 
 inline const char* firearmName(Firearm firearm) {
@@ -312,6 +323,36 @@ inline void consumeFirearmReset(WeaponLatch& latch) {
     latch.resetPending = false;
 }
 
+inline const char* tentacleCueName(TentacleCue cue) {
+    switch (cue) {
+    case TentacleCue::None: return "none";
+    case TentacleCue::Strike: return "strike";
+    case TentacleCue::Grip: return "grip";
+    case TentacleCue::Throw: return "throw";
+    case TentacleCue::Eat: return "eat";
+    case TentacleCue::Impale: return "impale";
+    }
+    return "unknown";
+}
+
+inline TriggerCommand tentacleProfile(TriggerHand hand, TentacleCue cue) {
+    switch (cue) {
+    case TentacleCue::Strike:
+        return feedbackCommand(hand, 3, 8);
+    case TentacleCue::Grip:
+        return weaponCommand(hand, 2, 5, 6);
+    case TentacleCue::Throw:
+        return vibrationCommand(hand, 5, 8, 20);
+    case TentacleCue::Eat:
+        return feedbackCommand(hand, 1, 8);
+    case TentacleCue::Impale:
+        return slopeFeedbackCommand(hand, 2, 7, 3, 8);
+    case TentacleCue::None:
+        break;
+    }
+    return offCommand(hand, TriggerOffReason::UnsupportedWeapon);
+}
+
 inline TriggerCommand idleProfile(TriggerHand hand, Firearm firearm) {
     switch (firearm) {
     case Firearm::Pistol:
@@ -372,6 +413,8 @@ inline TriggerCommand selectHand(
         return offCommand(which, TriggerOffReason::Unfocused);
     if (!gates.gameplayActive)
         return offCommand(which, gates.inactiveReason);
+    if (hand.tentacle != TentacleCue::None)
+        return tentacleProfile(which, hand.tentacle);
     if (hand.reloading)
         return offCommand(which, TriggerOffReason::Reload);
 
