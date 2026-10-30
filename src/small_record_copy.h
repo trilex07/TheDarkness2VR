@@ -87,6 +87,16 @@ inline bool DirectCopy(void* dst, const void* src, size_t bytes) {
     }
 }
 
+// Constant setters forward this exact source, or a full memcpy of it made by
+// the stereo substitution, to the native runtime on this thread before
+// returning. An in-range upload is therefore read in full with ordinary loads
+// later in the same call anyway; a DirectCopy fault only precedes that read and
+// DirectCopyFilter leaves PAGE_GUARD armed for it. Out-of-range uploads may be
+// rejected unread by the runtime and keep the legacy copy.
+inline bool NativeConsumedRange(unsigned start, unsigned count, unsigned registers) {
+    return count && start < registers && count <= registers - start;
+}
+
 // Output remains the legacy readable-prefix/zero-tail representation on error.
 // Only a full successful copy certifies an owned replay payload.
 inline bool Copy(void* dst, const void* data, size_t bytes, bool admitted,

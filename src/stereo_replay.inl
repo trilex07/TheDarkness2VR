@@ -544,7 +544,8 @@ static inline bool RecOnRenderThread() {
 }
 
 // Caller holds g_recLock until the payload and its command are both published.
-static inline uint32_t RecPushLocked(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {}) {
+static inline uint32_t RecPushLocked(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {},
+                                     bool nativeConsumed = false) {
     if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){
         d2vr_record_sync::conflict=true;g_recOverflow=true;return 0;
     }
@@ -552,7 +553,8 @@ static inline uint32_t RecPushLocked(const void* data, size_t bytes, const d2vr_
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
     if (bytes && !d2vr_native_constants::Copy(proof,g_recData.data()+off,data,bytes) &&
-        !(g_directRecordCopy.load(std::memory_order_relaxed) &&
+        !((g_directRecordCopy.load(std::memory_order_relaxed) ||
+           (nativeConsumed && g_consumedRecordCopy.load(std::memory_order_relaxed))) &&
           d2vr_record_copy::DirectCopy(g_recData.data()+off,data,bytes))) {
         if(!d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),
             &ReadProcessMemory,g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit))
@@ -650,7 +652,7 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
                                const d2vr_native_constants::Proof& proof = {},
                                unsigned payloadSlot = 4, uint32_t recordCount = UINT32_MAX,
                                int referenceBase=-1,d2vr_shader_registers::Reference* reference=nullptr,
-                               int auxiliaryBase=-1) {
+                               int auxiliaryBase=-1,bool nativeConsumed=false) {
     if(reference){reference->valid=false;reference->partialBase=-1;}
     if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){d2vr_record_sync::conflict=true;return;}
     if (!g_recActive) return;
@@ -661,7 +663,7 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
         if(op==OP_SetVSConstF)g_vsConstantHistory.live.Invalidate(a0,a1);
         return;
     }
-    uint32_t off = RecPushLocked(data, bytes, proof);
+    uint32_t off = RecPushLocked(data, bytes, proof, nativeConsumed);
     if(op==OP_SetVSConstF) {
         const bool complete=!g_recOverflow && uint64_t(off)+bytes<=g_recData.size();
         if(complete)g_vsConstantHistory.live.Write(a0,a1,g_recData.data()+off,bytes);
@@ -672,6 +674,12 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
     args[payloadSlot]=off; // internal callers use slots 0, 1 or 4
     RecEmitLocked(op, recordCount==UINT32_MAX ? (uint32_t)(bytes / 4) : recordCount,
                   args[0],args[1],args[2],args[3],args[4]);
+}
+// Only for hooks that forward this source to the native setter before returning.
+static inline void RecEmitConsumed(RecOp op, const void* data, size_t bytes, UINT start, UINT count,
+                                   UINT registers, const d2vr_native_constants::Proof& proof = {}) {
+    RecEmitData(op,data,bytes,start,count,0,0,proof,4,UINT32_MAX,-1,nullptr,-1,
+                d2vr_record_copy::NativeConsumedRange(start,count,registers));
 }
 
 // replay context: original device functions
@@ -1823,13 +1831,13 @@ static HRESULT STDMETHODCALLTYPE Hook_SetFVF(IDirect3DDevice9* dev, DWORD fvf) {
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetVertexShaderConstantI(dev,s,d,n);
     d2vr_record_sync::NativeMutation();
-    if (g_recActive) RecEmitData(OP_SetVSConstI, d, sizeof(int) * 4 * n, s, n);
+    if (g_recActive) RecEmitConsumed(OP_SetVSConstI, d, sizeof(int) * 4 * n, s, n, 16);
     return RecordLiveResult(g_orig.SetVertexShaderConstantI(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstB(IDirect3DDevice9* dev, UINT s, const BOOL* d, UINT n) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetVertexShaderConstantB(dev,s,d,n);
     d2vr_record_sync::NativeMutation();
-    if (g_recActive) RecEmitData(OP_SetVSConstB, d, sizeof(BOOL) * n, s, n);
+    if (g_recActive) RecEmitConsumed(OP_SetVSConstB, d, sizeof(BOOL) * n, s, n, 16);
     return RecordLiveResult(g_orig.SetVertexShaderConstantB(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSource(IDirect3DDevice9* dev, UINT num, IDirect3DVertexBuffer9* vb, UINT off, UINT stride) {
@@ -1874,7 +1882,7 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
         const auto proof=d2vr_native_constants::InspectCurrent(
             nativeSlot,nativeFrame,d,sizeof(float)*4*n,
             d2vr_native_constants::Stage::Pixel,nativeOwner);
-        RecEmitData(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n,0,0,proof);
+        RecEmitConsumed(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n, 224, proof);
     }
     float adjusted[224*4];
     if (g_submitMode == 4 && g_replayEye < 0 && d &&
@@ -1894,13 +1902,13 @@ D2VR_CONSTANT_GATE(Hook_SetPSConstF,Native_SetPSConstF)
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShaderConstantI(dev,s,d,n);
     d2vr_record_sync::NativeMutation();
-    if (g_recActive) RecEmitData(OP_SetPSConstI, d, sizeof(int) * 4 * n, s, n);
+    if (g_recActive) RecEmitConsumed(OP_SetPSConstI, d, sizeof(int) * 4 * n, s, n, 16);
     return RecordLiveResult(g_orig.SetPixelShaderConstantI(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstB(IDirect3DDevice9* dev, UINT s, const BOOL* d, UINT n) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShaderConstantB(dev,s,d,n);
     d2vr_record_sync::NativeMutation();
-    if (g_recActive) RecEmitData(OP_SetPSConstB, d, sizeof(BOOL) * n, s, n);
+    if (g_recActive) RecEmitConsumed(OP_SetPSConstB, d, sizeof(BOOL) * n, s, n, 16);
     return RecordLiveResult(g_orig.SetPixelShaderConstantB(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_StretchRect(IDirect3DDevice9* dev, IDirect3DSurface9* a, const RECT* ra,

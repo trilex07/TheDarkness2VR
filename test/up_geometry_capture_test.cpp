@@ -24,6 +24,7 @@ static d2vr_record_payload::Storage g_recData;
 static auto& g_recLock=d2vr_record_sync::held;
 static std::atomic<bool> g_wideRecordCopy{true};
 static std::atomic<bool> g_directRecordCopy{false};
+static std::atomic<bool> g_consumedRecordCopy{true}; // UP geometry is never consumer-declared
 static uint64_t g_recCounts[40]{};
 static d2vr_replay::FrameResourceRefs<IUnknown> g_recordRefs;
 static bool SmallRecordCopyIsEnabled(){return true;}
