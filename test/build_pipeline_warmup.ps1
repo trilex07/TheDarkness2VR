@@ -1,4 +1,5 @@
-param([switch]$Hardware)
+param([switch]$Hardware,[string]$GameplayManifest)
+if($GameplayManifest -and -not $Hardware){throw 'Gameplay manifest replay requires -Hardware'}
 $ErrorActionPreference='Stop'
 $here=$PSScriptRoot
 $repo=Split-Path -Parent $here
@@ -36,7 +37,7 @@ Push-Location $output
 try {
  cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /WX /O2 /std:c++17 `"$source`" /Fe:pipeline_warmup_test.exe /link user32.lib shell32.lib d3dcompiler.lib"
  if($LASTEXITCODE -ne 0){throw 'compile failed'}
- if($Hardware){& .\pipeline_warmup_test.exe --hardware}else{& .\pipeline_warmup_test.exe}
+ if($GameplayManifest){& .\pipeline_warmup_test.exe --hardware $GameplayManifest}elseif($Hardware){& .\pipeline_warmup_test.exe --hardware}else{& .\pipeline_warmup_test.exe}
  if($LASTEXITCODE -ne 0){throw 'pipeline warmup regression failed'}
  Write-Host 'PASS actual-source ordering: pool -> warmup -> vtable patch; live-only learning in all four draw wrappers; default OFF'
 } finally {Pop-Location}

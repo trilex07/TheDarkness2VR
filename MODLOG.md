@@ -2797,3 +2797,7 @@ command history --first-use (long flushes must no longer follow first binds).
 
 ## MAIN PipelineWarmup integration (2026-10-30)
 Integrated 84c633e2 and its decoder prerequisite; corrected explicit MRT/depth restoration, distinct same-format warmup targets and exception cleanup. Both x86 builds, real D3D9 REF/HAL-Ex warmup/Reset tests and related actual-source regressions PASS. Rollback-protected ON profile staged locally; Steam and two-launch PSVR2 validation pending authorization. No hitch/FPS gain claimed. See docs/investigations/pipeline-warmup-main-20261030.md.
+
+
+## INTZ warmup admission correction (2026-10-30)
+Runtime admitted only 16/407 pipelines: 391 INTZ depth records were rejected. Reproduced CreateDepthStencilSurface(INTZ) INVALIDCALL versus successful depth texture creation on HAL/Ex. Retain a private INTZ texture plus its level-zero surface; release both after restoration and before Reset. Actual-source saved-gameplay fixtures now warm 407/407 and 621/621, with no unsupported/missing records and completed/restored state. In-game hitch/FPS result remains unverified; the second session did not start ETW. See docs/investigations/pipeline-warmup-intz-20261030.md.

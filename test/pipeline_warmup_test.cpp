@@ -122,9 +122,10 @@ static void Save(const std::wstring& path,const std::vector<uint32_t>& data) {
     DWORD written=0;CHECK(WriteFile(f,data.data(),DWORD(data.size()*4),&written,nullptr));CHECK(written==data.size()*4);CloseHandle(f);
 }
 
-int main(int argc,char**) {
+int wmain(int argc,wchar_t** argv) {
     static_assert(sizeof(void*)==4,"x86 required");
     const bool hardware=argc>1;
+    const wchar_t* gameplayManifest=argc==3?argv[2]:nullptr;
     const auto vs=Compile("float4x4 m;struct O{float4 p:POSITION;float2 t:TEXCOORD0;};O main(float3 p:POSITION,float2 t:TEXCOORD0){O o;o.p=mul(float4(p,1),m);o.t=t;return o;}","vs_3_0");
     const auto ps=Compile("sampler2D s;float4 main(float2 t:TEXCOORD0):COLOR{return tex2D(s,t);}","ps_3_0");
     const auto otherPs=Compile("float4 main():COLOR{return float4(0,1,0,1);}","ps_3_0");
@@ -146,6 +147,33 @@ int main(int argc,char**) {
     IDirect3DDevice9* device=nullptr;IDirect3DDevice9Ex* deviceEx=nullptr;
     if(hardware) {HR(apiEx->CreateDeviceEx(0,D3DDEVTYPE_HAL,window,0x54,&pp,nullptr,&deviceEx));device=deviceEx;}
     else HR(api->CreateDevice(0,D3DDEVTYPE_REF,window,D3DCREATE_SOFTWARE_VERTEXPROCESSING,&pp,&device));
+
+    if(gameplayManifest) {
+        CHECK(hardware);
+        const auto data=ReadManifestFile(gameplayManifest);
+        std::vector<Record> gameplay;CHECK(Parse(data.data(),data.size(),gameplay));
+        wchar_t temporary[MAX_PATH];CHECK(GetTempPathW(MAX_PATH,temporary));
+        const auto dir=std::wstring(temporary)+L"d2vr-gameplay-"+std::to_wstring(GetCurrentProcessId());
+        const auto seed=dir+L"-gameplay-seed.bin",cache=dir+L"-gameplay-cache.bin";
+        d2vr_shader_preload::Pool<IUnknown> archive(device);
+        for(const auto& record:gameplay) {
+            CHECK(archive.Remember(device,record.vs));
+            if(!record.ps.empty())CHECK(archive.Remember(device,record.ps));
+        }
+        uint64_t version=0;Save(seed,archive.Archive(version));
+        auto pool=d2vr_shader_preload::PrepareState(device,cache,seed,2);
+        const auto pending=pool->pool.Pending();
+        auto result=WarmDevice(device,gameplay,pool.get(),&Lookup,&Lookup,8000);
+        const auto& r=result.result;
+        std::printf("GAMEPLAY records=%u warmed=%u draws=%u unsupported=%u missing=%u textureFailures=%u timedOut=%d failed=%d driverComplete=%d restored=%d\n",
+            r.records,r.warmed,r.draws,r.unsupported,r.missingObjects,result.substitutedTextures,int(r.timedOut),int(r.failed),int(result.completed),int(result.restored));
+        CHECK(result.began && result.completed && result.restored && !r.failed && !r.timedOut);
+        CHECK(r.warmed==gameplay.size() && r.unsupported==0 && r.missingObjects==0);
+        CHECK(pool->pool.Pending()==pending);pool.reset();
+        HR(deviceEx->ResetEx(&pp,nullptr));
+        CHECK(DeleteFileW(seed.c_str()));
+        std::puts("PASS actual-source gameplay manifest: all records warmed with exact formats, borrowed shaders, cleanup before ResetEx; not an in-game FPS claim");
+    }
 
     // Engine-like first draw: learn the effective pipeline from public device state.
     IDirect3DVertexShader9* gameVs=nullptr;IDirect3DPixelShader9* gamePs=nullptr;IDirect3DPixelShader9* gameOther=nullptr;
@@ -220,6 +248,27 @@ int main(int argc,char**) {
     after.Read(device);
     CHECK(report.restored && report.result.missingObjects==1 && report.result.unsupported==1 && report.result.draws==0 && !report.result.failed);
     CHECK(before.Same(after));after.Release();before.Release();
+
+    if(hardware) {
+        constexpr D3DFORMAT intz=static_cast<D3DFORMAT>(0x5a544e49);
+        Com<IDirect3DSurface9> directDepth;
+        const HRESULT direct=device->CreateDepthStencilSurface(16,16,intz,D3DMULTISAMPLE_NONE,0,TRUE,&directDepth.p,nullptr);
+        Com<IDirect3DTexture9> depthTexture;
+        const HRESULT textureResult=device->CreateTexture(16,16,1,D3DUSAGE_DEPTHSTENCIL,intz,D3DPOOL_DEFAULT,&depthTexture.p,nullptr);
+        std::printf("INTZ directSurface=0x%08lX texture=0x%08lX\n",static_cast<unsigned long>(direct),static_cast<unsigned long>(textureResult));
+        if(SUCCEEDED(textureResult)) {
+            Record nativeDepth=learned;nativeDepth.state.depth=uint32_t(intz);
+            DeviceSnapshot previous,current;previous.Read(device);
+            auto native=WarmDevice(device,{nativeDepth},pool.get(),&Lookup,&Lookup,5000);
+            CHECK(native.result.warmed==1 && native.result.unsupported==0 && native.completed && native.restored);
+            current.Read(device);CHECK(previous.Same(current));current.Release();
+            nativeDepth.state.textures[0]={D3DRTYPE_TEXTURE,uint32_t(intz),D3DUSAGE_DEPTHSTENCIL,0};
+            native=WarmDevice(device,{nativeDepth},pool.get(),&Lookup,&Lookup,5000);
+            CHECK(native.result.warmed==1 && native.result.unsupported==0 && native.completed && native.restored);
+            current.Read(device);CHECK(previous.Same(current));current.Release();previous.Release();
+            std::puts("PASS actual INTZ: texture-backed depth and sampler, exact format, state restoration; private depth owner released before ResetEx");
+        } else std::puts("SKIP INTZ: hardware does not support native INTZ textures");
+    }
 
     // Equal-format MRT slots still require distinct private surfaces.
     {

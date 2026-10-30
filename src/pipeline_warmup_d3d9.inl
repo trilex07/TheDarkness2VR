@@ -103,7 +103,7 @@ static bool Capture(IDirect3DDevice9* dev,Record& out) {
 // 16x16 resources and a degenerate triangle; Restore() is mandatory.
 class DeviceWarm {
     IDirect3DDevice9* dev_;
-    struct Target {uint32_t format;bool depth;uint32_t slot;IDirect3DSurface9* surface;};
+    struct Target {uint32_t format;bool depth;uint32_t slot;IDirect3DSurface9* surface;IDirect3DTexture9* depthTexture;};
     struct Bound {Texture key;IDirect3DBaseTexture9* texture;};
     struct Declaration {std::vector<Element> elements;IDirect3DVertexDeclaration9* object;};
     std::vector<Target> targets_;
@@ -121,12 +121,18 @@ class DeviceWarm {
     IDirect3DSurface9* Surface(uint32_t format,bool depth,uint32_t slot=0) {
         for(auto& t:targets_) if(t.format==format && t.depth==depth && t.slot==slot) return t.surface;
         IDirect3DSurface9* surface=nullptr;
-        const HRESULT hr=depth?dev_->CreateDepthStencilSurface(16,16,D3DFORMAT(format),D3DMULTISAMPLE_NONE,0,TRUE,&surface,nullptr):
+        Com<IDirect3DTexture9> depthTexture;
+        HRESULT hr;
+        if(depth && format==0x5a544e49u) { // INTZ is a sampleable depth texture, not a standalone surface.
+            hr=dev_->CreateTexture(16,16,1,D3DUSAGE_DEPTHSTENCIL,D3DFORMAT(format),D3DPOOL_DEFAULT,&depthTexture.p,nullptr);
+            if(SUCCEEDED(hr) && depthTexture.p)hr=depthTexture.p->GetSurfaceLevel(0,&surface);
+            else if(SUCCEEDED(hr))hr=E_FAIL;
+        } else hr=depth?dev_->CreateDepthStencilSurface(16,16,D3DFORMAT(format),D3DMULTISAMPLE_NONE,0,TRUE,&surface,nullptr):
             dev_->CreateRenderTarget(16,16,D3DFORMAT(format),D3DMULTISAMPLE_NONE,0,FALSE,&surface,nullptr);
-        if(FAILED(hr)) surface=nullptr;
+        if(FAILED(hr)) {if(surface)surface->Release();surface=nullptr;}
         Com<IDirect3DSurface9> owner;owner.p=surface;
-        targets_.push_back({format,depth,slot,surface});
-        owner.p=nullptr;return surface;
+        targets_.push_back({format,depth,slot,surface,depthTexture.p});
+        owner.p=nullptr;depthTexture.p=nullptr;return surface;
     }
     IDirect3DBaseTexture9* TextureFor(const Texture& key) {
         for(auto& t:textures_) if(!std::memcmp(&t.key,&key,sizeof(key))) return t.texture;
@@ -264,7 +270,7 @@ public:
     }
     void Release() {
         if(scene_) {dev_->EndScene();scene_=false;}
-        for(auto& t:targets_) if(t.surface) t.surface->Release();
+        for(auto& t:targets_) {if(t.surface)t.surface->Release();if(t.depthTexture)t.depthTexture->Release();}
         for(auto& t:textures_) if(t.texture) t.texture->Release();
         for(auto& d:declarations_) if(d.object) d.object->Release();
         targets_.clear();textures_.clear();declarations_.clear();
