@@ -14,16 +14,40 @@
 //     space). Both are handled by the same rotation-aware translation rule.
 #pragma once
 #include <cmath>
+#if defined(_M_IX86) || defined(_M_X64) || defined(__SSE__)
+#include <xmmintrin.h>
+#endif
 
 namespace d2vr_math {
 
 // Alias-safe row-vector composition. Used only on identified projection blocks.
 inline void Multiply(const float a[16], const float b[16], float out[16]) {
+#if defined(_M_IX86) || defined(_M_X64) || defined(__SSE__)
+    const __m128 b0=_mm_loadu_ps(b),b1=_mm_loadu_ps(b+4),b2=_mm_loadu_ps(b+8),b3=_mm_loadu_ps(b+12);
+    float result[16];
+    // Keep the initial +0 operation: folding it away changes signed zeros
+    // for underflowed products under the game's current MXCSR rounding mode.
+    volatile float initial=0.0f;
+    for(unsigned r=0;r<4;++r) {
+        // Match scalar +0, then k=0..3 accumulation exactly. No reassociation,
+        // approximate reciprocals or FMA. Read every row before writing output
+        // so full and partial overlaps with either source remain valid.
+        __m128 sum=_mm_set1_ps(initial);
+        sum=_mm_add_ps(sum,_mm_mul_ps(_mm_set1_ps(a[r*4]),b0));
+        sum=_mm_add_ps(sum,_mm_mul_ps(_mm_set1_ps(a[r*4+1]),b1));
+        sum=_mm_add_ps(sum,_mm_mul_ps(_mm_set1_ps(a[r*4+2]),b2));
+        sum=_mm_add_ps(sum,_mm_mul_ps(_mm_set1_ps(a[r*4+3]),b3));
+        _mm_storeu_ps(result+r*4,sum);
+    }
+    for(unsigned r=0;r<4;++r)_mm_storeu_ps(out+r*4,_mm_loadu_ps(result+r*4));
+#else
     float result[16]{};
     for (int r=0;r<4;++r) for(int c=0;c<4;++c)
         for(int k=0;k<4;++k) result[r*4+c]+=a[r*4+k]*b[k*4+c];
     for(int i=0;i<16;++i) out[i]=result[i];
+#endif
 }
+
 inline bool Invert(const float in[16], float out[16]) {
     double a[4][8]{};
     for(int r=0;r<4;++r) for(int c=0;c<4;++c) {

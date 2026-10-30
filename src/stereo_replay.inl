@@ -351,7 +351,8 @@ static void ApplyEyeShiftToMatrix(float* p, int n, const StereoParams& sp, bool 
     ep.fovScaleX = sp.fovScaleX;
     ep.fovScaleY = sp.fovScaleY;
     ep.headGeometry = sp.headGeometry;
-    d2vr_stereo::ApplyEyeShiftToMatrix(p, n, ep, cameraKnown, cameraPx, cameraPy,
+    // Reuse the exact coefficients just estimated/published above.
+    d2vr_stereo::ApplyEyeShiftToMatrix(p, n, ep, true, px, py,
                                        sp.headGeometry ? sp.headClip : nullptr);
 }
 

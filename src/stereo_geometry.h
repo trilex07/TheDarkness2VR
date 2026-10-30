@@ -60,6 +60,7 @@ inline float RowLength(const float* m, int col) {
 
 inline void EstimatePxPy(const float* p, bool cameraKnown, float cameraPx, float cameraPy,
                          float* px, float* py) {
+    if(cameraKnown){*px=cameraPx;*py=cameraPy;return;}
     const float l0 = RowLength(p, 0);
     const float l1 = RowLength(p, 1);
     const float lw = RowLength(p, 3);
