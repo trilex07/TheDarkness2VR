@@ -7,4 +7,3 @@ cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /WX /O2 /std:c++17 `"$source`" /Fo:`
 if($LASTEXITCODE -ne 0){throw 'Menu mouse merge regression compile failed'}
 & $exe
 if($LASTEXITCODE -ne 0){throw 'Menu mouse merge regression failed'}
-

@@ -1,8 +1,19 @@
 #include "../src/native_menu_mouse_merge.h"
+#define DIRECTINPUT_VERSION 0x0800
+#include <windows.h>
+#include <dinput.h>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 using namespace d2vr_menu_native;
+static_assert(sizeof(DIDEVICEOBJECTDATA)==sizeof(MouseEvent),"x86 SDK event extent");
+static_assert(offsetof(DIDEVICEOBJECTDATA,dwOfs)==offsetof(MouseEvent,offset),"offset ABI");
+static_assert(offsetof(DIDEVICEOBJECTDATA,dwData)==offsetof(MouseEvent,data),"data ABI");
+static_assert(offsetof(DIDEVICEOBJECTDATA,dwTimeStamp)==offsetof(MouseEvent,time),"timestamp ABI");
+static_assert(offsetof(DIDEVICEOBJECTDATA,dwSequence)==offsetof(MouseEvent,sequence),"sequence ABI");
+static_assert(offsetof(DIDEVICEOBJECTDATA,uAppData)==offsetof(MouseEvent,appData),"app data ABI");
+static_assert(sizeof(DIMOUSESTATE2)==20&&offsetof(DIMOUSESTATE2,rgbButtons)==12,"mouse state ABI");
 static unsigned checks;
 #define CHECK(x) do{++checks;if(!(x)){std::printf("FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 int main(){
