@@ -741,9 +741,13 @@ static void ResetProjectionHistories() {
 }
 static std::shared_ptr<VsInfo> g_activeVsOwner;
 static VsInfo* g_activeVs = nullptr;
+// Identity-only bindings for first-draw pipeline learning; never dereferenced.
+static const void* g_boundVs = nullptr;
+static const void* g_boundPs = nullptr;
 static void SetActiveVertexShaderMetadata(const void* shader) {
     g_vsInfo.Bind(shader,g_activeVsOwner);
     g_activeVs=g_activeVsOwner.get();
+    g_boundVs=shader;
 }
 static int g_activePsInverse = -1;
 // DeferredLight variants (projector / view-extent family) reconstruct the view-space
@@ -754,6 +758,7 @@ static int g_activePsViewExtents = -1;
 static uint32_t g_activePsHash = 0;
 static void SetActivePixelShaderMetadata(const void* identity) {
     const auto metadata=g_pixelShaders.Lookup(identity);
+    g_boundPs=identity;
     g_activePsInverse=metadata.inverse;
     g_activePsViewExtents=metadata.extents;
     g_activePsHash=metadata.hash;
@@ -1525,6 +1530,7 @@ static void NoteRecordedWorldDraw() {
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1539,6 +1545,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -1554,6 +1561,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
 static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT pc, const void* vb, UINT stride) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1568,6 +1576,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
 static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);

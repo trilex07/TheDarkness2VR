@@ -180,6 +180,8 @@ bool g_samplerCapsCacheEnabled = false; // Render.SamplerCapsCache: isolated A/B
 static bool g_startupShaderWarmup = false; // OFF; valid-device startup only, no native slot writes
 static bool g_startupShaderPool = false; // OFF; startup-owned shader objects, transferred once
 static unsigned g_startupShaderCopies=1; // independent startup creation references per exact bytecode
+static bool g_pipelineWarmup=false; // OFF; draws learned pipelines with pooled shaders before device handoff
+static unsigned g_pipelineWarmupMs=8000;
 static bool g_reuseStateSnapshots=false; // refresh frame-start state via Capture, release before Reset
 static unsigned g_queryPreloadCount=0; // bounded unused occlusion queries; startup only
 static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shadow image
@@ -707,6 +709,8 @@ void LoadConfig() {
     g_startupShaderWarmup = GetPrivateProfileIntA("Render", "StartupShaderWarmup", 0, chosenIni)!=0;
     g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
     g_startupShaderCopies=GetPrivateProfileIntA("Render","StartupShaderCopies",1,chosenIni)==2?2:1;
+    g_pipelineWarmup=GetPrivateProfileIntA("Render","PipelineWarmup",0,chosenIni)!=0;
+    g_pipelineWarmupMs=std::min<unsigned>(30000,GetPrivateProfileIntA("Render","PipelineWarmupMs",8000,chosenIni));
     g_reuseStateSnapshots=GetPrivateProfileIntA("Render","ReuseStateSnapshots",0,chosenIni)!=0;
     g_queryPreloadCount=GetPrivateProfileIntA("Render","QueryPreloadCount",0,chosenIni);
     if(g_queryPreloadCount>d2vr_query_preload::MaxQueries)g_queryPreloadCount=0;
@@ -1690,6 +1694,45 @@ static void MatchedCaptureInput(IDirect3DSurface9*,bool);
 static void NativeCameraUiScale(float& x,float& y);
 #endif
 #include "shader_preload_pool.inl"
+#include "pipeline_warmup_d3d9.inl"
+static std::vector<IUnknown*> PooledShaders(void* owner,const std::vector<uint32_t>& code) {
+    auto* s=static_cast<d2vr_shader_preload::State*>(owner);
+    return s->pool.PendingObjects(s->device,code);
+}
+// Before HookDevice patches the vtable and before the engine receives the
+// device: draws only pool-owned shader objects, then restores D3DSBT_ALL.
+static void StartupPipelineWarmup(IDirect3DDevice9* dev) {
+    if(!g_pipelineWarmup || !dev) return;
+    auto* pool=d2vr_shader_preload::state.load();
+    if(!pool || pool->device!=dev || !pool->usable.load()) {
+        Log("[PipelineWarmup] refused: StartupShaderPool objects required; no shader creation");return;
+    }
+    wchar_t base[MAX_PATH]{};
+    if(FAILED(SHGetFolderPathW(nullptr,CSIDL_LOCAL_APPDATA,nullptr,SHGFP_TYPE_CURRENT,base))) return;
+    try {
+        auto learner=std::make_unique<d2vr_pipeline_warmup::Learner>(GetCurrentThreadId(),
+            std::wstring(base)+L"\\Darkness2VR\\pipeline-warmup.bin");
+        const auto data=d2vr_pipeline_warmup::ReadManifestFile(learner->path);
+        std::vector<d2vr_pipeline_warmup::Record> records;
+        const bool valid=!data.empty() && d2vr_pipeline_warmup::Parse(data.data(),data.size(),records);
+        for(const auto& record:records) learner->manifest.Add(record);
+        learner->saved.store(learner->manifest.Version());
+        if(!records.empty()) {
+            const auto start=GetTickCount64();
+            const auto report=d2vr_pipeline_warmup::WarmDevice(dev,records,pool,&PooledShaders,&PooledShaders,g_pipelineWarmupMs);
+            const auto& r=report.result;
+            Log("[PipelineWarmup] records=%u warmed=%u draws=%u missingObjects=%u unsupported=%u substitutedTextures=%u timedOut=%d failed=%d driverComplete=%d restored=%d elapsedMs=%llu; pooled objects only",
+                r.records,r.warmed,r.draws,r.missingObjects,r.unsupported,report.substitutedTextures,int(r.timedOut),int(r.failed),
+                int(report.completed),int(report.restored),GetTickCount64()-start);
+            if(!report.restored) {
+                Log("[PipelineWarmup] state restoration failed; learning disabled");return;
+            }
+        } else {
+            Log("[PipelineWarmup] manifest present=%d valid=%d; learning first live draws only",int(!data.empty()),int(valid));
+        }
+        d2vr_pipeline_warmup::learner.store(learner.release(),std::memory_order_release);
+    } catch(...) {Log("[PipelineWarmup] initialization failed; original startup retained");}
+}
 static std::atomic<d2vr_query_preload::Pool*> g_queryPreload{nullptr};
 static d2vr_query_preload::CreateFn g_queryCreateOriginal=nullptr;
 __declspec(noinline) static HRESULT STDMETHODCALLTYPE Hook_CreateQuery(IDirect3DDevice9* device,D3DQUERYTYPE type,IDirect3DQuery9** out) {
@@ -6041,6 +6084,7 @@ static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
         MessageBeep(MB_OK);
     }
     d2vr_shader_preload::Tick();
+    d2vr_pipeline_warmup::Tick();
     QueryPreloadTick();
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
@@ -6717,6 +6761,7 @@ void HookDevice(IDirect3DDevice9* dev) {
     if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;
     StartupShaderWarmup(dev); // before our CreateShader hooks; native owner not yet supplied this device
     d2vr_shader_preload::Initialize(dev);
+    StartupPipelineWarmup(dev);
     LogStartupStage(11, "HookDevice (D3D9 vtable + replay hooks)");
     g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);
     if (g_smallRecordCopyRequested) Log("[SmallRecordCopy] requested=1 admitted=%d guardProbe=%d limit=%zu (failed reads retain legacy copy)",

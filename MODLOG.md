@@ -2766,3 +2766,30 @@ after reuse. Regression FAIL before / PASS after, both x86 builds and affected
 actual-source replay/buffer/stereo/StateBlock tests PASS. Repeated-packet fixture
 512 -> 2 calls is synthetic; no runtime FPS gain, 1 ms saving or Steam change
 claimed. See docs/research/replay-constant-reuse-20261030.md.
+
+## Verified pipeline warmup for first-use NVIDIA compilation (2026-10-30)
+
+Capture 20261030T155718Z-497ee850: the 21.26 ms producerFlush (frame 12020,
+eye 0) follows the only retained interval with 13 first-bound VS / 10 PS
+(14 pairs). StartupShaderPool served every creation (unknownMisses=0 then),
+so those VS/PS objects already existed; the NVIDIA worker compiled at first
+DRAW. Replay intervals bind no new pair; mod-set gameplay states are
+MAXANISOTROPY and UI scissor only, neither a shader variant. The ring has
+pointers only, so the 14 pairs cannot be named by bytecode from that trace.
+
+Render/PipelineWarmup=1 (default 0; requires StartupShaderPool=1):
+first live draw of each VS/PS pointer pair records exact GetFunction
+bytecode plus declaration, RT/depth formats, sRGB/alpha-test/fog/clip-plane
+states, sampler texture type/format/usage/sRGB and stream frequencies to
+%LOCALAPPDATA%\Darkness2VR\pipeline-warmup.bin (async write). Next start,
+inside HookDevice after pool creation and before any vtable patch, every
+pending pool copy of a recorded pair draws one degenerate triangle into
+private 16x16 resources, waits for an EVENT query, then restores D3DSBT_ALL,
+RT0/depth and stream frequencies and frees every private resource. No shader
+is created; unmatched shaders/unsupported formats are skipped.
+Render/PipelineWarmupMs bounds the startup cost (default 8000).
+
+x86 REF and NVIDIA HAL/Ex (0x54): learning, whole-file admission, all copies,
+restored state, Reset after warmup, served objects identical. Production and
+diagnostic DLL builds PASS. In-game hitch reduction NOT measured; validate with
+command history --first-use (long flushes must no longer follow first binds).
