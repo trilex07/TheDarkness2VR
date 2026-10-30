@@ -180,8 +180,29 @@ def inspect(blob):
     ):
         if hashlib.sha256(pe.at_va(address, count)).hexdigest() != expected:
             raise ValueError("native mouse polling/window contract changed")
+    # Concrete FlashInstanceImpl and FlashMgrImpl, reached through their type
+    # registrations and constructors, not inferred from adjacent table entries.
+    for table, slots in ((0xFDA6E8, {0xFC: 0x76D5C0, 0x104: 0x6E4250}),
+                         (0xFDA948, {0xA8: 0xA0B120})):
+        for slot, target in slots.items():
+            if struct.unpack("<I", pe.at_va(table + slot, 4))[0] != target:
+                raise ValueError("native Flash visibility/topmost dispatch changed")
+    if hashlib.sha256(pe.at_va(0x76D5C0, 0x4)).hexdigest() != "371e995f7d09f6172f7a1858c7a28a1595f6debf1f5d0ce2860187295d4fbd97":
+        raise ValueError("native Flash complete method changed")
+    if hashlib.sha256(pe.at_va(0x6E4250, 0x72)).hexdigest() != "2c845d9f75a08fd7581f1d6523975f36868737baf822ad779f139f5cb1389ce4":
+        raise ValueError("native Flash complete method changed")
+    if hashlib.sha256(pe.at_va(0xA0B120, 0x13)).hexdigest() != "12e2e22fa310de13dd8a4cba112a4c5d3a1772dbb9b0ed8710c89e30184bb08e":
+        raise ValueError("native Flash complete method changed")
     return {
         "status": "STATIC_CONTRACT_PASS", "exe_sha256": digest,
+        "native_movie_observation": {
+            "instance_type": "0xFDA6E8; constructed by 0x8963E0",
+            "visible": "slot+0xFC -> 0x76D5C0; byte at movie+0x79",
+            "topmost": "slot+0x104 -> 0x6E4250; compare movie+0xC intrusive reference",
+            "manager_type": "0xFDA948; constructed by 0xA0DBE0",
+            "manager_top": "slot+0xA8 -> 0xA0B120; reference at load(manager+0x5C)-4",
+            "lifetime_lease": False, "input_injection_admitted": False,
+        },
         "native_mouse_poll": {
             "method": "0x9A5D90; current receiver held in ESI",
             "get_state_return": "0x9A5E3C; slot +0x24",

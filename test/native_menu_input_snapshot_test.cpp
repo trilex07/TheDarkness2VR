@@ -110,5 +110,32 @@ int main() {
     for(uint32_t root:{0u,4u,0xFFFFu,0x100001u,0xFFFFFFFCu,0xFFFFFFF8u}) {
         other=pause;CHECK(!ObservePause(root,read,other));CHECK(other==pause);
     }
-    std::printf("PASS %u native menu snapshot checks: receiver graph, pause predicate/short circuit, inherited method, unknown override, reference indirections, bounded reads, unchanged failure output; no native calls or writes\n",checks);
+    memory={{0x100000,0xFDA6E8},{0xFDA7E4,0x76D5C0},{0xFDA7EC,0x6E4250},
+        {0x100078,0xFFFF01FF},{0x100044,0x200000},{0x200044,0x300000},
+        {0x300000,0x310000},{0x310000,0xFDA948},{0xFDA9F0,0xA0B120},
+        {0x31005C,0x400004},{0x400000,0x500000},{0x10000C,0x500000}};
+    MovieSnapshot movie,movieOther;
+    CHECK(ObserveMovie(0x100000,read,movie));CHECK(movie.visible && movie.topmost);
+    const auto movieMemory=memory;
+    for(const auto& entry:movieMemory) {
+        memory.erase(entry.first);movieOther=movie;
+        CHECK(!ObserveMovie(0x100000,read,movieOther));CHECK(movieOther==movie);
+        memory.insert(entry);
+    }
+    for(uint32_t flags:{0xFFFF00FFu,0xFFFF01FFu,0xFFFF80FFu}) {
+        memory[0x100078]=flags;CHECK(ObserveMovie(0x100000,read,movieOther));
+        CHECK(movieOther.visible==(uint8_t(flags>>8)!=0));
+    }
+    memory=movieMemory;memory[0x400000]=0x510000;memory[0x510000]=0;memory[0x500000]=0;
+    CHECK(ObserveMovie(0x100000,read,movieOther));CHECK(movieOther.topmost);
+    for(uint32_t object:{1u,0x100000u}) {
+        memory[0x510000]=object;CHECK(ObserveMovie(0x100000,read,movieOther));CHECK(!movieOther.topmost);
+    }
+    memory=movieMemory;memory[0x31005C]=0x10000;movieOther=movie;
+    CHECK(!ObserveMovie(0x100000,read,movieOther));CHECK(movieOther==movie);
+    for(uint32_t address:{0x100000u,0xFDA7E4u,0xFDA7ECu,0x310000u,0xFDA9F0u}) {
+        memory=movieMemory;memory[address]+=4;movieOther=movie;
+        CHECK(!ObserveMovie(0x100000,read,movieOther));CHECK(movieOther==movie);
+    }
+    std::printf("PASS %u native menu snapshot checks: movie visibility/topmost references, receiver graph, pause predicate/short circuit, inherited method, unknown override, reference indirections, bounded reads, unchanged failure output; no native calls or writes\n",checks);
 }

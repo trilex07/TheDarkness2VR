@@ -51,6 +51,46 @@ template<class Read> bool ObservePause(uint32_t manager,Read read,PauseSnapshot&
     }
     output=s;return true;
 }
+// Borrowed FlashInstanceImpl only: caller must own the object on its native
+// thread for the entire read. This observation never establishes that lease.
+struct MovieSnapshot {
+    uint32_t movie=0,container=0,managerRef=0,manager=0,topEnd=0,topRef=0,ownRef=0;
+    bool visible=false,topmost=false;
+    bool operator==(const MovieSnapshot& b)const {
+        return movie==b.movie && container==b.container && managerRef==b.managerRef &&
+            manager==b.manager && topEnd==b.topEnd && topRef==b.topRef && ownRef==b.ownRef &&
+            visible==b.visible && topmost==b.topmost;
+    }
+};
+// Read equivalents of IsVisible (76D5C0), IsTopmost (6E4250), and the concrete
+// manager's top-reference getter (A0B120). Pin those complete methods first.
+// Distinct intrusive references whose objects are both null compare equal in
+// the native method. Expose that result faithfully; it is NOT input admission.
+template<class Read> bool ObserveMovie(uint32_t movie,Read read,MovieSnapshot& output) {
+    MovieSnapshot s;s.movie=movie;
+    const auto field=[&](uint32_t base,uint32_t offset,uint32_t& value) {
+        return Pointer(base) && offset<=UINT32_MAX-base-3 && read(base+offset,value);
+    };
+    uint32_t table=0,method=0,flags=0;
+    if(!field(movie,0,table) || table!=0xFDA6E8 ||
+       !field(table,0xFC,method) || method!=0x76D5C0 ||
+       !field(table,0x104,method) || method!=0x6E4250 ||
+       !field(movie,0x78,flags))return false;
+    s.visible=uint8_t(flags>>8)!=0;
+    if(!field(movie,0x44,s.container) || !field(s.container,0x44,s.managerRef) ||
+       !field(s.managerRef,0,s.manager) || !field(s.manager,0,table) || table!=0xFDA948 ||
+       !field(table,0xA8,method) || method!=0xA0B120 ||
+       !field(s.manager,0x5C,s.topEnd) || !Pointer(s.topEnd) || s.topEnd<0x10004 ||
+       !read(s.topEnd-4,s.topRef) || !Pointer(s.topRef) ||
+       !field(movie,0xC,s.ownRef) || !Pointer(s.ownRef))return false;
+    if(s.topRef==s.ownRef)s.topmost=true;
+    else {
+        uint32_t top=0,own=0;
+        if(!field(s.topRef,0,top) || !field(s.ownRef,0,own))return false;
+        s.topmost=(top|own)==0;
+    }
+    output=s;return true;
+}
 // A refusal receipt identifies the first failed read/type/identity check. It
 // conveys no admission and never publishes a partially resolved receiver.
 struct Refusal {

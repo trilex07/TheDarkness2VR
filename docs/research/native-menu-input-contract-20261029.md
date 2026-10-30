@@ -406,3 +406,32 @@ returning entry+1C. It is not a universal current-menu predicate. Neither getter
 is used to take input ownership. Private complete exports remain in TEMP.
 Native menu activation, submitted geometry and host hook remain outstanding.
 Steam retains the separately deployed 5372cbd2 UI replay candidate.
+
+
+## Concrete Flash movie activation, 2026-10-30
+
+Type initializers EB3540/EB3650 lead through descriptor factories to instance
+constructors 8963E0/A0DBE0, installing FDA6E8/FDA948. The actual FlashInstance
+IsVisible method 76D5C0 reads byte +79. IsTopmost 6E4250 follows movie+44, then
+container+44 through an intrusive manager reference. Manager slot+A8 resolves
+to A0B120, returning the intrusive reference at load(manager+5C)-4. Native
+comparison accepts reference identity or two references containing null objects;
+that latter result is preserved as observation and does not admit input.
+
+ObserveMovie now reproduces those reads without native calls, refcount changes
+or object retention. Unknown types/methods, unreadable fields and underflow
+refuse without publishing partial output. Its host still must own the movie on
+the native thread throughout the read. A stable observation is not that lease.
+The static image auditor pins all three complete methods and their table slots.
+Actual-source optimized x86 regression: 199 checks PASS, including missing reads,
+visibility-byte isolation, distinct null references, topmost changes and unknown
+overrides. This component is not connected to input or deployed to Steam.
+
+ProjectPosition resolves to 9F5220 and projects a world point through an engine
+camera before viewport scaling. It is not a controller-ray/menu-plane hit test.
+Its existence alone does not establish a submitted menu surface. Private complete
+exports: TEMP/d2vr-menu-flash-concrete-20261030.txt and
+TEMP/d2vr-menu-flash-surface-20261030.txt, both EVIDENCE COMPLETE.
+
+Steam retains the separately tested/deployed mapped-copy candidate 21e9b5b5.
+Full native main/pause/options laser and runtime half-rate support remain open.
