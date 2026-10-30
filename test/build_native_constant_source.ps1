@@ -1,3 +1,4 @@
+param([switch]$PublicPolicy)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $output=Join-Path $env:TEMP ('d2vr-native-constant-'+[Guid]::NewGuid().ToString('N'))
@@ -11,10 +12,11 @@ if(-not $resultHook.Success){throw 'actual live result hook missing'}
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vcvars=Join-Path $vsPath 'VC/Auxiliary/Build/vcvarsall.bat'
+$policyDefine=if($PublicPolicy){"/DD2VR_NO_PRIVATE_CONSTANT_POLICY=1"}else{""}
 $source=Join-Path $PSScriptRoot 'native_constant_source_test.cpp'
 Push-Location $output
 try {
-    cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 /I`"$output`" `"$source`" /Fe:native_constant_source_test.exe"
+    cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 $policyDefine /I`"$output`" `"$source`" /Fe:native_constant_source_test.exe"
     if($LASTEXITCODE -ne 0){throw 'native source ABI build failed'}
     & .\native_constant_source_test.exe
     if($LASTEXITCODE -ne 0){throw 'native source ABI test failed'}

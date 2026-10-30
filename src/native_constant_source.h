@@ -5,6 +5,17 @@
 #include <cstring>
 #include <atomic>
 
+// Optional local-only policy. Missing policy preserves the public baseline.
+#if !defined(D2VR_NO_PRIVATE_CONSTANT_POLICY) && __has_include("native_constant_private_policy.h")
+#include "native_constant_private_policy.h"
+#else
+#define D2VR_EXTRA_FIELD_COUNT 0
+#define D2VR_EXTRA_FIELD_VS_RETURNS
+#define D2VR_EXTRA_FIELD_PS_RETURNS
+#define D2VR_EXTRA_FIELD_OFFSETS
+#define D2VR_EXTRA_FIELD_VECTORS
+#endif
+
 namespace d2vr_native_constants {
 // Per-call ownership proof, not a stack/page permission cache. The selected
 // native builders allocate 0x794 bytes after aligning EBP, then save EBX/ESI/EDI.
@@ -17,7 +28,7 @@ struct Sites {
     uintptr_t apiReturn[2];
     uintptr_t builderFirst[2],builderEnd[2];
     uintptr_t parentReturn[2][3];
-    uintptr_t fieldReturn[2][15] = {};
+    uintptr_t fieldReturn[2][15+D2VR_EXTRA_FIELD_COUNT] = {};
     uintptr_t nestedReturn[2][4] = {};
     uintptr_t globalReturn[2][6] = {};
     uintptr_t globalSource[2][6] = {};
@@ -26,8 +37,8 @@ inline constexpr Sites nativeSites{
     {0x00b74740,0x0096e3d0},
     {0x00571670,0x00ad3380},{0x00573750,0x00ad5460},
     {{0x0071f6db,0x0071f71f,0x008f8180},{0x0071f702,0x0071f736,0}},
-    {{0x571730,0x57176a,0x571787,0x5717ab,0x5717d0,0x571d6f,0x571e44,0x571e8d,0x572e2e,0x571e68,0x572a2e,0x572c40,0x572c64,0x572cb1,0x573353},
-     {0xad3440,0xad347a,0xad3497,0xad34bb,0xad34e0,0xad3a7f,0xad3b54,0xad3b9d,0xad4b3e,0xad3b78,0xad473e,0xad4950,0xad4974,0xad49c1,0xad5063}},
+    {{0x571730,0x57176a,0x571787,0x5717ab,0x5717d0,0x571d6f,0x571e44,0x571e8d,0x572e2e,0x571e68,0x572a2e,0x572c40,0x572c64,0x572cb1,0x573353,D2VR_EXTRA_FIELD_VS_RETURNS},
+     {0xad3440,0xad347a,0xad3497,0xad34bb,0xad34e0,0xad3a7f,0xad3b54,0xad3b9d,0xad4b3e,0xad3b78,0xad473e,0xad4950,0xad4974,0xad49c1,0xad5063,D2VR_EXTRA_FIELD_PS_RETURNS}},
     {{0x571db2,0x571dea,0x571e1f,0x5723a1},
      {0xad3ac2,0xad3afa,0xad3b2f,0xad40b1}},
     {{0x572f6c,0x572f86,0x57300e,0x5730d9,0x573515,0x5736c2},
@@ -43,9 +54,11 @@ inline std::atomic<bool> materialEnabled{false};
 // scratch field. Exact returned-pointer equality is required; helpers are never
 // re-executed and scratch contents are never reused across submissions.
 // The full producer admission and fresh owner test remain mandatory.
-inline constexpr size_t fieldOffset[]={0x10,0xd0,0xd0,0x110,0x220,0x4f0,0x470,0x260,0x580,0x330,0x2e0,0x2e0,0x2e0,0x2e0,0x2e0};
-inline constexpr size_t fieldVectors[]={12,4,1,17,4,6,4,4,1,4,1,1,1,1,1};
+inline constexpr size_t fieldOffset[]={0x10,0xd0,0xd0,0x110,0x220,0x4f0,0x470,0x260,0x580,0x330,0x2e0,0x2e0,0x2e0,0x2e0,0x2e0,D2VR_EXTRA_FIELD_OFFSETS};
+inline constexpr size_t fieldVectors[]={12,4,1,17,4,6,4,4,1,4,1,1,1,1,1,D2VR_EXTRA_FIELD_VECTORS};
 inline constexpr size_t fieldCount=sizeof(fieldOffset)/sizeof(fieldOffset[0]);
+static_assert(fieldCount==15+D2VR_EXTRA_FIELD_COUNT,"field policy extent mismatch");
+static_assert(sizeof(fieldVectors)/sizeof(fieldVectors[0])==fieldCount,"field policy count mismatch");
 inline constexpr size_t nestedOffset[]={0xe0,0x70,0,0xc0};
 inline constexpr size_t nestedVectors[]={6,1,9,4};
 struct Counts {uint64_t attempts=0,proved=0,copies=0,bytes=0,faults=0,materialProved=0,materialCopies=0,activeStackProved=0,activeStackCopies=0,nestedProved=0,nestedCopies=0;};

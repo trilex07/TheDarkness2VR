@@ -2679,3 +2679,20 @@ by Access denied; implementation and fixture match the accepted base.
 Bounded metadata reuse is bypassed with versioning OFF. No Steam or localization
 changes while the user tests fonts. Runtime FPS and visuals remain NOT RUN.
 Details: docs/research/replay-binding-filter-20261030.md.
+
+
+## Optional local constant policy
+
+The owned-constant classifier accepts an optional compile-time private policy.
+Without that file it preserves the existing public site set. Source address,
+extent, owner/frame/parent checks and image admission remain unchanged.
+The private policy and its private image auditor are explicitly gitignored;
+no new executable addresses, offsets, fingerprints or image bytes are published.
+PublicPolicy on the existing x86 fixture verifies the baseline independently.
+
+Validation: full local eighteen-site extension 413273 actual-source checks PASS;
+public-only policy 412337 checks PASS; both x86 DLL flavors PASS. Previous
+buffer/Reset/projection regression results remain applicable: those source paths
+are unchanged. No measured runtime gain, deployment, or MAIN modification.
+MAIN needs the locally retained policy header to build the eighteen-site extension;
+a public checkout alone deliberately does not activate unpublished contracts.
