@@ -14,10 +14,18 @@ from polish_pack import require, sha
 STEMS={'B.Font','H.Font','B.Texture_en','H.Texture_en','B.Misc_en','H.Misc_en','F.Misc_en','H.Misc'}
 NAMES={stem+suffix for stem in STEMS for suffix in ('.cache','.toc')}
 
+# Actual PSVR2 feedback: all menu glyphs became colored fragments after this
+# atlas payload. Hash-valid extraction/preview was insufficient runtime proof.
+REJECTED_FONT_PAYLOADS = {'B.Texture_en.cache': {
+    '4754337fc9d60b4475ac4a47b397ce153679feefe4437fc81faf3687a331151c',
+}}
+
 
 def verify(package):
     manifest=json.loads((package/'manifest.json').read_text(encoding='utf8'))
     require(set(manifest['files'])==NAMES,'Unexpected package payload identities')
+    require(not any(manifest['files'].get(name) in hashes for name,hashes in REJECTED_FONT_PAYLOADS.items()),
+            'Font payload rejected by PSVR2 runtime; retain accepted font fallback')
     for name,expected in manifest['files'].items():
         require(sha(package/'payload'/name)==expected,'Package SHA256 mismatch: '+name)
     sums=(package/'SHA256SUMS').read_text(encoding='utf8').splitlines()

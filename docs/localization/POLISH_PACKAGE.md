@@ -104,3 +104,19 @@ and audio file hashes. The existing installer provides backup and rollback.
 This isolates font validation in the next consolidated game session; it is not
 proof that the enemy hang or runtime font rendering has been fixed. MAIN must
 leave the user's current VR/FPS test untouched until that session ends.
+
+
+## Runtime rejection: six-atlas font payload
+
+The user tested font-only 39ba86e7 on the accepted VR DLL and supplied a PSVR2
+image with colored fragments replacing native menu text. Font tables and atlas
+previews passing offline did not establish the game's texture upload contract.
+The offending B.Texture_en.cache SHA-256 is
+4754337fc9d60b4475ac4a47b397ce153679feefe4437fc81faf3687a331151c.
+The installer now rejects this payload, including attempts to repackage it as a
+font-only release. Keep the original package and deployment receipts as evidence.
+MAIN restored the complete accepted font preimage with matching hashes. Existing
+Polish speech/text remain present; accented glyph rendering remains unresolved.
+Do not redeploy this atlas based on another Python preview or checksum PASS.
+The suspected planar-versus-driver block layout needs native upload evidence;
+it is a hypothesis, not a confirmed root cause or an implemented repair.

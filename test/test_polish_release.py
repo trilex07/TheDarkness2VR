@@ -92,6 +92,22 @@ class PolishReleaseTests(unittest.TestCase):
             self.assertRaises(ValueError,font_only_release,package,cache,receipt,root/'out')
             self.assertFalse((root/'out').exists())
 
+    def test_runtime_rejected_atlas_cannot_be_installed_or_repackaged(self):
+        from polish_release import font_only_release
+        with tempfile.TemporaryDirectory() as folder,patch.object(installer,'game_free'):
+            root=Path(folder);package,cache,receipt,old,new=self.font_package(root)
+            manifest_path=package/'manifest.json'
+            manifest=json.loads(manifest_path.read_text())
+            manifest['files']['B.Texture_en.cache']=next(iter(installer.REJECTED_FONT_PAYLOADS['B.Texture_en.cache']))
+            manifest_path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError,'rejected by PSVR2 runtime'):
+                installer.install(package,cache,root/'backup')
+            with self.assertRaisesRegex(ValueError,'rejected by PSVR2 runtime'):
+                font_only_release(package,cache,receipt,root/'out')
+            self.assertFalse((root/'backup').exists())
+            self.assertFalse((root/'out').exists())
+            self.assertEqual({n:installer.sha(cache/n) for n in old},old)
+
     def test_install_then_rollback_restores_every_original_hash(self):
         with tempfile.TemporaryDirectory() as folder,patch.object(installer,'game_free'):
             root=Path(folder);package,cache,old,new=self.package(root)
