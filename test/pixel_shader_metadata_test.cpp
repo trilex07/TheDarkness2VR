@@ -1,5 +1,7 @@
 #define NOMINMAX
 #include <d3d9.h>
+#include "../src/stateblock_recording.h"
+#include "../src/recorder_sync.h"
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -192,6 +194,15 @@ int main() {
     CHECK(Hook_SetVertexShader(expectedDevice,vs)==bindResult && !activeVertex && records==0);
     bindResult=S_FALSE;CHECK(Hook_SetVertexShader(expectedDevice,vs)==S_FALSE && activeVertex==vs && records==1);
     bindResult=S_OK;CHECK(Hook_SetVertexShader(expectedDevice,nullptr)==S_OK && !activeVertex && records==2);
+    for(HRESULT result:{S_OK,S_FALSE,D3DERR_INVALIDCALL}) {
+        bindResult=result;g_recActive=true;records=0;
+        SetActiveVertexShaderMetadata(vs);SetActivePixelShaderMetadata(&shader);
+        const auto hash=g_activePsHash;
+        d2vr_stateblock::Began(expectedDevice,S_OK);
+        CHECK(Hook_SetVertexShader(expectedDevice,nullptr)==result && activeVertex==vs && records==0);
+        CHECK(Hook_SetPixelShader(expectedDevice,nullptr)==result && g_activePsHash==hash && records==0);
+        d2vr_stateblock::Ended(expectedDevice,S_OK);
+    }
     g_recActive=false;vertexSyncs=0;
     for(unsigned op:{unsigned(OP_SetVertexShader),unsigned(OP_SetPixelShader)}) {
         const auto identity=op==OP_SetVertexShader?uintptr_t(vs):uintptr_t(&shader);

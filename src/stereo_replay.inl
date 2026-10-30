@@ -1030,6 +1030,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDirect3DVertexShader9* sh) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetVertexShader(dev,sh);
     d2vr_record_sync::NativeMutation();
     const HRESULT result=g_orig.SetVertexShader(dev,sh);
     if(FAILED(result))return result;
@@ -1351,27 +1352,32 @@ static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, 
     return RecordLiveResult(g_orig.Clear(dev, count, rects, flags, color, z, st));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetTransform(IDirect3DDevice9* dev, D3DTRANSFORMSTATETYPE st, const D3DMATRIX* m) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetTransform(dev,st,m);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetTransform,m,sizeof(D3DMATRIX),st,0,0,0,{},1,0);
     return RecordLiveResult(g_orig.SetTransform(dev, st, m));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetViewport(IDirect3DDevice9* dev, const D3DVIEWPORT9* vp) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetViewport(dev,vp);
     d2vr_record_sync::NativeMutation();
     InvalidateShadowAtlasPass();
     if (g_recActive) RecEmitData(OP_SetViewport,vp,sizeof(D3DVIEWPORT9),0,0,0,0,{},0,0);
     return RecordLiveResult(g_orig.SetViewport(dev, vp));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetClipPlane(IDirect3DDevice9* dev, DWORD index, const float* plane) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetClipPlane(dev,index,plane);
     d2vr_record_sync::NativeMutation();
     if (g_recActive && plane) RecEmitData(OP_SetClipPlane, plane, sizeof(float)*4, index);
     return RecordLiveResult(g_orig.SetClipPlane(dev, index, plane));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderState(IDirect3DDevice9* dev, D3DRENDERSTATETYPE st, DWORD v) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetRenderState(dev,st,v);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetRenderState, 0, st, v);
     return RecordLiveResult(g_orig.SetRenderState(dev, st, v));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetTextureStageState(IDirect3DDevice9* dev, DWORD stage, D3DTEXTURESTAGESTATETYPE t, DWORD v) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetTextureStageState(dev,stage,t,v);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetTextureStageState, 0, stage, t, v);
     return RecordLiveResult(g_orig.SetTextureStageState(dev, stage, t, v));
@@ -1389,6 +1395,7 @@ static DWORD ResolveSamplerValue(IDirect3DDevice9* dev, D3DSAMPLERSTATETYPE t, D
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWORD smp, D3DSAMPLERSTATETYPE t, DWORD v) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetSamplerState(dev,smp,t,v);
     d2vr_record_sync::NativeMutation();
     v = ResolveSamplerValue(dev, t, v);
     if (g_recActive) RecEmit(OP_SetSamplerState, 0, smp, t, v);
@@ -1547,6 +1554,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     return g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect(IDirect3DDevice9* dev, const RECT* r) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetScissorRect(dev,r);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) {
         if (r) RecEmitData(OP_SetScissorRect,r,sizeof(RECT),0,0,0,0,{},0,1);
@@ -1713,41 +1721,49 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
     return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexDeclaration(IDirect3DDevice9* dev, IDirect3DVertexDeclaration9* d) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetVertexDeclaration(dev,d);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetVertexDeclaration, 0, (uint32_t)(uintptr_t)d);
     return RecordLiveResult(g_orig.SetVertexDeclaration(dev, d));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetFVF(IDirect3DDevice9* dev, DWORD fvf) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetFVF(dev,fvf);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetFVF, 0, fvf);
     return RecordLiveResult(g_orig.SetFVF(dev, fvf));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetVertexShaderConstantI(dev,s,d,n);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetVSConstI, d, sizeof(int) * 4 * n, s, n);
     return RecordLiveResult(g_orig.SetVertexShaderConstantI(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstB(IDirect3DDevice9* dev, UINT s, const BOOL* d, UINT n) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetVertexShaderConstantB(dev,s,d,n);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetVSConstB, d, sizeof(BOOL) * n, s, n);
     return RecordLiveResult(g_orig.SetVertexShaderConstantB(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSource(IDirect3DDevice9* dev, UINT num, IDirect3DVertexBuffer9* vb, UINT off, UINT stride) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetStreamSource(dev,num,vb,off,stride);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetStreamSource, 0, num, (uint32_t)(uintptr_t)vb, off, stride);
     return RecordLiveResult(g_orig.SetStreamSource(dev, num, vb, off, stride));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSourceFreq(IDirect3DDevice9* dev, UINT num, UINT freq) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetStreamSourceFreq(dev,num,freq);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetStreamSourceFreq, 0, num, freq);
     return RecordLiveResult(g_orig.SetStreamSourceFreq(dev, num, freq));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3DIndexBuffer9* ib) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetIndices(dev,ib);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetIndices, 0, (uint32_t)(uintptr_t)ib);
     return RecordLiveResult(g_orig.SetIndices(dev, ib));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* ps) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShader(dev,ps);
     d2vr_record_sync::NativeMutation();
     const HRESULT result=g_orig.SetPixelShader(dev,ps);
     if(FAILED(result))return result;
@@ -1760,6 +1776,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDir
 #pragma optimize("y", off)
 __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n,
     const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShaderConstantF(dev,s,d,n);
     if(!d2vr_record_sync::NativeMutation())return g_orig.SetPixelShaderConstantF(dev,s,d,n);
 #ifdef D2VR_MATCHED_CAPTURE
     const float* native=d;
@@ -1787,11 +1804,13 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
 #pragma optimize("y", on)
 D2VR_CONSTANT_GATE(Hook_SetPSConstF,Native_SetPSConstF)
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShaderConstantI(dev,s,d,n);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetPSConstI, d, sizeof(int) * 4 * n, s, n);
     return RecordLiveResult(g_orig.SetPixelShaderConstantI(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstB(IDirect3DDevice9* dev, UINT s, const BOOL* d, UINT n) {
+    if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShaderConstantB(dev,s,d,n);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetPSConstB, d, sizeof(BOOL) * n, s, n);
     return RecordLiveResult(g_orig.SetPixelShaderConstantB(dev, s, d, n));
@@ -2458,8 +2477,17 @@ static void PatchStateBlock(IDirect3DStateBlock9* sb) {
 
 typedef HRESULT(STDMETHODCALLTYPE* PFN_CreateStateBlock)(IDirect3DDevice9*, D3DSTATEBLOCKTYPE, IDirect3DStateBlock9**);
 typedef HRESULT(STDMETHODCALLTYPE* PFN_EndStateBlock)(IDirect3DDevice9*, IDirect3DStateBlock9**);
+typedef HRESULT(STDMETHODCALLTYPE* PFN_BeginStateBlock)(IDirect3DDevice9*);
 static PFN_CreateStateBlock g_origCreateStateBlock = nullptr;
 static PFN_EndStateBlock g_origEndStateBlock = nullptr;
+static PFN_BeginStateBlock g_origBeginStateBlock = nullptr;
+
+static HRESULT STDMETHODCALLTYPE Hook_BeginStateBlock(IDirect3DDevice9* dev) {
+    d2vr_record_sync::NativeMutation();
+    const HRESULT result=g_origBeginStateBlock(dev);
+    d2vr_stateblock::Began(dev,result);
+    return result;
+}
 
 static HRESULT STDMETHODCALLTYPE Hook_CreateStateBlock(IDirect3DDevice9* dev, D3DSTATEBLOCKTYPE t,
                                                        IDirect3DStateBlock9** out) {
@@ -2470,6 +2498,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateStateBlock(IDirect3DDevice9* dev, D3
 static HRESULT STDMETHODCALLTYPE Hook_EndStateBlock(IDirect3DDevice9* dev, IDirect3DStateBlock9** out) {
     d2vr_record_sync::NativeMutation();
     HRESULT hr = g_origEndStateBlock(dev, out);
+    d2vr_stateblock::Ended(dev,hr);
     if (SUCCEEDED(hr) && out && *out) PatchStateBlock(*out);
     return hr;
 }
@@ -2495,6 +2524,7 @@ static bool InstallReplayHooks(void* dev) {
         { 55, ORIG(SetClipPlane), (void*)&Hook_SetClipPlane, "SetClipPlane@55" },
         { 57, ORIG(SetRenderState), (void*)&Hook_SetRenderState, "SetRS@57" },
         { 59, (void**)&g_origCreateStateBlock, (void*)&Hook_CreateStateBlock, "CreateStateBlock@59" },
+        { 60, (void**)&g_origBeginStateBlock, (void*)&Hook_BeginStateBlock, "BeginStateBlock@60" },
         { 61, (void**)&g_origEndStateBlock, (void*)&Hook_EndStateBlock, "EndStateBlock@61" },
         { 67, ORIG(SetTextureStageState), (void*)&Hook_SetTextureStageState, "SetTSS@67" },
         { 69, ORIG(SetSamplerState), (void*)&Hook_SetSamplerState, "SetSamp@69" },

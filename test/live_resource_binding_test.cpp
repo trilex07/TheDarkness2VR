@@ -7,6 +7,7 @@
 #include <vector>
 #include "../src/frame_resource_refs.h"
 #include "../src/replay_state_cache.h"
+#include "../src/stateblock_recording.h"
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL %u line %d: %s\n",checks,__LINE__,#x);exit(1);}}while(0)
 template<class... T> static void Log(const char*,T...){}
@@ -52,7 +53,7 @@ static HRESULT liveResult=S_OK;
 static void (*nativeCallback)(Device*)=nullptr;
 static Surface* nestedDepth=nullptr;
 static unsigned nativeCalls=0,replayCalls=0;
-static HRESULT STDMETHODCALLTYPE SetTexture(Device* d,DWORD slot,Texture* t){++nativeCalls;if(nativeCallback){auto callback=nativeCallback;nativeCallback=nullptr;callback(d);}if(SUCCEEDED(liveResult))d->textures[slot]=t;return liveResult;}
+static HRESULT STDMETHODCALLTYPE SetTexture(Device* d,DWORD slot,Texture* t){++nativeCalls;if(nativeCallback){auto callback=nativeCallback;nativeCallback=nullptr;callback(d);}if(SUCCEEDED(liveResult) && !d2vr_stateblock::Active(d))d->textures[slot]=t;return liveResult;}
 static HRESULT STDMETHODCALLTYPE SetDepth(Device* d,Surface* s){++nativeCalls;if(SUCCEEDED(liveResult))d->depth=s;return liveResult;}
 static auto g_origSetTexture=&SetTexture;
 static auto g_origSetDepthStencilSurface=&SetDepth;
@@ -136,5 +137,17 @@ int main(){
         CHECK(replayCalls==1);b.refs=db.refs=1;
     }
     Reset();CHECK(a.refs==1 && b.refs==1 && da.refs==1 && db.refs==1);
+    for(bool filter:{false,true})for(unsigned slot:{0u,7u,256u}) {
+        Reset();d2vr_replay::g_recActive=true;liveResult=S_OK;
+        Device left,right;left.textures[slot]=right.textures[slot]=&a;
+        d2vr_stateblock::Began(&left,S_OK);
+        CHECK(Hook_SetTexture(&left,slot,&b)==S_OK && nativeCalls==1);
+        d2vr_stateblock::Ended(&left,S_OK);
+        CHECK(Replay(&right,filter));
+        CHECK(left.textures[slot]==right.textures[slot]);
+        CHECK(d2vr_replay::records.empty() && g_intzTex9==nullptr);
+        CHECK(b.refs==1 && db.refs==1);
+    }
+    Reset();
     printf("PASS actual-source live texture/depth binding: %u checks; 240 status/binding/recording/filter cases, same-frame failed replacement, exact HRESULT/original-once, no rejected queries/retention, balanced lifetimes, native callback completion and accepted call order; CPU fixture\n",checks);
 }

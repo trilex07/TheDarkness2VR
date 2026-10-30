@@ -41,6 +41,7 @@
 #include "async_log.h"
 #include "small_record_copy.h"
 #include "recorder_sync.h"
+#include "stateblock_recording.h"
 #include "native_constant_source.h"
 #include "native_constant_gate.h"
 #include "startup_shader_warmup.h"
@@ -1969,6 +1970,8 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
     const float* pConstantData,
     UINT Vector4fCount,const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner)
 {
+    if(d2vr_stateblock::Active(dev))
+        return g_origSetVertexShaderConstantF(dev,StartRegister,pConstantData,Vector4fCount);
     if(!d2vr_record_sync::NativeMutation())
         return g_origSetVertexShaderConstantF(dev,StartRegister,pConstantData,Vector4fCount);
     d2vr_shader_registers::Reference rawReference;
@@ -2388,6 +2391,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDi
 // Evolution Engine binds INTZ to sampler s0 (SetTexture(0, intzTex)) during deferred lighting/shadows
 // right after the opaque 3D geometry pass completes (see PixelShaders/C891DB74.txt & 3FF3A68C.txt).
 HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* dev, DWORD Stage, IDirect3DBaseTexture9* pTexture) {
+    if(d2vr_stateblock::Active(dev))return g_origSetTexture(dev,Stage,pTexture);
     const HRESULT result = g_origSetTexture(dev, Stage, pTexture);
     if (FAILED(result)) return result;
     if (d2vr_replay::g_recActive) {
@@ -5930,6 +5934,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origReset(dev, pp);
+    d2vr_stateblock::Ended(dev,hr);
     d2vr_shader_preload::EndReset(dev,hr);
     QueryPreloadEndReset(dev,hr);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -5995,6 +6000,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
+    if(g_origResetEx)d2vr_stateblock::Ended(dev,hr);
     d2vr_shader_preload::EndReset(dev,g_origResetEx?hr:E_FAIL);
     QueryPreloadEndReset(dev,g_origResetEx?hr:E_FAIL);
 #ifdef D2VR_MATCHED_CAPTURE

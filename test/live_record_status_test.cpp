@@ -1,5 +1,6 @@
 static bool g_replayBufferVersions=true;
 #include "recorder_sync.h"
+#include "stateblock_recording.h"
 #include <windows.h>
 #include <d3d9.h>
 #include <cstdint>
@@ -111,6 +112,31 @@ int main(){
         CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;
     }
     CHECK(clipBegins==160 && clipEnds==clipBegins);
+    // Setters inside Begin/EndStateBlock build an object, not the live device.
+    // Preserve raw arguments/HRESULT without records or sticky draw failure.
+#define BUILD(name,...) do{Expect(__VA_ARGS__);CHECK(Hook_##name(__VA_ARGS__)==status);CHECK(calls==1 && records==0 && locks==0 && !g_recOverflow);}while(0)
+    for(HRESULT result:{S_OK,S_FALSE,D3DERR_INVALIDCALL,D3DERR_DEVICELOST}) {
+        g_recActive=true;g_recOverflow=false;status=result;
+        d2vr_stateblock::Began(dev,S_OK);
+        BUILD(SetTransform,dev,D3DTS_WORLD,&matrix);
+        BUILD(SetViewport,dev,&viewport);
+        BUILD(SetClipPlane,dev,2u,plane);
+        BUILD(SetRenderState,dev,D3DRS_ZWRITEENABLE,DWORD(TRUE));
+        BUILD(SetTextureStageState,dev,1u,D3DTSS_COLOROP,DWORD(D3DTOP_MODULATE));
+        BUILD(SetSamplerState,dev,2u,D3DSAMP_ADDRESSU,DWORD(D3DTADDRESS_CLAMP));
+        BUILD(SetScissorRect,dev,&rect);
+        BUILD(SetVertexDeclaration,dev,declaration);
+        BUILD(SetFVF,dev,DWORD(D3DFVF_XYZ));
+        BUILD(SetVSConstI,dev,1u,values,1u);
+        BUILD(SetVSConstB,dev,1u,values,1u);
+        BUILD(SetStreamSource,dev,0u,vertex,32u,40u);
+        BUILD(SetStreamSourceFreq,dev,0u,3u);
+        BUILD(SetIndices,dev,indices);
+        BUILD(SetPSConstI,dev,1u,values,1u);
+        BUILD(SetPSConstB,dev,1u,values,1u);
+        d2vr_stateblock::Ended(dev,S_OK);
+    }
+#undef BUILD
     // Intentional draw suppression still returns success without calling the
     // driver or making a previously complete recording invalid.
     skipDraw=true;g_recActive=true;g_recOverflow=false;status=D3DERR_DEVICELOST;
