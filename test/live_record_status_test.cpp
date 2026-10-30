@@ -47,6 +47,7 @@ static LONG g_lastHookId=0;
 static bool skipDraw=false;
 static bool SkipObjectDrawForTest(D3DPRIMITIVETYPE,UINT){return skipDraw;}
 static bool SkipShadowDrawForTest(IDirect3DDevice9*){return false;}
+static bool RecordUiPrimitive(IDirect3DDevice9*,D3DPRIMITIVETYPE,UINT,UINT){return false;}
 struct WorldDiffuseScope {explicit WorldDiffuseScope(IDirect3DDevice9*){}};
 struct TentacleHeadScope {explicit TentacleHeadScope(IDirect3DDevice9*){}};
 static unsigned clipBegins=0,clipEnds=0;

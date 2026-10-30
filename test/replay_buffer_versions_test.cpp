@@ -6,6 +6,8 @@ static bool g_replayBufferVersions=true;
 #include "replay_state_cache.h"
 #include "recorder_sync.h"
 #include "stateblock_recording.h"
+#include "up_geometry_capture.h"
+#include "ui_vertex_shadow.h"
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -33,6 +35,10 @@ static d2vr_replay::FrameResourceRefs<IUnknown,d2vr_record_sync::DriverScope> g_
 @LOCK@
 static void NoteRecordedWorldDraw(){}
 static HRESULT RecordLiveResult(HRESULT hr){if(FAILED(hr))g_recOverflow=true;return hr;}
+struct UiVertexShader{unsigned hash=0x7070C5BCu;};
+static UiVertexShader uiShader;
+static UiVertexShader* g_activeVs=nullptr;
+#define HOOK_MARK(x) ((void)0)
 namespace d2vr_trace {static bool g_enabled=false;static void NoteDraw(){}}
 struct UiClipState{};
 static UiClipState BeginScaledUiClip(IDirect3DDevice9*){return {};}
@@ -96,6 +102,12 @@ static IDirect3DVertexBuffer9* boundVB[16]{};
 static IDirect3DIndexBuffer9* boundIB=nullptr;
 static UINT streamOffset[16]{},streamStride[16]{};
 static std::vector<uint32_t> observed;
+static std::vector<uint64_t> uiObserved;
+static void ObserveUi(const void* data,UINT primitives,UINT stride){
+    auto bytes=static_cast<const uint8_t*>(data);uint64_t hash=14695981039346656037ull;
+    for(size_t i=0;i<size_t(primitives)*3*stride;++i)hash=(hash^bytes[i])*1099511628211ull;
+    uiObserved.push_back(hash);
+}
 struct Original {
     HRESULT SetStreamSource(IDirect3DDevice9*,UINT stream,IDirect3DVertexBuffer9* vb,UINT offset,UINT stride){
         CHECK(stream<16);if(vb)vb->AddRef();if(boundVB[stream])boundVB[stream]->Release();
@@ -107,14 +119,31 @@ static HRESULT STDMETHODCALLTYPE DriverGetStream(IDirect3DDevice9*,UINT slot,IDi
     CHECK(slot<16);*out=boundVB[slot];if(*out)(*out)->AddRef();*offset=streamOffset[slot];*stride=streamStride[slot];return D3D_OK;
 }
 static HRESULT STDMETHODCALLTYPE DriverGetIndices(IDirect3DDevice9*,IDirect3DIndexBuffer9** out){*out=boundIB;if(*out)(*out)->AddRef();return D3D_OK;}
+struct UiDeclaration final:IDirect3DVertexDeclaration9{
+    ULONG refs=1;
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID,void**)override{return E_NOINTERFACE;}
+    ULONG STDMETHODCALLTYPE AddRef()override{return ++refs;}
+    ULONG STDMETHODCALLTYPE Release()override{CHECK(refs>1);return --refs;}
+    HRESULT STDMETHODCALLTYPE GetDevice(IDirect3DDevice9**)override{return E_NOTIMPL;}
+    HRESULT STDMETHODCALLTYPE GetDeclaration(D3DVERTEXELEMENT9* out,UINT* count)override{
+        const D3DVERTEXELEMENT9 data[]={{0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},{0,12,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0},{0,16,D3DDECLTYPE_FLOAT2,0,D3DDECLUSAGE_TEXCOORD,0},D3DDECL_END()};
+        CHECK(*count>=4);*count=4;std::memcpy(out,data,sizeof(data));return S_OK;
+    }
+} uiDeclaration;
+static HRESULT STDMETHODCALLTYPE DriverGetDeclaration(IDirect3DDevice9*,IDirect3DVertexDeclaration9** out){*out=&uiDeclaration;uiDeclaration.AddRef();return S_OK;}
+static HRESULT STDMETHODCALLTYPE DriverGetFrequency(IDirect3DDevice9*,UINT slot,UINT* out){CHECK(slot==0);*out=1;return S_OK;}
 static void* deviceTable[119]{};
 static void** deviceObject=deviceTable;
 static auto device=reinterpret_cast<IDirect3DDevice9*>(&deviceObject);
 static uint32_t Word(IUnknown* buffer,UINT byte){uint32_t v;auto b=reinterpret_cast<DriverBuffer*>(buffer);CHECK(byte+4<=b->data.size());std::memcpy(&v,b->data.data()+byte,4);return v;}
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9*,D3DPRIMITIVETYPE type,UINT start,UINT count){
     CHECK(g_recLock.load()==0);DriverCallback(3);
+    if(type==D3DPT_TRIANGLELIST){auto raw=reinterpret_cast<DriverBuffer*>(boundVB[0]);const size_t off=streamOffset[0]+size_t(start)*streamStride[0];CHECK(off+size_t(count)*3*streamStride[0]<=raw->data.size());ObserveUi(raw->data.data()+off,count,streamStride[0]);return S_OK;}
     CHECK(type==D3DPT_POINTLIST && count==1 && boundVB[0]);
     observed.push_back(Word(boundVB[0],streamOffset[0]+start*streamStride[0]));return D3D_OK;
+}
+static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev,D3DPRIMITIVETYPE type,UINT count,const void* data,UINT stride){
+    CHECK(type==D3DPT_TRIANGLELIST);ObserveUi(data,count,stride);return g_orig.SetStreamSource(dev,0,nullptr,0,0);
 }
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev,D3DPRIMITIVETYPE type,INT base,UINT min,UINT num,UINT start,UINT count){
     CHECK(boundIB && type==D3DPT_TRIANGLELIST && count==1);
@@ -414,14 +443,69 @@ static void DeferredBenchmark(){
         us,added,g_deferredBufferData.capacity()+g_applyingBufferData.capacity());
     CHECK(!DeferredBufferWritesPending());vb->Release();CHECK(!liveBuffers && !g_bufferObjects);
 }
+static void UiCallbackCase(unsigned kind){
+    g_replayBufferVersions=false;
+    auto buffer=VB(128);callbackBuffer=buffer;Write(buffer,0,11,D3DLOCK_DISCARD);
+    Begin();g_bufferFrameOpen=false;callbackKind=kind;driverCallback=WorkerWrite;
+    Write(buffer,0,22,D3DLOCK_DISCARD);
+    CHECK(!driverCallback && d2vr_record_sync::conflict.load() && !g_recLock.load());
+    CHECK(!BufferInfo(buffer)->replica && !BufferInfo(buffer)->locks);
+    End();buffer->Release();CHECK(!liveBuffers && !g_bufferObjects);
+    printf("PASS CPU UI shadow callback kind %u: worker completed, ambiguous pair marked, no native call under recorder lock\n",kind);
+}
+static void UiWrapCases(){
+    g_replayBufferVersions=false;g_activeVs=&uiShader;
+    auto buffer=VB(524288);
+    Begin();g_bufferFrameOpen=false;Hook_SetStreamSource(device,0,buffer,0,24);
+    const UINT draws[][2]={{19624,2},{19630,2},{19640,12},{19676,2},{19682,76},{19910,2},{19916,64},{20148,28},{20232,176},{20760,84},{21012,128},{21396,2},{21402,14},{21444,2},{21450,14},{21492,2},{21498,12},{21534,2},{21540,12},{21576,10},{21606,78},{0,40}};
+    uiObserved.clear();
+    for(unsigned i=0;i<sizeof(draws)/sizeof(draws[0]);++i){
+        const UINT first=draws[i][0],count=draws[i][1],bytes=count*3*24;
+        void* mapped=nullptr;
+        CHECK(SUCCEEDED(buffer->Lock(first*24,bytes,&mapped,i==0||first==0?D3DLOCK_DISCARD:D3DLOCK_NOOVERWRITE)));
+        std::memset(mapped,0x31+i,bytes);CHECK(SUCCEEDED(buffer->Unlock()));
+        CHECK(SUCCEEDED(Hook_DrawPrimitive(device,D3DPT_TRIANGLELIST,first,count)));
+    }
+    CHECK(!g_recOverflow && uiObserved.size()==sizeof(draws)/sizeof(draws[0]));
+    const auto live=uiObserved;uiObserved.clear();const auto beforeReplayLocks=driverLocks;CHECK(Replay());
+    CHECK(driverLocks==beforeReplayLocks);
+    CHECK(uiObserved==live); // Baseline consumes the new DISCARD generation.
+    CHECK(g_recData.size()==55008);
+    CHECK(boundVB[0]==buffer && streamOffset[0]==0 && streamStride[0]==24);
+    CHECK(liveBuffers==1 && !BufferInfo(buffer)->replica && g_bufferFrameBytes==0);
+    CHECK(uiDeclaration.refs==1);End();
+    // Exact byte offset + StartVertex, zero-size Lock remainder, read-only
+    // locks, and unknown bytes after a later DISCARD must remain distinct.
+    Begin();g_bufferFrameOpen=false;Hook_SetStreamSource(device,0,buffer,24,24);
+    void* mapped=nullptr;CHECK(SUCCEEDED(buffer->Lock(96,72,&mapped,D3DLOCK_DISCARD)));
+    std::memset(mapped,0x76,72);CHECK(SUCCEEDED(buffer->Unlock()));
+    CHECK(SUCCEEDED(buffer->Lock(96,72,&mapped,D3DLOCK_READONLY)));CHECK(SUCCEEDED(buffer->Unlock()));
+    uiObserved.clear();CHECK(SUCCEEDED(Hook_DrawPrimitive(device,D3DPT_TRIANGLELIST,3,1)));
+    const auto offsetLive=uiObserved;uiObserved.clear();CHECK(Replay() && uiObserved==offsetLive);
+    CHECK(boundVB[0]==buffer && streamOffset[0]==24 && streamStride[0]==24);End();
+    Begin();g_bufferFrameOpen=false;Hook_SetStreamSource(device,0,buffer,0,24);
+    CHECK(SUCCEEDED(Hook_DrawPrimitive(device,D3DPT_TRIANGLELIST,0,1)) && g_recOverflow);End();
+    buffer->Release();CHECK(!liveBuffers && !g_bufferObjects);
+    d2vr_ui_vertices::Shadow shadow;shadow.Resize(64);uint8_t bytes[8]{};
+    CHECK(shadow.Stage(8,8,bytes,true) && !shadow.Read(8,8) && shadow.Commit(true) && shadow.Read(8,8));
+    CHECK(!shadow.Read(0,8) && shadow.Stage(24,8,bytes,false) && shadow.Commit(true) && !shadow.Read(8,24));
+    CHECK(shadow.Stage(16,8,bytes,false) && shadow.Commit(true) && shadow.Read(8,24));
+    CHECK(shadow.Stage(56,8,bytes,true) && shadow.Commit(true) && !shadow.Read(8,8) && shadow.Read(56,8));
+    CHECK(shadow.Stage(0,8,bytes,false) && !shadow.Commit(false) && !shadow.Read(56,8));
+    CHECK(!shadow.Stage(60,8,bytes,false) && !shadow.Read(SIZE_MAX,8));
+    std::puts("PASS actual UI draw replay: captured frame-008 offsets 21576/21606 -> 0, 512KiB DISCARD wrap; exact per-draw bytes, original live draw once, stream restoration and COM lifetime; ReplayBufferVersions=0, zero replica buffers/uploads");
+}
 int main(int argc,char** argv){
     static_assert(sizeof(void*)==4,"x86 packets");
     driverTable[0]=reinterpret_cast<void*>(&DriverQuery);driverTable[1]=reinterpret_cast<void*>(&DriverAddRef);driverTable[2]=reinterpret_cast<void*>(&DriverRelease);
     driverTable[4]=reinterpret_cast<void*>(&DriverSetPrivate);driverTable[5]=reinterpret_cast<void*>(&DriverGetPrivate);
     driverTable[11]=reinterpret_cast<void*>(&DriverLock);driverTable[12]=reinterpret_cast<void*>(&DriverUnlock);
     deviceTable[101]=reinterpret_cast<void*>(&DriverGetStream);deviceTable[105]=reinterpret_cast<void*>(&DriverGetIndices);
+    deviceTable[88]=reinterpret_cast<void*>(&DriverGetDeclaration);deviceTable[103]=reinterpret_cast<void*>(&DriverGetFrequency);
     g_createVB=&DriverCreateVB;g_createIB=&DriverCreateIB;
     g_rec.reserve(4096);g_recData.reserve(4u<<20);observed.reserve(16);
+    if(argc==2 && !strcmp(argv[1],"--ui-wrap")){UiWrapCases();return 0;}
+    if(argc==3 && !strcmp(argv[1],"--ui-callback")){UiCallbackCase(unsigned(atoi(argv[2])));return 0;}
     if(argc==2 && !strcmp(argv[1],"--cpu-probe")){Benchmark();return 0;}
     if(argc==3 && !strcmp(argv[1],"--sync-probe")){SynchronizationProbe(argv[2]);return 0;}
     BufferCases();LifecycleCases();BoundaryCases();Benchmark();ReplayLookupCases();ReplayLookupResetCase();ReplayLookupBenchmark();DeferredBenchmark();SynchronizationFaultCases();CHECK(!liveBuffers && !g_bufferObjects);

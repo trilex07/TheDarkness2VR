@@ -2,6 +2,7 @@
 // Resource-interface data slots are intercepted; no executable instructions change.
 // A replay buffer follows the same range writes as its live peer, in stream order.
 // CPU payloads exist only from Unlock to replay/abandon; no reads from GPU memory.
+#include "ui_vertex_shadow.h"
 static constexpr size_t kBufferPayloadLimit = 16u << 20;
 static constexpr size_t kBufferReplicaLimit = 64u << 20;
 static constexpr size_t kBufferObjectLimit = 8192;
@@ -22,6 +23,8 @@ struct BufferVersion final : IUnknown {
     std::atomic<unsigned> locks{0};
     bool unlocking=false;
     bool dynamic = false, index = false, linked = false, budget = false;
+    bool cpuOnly = false;
+    d2vr_ui_vertices::Shadow ui;
     std::atomic<bool> valid{true},uploading{false};
     std::atomic<bool> unsupportedAlias{false};
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) override {
@@ -205,6 +208,7 @@ static void DrainDeferredBufferWrites(){
 static HRESULT STDMETHODCALLTYPE BufferLock(IUnknown* object,UINT offset,UINT bytes,void** out,DWORD flags) {
     auto version=BufferInfo(object);
     const auto lock=version?version->lock:BufferMethods(object).lock;
+    if(!version && !g_replayBufferVersions)return lock(object,offset,bytes,out,flags);
     RecLockGuard guard;
     if(!version && g_bufferFrameOpen && !(flags&D3DLOCK_READONLY))g_recOverflow=true;
     d2vr_record_sync::DriverScope native;
@@ -224,13 +228,19 @@ static void FinishBufferRecording();
 static HRESULT STDMETHODCALLTYPE BufferUnlock(IUnknown* object) {
     auto version=BufferInfo(object);
     const auto unlock=version?version->unlock:BufferMethods(object).unlock;
+    if(!version && !g_replayBufferVersions)return unlock(object);
     RecLockGuard guard;
     bool captured=false;size_t record=0;
     if(version) {
         const bool write=version->locks==1 && !version->unlocking && !(version->flags&D3DLOCK_READONLY);
         if(version->unlocking){version->valid=false;g_recOverflow=true;}
         version->unlocking=true;
-        if(write) {
+        if(write && version->cpuOnly) {
+            if(version->valid && version->budget && version->mapped)
+                version->ui.Stage(version->offset,version->bytes,version->mapped,(version->flags&D3DLOCK_DISCARD)!=0);
+            else version->ui.Clear();
+        }
+        if(write && !version->cpuOnly) {
             if(!version->dynamic || !version->valid || !version->replica || !version->bytes) {
                 if(g_bufferFrameOpen)g_recOverflow=true;
             } else if(!d2vr_record_sync::Callback() && !d2vr_record_sync::Busy() && !g_bufferDraining &&
@@ -257,6 +267,7 @@ static HRESULT STDMETHODCALLTYPE BufferUnlock(IUnknown* object) {
     const HRESULT hr=unlock(object);
     native.Resume();
     if(version) {
+        if(version->cpuOnly && !(version->flags&D3DLOCK_READONLY))version->ui.Commit(SUCCEEDED(hr));
         if(FAILED(hr)) {
             version->valid=false;if(captured)g_rec[record].n=0;
             if(g_bufferFrameOpen)g_recOverflow=true;
@@ -274,9 +285,13 @@ static HRESULT STDMETHODCALLTYPE BufferUnlock(IUnknown* object) {
 }
 static void TrackBuffer(IDirect3DDevice9* dev,IUnknown* object,UINT size,DWORD usage,
                         DWORD format,D3DPOOL pool,bool index,bool shared) {
+    // With the quarantined general replica path OFF, retain only CPU writes
+    // to dynamic VBs. No second GPU buffer, index interception or upload.
+    if(!g_replayBufferVersions && (index || !(usage&D3DUSAGE_DYNAMIC) || shared))return;
     auto version=new(std::nothrow) BufferVersion{};
     if(!version)return; // Unknown bindings are rejected below.
     version->size=size;version->index=index;version->dynamic=(usage&D3DUSAGE_DYNAMIC)!=0;
+    version->cpuOnly=!g_replayBufferVersions;
     version->valid=!shared;
     AcquireSRWLockExclusive(&g_bufferRegistryLock);
     if(g_bufferObjects>=kBufferObjectLimit) {
@@ -290,7 +305,10 @@ static void TrackBuffer(IDirect3DDevice9* dev,IUnknown* object,UINT size,DWORD u
     const auto methods=BufferMethods(object,true);
     version->query=methods.query;version->lock=methods.lock;version->unlock=methods.unlock;
     version->valid=version->valid && methods.installed;
-    if(version->budget && version->valid) {
+    if(version->cpuOnly && version->budget && version->valid) {
+        try{version->ui.Resize(size);}catch(...){version->valid=false;DropBufferReplica(version);}
+    }
+    if(!version->cpuOnly && version->budget && version->valid) {
         HRESULT hr;
         if(index) {
             IDirect3DIndexBuffer9* replica=nullptr;
@@ -310,7 +328,7 @@ static void TrackBuffer(IDirect3DDevice9* dev,IUnknown* object,UINT size,DWORD u
             }
         }
     }
-    if(version->dynamic && !version->replica) {version->valid=false;DropBufferReplica(version);}
+    if(version->dynamic && !version->cpuOnly && !version->replica) {version->valid=false;DropBufferReplica(version);}
     AcquireSRWLockExclusive(&g_bufferRegistryLock);
     version->next=g_bufferRegistry;if(g_bufferRegistry)g_bufferRegistry->previous=version;
     g_bufferRegistry=version;version->linked=true;
