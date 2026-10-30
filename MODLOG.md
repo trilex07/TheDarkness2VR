@@ -2783,11 +2783,11 @@ bytecode plus declaration, RT/depth formats, sRGB/alpha-test/fog/clip-plane
 states, sampler texture type/format/usage/sRGB and stream frequencies to
 %LOCALAPPDATA%\Darkness2VR\pipeline-warmup.bin (async write). Next start,
 inside HookDevice after pool creation and before any vtable patch, every
-pending pool copy of a recorded pair draws one degenerate triangle into
+pending pool copy of a recorded pair draws one covering triangle into
 private 16x16 resources, waits for an EVENT query, then restores D3DSBT_ALL,
 RT0/depth and stream frequencies and frees every private resource. No shader
 is created; unmatched shaders/unsupported formats are skipped.
-Render/PipelineWarmupMs bounds the startup cost (default 8000).
+Render/PipelineWarmupMs bounds the startup cost (default 30000, clamp 30000).
 
 x86 REF and NVIDIA HAL/Ex (0x54): learning, whole-file admission, all copies,
 restored state, Reset after warmup, served objects identical. Production and
@@ -2808,3 +2808,5 @@ Combat capture 20261030T155718Z-497ee850, render TID 39032, 21,695 combat sample
 New Render/ConsumedRecordCopy (default 0, chosen INI, restart) applies the existing DirectCopy (SEH plus PAGE_GUARD re-arm, legacy fallback) only to in-range VS/PS float/int/bool setter payloads. Each such hook forwards the identical source to the native setter before returning, or the stereo substitution memcpys the whole range first, so the same thread reads those bytes with ordinary loads in the same call anyway. Out-of-range uploads, which the runtime may reject unread, plus all other payloads keep the legacy path. Native-owned proof copies keep precedence. No lock, ordering, permission cache, EXE, GPU synchronization or latency change.
 
 Actual-source x86 recorder test with the binary's own RPM import redirected: zero RPM for declared payloads, unchanged RPM for undeclared/out-of-range ones, identical bytes/offsets/register history, and an unchanged NOACCESS/PAGE_GUARD contract (prefix/zero tail, sticky overflow, guard still raises). Frame model of 1,697 payloads: protected RPM 1.059 ms, consumed 0.061 ms, legacy VirtualQuery 1.912 ms (synthetic, hot cache). Expected in-game saving is between that 1.0 ms lower bound and the ~2.5 ms profiled RPM syscall exposure; not measured in game. Both x86 DLL builds PASS. Of 92 regression scripts, 85 PASS, including small-record-copy, native-constant-source, UP geometry and live_record_status (fixture stub added). The 7 failures also fail on 020d6799 or on locked test binaries: pre_scene_clear, projection-estimate, sampler-caps-cache, adaptive_fps, build_test, live-pass-probe, xr-event-recovery. A/B overlays: profiles/protected-consumed-record-copy.
+## NVIDIA compiler warmup coverage (2026-10-30)
+`warmed=N` only replayed pipelines already in pipeline-warmup.bin. On the RTX 5070 a recorded-state draw does compile that shader object, including a degenerate triangle, and Reset does not drop it. The 90.88 ms nvgpucomp flush was the first in-process compile of pooled objects that had no stored record. A failed first snapshot never retried that pointer pair, and Add() discarded every record past 1024, so those pipelines hitch on every later launch. Warmup now submits a covering triangle (indices 0,1,2, clip-space positions, identity VS constants, cull none, scissor off, depth test that passes) without replacing the recorded declaration, formats, alpha, fog, clip or samplers. A failed capture is retried once. The manifest holds 4096 records / 32MB. PipelineWarmupMs defaults to 30000. No Reset-time warmup and no synthetic draws for shaders that have no recorded declaration. In-game hitch removal is not measured here.
