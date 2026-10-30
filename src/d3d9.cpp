@@ -6821,6 +6821,11 @@ void HookDevice(IDirect3DDevice9* dev) {
         if(d2vr_submission::requested)d2vr_submission::gate.Deny(d2vr_submission::Epoch::DeviceReplaced);
         return;
     }
+    StartupShaderWarmup(dev); // before our CreateShader hooks; native owner not yet supplied this device
+    d2vr_shader_preload::Initialize(dev);
+    StartupPipelineWarmup(dev);
+    // Startup owns this unpublished device; install admission hooks only after
+    // warmup has restored it, before any live native producer can receive it.
     if(d2vr_submission::requested) {
         d2vr_submission::deviceIdentity=dev;
         g_submissionQueryInterface=reinterpret_cast<SubmissionQueryInterface>(PatchVTable(dev,0,reinterpret_cast<void*>(&SubmissionDeviceQueryInterface)));
@@ -6828,9 +6833,6 @@ void HookDevice(IDirect3DDevice9* dev) {
         g_submissionSoftwareProcessing=reinterpret_cast<SubmissionSoftwareProcessing>(PatchVTable(dev,77,reinterpret_cast<void*>(&SubmissionSetSoftwareProcessing)));
         if(!g_submissionSoftwareProcessing)d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
     }
-    StartupShaderWarmup(dev); // before our CreateShader hooks; native owner not yet supplied this device
-    d2vr_shader_preload::Initialize(dev);
-    StartupPipelineWarmup(dev);
     LogStartupStage(11, "HookDevice (D3D9 vtable + replay hooks)");
     g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);
     if (g_smallRecordCopyRequested) Log("[SmallRecordCopy] requested=1 admitted=%d guardProbe=%d limit=%zu (failed reads retain legacy copy)",
