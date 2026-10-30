@@ -13,7 +13,7 @@ Reusable, token-efficient workflow for VR mod development.
 - `WORKFLOW.md` - Roles, worktrees, Git, gates, Steam rules
 - `BASELINE.md` - Accepted baseline tracking
 - `HANDOFF-TEMPLATE.md` - Compact handoff template
-- `HANDOFF-CURRENT.md` - Active task handoff (create when starting)
+- `handoffs/` - Per-task handoffs only (create `HANDOFF-<task-id>-<branch>.md` from template)
 - `FAILED-APPROACHES.md` - Searchable failed approaches index
 - `TASKS/` - Reusable templates
 - `SCRIPTS/` - Validation scripts (optional)

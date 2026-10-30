@@ -30,32 +30,51 @@ try {
     Write-Host "origin/HEAD: $originHead" -ForegroundColor Gray
     Write-Host "origin/main: $mainHead" -ForegroundColor Gray
     if ($Role) { Write-Host "Role: $Role" -ForegroundColor $(if($Role -eq "MAIN"){"Yellow"}else{"Cyan"}) }
-    if ($Task) { Write-Host "Task: $Task" -ForegroundColor Magenta }
+    if ($Task) { 
+        # Sanitize task for filename
+        $safeTask = $Task -replace '[^a-zA-Z0-9_-]', '_'
+        Write-Host "Task: $Task (safe: $safeTask)" -ForegroundColor Magenta 
+    }
     Write-Host ""
     
-    # Baseline
+    # Baseline - parse Markdown bullet fields
     Write-Host "=== Baseline ===" -ForegroundColor Cyan
     if (Test-Path "docs\agent-workflow\BASELINE.md") {
         $baseline = Get-Content "docs\agent-workflow\BASELINE.md"
-        $baseline | Select-String -Pattern "^(## Current|Repo HEAD|Latest MAIN|Integration branch|Accepted Steam|Installed DLL SHA256|Verified source commit|Branch \(current\)|Game)" | ForEach-Object { Write-Host $_.Line }
+        $patterns = @(
+            'Installed DLL SHA256',
+            'Installed INI SHA256',
+            'Deployed DLL source commit',
+            'Verified source commit',
+            'Integration branch',
+            'Latest MAIN',
+            'Repo DLL SHA256',
+            'Repo INI SHA256',
+            'Current workflow branch'
+        )
+        foreach ($p in $patterns) {
+            $line = $baseline | Where-Object { $_ -match "- \*\*$p\*\*:" -or $_ -match "- $p" } | Select-Object -First 1
+            if ($line) { Write-Host "  $($line.Trim())" }
+        }
     } else {
         Write-Host "  BASELINE.md not found" -ForegroundColor Red
     }
     Write-Host ""
     
-    # Active handoffs
+    # Active handoffs - read only, no directory creation
     Write-Host "=== Active Task Handoffs ===" -ForegroundColor Cyan
-    if (-not (Test-Path "docs\agent-workflow\handoffs")) {
-        New-Item -ItemType Directory -Force -Path "docs\agent-workflow\handoffs" | Out-Null
-    }
-    $handoffs = Get-ChildItem "docs\agent-workflow\handoffs\*.md" -ErrorAction SilentlyContinue
-    if ($handoffs) {
-        foreach ($h in $handoffs) {
-            Write-Host "  $($h.Name)" -ForegroundColor Yellow
-            Get-Content $h.FullName -First 8 | Where-Object { $_ -match "^#|Date|Agent|Branch|Status|Goal|Role" } | ForEach-Object { Write-Host "    $_" }
+    if (Test-Path "docs\agent-workflow\handoffs") {
+        $handoffs = Get-ChildItem "docs\agent-workflow\handoffs\*.md" -ErrorAction SilentlyContinue
+        if ($handoffs) {
+            foreach ($h in $handoffs) {
+                Write-Host "  $($h.Name)" -ForegroundColor Yellow
+                Get-Content $h.FullName -First 8 | Where-Object { $_ -match "^#|Date|Agent|Branch|Status|Goal|Role" } | ForEach-Object { Write-Host "    $_" }
+            }
+        } else {
+            Write-Host "  None (create HANDOFF-<task-id>-<branch>.md from HANDOFF-TEMPLATE.md)" -ForegroundColor Gray
         }
     } else {
-        Write-Host "  None (create HANDOFF-<task-id>-<branch>.md from HANDOFF-TEMPLATE.md)" -ForegroundColor Gray
+        Write-Host "  handoffs/ directory does not exist (read-only mode - not created)" -ForegroundColor Gray
     }
     Write-Host ""
     
@@ -74,8 +93,8 @@ try {
     
     Write-Host "=== Quick Start ===" -ForegroundColor Cyan
     Write-Host "1. Read AGENTS.md" -ForegroundColor White
-    Write-Host "2. Read BASELINE.md (check accepted Steam binary + verified source commit)" -ForegroundColor White
-    Write-Host "3. Read/create your per-task handoff in handoffs/" -ForegroundColor White
+    Write-Host "2. Read BASELINE.md (check accepted Steam binary + deployed DLL source commit)" -ForegroundColor White
+    Write-Host "3. Read/create your per-task handoff in handoffs/ (use Windows-safe filename)" -ForegroundColor White
     Write-Host "4. Check FAILED-APPROACHES.md" -ForegroundColor White
     Write-Host "5. Follow WORKFLOW.md" -ForegroundColor White
     
