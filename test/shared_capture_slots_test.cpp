@@ -37,9 +37,13 @@ struct ID3D11ShaderResourceView:Object{
     void Zero()override{if(texture)texture->Release();}
 };
 struct IDirect3DQuery9:Object{
-    unsigned issues=0,polls=0,flushes=0;HRESULT result=S_OK;
+    unsigned issues=0,polls=0,flushes=0,pendingPolls=0;HRESULT result=S_OK;
     HRESULT Issue(DWORD){++issues;return result;}
-    HRESULT GetData(void*,unsigned,DWORD flags){++polls;flushes+=flags!=0;return result;}
+    HRESULT GetData(void*,unsigned,DWORD flags){
+        ++polls;flushes+=flags!=0;
+        if(pendingPolls){--pendingPolls;return S_FALSE;}
+        return result;
+    }
 };
 struct ID3D11Query:Object{unsigned polls=0,ends=0;HRESULT result=S_OK;};
 struct D3D11_QUERY_DESC{unsigned Query,MiscFlags;};
@@ -93,12 +97,22 @@ struct Job{
 struct Queue{void Drain(){++drains;context.lease=false;}};
 class Pending{
     std::shared_ptr<Job> job;
+    bool staged=false;
 public:
     bool reject=false;
     bool Start(Queue&,std::shared_ptr<Job> input,bool&){
-        if(reject)return false;CHECK(!context.lease);job=input;context.lease=true;return true;
+        if(reject||staged)return false;CHECK(!context.lease);job=input;context.lease=true;return true;
     }
-    void Finish(){if(job){context.lease=false;context.End(job->reader.Get());context.Flush();job.reset();}}
+    bool Stage(Queue&,std::shared_ptr<Job> input,IDirect3DQuery9* producer,bool&){
+        CHECK(!staged && !context.lease && input && producer);
+        CHECK(!input->producerComplete && !input->producer.Get());
+        job=std::move(input);staged=true;return true;
+    }
+    bool Staged() const {return staged;}
+    void Finish(){
+        if(staged && !context.lease){staged=false;job.reset();return;}
+        if(job){context.lease=false;context.End(job->reader.Get());context.Flush();job.reset();}
+    }
     ~Pending(){Finish();}
 };
 }
@@ -183,7 +197,7 @@ int main(){
     g_eyeRTV[0]=new Object;g_eyeRTV[1]=new Object;
     g_stereoCB11=new Object;g_stereoVS11=new Object;g_stereoPS11=new Object;
     g_stereoRS11=new Object;g_stereoSamp11=new Object;
-    for(int mode:{1,3})for(unsigned split:{0u,1u}){
+    for(int mode:{1,3,4})for(unsigned split:{0u,1u}){
         g_stereoTransferMode=mode;
         CHECK(EnsureSharedCapture(&device)&&PrepareSplitSharedCapture(&device));
         for(unsigned eye=0;eye<2;++eye){
@@ -192,14 +206,29 @@ int main(){
             d2vr_transfer::Pending pending;std::shared_ptr<d2vr_transfer::Job> job;
             CHECK(StartStereoTransfer(&device,eye,pending,job,index));
             CHECK(context.lease&&job&&job->source.Get()==slot.srv11&&job->reader.Get()==slot.reader);
-            CHECK(job->producer.Get()==(mode==3?nullptr:slot.producer));
-            CHECK(job->producerComplete==(mode==3)&&job->deferReader&&slot.deferred==job);
+            const bool owner=mode==3||mode==4;
+            CHECK(job->producer.Get()==(owner?nullptr:slot.producer));
+            CHECK(job->producerComplete==owner&&job->deferReader&&slot.deferred==job);
             CHECK(job->target.Get()==g_eyeRTV[eye]&&job->width==g_eyeCacheW&&job->height==g_eyeCacheH&&g_uploadSRV==nullptr);
             pending.Finish();job.reset();CHECK(!context.lease&&slot.deferred);
             CHECK(WaitSharedReader(slot)&&!slot.deferred);
         }
         CHECK(ReleaseSharedCapture());
     }
+    // Mode 4 leaves a flushed, incomplete producer on the owner. No D3D11
+    // lease exists until a later S_OK poll publishes the packet.
+    g_stereoTransferMode=4;
+    CHECK(EnsureSharedCapture(&device)&&PrepareSplitSharedCapture(&device));
+    g_sharedCapture[0].producer->pendingPolls=1;
+    {
+        d2vr_transfer::Pending held;std::shared_ptr<d2vr_transfer::Job> heldJob;
+        CHECK(StartStereoTransfer(&device,0,held,heldJob,0));
+        CHECK(held.Staged()&&!context.lease&&heldJob&&!heldJob->producerComplete&&!heldJob->producer.Get());
+        CHECK(g_sharedCapture[0].producer->flushes==1&&g_sharedCapture[0].producerStatus==S_FALSE);
+        held.Finish();
+        CHECK(!held.Staged()&&!context.lease);
+    }
+    CHECK(ReleaseSharedCapture());
     CHECK(EnsureSharedCapture(&device));
     d2vr_transfer::Pending refused;refused.reject=true;std::shared_ptr<d2vr_transfer::Job> refusedJob;
     CHECK(!StartStereoTransfer(&device,0,refused,refusedJob));

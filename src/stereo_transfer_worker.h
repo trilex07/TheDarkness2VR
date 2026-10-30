@@ -108,26 +108,74 @@ using Queue=d2vr_render_worker::Queue<Backend,std::shared_ptr<Job>,2>;
 // Stack-bound lease: normal, error and early-return paths join before the
 // caller resumes D3D11. With deferReader, the separate retained reader fence
 // must still complete before shared-input overwrite or resource teardown.
+// A staged producer stays on the owner thread. Promote publishes a D3D11-only
+// job after that query is S_OK. Destroying a staged lease retires the query
+// and does not start D3D11.
 class Pending {
     Queue* queue_=nullptr;
+    Queue* held_=nullptr;
     std::uint64_t ticket_=0;
     std::shared_ptr<Job> job_;
+    Ref<IDirect3DQuery9> producer_;
     bool* fault_=nullptr;
+    bool staged_=false;
+    void Retire() {
+        if(!staged_) return;
+        const ULONGLONG start=GetTickCount64();
+        HRESULT hr=S_OK;
+        while(producer_.Get() && (hr=producer_->GetData(nullptr,0,0))==S_FALSE) {
+            if(GetTickCount64()-start>2000) break;
+            SwitchToThread();
+        }
+        if(hr!=S_OK && fault_) *fault_=true;
+        producer_={}; job_.reset(); staged_=false; held_=nullptr; fault_=nullptr;
+    }
 public:
     Pending()=default;
     Pending(const Pending&)=delete;
     Pending& operator=(const Pending&)=delete;
-    ~Pending() { Finish(); }
+    ~Pending() { if(staged_) Retire(); else Finish(); }
     bool Start(Queue& queue,std::shared_ptr<Job> job,bool& fault) {
-        if(queue_ || fault) return false;
+        if(queue_ || staged_ || fault) return false;
         const auto submitted=queue.Submit(job);
         if(!submitted.accepted) return false;
         queue_=&queue; ticket_=submitted.ticket; job_=std::move(job); fault_=&fault;
         return true;
     }
-    bool Active() const { return queue_!=nullptr; }
+    // Owner already issued and flushed this query. No D3D11 work is queued.
+    bool Stage(Queue& queue,std::shared_ptr<Job> job,IDirect3DQuery9* producer,bool& fault) {
+        if(queue_ || staged_ || held_ || fault || !job || !producer) return false;
+        if(job->producer.Get() || job->producerComplete || job->readerSubmitted) return false;
+        producer_=Ref<IDirect3DQuery9>(producer);
+        job_=std::move(job); held_=&queue; fault_=&fault; staged_=true;
+        return true;
+    }
+    bool Staged() const { return staged_; }
+    bool Active() const { return queue_!=nullptr || staged_; }
+    HRESULT Poll() {
+        if(!staged_ || !producer_.Get()) return E_FAIL;
+        return producer_->GetData(nullptr,0,0);
+    }
+    void Abandon() {
+        producer_={}; job_.reset(); staged_=false; held_=nullptr; fault_=nullptr;
+    }
+    bool Promote() {
+        if(!staged_ || !held_ || !job_ || !fault_ || *fault_) return false;
+        if(job_->producer.Get() || job_->readerSubmitted) return false;
+        job_->producerComplete=true;
+        producer_={};
+        staged_=false;
+        Queue* queue=held_;
+        held_=nullptr;
+        std::shared_ptr<Job> job=job_;
+        bool* fault=fault_;
+        if(!Start(*queue,std::move(job),*fault)) {
+            *fault=true; job_.reset(); fault_=nullptr; return false;
+        }
+        return true;
+    }
     bool Finish() {
-        if(!queue_) return true;
+        if(staged_ || !queue_) return !staged_;
         const auto completed=queue_->Wait(ticket_);
         const bool ok=completed.complete && !completed.firstFailure &&
             job_->result==S_OK && (job_->readerComplete ||

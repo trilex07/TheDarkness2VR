@@ -8,6 +8,11 @@ Restart the game when changing modes:
 - `1`: D3D9 producer polling plus D3D11 eye blit/read completion on a worker.
 - `2`: serial transfer with the same D3DCREATE_MULTITHREADED creation flag as 1,
   for separating flag overhead from actual overlap in a controlled comparison.
+- `4`: single-owner D3D9. The render thread issues and flushes the producer,
+  keeps doing D3D9, and publishes a D3D11-only job once that event is ready.
+  Native creation flags are unchanged. This is not mode 3: mode 3 waits for
+  the producer before that D3D9 work. Opt-in is `single-owner.overrides.ini`.
+  The protected on-profile stays mode 1 until MAIN selects 4.
 
 Mode 1 overlaps left-eye transfer with right-eye D3D9 replay and right-eye
 transfer with live-state restoration. The game, native resource operations,
