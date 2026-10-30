@@ -12,8 +12,10 @@
 // with the SAME pooled shader objects the engine later receives.
 namespace d2vr_pipeline_warmup {
 constexpr uint32_t Magic=0x31575050; // PPW1
-constexpr uint32_t MaxRecords=1024, MaxElements=32, Samplers=16, Streams=4, Targets=4;
-constexpr size_t MaxBytes=12u*1024u*1024u;
+// A full 1024-record file stopped learning, so every later launch compiled the
+// omitted pipelines on their first gameplay draw. Old PPW1 files still parse.
+constexpr uint32_t MaxRecords=4096, MaxElements=32, Samplers=16, Streams=4, Targets=4;
+constexpr size_t MaxBytes=32u*1024u*1024u;
 constexpr uint32_t VertexVersion=0xfffe0300u, PixelVersion=0xffff0300u;
 
 // D3DVERTEXELEMENT9 layout, D3DDECL_END excluded.
@@ -122,14 +124,16 @@ class Manifest {
     size_t words_=3;
     uint64_t version_=0;
 public:
-    bool Add(const Record& r) {
-        if(!ValidRecord(r)) return false;
+    enum class Admit { Added, Duplicate, Rejected };
+    Admit Admit(const Record& r) {
+        if(!ValidRecord(r)) return Admit::Rejected;
         std::lock_guard<std::mutex> lock(mutex_);
-        for(const auto& existing:records_) if(existing==r) return false;
-        if(records_.size()>=MaxRecords || (words_+RecordWords(r))*4>MaxBytes) return false;
+        for(const auto& existing:records_) if(existing==r) return Admit::Duplicate;
+        if(records_.size()>=MaxRecords || (words_+RecordWords(r))*4>MaxBytes) return Admit::Rejected;
         records_.push_back(r);words_+=RecordWords(r);++version_;
-        return true;
+        return Admit::Added;
     }
+    bool Add(const Record& r) { return Admit(r)==Admit::Added; }
     size_t Size() const {std::lock_guard<std::mutex> lock(mutex_);return records_.size();}
     uint64_t Version() const {std::lock_guard<std::mutex> lock(mutex_);return version_;}
     std::vector<uint32_t> Serialize(uint64_t& version) const {
