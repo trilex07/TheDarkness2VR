@@ -300,3 +300,42 @@ Private export: TEMP/d2vr-menu-observed-input-20261030.txt (pinned SHA and
 EVIDENCE COMPLETE), not committed.
 
 Both standard and protected-native x86 DLL builds PASS after this change.
+
+## Concrete input integration boundary, 2026-10-30
+
+Complete pinned Ghidra exports of 9A5D90, D993C0 and 744830 establish a
+constraint that changes the implementation choice. The native mouse updater
+keeps its current receiver in ESI and calls GetDeviceState first (return
+9A5E3C), then GetDeviceData (return 9A5E70), with 20-byte events and flags 0.
+It copies current state to previous state, clears current state, and polls
+the immediate state before buffered events. Mouse fields +1C0/+1C4/+1C8
+are state extent/current/previous; +1A8/+1BC are event buffer/capacity;
++1B8/+1CC are returned event count/decoder index.
+
+The updater overwrites each returned event's appData with zero. On buffer
+overflow (HRESULT 1), differing immediate states dispatch virtual +68 with
+argument 1, rebuilding transitions. A bridge that changes only buffered
+clicks therefore fails to preserve the native state/recovery contract. A
+bridge must merge both immediate and buffered button state, preserve HRESULT
+and capacity, and release only its own synthetic button ownership. It must
+not mark buffered events with appData and expect that mark to reach the decoder.
+
+The WndProc routes ordinary messages through 744830. WM_MOUSEMOVE does not
+set native cursor coordinates in the standard mouse-message branch; other
+mouse messages primarily control acquisition. A separate client-native mode
+can consume messages first through a different receiver. Posting generic
+Win32 mouse messages is not a demonstrated replacement for the DirectInput
+state/event funnel and is not selected for the bridge.
+
+The existing private-image auditor now fingerprints all three concrete
+functions and emits this exact polling contract. It performs no additional
+live polling, calls or writes. Private exports remain outside Git:
+TEMP/d2vr-menu-input-update-20261030.txt and
+TEMP/d2vr-menu-window-input-20261030.txt; both have EVIDENCE COMPLETE.
+Native mouse callback lifetime/thread admission and submitted menu surface
+remain required before controller events are injected. Accepted Steam baseline
+unchanged.
+
+Primary input-structure/state reference:
+https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416611(v=vs.85)
+https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416236(v=vs.85)

@@ -171,8 +171,29 @@ def inspect(blob):
             raise ValueError("native mouse method changed")
     if pe.at_va(0x603190, 27) != bytes.fromhex("8b811c0200008b54240489028b81200200008b4c24088901c20800"):
         raise ValueError("native mouse position getter changed")
+    # Validate the complete concrete polling funnel, not guessed COM slots.
+    for address, count, expected in (
+        (0x9A5D90, 0x178, "3212759191b224c699c8355473f8368982aa078beb24f8f535d46e30c44260d6"),
+        (0xD993C0, 0x124, "ee8424992af96d195371fd69177fabac7ea710d4ba5a240df483d4a9f981e8d7"),
+        (0x744830, 0xC26, "189c6ff0d04450ac5e536da45286000e0bc72a232dfae335b04ed91797060f00"),
+    ):
+        if hashlib.sha256(pe.at_va(address, count)).hexdigest() != expected:
+            raise ValueError("native mouse polling/window contract changed")
     return {
         "status": "STATIC_CONTRACT_PASS", "exe_sha256": digest,
+        "native_mouse_poll": {
+            "method": "0x9A5D90; current receiver held in ESI",
+            "get_state_return": "0x9A5E3C; slot +0x24",
+            "get_data_return": "0x9A5E70; slot +0x28",
+            "event_bytes": 20, "get_data_flags": 0,
+            "event_buffer_field": "0x1A8", "event_capacity_field": "0x1BC",
+            "event_count_field": "0x1B8", "event_index_field": "0x1CC",
+            "current_state_buffer_field": "0x1C4", "previous_state_buffer_field": "0x1C8",
+            "state_bytes_field": "0x1C0",
+            "native_postprocessing": "overwrites all returned uAppData with zero; overflow can rebuild events via slot +0x68",
+            "live_owner_thread_and_lifetime_verified": False,
+            "input_injection_admitted": False,
+        },
         "native_mouse_cursor": {
             "vtable": "0xFC00C8",
             "get_position": "slot +0x6C, 0x603190; void thiscall(this, int* x, int* y)",
