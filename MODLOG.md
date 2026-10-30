@@ -2793,3 +2793,7 @@ x86 REF and NVIDIA HAL/Ex (0x54): learning, whole-file admission, all copies,
 restored state, Reset after warmup, served objects identical. Production and
 diagnostic DLL builds PASS. In-game hitch reduction NOT measured; validate with
 command history --first-use (long flushes must no longer follow first binds).
+
+
+## MAIN PipelineWarmup integration (2026-10-30)
+Integrated 84c633e2 and its decoder prerequisite; corrected explicit MRT/depth restoration, distinct same-format warmup targets and exception cleanup. Both x86 builds, real D3D9 REF/HAL-Ex warmup/Reset tests and related actual-source regressions PASS. Rollback-protected ON profile staged locally; Steam and two-launch PSVR2 validation pending authorization. No hitch/FPS gain claimed. See docs/investigations/pipeline-warmup-main-20261030.md.

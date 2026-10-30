@@ -42,16 +42,22 @@ static bool Capture(IDirect3DDevice9* dev,Record& out) {
     s.elementCount=count-1;
     static_assert(sizeof(D3DVERTEXELEMENT9)==sizeof(Element),"element layout");
     std::memcpy(s.elements,elements,sizeof(Element)*s.elementCount);
-    for(uint32_t i=0;i<Targets;++i) {
+    D3DCAPS9 caps{};
+    if(FAILED(dev->GetDeviceCaps(&caps)) || !caps.NumSimultaneousRTs)return false;
+    for(uint32_t i=0;i<std::min<uint32_t>(Targets,caps.NumSimultaneousRTs);++i) {
         Com<IDirect3DSurface9> target;D3DSURFACE_DESC desc{};
-        if(SUCCEEDED(dev->GetRenderTarget(i,&target.p)) && target.p) {
+        const HRESULT hr=dev->GetRenderTarget(i,&target.p);
+        if(FAILED(hr) && hr!=D3DERR_NOTFOUND)return false;
+        if(SUCCEEDED(hr) && target.p) {
             if(FAILED(target.p->GetDesc(&desc))) return false;
             s.targets[i]=uint32_t(desc.Format);
         }
     }
     {
         Com<IDirect3DSurface9> depth;D3DSURFACE_DESC desc{};
-        if(SUCCEEDED(dev->GetDepthStencilSurface(&depth.p)) && depth.p) {
+        const HRESULT hr=dev->GetDepthStencilSurface(&depth.p);
+        if(FAILED(hr) && hr!=D3DERR_NOTFOUND)return false;
+        if(SUCCEEDED(hr) && depth.p) {
             if(FAILED(depth.p->GetDesc(&desc))) return false;
             s.depth=uint32_t(desc.Format);
         }
@@ -97,7 +103,7 @@ static bool Capture(IDirect3DDevice9* dev,Record& out) {
 // 16x16 resources and a degenerate triangle; Restore() is mandatory.
 class DeviceWarm {
     IDirect3DDevice9* dev_;
-    struct Target {uint32_t format;bool depth;IDirect3DSurface9* surface;};
+    struct Target {uint32_t format;bool depth;uint32_t slot;IDirect3DSurface9* surface;};
     struct Bound {Texture key;IDirect3DBaseTexture9* texture;};
     struct Declaration {std::vector<Element> elements;IDirect3DVertexDeclaration9* object;};
     std::vector<Target> targets_;
@@ -106,18 +112,21 @@ class DeviceWarm {
     IDirect3DVertexBuffer9* vertices_=nullptr;
     IDirect3DIndexBuffer9* indices_=nullptr;
     IDirect3DStateBlock9* saved_=nullptr;
-    IDirect3DSurface9* savedTarget_=nullptr;
+    IDirect3DSurface9* savedTargets_[Targets]{};
+    uint32_t savedTargetCount_=0;
+    bool savedStateReady_=false;
     IDirect3DSurface9* savedDepth_=nullptr;
     UINT savedFrequency_[Streams]{1,1,1,1};
     bool scene_=false;
-    IDirect3DSurface9* Surface(uint32_t format,bool depth) {
-        for(auto& t:targets_) if(t.format==format && t.depth==depth) return t.surface;
+    IDirect3DSurface9* Surface(uint32_t format,bool depth,uint32_t slot=0) {
+        for(auto& t:targets_) if(t.format==format && t.depth==depth && t.slot==slot) return t.surface;
         IDirect3DSurface9* surface=nullptr;
         const HRESULT hr=depth?dev_->CreateDepthStencilSurface(16,16,D3DFORMAT(format),D3DMULTISAMPLE_NONE,0,TRUE,&surface,nullptr):
             dev_->CreateRenderTarget(16,16,D3DFORMAT(format),D3DMULTISAMPLE_NONE,0,FALSE,&surface,nullptr);
         if(FAILED(hr)) surface=nullptr;
-        targets_.push_back({format,depth,surface});
-        return surface;
+        Com<IDirect3DSurface9> owner;owner.p=surface;
+        targets_.push_back({format,depth,slot,surface});
+        owner.p=nullptr;return surface;
     }
     IDirect3DBaseTexture9* TextureFor(const Texture& key) {
         for(auto& t:textures_) if(!std::memcmp(&t.key,&key,sizeof(key))) return t.texture;
@@ -126,7 +135,8 @@ class DeviceWarm {
         else if(key.type==D3DRTYPE_CUBETEXTURE) {IDirect3DCubeTexture9* t=nullptr;hr=dev_->CreateCubeTexture(4,1,key.usage,D3DFORMAT(key.format),D3DPOOL_DEFAULT,&t,nullptr);texture=t;}
         else if(key.type==D3DRTYPE_VOLUMETEXTURE) {IDirect3DVolumeTexture9* t=nullptr;hr=dev_->CreateVolumeTexture(4,4,4,1,0,D3DFORMAT(key.format),D3DPOOL_DEFAULT,&t,nullptr);texture=t;}
         if(FAILED(hr)) texture=nullptr;
-        textures_.push_back({key,texture});
+        Com<IDirect3DBaseTexture9> owner;owner.p=texture;
+        textures_.push_back({key,texture});owner.p=nullptr;
         if(!texture) ++substitutedTextures;
         return texture;
     }
@@ -139,30 +149,42 @@ class DeviceWarm {
         native[elements.size()]=D3DDECL_END();
         IDirect3DVertexDeclaration9* object=nullptr;
         if(FAILED(dev_->CreateVertexDeclaration(native,&object))) object=nullptr;
+        Com<IDirect3DVertexDeclaration9> owner;owner.p=object;
         declarations_.push_back({std::move(elements),object});
-        return object;
+        owner.p=nullptr;return object;
     }
 public:
     uint32_t substitutedTextures=0;
     explicit DeviceWarm(IDirect3DDevice9* dev):dev_(dev) {}
     DeviceWarm(const DeviceWarm&)=delete;
     DeviceWarm& operator=(const DeviceWarm&)=delete;
-    ~DeviceWarm() {Release();}
+    ~DeviceWarm() {if(savedStateReady_)Restore();else Release();}
     uint64_t Now() const {return GetTickCount64();}
     // Captures the complete replaceable state first. Without a saved state
     // block nothing is mutated.
     bool Begin() {
         if(FAILED(dev_->CreateStateBlock(D3DSBT_ALL,&saved_)) || !saved_) {saved_=nullptr;return false;}
-        if(FAILED(dev_->GetRenderTarget(0,&savedTarget_))) savedTarget_=nullptr;
-        if(FAILED(dev_->GetDepthStencilSurface(&savedDepth_))) savedDepth_=nullptr;
+        D3DCAPS9 caps{};
+        if(FAILED(dev_->GetDeviceCaps(&caps)) || !caps.NumSimultaneousRTs) return false;
+        savedTargetCount_=std::min<uint32_t>(Targets,caps.NumSimultaneousRTs);
+        for(uint32_t i=0;i<savedTargetCount_;++i) {
+            const HRESULT hr=dev_->GetRenderTarget(i,&savedTargets_[i]);
+            if(FAILED(hr) && hr!=D3DERR_NOTFOUND) return false;
+            if(i==0 && !savedTargets_[i]) return false;
+        }
+        const HRESULT depthResult=dev_->GetDepthStencilSurface(&savedDepth_);
+        if(FAILED(depthResult) && depthResult!=D3DERR_NOTFOUND) return false;
         for(uint32_t i=0;i<Streams;++i) if(FAILED(dev_->GetStreamSourceFreq(i,&savedFrequency_[i]))) return false;
+        savedStateReady_=true;
         void* data=nullptr;
         if(FAILED(dev_->CreateVertexBuffer(3*0x1100,D3DUSAGE_WRITEONLY,0,D3DPOOL_DEFAULT,&vertices_,nullptr)) ||
            FAILED(vertices_->Lock(0,0,&data,0))) return false;
-        std::memset(data,0,3*0x1100);vertices_->Unlock();
+        if(!data)return false;
+        std::memset(data,0,3*0x1100);if(FAILED(vertices_->Unlock()))return false;
         if(FAILED(dev_->CreateIndexBuffer(3*sizeof(uint16_t),D3DUSAGE_WRITEONLY,D3DFMT_INDEX16,D3DPOOL_DEFAULT,&indices_,nullptr)) ||
            FAILED(indices_->Lock(0,0,&data,0))) return false;
-        std::memset(data,0,3*sizeof(uint16_t));indices_->Unlock();
+        if(!data)return false;
+        std::memset(data,0,3*sizeof(uint16_t));if(FAILED(indices_->Unlock()))return false;
         if(FAILED(dev_->BeginScene())) return false;
         scene_=true;
         return true;
@@ -174,11 +196,14 @@ public:
     std::vector<IUnknown*> Pixel(const std::vector<uint32_t>& code) {return pixel(lookup,code);}
     Prepared Prepare(const State& s) {
         IDirect3DSurface9* color[Targets]{};
-        for(uint32_t i=0;i<Targets;++i) if(s.targets[i] && !(color[i]=Surface(s.targets[i],false))) return Prepared::Unsupported;
+        for(uint32_t i=0;i<Targets;++i) if(s.targets[i] && !(color[i]=Surface(s.targets[i],false,i))) return Prepared::Unsupported;
         auto* declaration=DeclarationFor(s);
         if(!declaration) return Prepared::Unsupported;
-        for(uint32_t i=0;i<Targets;++i) if(FAILED(dev_->SetRenderTarget(i,color[i]))) return i?Prepared::Unsupported:Prepared::DeviceFailure;
+        for(uint32_t i=savedTargetCount_;i<Targets;++i) if(color[i])return Prepared::Unsupported;
+        if(FAILED(dev_->SetDepthStencilSurface(nullptr)))return Prepared::DeviceFailure;
+        for(uint32_t i=0;i<savedTargetCount_;++i) if(FAILED(dev_->SetRenderTarget(i,color[i]))) return i?Prepared::Unsupported:Prepared::DeviceFailure;
         IDirect3DSurface9* depth=s.depth?Surface(s.depth,true):nullptr;
+        if(s.depth && !depth)return Prepared::Unsupported;
         if(FAILED(dev_->SetDepthStencilSurface(depth))) return Prepared::DeviceFailure;
         const D3DVIEWPORT9 viewport={0,0,16,16,0.f,1.f};
         if(FAILED(dev_->SetViewport(&viewport)) ||
@@ -191,7 +216,9 @@ public:
            FAILED(dev_->SetIndices(indices_))) return Prepared::DeviceFailure;
         for(uint32_t i=0;i<Samplers;++i) {
             const auto& t=s.textures[i];
-            if(FAILED(dev_->SetTexture(i,t.type?TextureFor(t):nullptr)) ||
+            auto* texture=t.type?TextureFor(t):nullptr;
+            if(t.type && !texture)return Prepared::Unsupported;
+            if(FAILED(dev_->SetTexture(i,texture)) ||
                FAILED(dev_->SetSamplerState(i,D3DSAMP_SRGBTEXTURE,t.srgb))) return Prepared::DeviceFailure;
         }
         for(uint32_t i=0;i<Streams;++i) {
@@ -208,7 +235,7 @@ public:
     }
     // Waits for the queued driver work at startup, never during gameplay.
     bool Complete(uint64_t waitMs) {
-        if(scene_) {dev_->EndScene();scene_=false;}
+        if(scene_) {const HRESULT hr=dev_->EndScene();scene_=false;if(FAILED(hr))return false;}
         Com<IDirect3DQuery9> query;
         if(FAILED(dev_->CreateQuery(D3DQUERYTYPE_EVENT,&query.p)) || !query.p || FAILED(query.p->Issue(D3DISSUE_END))) return false;
         const auto start=Now();
@@ -221,13 +248,15 @@ public:
     }
     // Restores the engine-visible state, then frees every private resource.
     bool Restore() {
-        if(scene_) {dev_->EndScene();scene_=false;}
-        bool ok=saved_!=nullptr;
-        if(saved_) {
+        bool ok=savedStateReady_ && saved_;
+        if(scene_) {ok=SUCCEEDED(dev_->EndScene()) && ok;scene_=false;}
+        if(savedStateReady_ && saved_) {
             for(uint32_t i=0;i<Streams;++i) ok=SUCCEEDED(dev_->SetStreamSourceFreq(i,savedFrequency_[i])) && ok;
-            ok=SUCCEEDED(dev_->SetRenderTarget(0,savedTarget_)) && ok;
-            for(uint32_t i=1;i<Targets;++i) dev_->SetRenderTarget(i,nullptr);
+            ok=SUCCEEDED(dev_->SetDepthStencilSurface(nullptr)) && ok;
+            for(uint32_t i=1;i<savedTargetCount_;++i) ok=SUCCEEDED(dev_->SetRenderTarget(i,nullptr)) && ok;
+            for(uint32_t i=0;i<savedTargetCount_;++i) ok=SUCCEEDED(dev_->SetRenderTarget(i,savedTargets_[i])) && ok;
             ok=SUCCEEDED(dev_->SetDepthStencilSurface(savedDepth_)) && ok;
+            // Apply last: SetRenderTarget resets the viewport.
             ok=SUCCEEDED(saved_->Apply()) && ok;
         }
         Release();
@@ -242,7 +271,8 @@ public:
         if(vertices_) {vertices_->Release();vertices_=nullptr;}
         if(indices_) {indices_->Release();indices_=nullptr;}
         if(saved_) {saved_->Release();saved_=nullptr;}
-        if(savedTarget_) {savedTarget_->Release();savedTarget_=nullptr;}
+        for(auto& target:savedTargets_)if(target){target->Release();target=nullptr;}
+        savedStateReady_=false;savedTargetCount_=0;
         if(savedDepth_) {savedDepth_->Release();savedDepth_=nullptr;}
     }
 };

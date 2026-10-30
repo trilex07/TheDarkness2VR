@@ -203,6 +203,10 @@ int main(int argc,char**) {
     const auto vsBefore=pool->pool.PendingObjects(device,vs),psBefore=pool->pool.PendingObjects(device,ps);
     CHECK(vsBefore.size()==2 && psBefore.size()==2);
 
+    // Render targets are not part of D3DSBT_ALL. Preserve a preexisting MRT.
+    IDirect3DSurface9* secondTarget=nullptr;
+    HR(device->CreateRenderTarget(64,64,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&secondTarget,nullptr));
+    HR(device->SetRenderTarget(1,secondTarget));
     DeviceSnapshot before,after;before.Read(device);
     auto report=WarmDevice(device,records,pool.get(),&Lookup,&Lookup,5000);
     after.Read(device);
@@ -216,6 +220,27 @@ int main(int argc,char**) {
     after.Read(device);
     CHECK(report.restored && report.result.missingObjects==1 && report.result.unsupported==1 && report.result.draws==0 && !report.result.failed);
     CHECK(before.Same(after));after.Release();before.Release();
+
+    // Equal-format MRT slots still require distinct private surfaces.
+    {
+        DeviceWarm mrt(device);CHECK(mrt.Begin());
+        auto state=learned.state;state.targets[1]=state.targets[0];
+        CHECK(mrt.Prepare(state)==Prepared::Ready);
+        Com<IDirect3DSurface9> rt0,rt1;
+        HR(device->GetRenderTarget(0,&rt0.p));HR(device->GetRenderTarget(1,&rt1.p));
+        CHECK(rt0.p!=rt1.p);
+        CHECK(mrt.Draw(vsBefore[0],psBefore[0]));CHECK(mrt.Complete(5000));CHECK(mrt.Restore());
+    }
+
+    // Exception unwinding must restore bindings before releasing private resources.
+    before.Read(device);
+    try {
+        DeviceWarm interrupted(device);CHECK(interrupted.Begin());
+        CHECK(interrupted.Prepare(learned.state)==Prepared::Ready);
+        throw 7;
+    } catch(int) {}
+    after.Read(device);CHECK(before.Same(after));after.Release();before.Release();
+    HR(device->SetRenderTarget(1,nullptr));secondTarget->Release();
 
     // A non-Ex device cannot Reset while private DEFAULT-pool resources exist.
     HR(device->SetTexture(0,nullptr));HR(device->SetStreamSource(0,nullptr,0,0));
