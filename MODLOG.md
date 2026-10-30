@@ -2729,3 +2729,29 @@ EXE write, menu-visibility assumption or Steam deployment is introduced.
 Actual-source x86 gateway regression PASS (18071 checks / 3000 ABI calls),
 existing mouse merge PASS (172147 checks), pinned EXE audit PASS. Full native
 menu laser remains incomplete pending activation/surface and host integration.
+
+
+## 2026-10-30 — Stream mapped UI vertex snapshots
+
+The recent CPU UI shadow copies every tracked dynamic vertex-buffer write before
+native Unlock. The fresh local combat trace concentrates CPU samples in the C
+runtime under native buffer-Unlock callers. A controlled offline WC-memory test
+reproduces an expensive ordinary read: 1 MiB memcpy 3.556 ms versus 0.274 ms with
+the actual new streaming-load helper (32 copies each). This is a memory-copy
+benchmark, not measured game frame-time savings; mapped runtime memory type and
+PSVR2 acceptance remain to be confirmed by MAIN.
+
+Use SSE4.1 streaming loads for snapshots of at least 256 bytes, with CPU support
+checked at shadow initialization and ordinary memcpy fallback. Scalar edges stay
+inside the supplied range. CPU memory fences order preceding mapped writes and
+finish reads before native Unlock; no GPU fences, allocation, system calls or
+CPUID are added to the copy path. Exact ranges, DISCARD generations, NOOVERWRITE,
+failed-Unlock invalidation and replay ownership are unchanged.
+
+Validation: 270464 actual-helper cached/WC alignment, sentinel and inaccessible
+page-boundary cases PASS; six VB/IB consistency cases, NOOVERWRITE, lifetime/Reset,
+11 recorder callback scenarios, actual UI DISCARD wrap and two UI worker callback
+cases PASS. Production and DiagnosticCapture x86 builds PASS. No deployment.
+Instruction contract: Intel SSE4 Programming Reference,
+https://www.intel.com/content/dam/develop/external/us/en/documents/d9156103-705230.pdf
+Private trace, executable metadata and binaries are not included in this change.
