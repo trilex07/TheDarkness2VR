@@ -339,3 +339,36 @@ unchanged.
 Primary input-structure/state reference:
 https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416611(v=vs.85)
 https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416236(v=vs.85)
+
+## Mouse ownership transaction and rejected tool-mode route, 2026-10-30
+
+The native WndProc's alternate Client +B4 branch is now resolved. Client type
+registration EB4750 names the Engine/Client descriptor at 10FAC40. Its instance
+constructor 5CBF10 installs FDDAD0. FDDAD0+B4 selects 97E160: follow Client+2A4
+through its intrusive reference, then query the referenced object's +68 method.
+CA49E0 creates that reference using the DarkitectClientImpl type. This closes
+the proposed Windows-message shortcut: its separate +17C receiver is an engine
+tool route, not evidence of gameplay main/pause/options menu visibility.
+Private complete exports: TEMP/d2vr-menu-client-constructor-20261030.txt and
+TEMP/d2vr-menu-client-receiver-20261030.txt. No native code bytes are published.
+
+`native_menu_mouse_merge.h` now implements the button-ownership transaction
+needed at the proven immediate/buffered polling boundary. A successful host
+must provide fresh native immediate state and event buffers, on their owner
+thread, before the native consumer runs. The component retains values only.
+It never changes HRESULT, never touches native previous state, and never
+claims a snapshot establishes lifetime. Physical mouse ownership wins over a
+synthetic release. An active synthetic hold masks physical button-zero edges;
+motion, wheel and other buttons pass through. Pending synthetic edges append
+only with available capacity; partial delivery retains the remaining edge.
+Failed, peek or unknown-format calls consume nothing. DI_BUFFEROVERFLOW keeps
+queued clicks pending because native immediate-state recovery can replace the
+returned event stream. A host must cancel on focus/menu loss and drain its
+committed release through a successful poll; it must not discard the object
+while a committed synthetic hold still needs release.
+
+Offline actual-source regression covers full/overflow and malformed calls,
+quick press/release, independent physical ownership and 4096 exhaustive
+six-poll transition sequences. No native hook, menu surface or gameplay input
+route is connected by this commit. Those remain necessary for full acceptance.
+The accepted Steam DLL and profiles remain unchanged.

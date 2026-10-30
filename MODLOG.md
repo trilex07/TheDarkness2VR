@@ -2638,7 +2638,7 @@ VR Settings laser is separate and is not presented as native-menu completion.
 Both final x86 DLL builds and actual-source camera dispatch10000 PASS.
 
 
-## 2026-10-30 — reject incompatible DLL build flavors before deployment
+## 2026-10-30 ï¿½ reject incompatible DLL build flavors before deployment
 
 The b6d2bfbf failed session and 213bb4f7 recovery candidate used standard x86
 DLLs. The installed profile requires the D2VR_MATCHED_CAPTURE protected-native
@@ -2692,3 +2692,28 @@ PASS after, 149 C++ checks and five Python ownership tests PASS. Pinned private
 EXE audit and both full x86 builds PASS. The initial Python test edit contained
 a C++ integer suffix; corrected before the passing run. Native menu laser
 connection remains incomplete. Steam and accepted 5ef2106c baseline unchanged.
+
+## Native menu mouse ownership transaction (2026-10-30)
+
+Added `src/native_menu_mouse_merge.h` for the independently recovered D46
+20-byte DirectInput polling boundary. It queues every logical press/release,
+merges ownership with fresh physical button state, preserves unrelated events,
+defers edges when the native buffer is full, and leaves failed/peek/unknown
+calls untouched. Overflow defers queued clicks because 9A5D90 can rebuild events
+from immediate state. Cancellation discards undelivered clicks and retains a
+release for an already committed synthetic press. No allocation, Windows call,
+lock, native call or retained native pointer is introduced.
+
+Actual-source x86 regression PASS: 172147 checks, including 4096 six-poll
+physical/laser transition sequences, physical-button ownership, quick clicks,
+full/overflow buffers, malformed calls and queue exhaustion. This is the merge
+component, not a connected native menu laser. The host must use fresh owner-
+thread buffers after native polling, handle queue rejection by cancellation,
+and supply actual submitted menu geometry. Steam baseline 5ef2106c unchanged.
+
+Closed the alternative WndProc route: Client base constructor 5CBF10 installs
+FDDAD0; slot +B4 selects 97E160, which queries its +2A4 referenced object's +68.
+Client initializer CA49E0 creates that reference from DarkitectClientImpl.
+It is an engine-tool receiver, not a demonstrated native game-menu predicate.
+Do not route laser clicks through its +17C Windows-message callback.
+Complete private exports remain in TEMP/d2vr-menu-client-*-20261030.txt.
