@@ -1,0 +1,400 @@
+{
+  "capture": "20261030T155718Z-497ee850",
+  "source_commit": "5ff1b7dd9a11b73f426b6f9559707d9a11cc84a1",
+  "valid": true,
+  "errors": [],
+  "hashes": {
+    "DarknessII.exe": "D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1",
+    "d3d9.dll": "4FB4E4B04A57EA4B411936C0AADE9F46CEDFB6129FA062157DD9A2ACDE18853B",
+    "Darkness2VR.ini": "1AB5498D032EB9243C4D350482D64BC2784EAAA4A00C62BFC87E8ECF581DE254",
+    "Darkness2VR-diagnostic.ini": "3610182BAE2329BBA150E6B90F5A9D066147F00482F25885917E9166746C8EE9"
+  },
+  "symbols": [
+    {
+      "file": "d3d9.dll",
+      "sha256": "4FB4E4B04A57EA4B411936C0AADE9F46CEDFB6129FA062157DD9A2ACDE18853B"
+    },
+    {
+      "file": "d3d9.pdb",
+      "sha256": "A40417FFD80F4884E5DC64A5A149A049034723005B767778474508472594351A"
+    },
+    {
+      "file": "d3d9.map",
+      "sha256": "7A24AF0A75A5E9508DA96F90B043998238F1470AEC35A506C371C84131D548B3"
+    }
+  ],
+  "etw_lost": 0,
+  "presentmon_lost": 0,
+  "game_pid": 35484,
+  "origin_qpc": 315503821282,
+  "frequency": 10000000,
+  "trigger": {
+    "sequence": 1544314,
+    "begin": 315729720772,
+    "end": 315729933347,
+    "frame": 12020,
+    "draw": 1506423,
+    "tid": 39032,
+    "generation": 1,
+    "device": 263479200,
+    "operation": 8,
+    "eye": 4294967295,
+    "caller": 0,
+    "args": [
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "result": 1,
+    "uncertain": 0,
+    "resource": 0,
+    "pipeline": {
+      "vs": 377471008,
+      "ps": 369686944,
+      "declaration": 365654784,
+      "fvf": 322,
+      "rt": [
+        353822784,
+        0,
+        0,
+        0
+      ],
+      "depth": 358161984,
+      "textures": [
+        786315424,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "render": [
+        1,
+        1,
+        4,
+        0,
+        7,
+        0,
+        1,
+        2,
+        6,
+        1,
+        3,
+        0,
+        0,
+        4294967295,
+        1,
+        0
+      ],
+      "sampler": [
+        3,
+        2,
+        1,
+        1,
+        3,
+        3
+      ],
+      "known": 131071,
+      "renderKnown": 65535,
+      "samplerKnown": 63
+    },
+    "name": "producerFlush",
+    "wall_ms": 21.2575
+  },
+  "render_off": [
+    {
+      "begin_us": 22589980.0,
+      "end_us": 22611195.0,
+      "off_ms": 21.215,
+      "reason": "UserRequest",
+      "wait_stack": [],
+      "ready": {
+        "event": [
+          "ReadyThread",
+          "22611187",
+          "DarknessII.exe (35484)",
+          "38200",
+          "DarknessII.exe (35484)",
+          "39032",
+          "Unwait",
+          "1",
+          "7",
+          ""
+        ],
+        "stack": [
+          {
+            "tid": "38200",
+            "frame": "1",
+            "pc": "0xfffff80779af8f14",
+            "function": "ntoskrnl.exe!EtwpTraceStackWalk"
+          },
+          {
+            "tid": "38200",
+            "frame": "2",
+            "pc": "0xfffff80779a5d355",
+            "function": "ntoskrnl.exe!EtwpLogKernelEvent"
+          },
+          {
+            "tid": "38200",
+            "frame": "3",
+            "pc": "0xfffff80779a52099",
+            "function": "ntoskrnl.exe!EtwTraceReadyThread"
+          },
+          {
+            "tid": "38200",
+            "frame": "4",
+            "pc": "0xfffff80779a52d82",
+            "function": "ntoskrnl.exe!KiProcessThreadWaitList"
+          },
+          {
+            "tid": "38200",
+            "frame": "5",
+            "pc": "0xfffff80779a51d36",
+            "function": "ntoskrnl.exe!KiExitDispatcher"
+          },
+          {
+            "tid": "38200",
+            "frame": "6",
+            "pc": "0xfffff80779b46a58",
+            "function": "ntoskrnl.exe!KeReleaseSemaphoreEx"
+          },
+          {
+            "tid": "38200",
+            "frame": "7",
+            "pc": "0xfffff8077a1c4c59",
+            "function": "ntoskrnl.exe!NtReleaseSemaphore"
+          },
+          {
+            "tid": "38200",
+            "frame": "8",
+            "pc": "0xfffff80779ec4f58",
+            "function": "ntoskrnl.exe!KiSystemServiceCopyEnd"
+          },
+          {
+            "tid": "38200",
+            "frame": "9",
+            "pc": "0x0000000077841f83",
+            "function": "wow64cpu.dll!CpupSyscallStub"
+          },
+          {
+            "tid": "38200",
+            "frame": "10",
+            "pc": "0x0000000077841f42",
+            "function": "wow64cpu.dll!Thunk0Arg"
+          },
+          {
+            "tid": "38200",
+            "frame": "11",
+            "pc": "0x0000000077841789",
+            "function": "wow64cpu.dll!BTCpuSimulate"
+          },
+          {
+            "tid": "38200",
+            "frame": "12",
+            "pc": "0x00007ff8151b282d",
+            "function": "wow64.dll!RunCpuSimulation"
+          },
+          {
+            "tid": "38200",
+            "frame": "13",
+            "pc": "0x00007ff8151b1ff2",
+            "function": "wow64.dll!Wow64LdrpInitialize"
+          },
+          {
+            "tid": "38200",
+            "frame": "14",
+            "pc": "0x00007ff8173f4308",
+            "function": "ntdll.dll!_LdrpInitialize"
+          },
+          {
+            "tid": "38200",
+            "frame": "15",
+            "pc": "0x00007ff8173f41c2",
+            "function": "ntdll.dll!LdrpInitializeInternal"
+          },
+          {
+            "tid": "38200",
+            "frame": "16",
+            "pc": "0x00007ff81743f09e",
+            "function": "ntdll.dll!LdrInitializeThunk"
+          },
+          {
+            "tid": "38200",
+            "frame": "17",
+            "pc": "0x00000000778c82cc",
+            "function": "ntdll.dll!ZwReleaseSemaphore"
+          },
+          {
+            "tid": "38200",
+            "frame": "18",
+            "pc": "0x0000000077144164",
+            "function": "KernelBase.dll!ReleaseSemaphore"
+          },
+          {
+            "tid": "38200",
+            "frame": "19",
+            "pc": "0x000000005c83a8ec",
+            "function": "nvd3dum.dll!0x000000005c83a8ec"
+          },
+          {
+            "tid": "38200",
+            "frame": "20",
+            "pc": "0x000000005c846f57",
+            "function": "nvd3dum.dll!0x000000005c846f57"
+          },
+          {
+            "tid": "38200",
+            "frame": "21",
+            "pc": "0x000000005cb633dc",
+            "function": "nvd3dum.dll!0x000000005cb633dc"
+          },
+          {
+            "tid": "38200",
+            "frame": "22",
+            "pc": "0x00000000775f5d49",
+            "function": "kernel32.dll!BaseThreadInitThunk"
+          },
+          {
+            "tid": "38200",
+            "frame": "23",
+            "pc": "0x00000000778bc75b",
+            "function": "ntdll.dll!__RtlUserThreadStart"
+          },
+          {
+            "tid": "38200",
+            "frame": "24",
+            "pc": "0x00000000778bc6e1",
+            "function": "ntdll.dll!_RtlUserThreadStart"
+          }
+        ]
+      }
+    }
+  ],
+  "compiler_samples": {
+    "38200": 19
+  },
+  "combat": {
+    "rows": 1343,
+    "metrics_ms": {
+      "FrameTime": {
+        "n": 1343,
+        "mean": 18.60792591213701,
+        "p50": 18.1847,
+        "p95": 22.49564,
+        "p99": 25.512007999999973,
+        "worst": 43.4283
+      },
+      "CPUBusy": {
+        "n": 1343,
+        "mean": 18.043540729709605,
+        "p50": 17.6279,
+        "p95": 21.906859999999998,
+        "p99": 24.81372999999999,
+        "worst": 42.9246
+      },
+      "CPUWait": {
+        "n": 1343,
+        "mean": 0.5643851824274013,
+        "p50": 0.5302,
+        "p95": 0.7790700000000005,
+        "p99": 0.9392199999999997,
+        "worst": 1.5093
+      },
+      "GPUBusy": {
+        "n": 1343,
+        "mean": 6.085458674609084,
+        "p50": 6.064,
+        "p95": 6.78006,
+        "p99": 7.167713999999999,
+        "worst": 7.5695
+      },
+      "GPUWait": {
+        "n": 1343,
+        "mean": 11.895704244229337,
+        "p50": 11.8791,
+        "p95": 15.905100000000006,
+        "p99": 18.042141999999988,
+        "worst": 37.8337
+      },
+      "GPUTime": {
+        "n": 1343,
+        "mean": 17.98116291883842,
+        "p50": 17.9815,
+        "p95": 22.14165,
+        "p99": 24.688472,
+        "worst": 43.3135
+      },
+      "GPULatency": {
+        "n": 1343,
+        "mean": 0.5517950111690245,
+        "p50": 0.0,
+        "p95": 5.2427,
+        "p99": 6.315849999999991,
+        "worst": 18.3511
+      }
+    },
+    "displayed_time_available": 1335,
+    "frames_over_ms": {
+      "11.11": 1343,
+      "22.22": 82,
+      "33.33": 2
+    }
+  },
+  "files": [
+    {
+      "file": "manifest.json",
+      "bytes": 67343,
+      "sha256": "04b629a0c1f94cae03836d6863316c67258e8ef6e8da59d72ffc8b183218e8cc"
+    },
+    {
+      "file": "command-history.bin",
+      "bytes": 8650848,
+      "sha256": "4d605e9f5923f372e97eef99a97d9f760551c361a9fa6ba69bff13115589d4d8"
+    },
+    {
+      "file": "command-history-summary.json",
+      "bytes": 46568,
+      "sha256": "14aa086a159ffb72a6ab6e1ad91662b7aecabe5ab01aff4c26a38431a46340ce"
+    },
+    {
+      "file": "compiler-dependency.json",
+      "bytes": 6241,
+      "sha256": "db1efb7e01037587ef3c40902f63f4b1a3b8a2d50004eeb43cd30468aa68fa01"
+    },
+    {
+      "file": "presentmon.csv",
+      "bytes": 314472,
+      "sha256": "1551e4510988eeebee37d9cf927a2ed6d5df4206932b4f2bf957f4fccb3a06b5"
+    },
+    {
+      "file": "presentmon-summary.json",
+      "bytes": 11126,
+      "sha256": "82cd3c83bf41eba63f7a28a0c15fed1bc968bc74bc512064fbdf8d9d50a7a28e"
+    },
+    {
+      "file": "qpc-origin.json",
+      "bytes": 100,
+      "sha256": "43917acffba28e71a0c8a5a1148dac7d3b52abb477cda2d8a7df085f6139b261"
+    },
+    {
+      "file": "cpu-raw-all.json",
+      "bytes": 34287502,
+      "sha256": "f40b9bba671fde9df3bd3def05d84af636a5e93a545a7d165bbd779c6f74649c"
+    },
+    {
+      "file": "cpu-wait-frame-0.json",
+      "bytes": 362924,
+      "sha256": "87f7ec93a1d597d5986505dfb95fa3e7b2a7bd056e1d28ef7d63e62b5a4e8e68"
+    },
+    {
+      "file": "combat.etl",
+      "bytes": 2079326208,
+      "sha256": "4DBCD29E1F0146028F1CA63D9C90FD4302EE1DF2BB17D0D5A15A187D7F7635D2"
+    }
+  ]
+}
