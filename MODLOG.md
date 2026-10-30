@@ -2667,3 +2667,15 @@ accepted profile values; physical visuals/FPS/hang recovery remain NOT RUN.
 No native menu laser completion, half-rate forcing or new FPS gain is claimed.
 UEVR OverlayComponent was reviewed as a design reference (actual surface and
 input ownership); no source copied and no new license obligation introduced.
+
+
+## MAIN 2026-10-30 - replay binding and metadata, staged offline
+
+Integrated SIDE 38fe1fee/e6268ae6/f2a3c4f3 onto accepted protected-native
+1dd6205e in codex/main-render-cpu-next. All recovery switches remain OFF.
+Both x86 builds, 44 binary/profile checks and affected actual-source replay,
+buffer and stereo regressions PASS. Snapshot CPU execution remains BLOCKED
+by Access denied; implementation and fixture match the accepted base.
+Bounded metadata reuse is bypassed with versioning OFF. No Steam or localization
+changes while the user tests fonts. Runtime FPS and visuals remain NOT RUN.
+Details: docs/research/replay-binding-filter-20261030.md.
