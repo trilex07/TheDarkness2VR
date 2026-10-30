@@ -1,4 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
+#include "../../src/recorder_sync.h"
 #define NOMINMAX
 #include "../../src/small_record_copy.h"
 #include "../../src/native_constant_source.h"
@@ -39,7 +40,7 @@ static void Filled(const uint8_t* p, size_t n, uint8_t value) {
 #include "../../src/record_payload_storage.h"
 static d2vr_record_payload::Storage g_recData;
 static d2vr_shader_registers::History g_vsConstantHistory;
-static std::atomic<LONG> g_recLock{0};
+static auto& g_recLock=d2vr_record_sync::held;
 static bool g_smallRecordCopyAdmitted=false;
 static std::atomic<bool> g_wideRecordCopy{false};
 static std::atomic<bool> g_directRecordCopy{false};
@@ -384,6 +385,12 @@ int main(int argc, char** argv) {
         if(mode&PAGE_GUARD)assert(GuardRaises(memory+page));
         assert(VirtualProtect(memory+page,page,PAGE_READWRITE,&old));cases+=3;
     }
+    // A late legacy payload must not relocate the arena owned by replay.
+    const auto frozenSize=g_recData.size();const auto frozenBase=g_recData.data();
+    d2vr_record_sync::replaying=true;g_recOverflow=false;
+    RecPush(memory,16);assert(g_recOverflow && d2vr_record_sync::conflict.load());
+    assert(g_recData.size()==frozenSize && g_recData.data()==frozenBase);
+    d2vr_record_sync::replaying=false;d2vr_record_sync::conflict=false;g_recOverflow=false;
     // Synthetic x86 cost of the actual RecPush per readable heap payload.
     for(size_t bytes:{64u,272u,1088u}) {
         double ns[2]{};

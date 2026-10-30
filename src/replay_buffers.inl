@@ -19,8 +19,10 @@ struct BufferVersion final : IUnknown {
     UINT size = 0, offset = 0, bytes = 0;
     DWORD flags = 0;
     void* mapped = nullptr;
-    unsigned locks = 0;
-    bool dynamic = false, valid = true, index = false, linked = false, budget = false;
+    std::atomic<unsigned> locks{0};
+    bool unlocking=false;
+    bool dynamic = false, index = false, linked = false, budget = false;
+    std::atomic<bool> valid{true},uploading{false};
     std::atomic<bool> unsupportedAlias{false};
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) override {
         if(!out)return E_POINTER;*out=nullptr;
@@ -71,13 +73,15 @@ static BufferVersion* BufferInfo(IUnknown* object) {
     if(!object)return nullptr;
     BufferVersion* version=nullptr;DWORD bytes=sizeof(version);
     auto resource=static_cast<IDirect3DResource9*>(object);
-    if(FAILED(resource->GetPrivateData(kBufferVersionTag,&version,&bytes)) || bytes!=sizeof(version) || !version)return nullptr;
+    HRESULT result;
+    {d2vr_record_sync::DriverScope native;result=resource->GetPrivateData(kBufferVersionTag,&version,&bytes);}
+    if(FAILED(result) || bytes!=sizeof(version) || !version)return nullptr;
     // D3DSPD_IUNKNOWN returns an owned reference. The source resource keeps its
     // own reference for its lifetime; all callers already own the source.
     version->Release();return version;
 }
 // Source resources exclusively own their private metadata for their lifetime.
-// Pin the source while memoizing that pointer, only under the replay lock. Keep
+// Pin the source during the immutable replay phase. Keep
 // checking mutable validity/locks/alias state at each use; never cache decisions.
 struct ReplayBufferLookup {IUnknown* source=nullptr;BufferVersion* version=nullptr;};
 static ReplayBufferLookup g_replayBufferLookups[128]{};
@@ -86,7 +90,7 @@ static void ClearReplayBufferLookups() {
     g_replayBufferLookupActive=false;
     for(auto& entry:g_replayBufferLookups) {
         auto source=entry.source;entry={};
-        if(source)source->Release();
+        if(source){d2vr_record_sync::DriverScope native;source->Release();}
     }
 }
 static void BeginReplayBufferLookups() {
@@ -101,8 +105,9 @@ static BufferVersion* ReplayBufferInfo(IUnknown* source) {
     if(version) {
         // Only positive metadata is memoized. Unknown and replica-tagged
         // resources retain their existing validation path on every access.
-        source->AddRef();auto previous=entry.source;entry={source,version};
-        if(previous)previous->Release();
+        {d2vr_record_sync::DriverScope native;source->AddRef();}
+        auto previous=entry.source;entry={source,version};
+        if(previous){d2vr_record_sync::DriverScope native;previous->Release();}
     }
     return version;
 }
@@ -113,7 +118,7 @@ static void DropBufferReplica(BufferVersion* version) {
     ReleaseSRWLockExclusive(&g_bufferRegistryLock);
     // Never call the runtime while holding the registry lock: resource private
     // data destruction can call back here while the runtime owns its own lock.
-    if(replica)replica->Release();
+    if(replica){d2vr_record_sync::DriverScope native;replica->Release();}
 }
 ULONG STDMETHODCALLTYPE BufferVersion::Release() {
     const auto remaining=ULONG(InterlockedDecrement(&refs));
@@ -141,30 +146,73 @@ static HRESULT STDMETHODCALLTYPE BufferQuery(IUnknown* object,REFIID iid,void** 
     return hr;
 }
 static bool UploadBufferRange(BufferVersion* version,UINT offset,UINT bytes,DWORD flags,const void* data) {
-    if(!version || !version->valid || version->unsupportedAlias.load(std::memory_order_acquire) || !version->replica || !data || !bytes ||
+    RecLockGuard guard;
+    if(!version || !version->valid || version->uploading || version->unsupportedAlias.load(std::memory_order_acquire) || !version->replica || !data || !bytes ||
        offset>version->size || bytes>version->size-offset)return false;
-    // Keep failure sticky even if the driver raises an exception during replay.
-    version->valid=false;
+    // An interrupted upload remains ineligible; callback writes still journal
+    // their source ranges instead of confusing an in-flight upload with failure.
+    version->uploading=true;
+    d2vr_record_sync::DriverScope native;
     void* mapped=nullptr;
     HRESULT hr=version->replicaLock(version->replica,offset,bytes,&mapped,flags);
-    if(FAILED(hr)) {version->valid=false;return false;}
+    if(FAILED(hr)) {version->valid=false;version->uploading=false;return false;}
     if(mapped)std::memcpy(mapped,data,bytes);
     hr=version->replicaUnlock(version->replica);
-    version->valid=mapped && SUCCEEDED(hr);
+    native.Resume();
+    version->valid=version->valid && mapped && SUCCEEDED(hr);
+    version->uploading=false;
     return version->valid;
+}
+// A late/native callback write cannot touch the frozen replay stream or its
+// replica. Capture its exact modified range, then drain after native leases end.
+struct DeferredBufferWrite {IUnknown* source;UINT offset,bytes;DWORD flags;size_t data;};
+static std::vector<DeferredBufferWrite> g_deferredBufferWrites,g_applyingBufferWrites;
+static d2vr_record_payload::Storage g_deferredBufferData,g_applyingBufferData;
+static bool g_bufferDraining=false;
+static bool DeferredBufferWritesPending(){return !g_deferredBufferWrites.empty();}
+static bool DeferBufferWrite(IUnknown* source,BufferVersion* version){
+    if(version->bytes>kBufferPayloadLimit-g_deferredBufferData.size() || g_deferredBufferWrites.size()>=65536)return false;
+    bool retained=false;
+    try {
+        const size_t offset=g_deferredBufferData.size();
+        // Reserve bookkeeping before owning a COM reference.
+        if(g_deferredBufferWrites.size()==g_deferredBufferWrites.capacity())
+            g_deferredBufferWrites.reserve(std::min<size_t>(65536,g_deferredBufferWrites.empty()?64:g_deferredBufferWrites.capacity()*2));
+        const size_t required=offset+version->bytes;
+        if(required>g_deferredBufferData.capacity())
+            g_deferredBufferData.reserve((std::min)(kBufferPayloadLimit,(std::max)(required,g_deferredBufferData.capacity()*2)));
+        g_deferredBufferData.resize(required);
+        std::memcpy(g_deferredBufferData.data()+offset,version->mapped,version->bytes);
+        const DeferredBufferWrite request{source,version->offset,version->bytes,version->flags,offset};
+        {d2vr_record_sync::DriverScope native;source->AddRef();retained=true;}
+        g_deferredBufferWrites.push_back(request);
+        return true;
+    }catch(...){if(retained){d2vr_record_sync::DriverScope native;source->Release();}return false;}
+}
+static void DrainDeferredBufferWrites(){
+    if(g_bufferDraining || d2vr_record_sync::Busy() || g_deferredBufferWrites.empty())return;
+    g_bufferDraining=true;
+    g_applyingBufferWrites.swap(g_deferredBufferWrites);g_applyingBufferData.swap(g_deferredBufferData);
+    // One bounded batch. Reentrant writes go into the other arena, never into
+    // the batch being consumed. No retry loop, GPU fence or wait for a callback.
+    for(const auto& write:g_applyingBufferWrites){
+        auto version=BufferInfo(write.source);
+        UploadBufferRange(version,write.offset,write.bytes,write.flags,g_applyingBufferData.data()+write.data);
+        {d2vr_record_sync::DriverScope native;write.source->Release();}
+    }
+    g_applyingBufferWrites.clear();g_applyingBufferData.clear();g_bufferDraining=false;
 }
 static HRESULT STDMETHODCALLTYPE BufferLock(IUnknown* object,UINT offset,UINT bytes,void** out,DWORD flags) {
     auto version=BufferInfo(object);
-    if(!version) {
-        const auto lock=BufferMethods(object).lock;
-        RecLockGuard guard;if(g_bufferFrameOpen && !(flags&D3DLOCK_READONLY))g_recOverflow=true;
-        return lock(object,offset,bytes,out,flags);
-    }
+    const auto lock=version?version->lock:BufferMethods(object).lock;
     RecLockGuard guard;
-    const HRESULT hr=version->lock(object,offset,bytes,out,flags);
-    if(FAILED(hr))return hr;
+    if(!version && g_bufferFrameOpen && !(flags&D3DLOCK_READONLY))g_recOverflow=true;
+    d2vr_record_sync::DriverScope native;
+    const HRESULT hr=lock(object,offset,bytes,out,flags);
+    native.Resume();
+    if(!version || FAILED(hr))return hr;
     ++version->locks;
-    if(version->locks!=1 || !out || !*out || offset>version->size || bytes>version->size-offset) {
+    if(version->locks!=1 || version->unlocking || !out || !*out || offset>version->size || bytes>version->size-offset) {
         version->valid=false;if(g_bufferFrameOpen)g_recOverflow=true;return hr;
     }
     version->offset=offset;version->bytes=bytes?bytes:version->size-offset;
@@ -172,55 +220,56 @@ static HRESULT STDMETHODCALLTYPE BufferLock(IUnknown* object,UINT offset,UINT by
     return hr;
 }
 static void AdvanceBufferWrites();
+static void FinishBufferRecording();
 static HRESULT STDMETHODCALLTYPE BufferUnlock(IUnknown* object) {
     auto version=BufferInfo(object);
-    if(!version) {
-        const auto unlock=BufferMethods(object).unlock;
-        return unlock(object);
-    }
+    const auto unlock=version?version->unlock:BufferMethods(object).unlock;
     RecLockGuard guard;
-    const bool write=version->locks==1 && !(version->flags&D3DLOCK_READONLY);
-    bool captured=false;
-    size_t record=0;
-    if(write) {
-        // Static or shared resources cannot be journaled. Reject an overlapping
-        // recording, including the interval between live completion and replay.
-        if(!version->dynamic || !version->valid || !version->replica || !version->bytes) {
-            if(g_bufferFrameOpen)g_recOverflow=true;
-        } else if(g_bufferFrameOpen) {
-            if(g_recActive && !g_recOverflow && version->bytes<=kBufferPayloadLimit-g_bufferFrameBytes &&
-               g_rec.size()<400000 && g_recData.size()<=UINT32_MAX-version->bytes) {
+    bool captured=false;size_t record=0;
+    if(version) {
+        const bool write=version->locks==1 && !version->unlocking && !(version->flags&D3DLOCK_READONLY);
+        if(version->unlocking){version->valid=false;g_recOverflow=true;}
+        version->unlocking=true;
+        if(write) {
+            if(!version->dynamic || !version->valid || !version->replica || !version->bytes) {
+                if(g_bufferFrameOpen)g_recOverflow=true;
+            } else if(!d2vr_record_sync::Callback() && !d2vr_record_sync::Busy() && !g_bufferDraining &&
+                      g_bufferFrameOpen && g_recActive && !g_recOverflow &&
+                      version->bytes<=kBufferPayloadLimit-g_bufferFrameBytes && g_rec.size()<400000 &&
+                      g_recData.size()<=UINT32_MAX-version->bytes) {
                 try {
                     const auto offset=uint32_t(g_recData.size());
                     g_recData.resize(g_recData.size()+version->bytes);
                     std::memcpy(g_recData.data()+offset,version->mapped,version->bytes);
                     record=g_rec.size();
-                    RecEmitLocked(OP_BufferWrite,version->bytes,uint32_t(uintptr_t(object)),
-                        version->offset,version->flags,offset);
+                    RecEmitLocked(OP_BufferWrite,version->bytes,uint32_t(uintptr_t(object)),version->offset,version->flags,offset);
                     captured=g_rec.size()==record+1;
                     if(captured)g_bufferFrameBytes+=version->bytes;
-                } catch(...) {g_recOverflow=true;}
+                }catch(...){g_recOverflow=true;}
             }
-            if(!captured) {
-                // The pair cannot be published, but its final contents must still
-                // become next frame's baseline. Drain once, then copy each later
-                // range directly; no unbounded journal or poisoned next frame.
-                g_recOverflow=true;AdvanceBufferWrites();
-                if(!UploadBufferRange(version,version->offset,version->bytes,version->flags,version->mapped))version->valid=false;
+            if(version->dynamic && version->valid && !captured) {
+                if(g_bufferFrameOpen || d2vr_record_sync::Callback() || d2vr_record_sync::Busy())g_recOverflow=true;
+                if(!DeferBufferWrite(object,version))version->valid=false;
             }
-        } else if(!UploadBufferRange(version,version->offset,version->bytes,version->flags,version->mapped)) {
-            version->valid=false;
         }
     }
-    const HRESULT hr=version->unlock(object);
-    if(FAILED(hr)) {
-        // Never replay a write which the original resource rejected.
-        version->valid=false;
-        if(captured)g_rec[record].n=0;
-        if(g_bufferFrameOpen)g_recOverflow=true;
+    d2vr_record_sync::DriverScope native;
+    const HRESULT hr=unlock(object);
+    native.Resume();
+    if(version) {
+        if(FAILED(hr)) {
+            version->valid=false;if(captured)g_rec[record].n=0;
+            if(g_bufferFrameOpen)g_recOverflow=true;
+        }
+        if(version->locks)--version->locks;
+        if(!version->locks)version->mapped=nullptr;
+        version->unlocking=false;
     }
-    if(version->locks)--version->locks;
-    if(!version->locks)version->mapped=nullptr;
+    native.Finish();
+    if(!d2vr_record_sync::Busy() && !g_bufferDraining) {
+        if(g_bufferFrameOpen && g_recOverflow)FinishBufferRecording();
+        else if(!g_bufferFrameOpen)DrainDeferredBufferWrites();
+    }
     return hr;
 }
 static void TrackBuffer(IDirect3DDevice9* dev,IUnknown* object,UINT size,DWORD usage,
@@ -300,7 +349,7 @@ static IUnknown* ReplayBuffer(IUnknown* object,bool& complete) {
            bytes==sizeof(tag) && tag==0x52564231)return object;
         complete=false;return nullptr;
     }
-    if(!version->valid || version->unsupportedAlias.load(std::memory_order_acquire) || version->locks || (version->dynamic && !version->replica)) {
+    if(!version->valid || version->uploading || version->unsupportedAlias.load(std::memory_order_acquire) || version->locks || (version->dynamic && !version->replica)) {
         complete=false;return nullptr;
     }
     return version->dynamic?version->replica:object;
@@ -328,23 +377,41 @@ static bool ReplayInheritedBuffers(IDirect3DDevice9* dev) {
     return complete;
 }
 static void AdvanceBufferWrites() {
-    // Caller holds recorder lock. Drain at most once, including on overflow.
+    if(g_bufferDraining || d2vr_record_sync::Busy())return;
+    g_bufferDraining=true;
     if(!g_bufferWritesApplied)for(const auto& record:g_rec)if(record.op==OP_BufferWrite)
         ReplayBufferWrite(record,g_recData.data());
-    g_bufferWritesApplied=true;
+    g_bufferWritesApplied=true;g_bufferDraining=false;
 }
 static void FinishBufferRecording() {
     if(!g_replayBufferVersions)return;
-    AdvanceBufferWrites();
-    g_bufferFrameOpen=false;g_bufferFrameBytes=0;
+    if(d2vr_record_sync::Busy() || g_bufferDraining){g_recOverflow=true;return;}
+    g_bufferFrameOpen=false;
+    AdvanceBufferWrites();DrainDeferredBufferWrites();g_bufferFrameBytes=0;
 }
 static void CloseBufferFrame() {
     if(!g_replayBufferVersions)return;
     RecLockGuard guard;g_recActive=false;FinishBufferRecording();
 }
+static bool BeginReplayRecording(){
+    RecLockGuard guard;
+    if(d2vr_record_sync::Busy() || g_bufferDraining || DeferredBufferWritesPending() ||
+       (g_replayBufferVersions && g_bufferWritesApplied)) {g_recOverflow=true;return false;}
+    g_recActive=false;d2vr_record_sync::replaying=true;return true;
+}
+// Caller holds the short CPU lock, then publishes eye history under that lock.
+static bool EndReplayRecording(bool complete){
+    d2vr_record_sync::replaying=false;g_bufferWritesApplied=true;
+    complete=complete && !g_recOverflow && !d2vr_record_sync::conflict.load() && !d2vr_record_sync::Busy();
+    if(g_replayBufferVersions){g_bufferFrameOpen=false;DrainDeferredBufferWrites();}
+    return complete && !g_recOverflow && !d2vr_record_sync::conflict.load() && !d2vr_record_sync::Busy();
+}
 static void ResetBufferReplicas() {
     if(!g_replayBufferVersions)return;
-    RecLockGuard guard;ClearReplayBufferLookups();
+    RecLockGuard guard;
+    if(d2vr_record_sync::Busy() || g_bufferDraining){g_recOverflow=true;return;}
+    ClearReplayBufferLookups();
+    DrainDeferredBufferWrites();
     BufferVersion* pending[kBufferObjectLimit];size_t count=0;
     AcquireSRWLockExclusive(&g_bufferRegistryLock);
     for(auto version=g_bufferRegistry;version;version=version->next)if(version->dynamic) {

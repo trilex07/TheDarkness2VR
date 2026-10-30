@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include <windows.h>
+#include "../src/recorder_sync.h"
 #include <d3d9.h>
 #include <cstdio>
 #include <cstdlib>
@@ -98,5 +99,10 @@ int main(){
         CHECK(g_recOverflow==recording && records==0);
         CHECK(d.refs==1 && a.refs==1 && b.refs==1);
     }
+    Reset(d,a,b,true);d2vr_record_sync::replaying=true;d2vr_record_sync::conflict=false;
+    CHECK(Hook_SBApply(&block)==S_OK && applies==1 && records==0);
+    CHECK(d2vr_record_sync::conflict.load() && order.size()==1);
+    float preserved[16];CHECK(g_vsConstantHistory.live.Matrix(0,preserved));
+    d2vr_record_sync::replaying=false;d2vr_record_sync::conflict=false;
     printf("PASS actual live stateblock+shader sync: %u checks; 16000 successful transitions, failed Apply/GetDevice/query, null shaders, raw-bank invalidation, original receipt, exact order and references; CPU fixture\n",checks);
 }
