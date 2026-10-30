@@ -5,14 +5,18 @@ namespace d2vr_menu_native {
 // Pinned D46 native contracts, observed without retaining or mutating objects.
 // A stable pair of snapshots is not a lifetime lease or input admission.
 struct Snapshot {
-    uint32_t framework=0,clientRef=0,client=0,inputRef=0,input=0;
+    uint32_t framework=0,clientRef=0,client=0,inputRef=0,input=0,inputTable=0;
     uint32_t mouseRef=0,mouse=0,device=0,deviceTable=0,getState=0,getData=0;
     bool operator==(const Snapshot& b)const {
         return framework==b.framework && clientRef==b.clientRef && client==b.client &&
-            inputRef==b.inputRef && input==b.input && mouseRef==b.mouseRef && mouse==b.mouse &&
+            inputRef==b.inputRef && input==b.input && inputTable==b.inputTable && mouseRef==b.mouseRef && mouse==b.mouse &&
             device==b.device && deviceTable==b.deviceTable && getState==b.getState && getData==b.getData;
     }
 };
+// Both pinned Windows classes use +A44 as the same intrusive mouse reference.
+// FBFAD8 is constructed by 4CE810 and initializes it through 8460E0;
+// FBFCD0's 479EB0 initializer calls that same base initializer first.
+inline bool InputTable(uint32_t table){return table==0xFBFAD8 || table==0xFBFCD0;}
 inline bool Pointer(uint32_t p){return p>=0x10000 && !(p&3) && p<=UINT32_MAX-4;}
 struct PauseSnapshot {
     uint32_t manager=0,rulesRef=0,rules=0,table=0,menuRef=0,menu=0;
@@ -78,7 +82,7 @@ template<class Read> bool Observe(uint32_t hwnd,uint32_t framework,Read read,Sna
        !field("client",s.clientRef,0,s.client) ||
        !field("input-reference",s.client,0x374,s.inputRef) ||
        !field("input",s.inputRef,0,s.input) ||
-       !field("input-type",s.input,0,table,0xFBFCD0) || table!=0xFBFCD0 ||
+       !field("input-type",s.input,0,s.inputTable,0xFBFCD0) || !InputTable(s.inputTable) ||
        !field("mouse-reference",s.input,0xA44,s.mouseRef) ||
        !field("mouse",s.mouseRef,0,s.mouse) ||
        !field("mouse-type",s.mouse,0,table,0xFC00C8) || table!=0xFC00C8 ||

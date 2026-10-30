@@ -34,10 +34,22 @@ class InputOwnershipTests(unittest.TestCase):
             observe_chain(self.read, 0x1234, 0x10000)
         for field in (0x10000, 0x50000):
             original = self.memory[field]
-            self.memory[field] = 0xFBFAD8  # base type is insufficient
+            self.memory[field] = 0xFBFADC  # unknown neighboring type is insufficient
             with self.assertRaises(ValueError):
                 observe_chain(self.read, 0x5678, 0x10000)
             self.memory[field] = original
+
+    def test_observed_windows_base_preserves_reference_layout(self):
+        derived = observe_chain(self.read, 0x5678, 0x10000)
+        self.memory[0x50000] = 0xFBFAD8
+        base = observe_chain(self.read, 0x5678, 0x10000)
+        self.assertEqual(base["input_object"], derived["input_object"])
+        self.assertEqual(base["input_table"], 0xFBFAD8)
+        self.assertNotEqual(base, derived)
+        for unknown in (0, 0xFBFAD4, 0xFBFADC, 0xFBFCCC, 0xFBFCD4):
+            self.memory[0x50000] = unknown
+            with self.assertRaises(ValueError):
+                observe_chain(self.read, 0x5678, 0x10000)
 
     def test_invalid_reference_values_rejected(self):
         for address in (0x100A8, 0x20000, 0x30374, 0x40000):

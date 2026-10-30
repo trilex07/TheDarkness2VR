@@ -269,3 +269,34 @@ never publishes a partially resolved receiver. Both x86 builds PASS; 136
 actual-source snapshot checks and 181368 pointer-core checks PASS. The installed
 StateBlock/font candidate remains unchanged. Native menu routing remains
 incomplete until the real receiver and submitted surface can be admitted.
+
+## Observed base Windows input receiver, 2026-10-30
+
+The consolidated retained game log from the 5ef2106c candidate identifies the
+actual first refusal: input-type, readable FBFAD8 where the old observer
+required only FBFCD0. It had already resolved the native framework, its HWND
+and both client/input reference wrappers. No native pointers are retained.
+
+Pinned-image disassembly and complete private Ghidra export confirm FBFAD8's
+4CE810 constructor, its +A44 intrusive mouse reference, +60 -> 8460E0
+initializer, allocation of a MouseDeviceWin through 821400 and reference
+assignment through 84BBA0. FBFCD0's +60 -> 479EB0 invokes that same base
+initializer. Both exact types therefore share the observed mouse path.
+Observe now accepts just these two tables, retains the exact FC00C8 mouse
+check and includes inputTable in snapshot equality/receipts. A type transition
+within an otherwise identical graph cannot produce an equal pair. Unknown
+neighboring tables remain rejected. This fixes the demonstrated rejection;
+it does not turn a snapshot into a lifetime lease or enable native events.
+
+The new regression fails against the previous actual source at its observed
+base-type case, then passes after the correction. C++ snapshot 149 checks PASS;
+five Python ownership tests PASS. Private-image auditor verifies both
+initializer slots and the complete constructor SHA rather than publishing
+new extracted executable bytes. Actual cursor/input owner-thread integration,
+native menu surface and headset behavior remain unverified. No Steam files
+are changed; the accepted 5ef2106c recovery baseline remains authoritative.
+
+Private export: TEMP/d2vr-menu-observed-input-20261030.txt (pinned SHA and
+EVIDENCE COMPLETE), not committed.
+
+Both standard and protected-native x86 DLL builds PASS after this change.

@@ -38,10 +38,11 @@ def observe_chain(read_word, hwnd, framework):
     client = pointer(field(client_ref, 0))
     input_ref = pointer(field(client, 0x374))
     input_object = pointer(field(input_ref, 0))
-    if field(input_object, 0) != 0xFBFCD0:
+    input_table = field(input_object, 0)
+    if input_table not in (0xFBFAD8, 0xFBFCD0):
         raise ValueError("input object is not the pinned Windows manager type")
     return dict(framework=framework, client_ref=client_ref, client=client,
-                input_ref=input_ref, input_object=input_object)
+                input_ref=input_ref, input_object=input_object, input_table=input_table)
 
 
 def observe_live(pid, exe_blob, exe_path):
@@ -154,6 +155,13 @@ def inspect(blob):
         raise ValueError("client initializer frame changed")
     if pe.at_va(0xC2CC18, 3) != bytes.fromhex("c21c00"):
         raise ValueError("client initializer argument cleanup changed")
+    # Exact observed Windows base and derived manager initialization routes.
+    # The derived method calls the base initializer before its own additions.
+    for table, initializer in ((0xFBFAD8, 0x8460E0), (0xFBFCD0, 0x479EB0)):
+        if struct.unpack("<I", pe.at_va(table + 0x60, 4))[0] != initializer:
+            raise ValueError("native Windows input initializer changed")
+    if hashlib.sha256(pe.at_va(0x4CE810, 0x42)).hexdigest() != "73ab91b6a66259fedce55cf5e677310eb17680b533c39e359ef7151187d47808":
+        raise ValueError("base Windows input constructor changed")
     # Concrete MouseDeviceWin API recovered from its pinned native table.
     # These checks describe existing methods; they do not grant object lifetime
     # or call/injection permission to a later reader of this static receipt.

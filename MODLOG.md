@@ -2679,3 +2679,16 @@ by Access denied; implementation and fixture match the accepted base.
 Bounded metadata reuse is bypassed with versioning OFF. No Steam or localization
 changes while the user tests fonts. Runtime FPS and visuals remain NOT RUN.
 Details: docs/research/replay-binding-filter-20261030.md.
+
+
+## MAIN 2026-10-30 - observed native menu receiver correction
+
+The accepted candidate's retained refusal receipt resolves the input object
+as native FBFAD8, not the previously assumed derived FBFCD0. Pinned Ghidra
+constructor/initializer evidence proves the same +A44 MouseDeviceWin reference
+layout. Added only this exact known type, including type identity in snapshot
+equality; no native calls or injection. Actual-source regression FAIL before /
+PASS after, 149 C++ checks and five Python ownership tests PASS. Pinned private
+EXE audit and both full x86 builds PASS. The initial Python test edit contained
+a C++ integer suffix; corrected before the passing run. Native menu laser
+connection remains incomplete. Steam and accepted 5ef2106c baseline unchanged.

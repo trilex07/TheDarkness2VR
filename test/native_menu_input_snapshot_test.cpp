@@ -23,6 +23,17 @@ int main() {
     CHECK(first.client==0x210000 && first.input==0x310000 && first.mouse==0x410000);
     CHECK(first.device==0x500000 && first.getState==0x70001001 && first.getData==0x70002001);
     CHECK(Observe(0x1234,0x100000,read,second));CHECK(first==second);
+    // The user's retained game log has the Windows base manager at FBFAD8.
+    // Its native +60 initializer creates the same MouseDeviceWin at +A44.
+    memory[0x310000]=0xFBFAD8;
+    CHECK(Observe(0x1234,0x100000,read,second));
+    CHECK(second.input==first.input && second.mouse==first.mouse);
+    CHECK(second.inputTable==0xFBFAD8 && !(first==second));
+    for(uint32_t unknown:{0u,0xFBFAD4u,0xFBFADCu,0xFBFCCCu,0xFBFCD4u}) {
+        memory[0x310000]=unknown;second=first;
+        CHECK(!Observe(0x1234,0x100000,read,second));CHECK(first==second);
+    }
+    memory[0x310000]=0xFBFCD0;
     // Refusals expose the exact contract failure, not a partial receiver.
     Refusal refusal;
     memory.erase(0x310A44);second=first;
