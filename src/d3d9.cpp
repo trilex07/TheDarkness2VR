@@ -2339,6 +2339,11 @@ static void CaptureIntzDepthToD11(IDirect3DDevice9* dev) {
 }
 
 HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDirect3DSurface9* pNewZStencil) {
+    // Publish only accepted binds, as the VS/PS hooks do. A rejected native
+    // bind leaves the live resource unchanged and must not become a successful
+    // later replay bind or replace the observed hardware-depth texture.
+    const HRESULT result = g_origSetDepthStencilSurface(dev, pNewZStencil);
+    if (FAILED(result)) return result;
     if (d2vr_replay::g_recActive) {
         d2vr_replay::RecEmit(d2vr_replay::OP_SetDepthStencilSurface, 0, (uint32_t)(uintptr_t)pNewZStencil);
         // depth surface -> owning texture (INTZ), once per surface - diagnostic trace link
@@ -2374,12 +2379,14 @@ HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDi
             }
         }
     }
-    return g_origSetDepthStencilSurface(dev, pNewZStencil);
+    return result;
 }
 
 // Evolution Engine binds INTZ to sampler s0 (SetTexture(0, intzTex)) during deferred lighting/shadows
 // right after the opaque 3D geometry pass completes (see PixelShaders/C891DB74.txt & 3FF3A68C.txt).
 HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* dev, DWORD Stage, IDirect3DBaseTexture9* pTexture) {
+    const HRESULT result = g_origSetTexture(dev, Stage, pTexture);
+    if (FAILED(result)) return result;
     if (d2vr_replay::g_recActive) {
         d2vr_replay::RecEmit(d2vr_replay::OP_SetTexture, 0, Stage, (uint32_t)(uintptr_t)pTexture);
         // texture -> level-0 surface map for the traces (once per texture, capped)
@@ -2408,7 +2415,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* dev, DWORD Stage, ID
             }
         }
     }
-    return g_origSetTexture(dev, Stage, pTexture);
+    return result;
 }
 
 // ---------------------------------------------------------------- D3D11 Method 2 Stereo Shader Pipeline
