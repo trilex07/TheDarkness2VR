@@ -1,5 +1,6 @@
 #include "../src/native_menu_input_snapshot.h"
 #include <map>
+#include <string>
 #include <cstdio>
 #include <cstdlib>
 using namespace d2vr_menu_native;
@@ -22,6 +23,19 @@ int main() {
     CHECK(first.client==0x210000 && first.input==0x310000 && first.mouse==0x410000);
     CHECK(first.device==0x500000 && first.getState==0x70001001 && first.getData==0x70002001);
     CHECK(Observe(0x1234,0x100000,read,second));CHECK(first==second);
+    // Refusals expose the exact contract failure, not a partial receiver.
+    Refusal refusal;
+    memory.erase(0x310A44);second=first;
+    CHECK(!Observe(0x1234,0x100000,read,second,0,&refusal));
+    CHECK(first==second && !refusal.readable && refusal.address==0x310A44);
+    CHECK(std::string(refusal.stage)=="mouse-reference");
+    memory[0x310A44]=0x400000;memory[0x310000]=0xFBFCD4;
+    CHECK(!Observe(0x1234,0x100000,read,second,0,&refusal));
+    CHECK(first==second && refusal.readable && refusal.observed==0xFBFCD4 && refusal.expected==0xFBFCD0);
+    CHECK(std::string(refusal.stage)=="input-type");
+    memory[0x310000]=0xFBFCD0;
+    CHECK(Observe(0x1234,0x100000,read,second,0,&refusal));
+    CHECK(first==second && std::string(refusal.stage)=="none" && !refusal.address);
     const auto originalMemory=memory;
     // Mode3 replaces FrameworkWin's instance table before input observation.
     // A valid receiver must survive exactly OUR admitted immutable clone.

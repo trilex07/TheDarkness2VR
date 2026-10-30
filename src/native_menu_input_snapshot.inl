@@ -60,16 +60,19 @@ static void ObserveNativeMenuReceiver() {
         return ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(address),&value,4,&copied) && copied==4;
     };
     d2vr_menu_native::Snapshot first,second;
+    d2vr_menu_native::Refusal refusal;
     DWORD afterPid=0;
     if(thread && pid==GetCurrentProcessId() &&
-       d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,first,ownedFrameworkTable) &&
-       d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,second,ownedFrameworkTable) && first==second &&
+       d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,first,ownedFrameworkTable,&refusal) &&
+       d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,second,ownedFrameworkTable,&refusal) && first==second &&
        GetWindowThreadProcessId(window,&afterPid)==thread && afterPid==pid &&
        uint32_t(GetWindowLongPtrW(window,GWLP_USERDATA))==framework) {
         complete=true;
         Log("[NativeMenuReceiver] hwnd=%p thread=%lu framework=%08X client=%08X input=%08X mouse=%08X directInput=%08X GetDeviceState=%08X GetDeviceData=%08X; read-only stable snapshot; lifetimeLease=0 menuState=UNKNOWN surface=UNKNOWN injection=OFF",
             window,thread,first.framework,first.client,first.input,first.mouse,first.device,first.getState,first.getData);
     } else if(attempts==8)
-        Log("[NativeMenuReceiver] no stable receiver after eight bounded observations; injection=OFF");
+        Log("[NativeMenuReceiver] no stable receiver after eight bounded observations; stage=%s address=%08X readable=%d observed=%08X expected=%08X hwnd=%p thread=%lu pid=%lu framework=%08X ownedTable=%08X; injection=OFF",
+            refusal.stage,refusal.address,int(refusal.readable),refusal.observed,refusal.expected,
+            window,thread,pid,framework,ownedFrameworkTable);
 #endif
 }

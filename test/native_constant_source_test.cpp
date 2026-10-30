@@ -62,6 +62,57 @@ static void ClassifierFailures() {
     Check((mbi.Protect&PAGE_GUARD)!=0,"fallback preserves foreign source guard");
     VirtualFree(guard,0,MEM_RELEASE);
 }
+static void GlobalFields() {
+    auto* page=static_cast<unsigned char*>(VirtualAlloc(nullptr,4096,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
+    Check(page!=nullptr,"global classifier frame allocation");
+    const uintptr_t low=reinterpret_cast<uintptr_t>(page),high=low+4096,frame=low+0x900;
+    auto* slot=reinterpret_cast<uintptr_t*>(frame-0x794-48);
+    static unsigned payload[4];
+    Sites sites{{11,12},{21,22},{121,122},{{41,0,0},{42,0,0}}};
+    materialEnabled=true;
+    for(unsigned bank=0;bank<2;++bank)for(unsigned site=0;site<6;++site) {
+        const auto stage=bank?Stage::Pixel:Stage::Vertex;
+        const auto address=reinterpret_cast<uintptr_t>(payload);
+        sites.globalReturn[bank][site]=30+site;
+        sites.globalSource[bank][site]=address;
+        slot[0]=sites.apiReturn[bank];slot[2]=slot[6]=0;
+        slot[3]=slot[7]=address;slot[4]=slot[8]=1;slot[5]=30+site;
+        reinterpret_cast<uintptr_t*>(frame)[1]=sites.parentReturn[bank][0];
+        auto inspect=[&](size_t bytes=16){return Proof::Inspect(slot,frame,payload,bytes,stage,low,high,sites);};
+        for(unsigned revision=0;revision<100;++revision) {
+            for(unsigned j=0;j<4;++j)payload[j]=revision*101+site*7+bank+j;
+            auto proof=inspect();
+            Check(proof.Matches(payload,16)&&proof.Material(),"exact current global accepted");
+            Check(Copy(proof,recorded,payload,16)&&!memcmp(recorded,payload,16),"mutable global copied each call");
+        }
+        slot[4]=slot[8]=2;Check(!inspect(32).Matches(payload,32),"global oversized upload rejected");slot[4]=slot[8]=1;
+        ++sites.globalSource[bank][site];Check(!inspect().Matches(payload,16),"global interior address rejected");--sites.globalSource[bank][site];
+        ++slot[5];Check(!inspect().Matches(payload,16),"unknown global call site rejected");--slot[5];
+        materialEnabled=false;Check(!inspect().Matches(payload,16),"global option off rejected");materialEnabled=true;
+        sites.globalReturn[bank][site]=0;
+    }
+    sites.globalReturn[1][0]=30;sites.globalSource[1][0]=reinterpret_cast<uintptr_t>(payload);
+    slot[5]=30;
+    LARGE_INTEGER frequency,start,stop;QueryPerformanceFrequency(&frequency);
+    constexpr unsigned iterations=200000;
+    QueryPerformanceCounter(&start);
+    for(unsigned i=0;i<iterations;++i) {
+        payload[0]=i;
+        Check(d2vr_record_copy::Copy(recorded,payload,16,true),"RPM global benchmark copy");
+    }
+    QueryPerformanceCounter(&stop);
+    const double rpm=(stop.QuadPart-start.QuadPart)*1e9/frequency.QuadPart/iterations;
+    QueryPerformanceCounter(&start);
+    for(unsigned i=0;i<iterations;++i) {
+        payload[0]=i;
+        auto proof=Proof::Inspect(slot,frame,payload,16,Stage::Pixel,low,high,sites);
+        Check(Copy(proof,recorded,payload,16),"owned global benchmark copy");
+    }
+    QueryPerformanceCounter(&stop);
+    const double owned=(stop.QuadPart-start.QuadPart)*1e9/frequency.QuadPart/iterations;
+    std::printf("OFFLINE exact 16B global copy: RPM=%.1f ns owned-with-classifier=%.1f ns; runtime frequency unknown\n",rpm,owned);
+    materialEnabled=false;VirtualFree(page,0,MEM_RELEASE);
+}
 static void ActiveStackFailures() {
     auto* page=static_cast<unsigned char*>(VirtualAlloc(nullptr,8192,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
     Check(page!=nullptr,"active stack classifier allocation");
@@ -340,6 +391,10 @@ int main() {
         std::memset(recorded,0,sizeof(recorded));std::memset(forwarded,0,sizeof(forwarded));
         Parent();Check(copied,"every admitted fixed-field extent works through actual gate");
         Check(!std::memcmp(recorded,overrideSource,vectorCount*16)&&!std::memcmp(recorded,forwarded,sizeof(recorded)),"fixed-field nonzero payload bit equality");
+        if(field>=10)for(unsigned revision=0;revision<100;++revision) {
+            for(unsigned j=0;j<4;++j)reinterpret_cast<unsigned*>(materialBlock+fieldOffset[field])[j]=revision*101+j;
+            Parent();Check(copied&&!memcmp(recorded,overrideSource,16),"scratch overwrite copied freshly through actual hook");
+        }
         overrideSource+=4;Parent();Check(!copied,"each field rejects shifted source");overrideSource-=4;
         ++vectorCount;Parent();Check(!copied,"each field rejects oversized extent");--vectorCount;
     }
@@ -404,6 +459,7 @@ int main() {
     PixelSubmissionFailures();
     ClassifierFailures();
     ActiveStackFailures();
+    GlobalFields();
     NestedFields();
     Check(!AdmitImage("wrong",nullptr),"wrong image SHA rejects");
     VirtualFree(materialBlock,0,MEM_RELEASE);

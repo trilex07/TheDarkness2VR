@@ -47,26 +47,48 @@ template<class Read> bool ObservePause(uint32_t manager,Read read,PauseSnapshot&
     }
     output=s;return true;
 }
+// A refusal receipt identifies the first failed read/type/identity check. It
+// conveys no admission and never publishes a partially resolved receiver.
+struct Refusal {
+    const char* stage="none";
+    uint32_t address=0,observed=0,expected=0;
+    bool readable=false;
+};
 // ownedFrameworkTable must come from our pinned immutable framework clone,
 // never from an observed unknown instance. All other graph/type checks remain.
 template<class Read> bool Observe(uint32_t hwnd,uint32_t framework,Read read,Snapshot& output,
-                                  uint32_t ownedFrameworkTable=0) {
+                                  uint32_t ownedFrameworkTable=0,Refusal* refusal=nullptr) {
     Snapshot s;s.framework=framework;
-    const auto field=[&](uint32_t base,uint32_t offset,uint32_t& value) {
-        return Pointer(base) && offset<=UINT32_MAX-base-3 && read(base+offset,value);
+    Refusal failure;
+    const auto field=[&](const char* stage,uint32_t base,uint32_t offset,uint32_t& value,
+                         uint32_t expected=0) {
+        failure={stage,0,0,expected,false};
+        if(!Pointer(base) || offset>UINT32_MAX-base-3)return false;
+        failure.address=base+offset;
+        if(!read(failure.address,value))return false;
+        failure.readable=true;failure.observed=value;
+        return true;
     };
     uint32_t table=0,mirror=0;
-    if(!hwnd || !field(framework,0,table) ||
+    failure.stage="window";
+    if(!hwnd || !field("framework-type",framework,0,table,0xFC8930) ||
        (table!=0xFC8930 && (!ownedFrameworkTable || table!=ownedFrameworkTable)) ||
-       !field(framework,0xF8,mirror) || mirror!=hwnd ||
-       !field(framework,0xA8,s.clientRef) || !field(s.clientRef,0,s.client) ||
-       !field(s.client,0x374,s.inputRef) || !field(s.inputRef,0,s.input) ||
-       !field(s.input,0,table) || table!=0xFBFCD0 ||
-       !field(s.input,0xA44,s.mouseRef) || !field(s.mouseRef,0,s.mouse) ||
-       !field(s.mouse,0,table) || table!=0xFC00C8 ||
-       !field(s.mouse,0x1A4,s.device) || !field(s.device,0,s.deviceTable) ||
-       !field(s.deviceTable,0x24,s.getState) || !field(s.deviceTable,0x28,s.getData) ||
-       !s.getState || !s.getData)return false;
-    output=s;return true;
+       !field("window-mirror",framework,0xF8,mirror,hwnd) || mirror!=hwnd ||
+       !field("client-reference",framework,0xA8,s.clientRef) ||
+       !field("client",s.clientRef,0,s.client) ||
+       !field("input-reference",s.client,0x374,s.inputRef) ||
+       !field("input",s.inputRef,0,s.input) ||
+       !field("input-type",s.input,0,table,0xFBFCD0) || table!=0xFBFCD0 ||
+       !field("mouse-reference",s.input,0xA44,s.mouseRef) ||
+       !field("mouse",s.mouseRef,0,s.mouse) ||
+       !field("mouse-type",s.mouse,0,table,0xFC00C8) || table!=0xFC00C8 ||
+       !field("direct-input-device",s.mouse,0x1A4,s.device) ||
+       !field("direct-input-table",s.device,0,s.deviceTable) ||
+       !field("get-device-state",s.deviceTable,0x24,s.getState) || !s.getState ||
+       !field("get-device-data",s.deviceTable,0x28,s.getData) || !s.getData) {
+        if(refusal)*refusal=failure;
+        return false;
+    }
+    output=s;if(refusal)*refusal={};return true;
 }
 }

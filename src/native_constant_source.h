@@ -17,25 +17,34 @@ struct Sites {
     uintptr_t apiReturn[2];
     uintptr_t builderFirst[2],builderEnd[2];
     uintptr_t parentReturn[2][3];
-    uintptr_t fieldReturn[2][10] = {};
+    uintptr_t fieldReturn[2][15] = {};
     uintptr_t nestedReturn[2][4] = {};
+    uintptr_t globalReturn[2][6] = {};
+    uintptr_t globalSource[2][6] = {};
 };
 inline constexpr Sites nativeSites{
     {0x00b74740,0x0096e3d0},
     {0x00571670,0x00ad3380},{0x00573750,0x00ad5460},
     {{0x0071f6db,0x0071f71f,0x008f8180},{0x0071f702,0x0071f736,0}},
-    {{0x571730,0x57176a,0x571787,0x5717ab,0x5717d0,0x571d6f,0x571e44,0x571e8d,0x572e2e,0x571e68},
-     {0xad3440,0xad347a,0xad3497,0xad34bb,0xad34e0,0xad3a7f,0xad3b54,0xad3b9d,0xad4b3e,0xad3b78}},
+    {{0x571730,0x57176a,0x571787,0x5717ab,0x5717d0,0x571d6f,0x571e44,0x571e8d,0x572e2e,0x571e68,0x572a2e,0x572c40,0x572c64,0x572cb1,0x573353},
+     {0xad3440,0xad347a,0xad3497,0xad34bb,0xad34e0,0xad3a7f,0xad3b54,0xad3b9d,0xad4b3e,0xad3b78,0xad473e,0xad4950,0xad4974,0xad49c1,0xad5063}},
     {{0x571db2,0x571dea,0x571e1f,0x5723a1},
-     {0xad3ac2,0xad3afa,0xad3b2f,0xad40b1}}
+     {0xad3ac2,0xad3afa,0xad3b2f,0xad40b1}},
+    {{0x572f6c,0x572f86,0x57300e,0x5730d9,0x573515,0x5736c2},
+     {0xad4c7c,0xad4c96,0xad4d1e,0xad4de9,0xad5225,0xad53d2}},
+    {{0x10dd120,0x10dd6c0,0x10dea40,0x10dea40,0x10dc0c0,0x10dd5b0},
+     {0x10dc260,0x10dc440,0x10dea40,0x10dea40,0x10dd440,0x10dc8e0}}
 };
 inline std::atomic<bool> enabled{false},admitted{false},faulted{false};
 inline std::atomic<bool> materialEnabled{false};
 // The common matrix callback may follow several native computations. Only its
 // current owner's fixed 0x330 scratch matrix qualifies, never a returned foreign
-// pointer. The full producer admission and fresh owner test remain mandatory.
-inline constexpr size_t fieldOffset[]={0x10,0xd0,0xd0,0x110,0x220,0x4f0,0x470,0x260,0x580,0x330};
-inline constexpr size_t fieldVectors[]={12,4,1,17,4,6,4,4,1,4};
+// pointer. Five scalar-vector helpers similarly use the current owner's 0x2e0
+// scratch field. Exact returned-pointer equality is required; helpers are never
+// re-executed and scratch contents are never reused across submissions.
+// The full producer admission and fresh owner test remain mandatory.
+inline constexpr size_t fieldOffset[]={0x10,0xd0,0xd0,0x110,0x220,0x4f0,0x470,0x260,0x580,0x330,0x2e0,0x2e0,0x2e0,0x2e0,0x2e0};
+inline constexpr size_t fieldVectors[]={12,4,1,17,4,6,4,4,1,4,1,1,1,1,1};
 inline constexpr size_t fieldCount=sizeof(fieldOffset)/sizeof(fieldOffset[0]);
 inline constexpr size_t nestedOffset[]={0xe0,0x70,0,0xc0};
 inline constexpr size_t nestedVectors[]={6,1,9,4};
@@ -89,6 +98,20 @@ public:
             if(!known)return {};
             if(p>=first && p<=last && bytes<=last-p) {
                 ++counts.proved;return Proof(source,bytes);
+            }
+            // The pinned builders also submit six exact 16-byte image globals
+            // per stage. Their lifetime is the admitted main executable's lifetime.
+            // These values can change: copy NOW, never cache their contents or
+            // generalize admission to a containing page/section. Exact call site,
+            // duplicated arguments, parent and full producer fingerprint still apply.
+            if(materialEnabled.load(std::memory_order_relaxed) && bytes==16) {
+                for(unsigned i=0;i<6;++i) {
+                    if(sites.globalReturn[bank][i] && slot[5]==sites.globalReturn[bank][i] &&
+                       sites.globalSource[bank][i] && p==sites.globalSource[bank][i]) {
+                        ++counts.proved;++counts.materialProved;
+                        return Proof(source,bytes,true);
+                    }
+                }
             }
             // EBX is assigned the current material owner once at builder entry,
             // preserved by both native forwarders, and never reassigned before

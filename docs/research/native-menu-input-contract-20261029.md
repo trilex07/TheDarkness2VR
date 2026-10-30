@@ -256,3 +256,16 @@ Private exports: TEMP/d2vr-menu-cursor-contract-20261030.txt,
 d2vr-menu-mouse-events-20261030.txt and d2vr-menu-mouse-dispatch-20261030.txt;
 each has the pinned EXE SHA and EVIDENCE COMPLETE. The existing input-service
 audit now checks the concrete vtable entries and complete getter bytes.
+
+## Exact receiver refusal receipt, 2026-10-30
+
+The retained runtime still refused all eight observations after private-table
+compatibility was added. That log does not identify which later graph check
+failed. The existing bounded observer now reports the first failed field/type
+check, read address, readability and expected/observed word on its final
+attempt. It retains all admission checks, maximum eight attempts and no input
+injection. No additional polling or profiler was introduced. Failure output
+never publishes a partially resolved receiver. Both x86 builds PASS; 136
+actual-source snapshot checks and 181368 pointer-core checks PASS. The installed
+StateBlock/font candidate remains unchanged. Native menu routing remains
+incomplete until the real receiver and submitted surface can be admitted.
