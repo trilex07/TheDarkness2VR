@@ -182,7 +182,7 @@ def inspect(blob):
             raise ValueError("native mouse polling/window contract changed")
     # Concrete FlashInstanceImpl and FlashMgrImpl, reached through their type
     # registrations and constructors, not inferred from adjacent table entries.
-    for table, slots in ((0xFDA6E8, {0xFC: 0x76D5C0, 0x104: 0x6E4250}),
+    for table, slots in ((0xFDA6E8, {0xFC: 0x76D5C0, 0x104: 0x6E4250, 0x130: 0xB64910}),
                          (0xFDA948, {0xA8: 0xA0B120})):
         for slot, target in slots.items():
             if struct.unpack("<I", pe.at_va(table + slot, 4))[0] != target:
@@ -193,9 +193,21 @@ def inspect(blob):
         raise ValueError("native Flash complete method changed")
     if hashlib.sha256(pe.at_va(0xA0B120, 0x13)).hexdigest() != "12e2e22fa310de13dd8a4cba112a4c5d3a1772dbb9b0ed8710c89e30184bb08e":
         raise ValueError("native Flash complete method changed")
+    for address, count, expected in (
+        (0xC98BD0, 0x101, "15ff2ef0033ce05e1253511291e3cfab855c2d941f741daa396475e96a1fe347"),
+        (0xBB87C0, 0x19B, "48d140142551d971092fcc06d6abbbc0e45d2904da09f5c0e54e873269c42fa0"),
+        (0xB64910, 0x7, "9b682a016c48e8f647b1b2a009f9379a640f5bf09e524afc9bf9f5d7cfda07d0"),
+        (0xA0DC30, 0x9, "ca60d8c6679c797c62a6dff123a9fa1cb5f393fbdd10c7b14d7b5885791235b8"),
+        (0xB0FB20, 0x3F, "3e8b1a4fabd142b247ad781fbd3bcd19700261e8e47647a3301d4a984365934f"),
+    ):
+        if hashlib.sha256(pe.at_va(address, count)).hexdigest() != expected:
+            raise ValueError("native Flash root/cursor contract changed")
     return {
         "status": "STATIC_CONTRACT_PASS", "exe_sha256": digest,
         "native_movie_observation": {
+            "manager_root": "load(0x10B389C) -> intrusive reference -> FlashMgrImpl; factory C98BD0, shutdown BB87C0",
+            "top_stack": "manager+0x58 begin, +0x5C end; empty vector has no movie",
+            "cursor_requested": "slot+0x130 -> B64910; byte at movie+0xF4; observation only",
             "instance_type": "0xFDA6E8; constructed by 0x8963E0",
             "visible": "slot+0xFC -> 0x76D5C0; byte at movie+0x79",
             "topmost": "slot+0x104 -> 0x6E4250; compare movie+0xC intrusive reference",

@@ -468,3 +468,41 @@ surface acquisition, installation of the admitted native hook, cursor setter
 and navigation routing remain unconnected. This is an integration component,
 not a functioning native main/pause/options laser or a runtime FPS improvement.
 Steam retains the user's mapped-copy candidate 21e9b5b5.
+
+
+## Existing Flash root to top movie, 2026-10-30
+
+The exact singleton root is 10B389C, holding an intrusive reference, not a
+FlashMgr object. C98BD0 reads it, creates /EE/Types/UISys/FlashMgrImpl only if
+its referenced object is null, stores the created reference back and initializes
+through +5C. BB87C0 clears this same root during shutdown. The unrelated manager
+slot+104 -> C98BC0 increments manager+50 and is not the singleton getter.
+No factory is invoked by the integration to discover an existing object.
+
+A0DBE0 initializes the +58/+5C/+60 vector to zero; BB87C0 passes manager+58 to
+the complete B0FB20 vector teardown. This establishes the begin/end pair around
+A0B120's existing last-reference getter. ObserveTopMovie checks the existing
+root, concrete manager and end >= begin/alignment before following end-4. An
+empty vector yields a successful no-movie observation without dereferencing
+before the vector. A nonempty result must also satisfy the existing movie's
+container/manager/type/visibility/topmost checks. Slot+130 -> B64910 reads byte
+movie+F4; slot+138 -> B072E0 sets it. It is exposed as cursorRequested, not as a
+claim that the object is an input owner or has a world-space menu plane.
+
+The existing protected diagnostic observer now performs at most eight attempts,
+one second apart, on the native window thread, with two equal snapshots before
+a receipt. Loaded complete root creation/shutdown, visibility/topmost/cursor
+methods and the vector initialization/teardown contract are fingerprinted first.
+Only a supported visible top movie requesting a cursor ends observation early.
+No native calls, hooks, object retention, events or UI writes are added.
+Production omits the observer. A snapshot remains lifetimeLease=0/injection=OFF.
+
+Actual-source x86 snapshots: 264 checks PASS; pointer-to-poll coordinator: 65
+checks PASS; five existing Python input ownership tests and pinned-image static
+audit PASS. Both renderer x86 configurations PASS. No gameplay/PSVR2 result,
+FPS claim or Steam deployment. Steam DLL remains 21e9b5b5 / CA31CA75...19941.
+Private Ghidra exports: TEMP/d2vr-menu-manager-root-20261030.txt,
+d2vr-menu-manager-root-setter-20261030.txt and
+TEMP/d2vr-menu-table-contract-complete-20261030.txt; all EVIDENCE COMPLETE.
+The remaining host needs actual submitted native menu geometry and native
+cursor/navigation routing before a full main/pause/options laser can work.

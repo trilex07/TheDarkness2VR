@@ -91,6 +91,41 @@ template<class Read> bool ObserveMovie(uint32_t movie,Read read,MovieSnapshot& o
     }
     output=s;return true;
 }
+// Root used by C98BD0's singleton creation/read path and cleared by BB87C0.
+// Read-only observation only; never call that factory merely to find a movie.
+struct TopMovieSnapshot {
+    uint32_t managerRef=0,manager=0,begin=0,end=0,topRef=0,topMovie=0;
+    MovieSnapshot movie;
+    bool cursorRequested=false,hasMovie=false;
+    bool operator==(const TopMovieSnapshot& b)const {
+        return managerRef==b.managerRef && manager==b.manager && begin==b.begin &&
+            end==b.end && topRef==b.topRef && topMovie==b.topMovie && movie==b.movie &&
+            cursorRequested==b.cursorRequested && hasMovie==b.hasMovie;
+    }
+};
+template<class Read> bool ObserveTopMovie(Read read,TopMovieSnapshot& output) {
+    TopMovieSnapshot s;
+    const auto field=[&](uint32_t base,uint32_t offset,uint32_t& value) {
+        return Pointer(base) && offset<=UINT32_MAX-base-3 && read(base+offset,value);
+    };
+    uint32_t table=0,method=0,flags=0;
+    if(!read(0x10B389C,s.managerRef) || !field(s.managerRef,0,s.manager) ||
+       !field(s.manager,0,table) || table!=0xFDA948 ||
+       !field(table,0xA8,method) || method!=0xA0B120 ||
+       !field(s.manager,0x58,s.begin) || !field(s.manager,0x5C,s.end) ||
+       (s.begin && !Pointer(s.begin)) || s.end<s.begin || ((s.end-s.begin)&3))return false;
+    if(s.begin!=s.end) {
+        if(!Pointer(s.end) || !read(s.end-4,s.topRef) ||
+           !field(s.topRef,0,s.topMovie) || !Pointer(s.topMovie) ||
+           !ObserveMovie(s.topMovie,read,s.movie) || s.movie.manager!=s.manager ||
+           !field(s.topMovie,0,table) || !field(table,0x130,method) || method!=0xB64910 ||
+           !field(s.topMovie,0xF4,flags))return false;
+        // B64910 returns this exact byte. It requests native mouse visibility;
+        // neither this byte nor topmost/visible proves an input lifetime lease.
+        s.cursorRequested=uint8_t(flags)!=0;s.hasMovie=true;
+    }
+    output=s;return true;
+}
 // A refusal receipt identifies the first failed read/type/identity check. It
 // conveys no admission and never publishes a partially resolved receiver.
 struct Refusal {

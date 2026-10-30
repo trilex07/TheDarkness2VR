@@ -2742,3 +2742,15 @@ Native surface/activation, poll-hook installation and cursor/navigation host
 routing remain outstanding; no claim of a working native menu laser.
 Optimized x86 integration and existing pointer/poll/merge/snapshot tests PASS;
 both renderer x86 configurations PASS. No Steam deployment or FPS claim.
+
+
+## Existing Flash root and top-movie observation (2026-10-30)
+
+Resolved the actual FlashMgr singleton reference at 10B389C through its native
+creation/read and shutdown implementation. Added bounded empty-stack-aware
+root-to-top-movie observation, cursor-request byte and loaded instruction pins.
+The diagnostic path takes at most eight owner-thread paired reads; it never
+calls a factory, hooks UI, retains native objects or injects input. Production
+omits it. Actual-source snapshot264, pointer bridge65, Python ownership5 and
+pinned EXE audit PASS; both x86 builds PASS. No Steam deployment/FPS claim.
+Actual native menu surface and cursor/navigation host integration remain open.

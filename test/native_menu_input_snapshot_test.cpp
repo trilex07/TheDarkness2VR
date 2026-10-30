@@ -137,5 +137,40 @@ int main() {
         memory=movieMemory;memory[address]+=4;movieOther=movie;
         CHECK(!ObserveMovie(0x100000,read,movieOther));CHECK(movieOther==movie);
     }
+    memory=movieMemory;
+    memory[0x10B389C]=0x300000;memory[0x310058]=0x400000;
+    memory[0x500000]=0x100000;memory[0xFDA818]=0xB64910;memory[0x1000F4]=0xFFFFFF01;
+    TopMovieSnapshot top,topOther;
+    CHECK(ObserveTopMovie(read,top));CHECK(top.hasMovie&&top.cursorRequested);
+    CHECK(top.topMovie==0x100000&&top.movie.visible&&top.movie.topmost);
+    const auto topMemory=memory;
+    for(const auto& entry:topMemory) {
+        memory.erase(entry.first);topOther=top;
+        CHECK(!ObserveTopMovie(read,topOther));CHECK(top==topOther);
+        memory.insert(entry);
+    }
+    for(uint32_t flags:{0xFFFFFF00u,0x00000100u,1u,0x80u}) {
+        memory[0x1000F4]=flags;CHECK(ObserveTopMovie(read,topOther));
+        CHECK(topOther.cursorRequested==(uint8_t(flags)!=0));
+    }
+    memory=topMemory;memory[0x310058]=memory[0x31005C];
+    memory.erase(0x400000);memory.erase(0x500000);memory.erase(0x100000);
+    CHECK(ObserveTopMovie(read,topOther));CHECK(!topOther.hasMovie&&!topOther.cursorRequested);
+    memory=topMemory;memory[0x310058]=memory[0x31005C]=0;
+    CHECK(ObserveTopMovie(read,topOther));CHECK(!topOther.hasMovie&&!topOther.movie.visible);
+    for(unsigned kind=0;kind<8;++kind) {
+        memory=topMemory;
+        switch(kind) {
+        case 0:memory[0x10B389C]=0;break;
+        case 1:memory[0x310058]=0x400008;break;
+        case 2:memory[0x310058]=0x400001;break;
+        case 3:memory[0x31005C]=0x400006;break;
+        case 4:memory[0x500000]=0;break;
+        case 5:memory[0xFDA818]++;break;
+        case 6:memory[0x31005C]=0xFFFFFFFCu;break;
+        case 7:memory[0x310000]++;break;
+        }
+        topOther=top;CHECK(!ObserveTopMovie(read,topOther));CHECK(topOther==top);
+    }
     std::printf("PASS %u native menu snapshot checks: movie visibility/topmost references, receiver graph, pause predicate/short circuit, inherited method, unknown override, reference indirections, bounded reads, unchanged failure output; no native calls or writes\n",checks);
 }
