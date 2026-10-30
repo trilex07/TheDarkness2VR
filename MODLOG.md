@@ -2755,3 +2755,12 @@ cases PASS. Production and DiagnosticCapture x86 builds PASS. No deployment.
 Instruction contract: Intel SSE4 Programming Reference,
 https://www.intel.com/content/dam/develop/external/us/en/documents/d9156103-705230.pdf
 Private trace, executable metadata and binaries are not included in this change.
+
+
+Copy-cost follow-up: expanded the same helper benchmark to WB/WC memory at 256 B,
+64 KiB, 512 KiB and 1 MiB (128 copies each). Cached 1 MiB changed from 0.014920 to
+0.016355 ms; WC 1 MiB changed from 3.506853 to 0.435728 ms, and WC 512 KiB from
+1.801205 to 0.255502 ms. Run-to-run variation prevents a fixed frame-time claim;
+this bounds the cached-memory tradeoff while confirming the WC improvement.
+All 270464 copy correctness cases still pass. No production code changed in this
+follow-up, so the previously passing DLL builds and replay tests remain applicable.
