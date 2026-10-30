@@ -752,6 +752,7 @@ void LoadConfig() {
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
     d2vr_submission::requested=GetPrivateProfileIntA("Render","NativeSubmissionFilter",0,chosenIni)!=0;
     d2vr_submission::gate.Configure(d2vr_submission::requested);
+    d2vr_submission::bindingsRequested=GetPrivateProfileIntA("Render","NativeBindingFilter",0,chosenIni)!=0;
     Log("[NativeSubmission] requested=%d; owned final float packets only; opaque state fails closed",int(d2vr_submission::requested));
     g_replayConstantReuse = GetPrivateProfileIntA("Render", "ReplayConstantReuse", 0, chosenIni)!=0;
     g_replayConstantBindWindow = GetPrivateProfileIntA("Render", "ReplayConstantBindWindow", 0, chosenIni)!=0;
@@ -3662,6 +3663,9 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
                 int(d2vr_submission::gate.Enabled()),d2vr_submission::gate.Reasons(),
                 calls.forwarded[0],calls.skipped[0],calls.uncaptured[0],calls.forwarded[1],calls.skipped[1],calls.uncaptured[1]);
         }
+        if(d2vr_submission::requested && d2vr_submission::bindingsRequested)
+            Log("[NativeBinding] forwarded=%llu skipped=%llu unowned=%llu; frame ledger only, no texture/depth elision",
+                d2vr_submission::bindings.forwarded,d2vr_submission::bindings.skipped,d2vr_submission::bindings.unowned);
         const uint64_t* c = d2vr_replay::g_recCounts;
         Log("[TrueStereo] ops: Begin=%llu End=%llu Clear=%llu RT=%llu DSS=%llu Draw=%llu DIP=%llu DPUP=%llu DIPUP=%llu VS=%llu VSCF=%llu Tex=%llu RS=%llu TSS=%llu Smp=%llu VP=%llu SB=%llu",
             c[3], c[4], c[5], c[1], c[2], c[13], c[14], c[15], c[16], c[19], c[20], c[9], c[8], c[10], c[11], c[7], c[36]);

@@ -501,6 +501,7 @@ static void FinishBufferRecording();
 static void BeginBufferRecording();
 static bool ReleaseRecordingLocked(bool keepSnapshot=false) {
     if(d2vr_record_sync::Busy()){g_recOverflow=true;g_recActive=false;return false;}
+    d2vr_submission::InvalidateBindings(); // invalidate identities BEFORE ledger Release callbacks
     g_recActive = false;
     FinishBufferRecording();
     g_rec.clear();
@@ -648,6 +649,16 @@ static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 
     if (!g_recActive || g_recOverflow) return;
     RecLockGuard lock;
     RecEmitLocked(op,n,a0,a1,a2,a3,a4,a5);
+}
+// Exact publication receipt; a successful bind's resource is now ledger-owned.
+static inline bool RecEmitBinding(RecOp op,uint32_t n,uint32_t a0=0,uint32_t a1=0,
+                                 uint32_t a2=0,uint32_t a3=0){
+    if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){d2vr_record_sync::conflict=true;return false;}
+    if(!g_recActive || g_recOverflow)return false;
+    RecLockGuard lock;
+    const auto before=g_rec.size();
+    RecEmitLocked(op,n,a0,a1,a2,a3);
+    return !g_recOverflow && g_rec.size()==before+1;
 }
 static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
                                uint32_t a0 = 0, uint32_t a1 = 0, uint32_t a2 = 0, uint32_t a3 = 0,
@@ -1056,11 +1067,12 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDirect3DVertexShader9* sh) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetVertexShader(dev,sh);
     d2vr_record_sync::NativeMutation();
-    const HRESULT result=g_orig.SetVertexShader(dev,sh);
-    if(FAILED(result))return result;
+    bool published=false;
+    bool forwarded=false;
+    const auto updateMetadata=[&](bool record){
     RecLockGuard metadata;
-    if(!d2vr_record_sync::NativeMutation())return result;
-    if (g_recActive) RecEmit(OP_SetVertexShader, 0, (uint32_t)(uintptr_t)sh);
+    if(!d2vr_record_sync::NativeMutation())return;
+    if (record && g_recActive) published=RecEmitBinding(OP_SetVertexShader, 0, (uint32_t)(uintptr_t)sh);
     if (sh) {
         RecLockGuard lock;
         SetActiveVertexShaderMetadata(sh);
@@ -1071,6 +1083,18 @@ static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDi
     } else {
         SetActiveVertexShaderMetadata(nullptr);
     }
+    };
+    const auto send=[&]()->HRESULT {
+        forwarded=true;
+    const HRESULT result=g_orig.SetVertexShader(dev,sh);
+    if(FAILED(result))return result;
+    updateMetadata(true);
+    return result;
+    };
+    const HRESULT result=d2vr_submission::ForwardBinding(dev,
+        (d2vr_submission::requested && d2vr_submission::bindingsRequested)?GetCurrentThreadId():0,
+        g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::VertexShader,(uintptr_t)sh,0,0,send,[&](){return published;});
+    if(!forwarded)updateMetadata(false); // bind equality does not freeze metadata publication
     return result;
 }
 
@@ -1580,11 +1604,14 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
+    d2vr_submission::InvalidateBindings();
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawUP,g_replayEye,0,t,pc,stride);
-    return command.Finish(g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride));
+    const HRESULT result=command.Finish(g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride));
+    d2vr_submission::InvalidateBindings();return result;
 #else
-    return g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
+    const HRESULT result=g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
+    d2vr_submission::InvalidateBindings();return result;
 #endif
 }
 static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
@@ -1595,11 +1622,14 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
+    d2vr_submission::InvalidateBindings();
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawIndexedUP,g_replayEye,0,t,mvi,nv,pc,fmt,stride);
-    return command.Finish(g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride));
+    const HRESULT result=command.Finish(g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride));
+    d2vr_submission::InvalidateBindings();return result;
 #else
-    return g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+    const HRESULT result=g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+    d2vr_submission::InvalidateBindings();return result;
 #endif
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect(IDirect3DDevice9* dev, const RECT* r) {
@@ -1825,14 +1855,23 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexDeclaration(IDirect3DDevice9* dev, IDirect3DVertexDeclaration9* d) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetVertexDeclaration(dev,d);
     d2vr_record_sync::NativeMutation();
-    if (g_recActive) RecEmit(OP_SetVertexDeclaration, 0, (uint32_t)(uintptr_t)d);
+    bool published=false;
+    const auto send=[&]()->HRESULT {
+    if (g_recActive) published=RecEmitBinding(OP_SetVertexDeclaration, 0, (uint32_t)(uintptr_t)d);
     return RecordLiveResult(g_orig.SetVertexDeclaration(dev, d));
+
+    };
+    return d2vr_submission::ForwardBinding(dev,
+        (d2vr_submission::requested && d2vr_submission::bindingsRequested)?GetCurrentThreadId():0,
+        g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::Declaration,(uintptr_t)d,0,0,send,[&](){return published;});
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetFVF(IDirect3DDevice9* dev, DWORD fvf) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetFVF(dev,fvf);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetFVF, 0, fvf);
-    return RecordLiveResult(g_orig.SetFVF(dev, fvf));
+    d2vr_submission::InvalidateBindings();
+    const HRESULT result=RecordLiveResult(g_orig.SetFVF(dev,fvf));
+    d2vr_submission::InvalidateBindings();return result;
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetVertexShaderConstantI(dev,s,d,n);
@@ -1849,30 +1888,64 @@ static HRESULT STDMETHODCALLTYPE Hook_SetVSConstB(IDirect3DDevice9* dev, UINT s,
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSource(IDirect3DDevice9* dev, UINT num, IDirect3DVertexBuffer9* vb, UINT off, UINT stride) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetStreamSource(dev,num,vb,off,stride);
     d2vr_record_sync::NativeMutation();
-    if (g_recActive) RecEmit(OP_SetStreamSource, 0, num, (uint32_t)(uintptr_t)vb, off, stride);
+    bool published=false;
+    const auto send=[&]()->HRESULT {
+    if (g_recActive) published=RecEmitBinding(OP_SetStreamSource, 0, num, (uint32_t)(uintptr_t)vb, off, stride);
     return RecordLiveResult(g_orig.SetStreamSource(dev, num, vb, off, stride));
+
+    };
+    return d2vr_submission::ForwardBinding(dev,
+        (d2vr_submission::requested && d2vr_submission::bindingsRequested)?GetCurrentThreadId():0,
+        g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::Stream(num),(uintptr_t)vb,off,stride,send,[&](){return published;});
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSourceFreq(IDirect3DDevice9* dev, UINT num, UINT freq) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetStreamSourceFreq(dev,num,freq);
     d2vr_record_sync::NativeMutation();
-    if (g_recActive) RecEmit(OP_SetStreamSourceFreq, 0, num, freq);
+    bool published=false;
+    const auto send=[&]()->HRESULT {
+    if (g_recActive) published=RecEmitBinding(OP_SetStreamSourceFreq, 0, num, freq);
     return RecordLiveResult(g_orig.SetStreamSourceFreq(dev, num, freq));
+
+    };
+    return d2vr_submission::ForwardBinding(dev,
+        (d2vr_submission::requested && d2vr_submission::bindingsRequested)?GetCurrentThreadId():0,
+        g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::Frequency(num),freq,0,0,send,[&](){return published;});
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3DIndexBuffer9* ib) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetIndices(dev,ib);
     d2vr_record_sync::NativeMutation();
-    if (g_recActive) RecEmit(OP_SetIndices, 0, (uint32_t)(uintptr_t)ib);
+    bool published=false;
+    const auto send=[&]()->HRESULT {
+    if (g_recActive) published=RecEmitBinding(OP_SetIndices, 0, (uint32_t)(uintptr_t)ib);
     return RecordLiveResult(g_orig.SetIndices(dev, ib));
+
+    };
+    return d2vr_submission::ForwardBinding(dev,
+        (d2vr_submission::requested && d2vr_submission::bindingsRequested)?GetCurrentThreadId():0,
+        g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::Indices,(uintptr_t)ib,0,0,send,[&](){return published;});
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* ps) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShader(dev,ps);
     d2vr_record_sync::NativeMutation();
+    bool published=false;
+    bool forwarded=false;
+    const auto updateMetadata=[&](bool record){
+    RecLockGuard metadata;
+    if(!d2vr_record_sync::NativeMutation())return;
+    if (record && g_recActive) published=RecEmitBinding(OP_SetPixelShader, 0, (uint32_t)(uintptr_t)ps);
+    SetActivePixelShaderMetadata(ps);
+    };
+    const auto send=[&]()->HRESULT {
+        forwarded=true;
     const HRESULT result=g_orig.SetPixelShader(dev,ps);
     if(FAILED(result))return result;
-    RecLockGuard metadata;
-    if(!d2vr_record_sync::NativeMutation())return result;
-    if (g_recActive) RecEmit(OP_SetPixelShader, 0, (uint32_t)(uintptr_t)ps);
-    SetActivePixelShaderMetadata(ps);
+    updateMetadata(true);
+    return result;
+    };
+    const HRESULT result=d2vr_submission::ForwardBinding(dev,
+        (d2vr_submission::requested && d2vr_submission::bindingsRequested)?GetCurrentThreadId():0,
+        g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::PixelShader,(uintptr_t)ps,0,0,send,[&](){return published;});
+    if(!forwarded)updateMetadata(false); // bind equality does not freeze metadata publication
     return result;
 }
 #pragma optimize("y", off)

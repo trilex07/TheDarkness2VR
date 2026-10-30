@@ -22,6 +22,7 @@ if(-not $lock){throw 'Recorder lock source missing'}
 $enum=[regex]::Match($source,'(?s)enum RecOp : uint16_t \{.*?\};').Value
 $record=[regex]::Match($source,'(?s)struct Rec \{.*?\};').Value
 $records=foreach($name in 'RecEmitLocked','RecEmit') {FunctionText $name}
+if($source.Contains('static inline bool RecEmitBinding(')){$records=@($records)+(FunctionText 'RecEmitBinding')}
 $hooks=foreach($name in 'Hook_SetStreamSource','Hook_SetIndices','Hook_DrawPrimitive','Hook_DrawIndexedPrimitive') {FunctionText $name}
 if($source.Contains('static bool RecordUiPrimitive(')){$hooks=@((FunctionText 'RecordUiPrimitive'))+$hooks}
 else{$hooks=@('[[maybe_unused]] static bool RecordUiPrimitive(IDirect3DDevice9*,D3DPRIMITIVETYPE,UINT,UINT){return false;}')+$hooks}
@@ -89,3 +90,6 @@ foreach($probe in 'draw','worker','lock','unlock','replay','draw-write','worker-
     if(-not $process.WaitForExit(5000)){$process.Kill();throw "Recorder callback deadlocked: $probe"}
     if($process.ExitCode -ne 0){throw "Recorder callback regression failed: $probe"}
 }
+
+& $exe --native-bindings
+if($LASTEXITCODE -ne 0){throw 'Frame-owned native binding regression failed'}

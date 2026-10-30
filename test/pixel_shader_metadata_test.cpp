@@ -21,7 +21,9 @@ static uint32_t g_activePsHash=0;
 static const void* g_boundPs=nullptr;
 template<class... T> static void Log(const char*,T...){}
 static unsigned records=0;
+static bool g_recOverflow=false;
 static void RecEmit(unsigned,unsigned,uint32_t){++records;}
+template<class... A> static bool RecEmitBinding(A... args){RecEmit(args...);return g_recActive&&!g_recOverflow;}
 static d2vr_shader_metadata::Pixels g_pixelShaders;
 #ifdef D2VR_EXPECT_LEGACY_STALE
 static std::unordered_map<const void*,uint32_t> g_psHashByPtr;
@@ -232,6 +234,27 @@ int main() {
     device.result=E_FAIL;CHECK(!SyncActiveShader(&device));
     CHECK(!g_activePsHash && g_activePsInverse==-1 && g_activePsViewExtents==-1);
     CHECK(!AdjustLight(adjusted,values,0,2,.25f,-.5f));
+    // Actual native shader hooks: successful publication permits elision;
+    // failures and callbacks cannot publish a false proof.
+    d2vr_submission::requested=true;d2vr_submission::bindingsRequested=true;
+    d2vr_submission::deviceIdentity=expectedDevice;d2vr_submission::gate.Configure(true);
+    g_recActive=true;g_recOverflow=false;bindResult=S_OK;
+    unsigned beforeBind=binds,beforeRecord=records;
+    CHECK(Hook_SetPixelShader(expectedDevice,&shader)==S_OK);
+    CHECK(Hook_SetPixelShader(expectedDevice,&shader)==S_OK);
+    CHECK(binds==beforeBind+1 && records==beforeRecord+1);
+    auto* vertex=reinterpret_cast<IDirect3DVertexShader9*>(&shader);
+    beforeBind=binds;beforeRecord=records;
+    CHECK(Hook_SetVertexShader(expectedDevice,vertex)==S_OK);
+    activeVertex=nullptr; // metadata can be republished independently of binding identity
+    CHECK(Hook_SetVertexShader(expectedDevice,vertex)==S_OK);
+    CHECK(activeVertex==vertex);
+    CHECK(binds==beforeBind+1 && records==beforeRecord+1);
+    d2vr_submission::Invalidate();bindResult=E_FAIL;beforeBind=binds;beforeRecord=records;
+    CHECK(Hook_SetPixelShader(expectedDevice,&shader)==E_FAIL);
+    CHECK(Hook_SetPixelShader(expectedDevice,&shader)==E_FAIL);
+    CHECK(binds==beforeBind+2 && records==beforeRecord);
+    bindResult=S_OK;
     // A worker repeatedly replaces a complete snapshot while two render-like
     // readers access it and new identities force map rehashes.
     d2vr_shader_metadata::Pixels concurrent;

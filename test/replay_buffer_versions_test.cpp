@@ -156,8 +156,8 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev,D3DPRIMITIV
 static IDirect3DVertexBuffer9* VB(UINT bytes=128,DWORD usage=D3DUSAGE_DYNAMIC|D3DUSAGE_WRITEONLY){IDirect3DVertexBuffer9* b=nullptr;CHECK(SUCCEEDED(Hook_CreateVB(device,bytes,usage,0,D3DPOOL_DEFAULT,&b,nullptr)));return b;}
 static IDirect3DIndexBuffer9* IB(D3DFORMAT format=D3DFMT_INDEX32){IDirect3DIndexBuffer9* b=nullptr;CHECK(SUCCEEDED(Hook_CreateIB(device,128,D3DUSAGE_DYNAMIC|D3DUSAGE_WRITEONLY,format,D3DPOOL_DEFAULT,&b,nullptr)));return b;}
 template<class T> static void Write(T* buffer,UINT offset,uint32_t value,DWORD flags){void* p=nullptr;CHECK(SUCCEEDED(buffer->Lock(offset,4,&p,flags)));std::memcpy(p,&value,4);CHECK(SUCCEEDED(buffer->Unlock()));}
-static void Begin(){RecLockGuard guard;FinishBufferRecording();g_rec.clear();g_recData.clear();g_recordRefs.Begin(true);g_recOverflow=false;d2vr_record_sync::conflict=false;g_recActive=true;g_bufferFrameOpen=true;g_bufferWritesApplied=false;g_bufferUnsafeAlias.store(false);observed.clear();}
-static void End(){RecLockGuard guard;g_recActive=false;FinishBufferRecording();g_rec.clear();g_recData.clear();g_recordRefs.Clear();for(UINT slot=0;slot<16;++slot)g_orig.SetStreamSource(device,slot,nullptr,0,0);g_orig.SetIndices(device,nullptr);}
+static void Begin(){d2vr_submission::InvalidateBindings();RecLockGuard guard;FinishBufferRecording();g_rec.clear();g_recData.clear();g_recordRefs.Begin(true);g_recOverflow=false;d2vr_record_sync::conflict=false;g_recActive=true;g_bufferFrameOpen=true;g_bufferWritesApplied=false;g_bufferUnsafeAlias.store(false);observed.clear();}
+static void End(){d2vr_submission::InvalidateBindings();RecLockGuard guard;g_recActive=false;FinishBufferRecording();g_rec.clear();g_recData.clear();g_recordRefs.Clear();for(UINT slot=0;slot<16;++slot)g_orig.SetStreamSource(device,slot,nullptr,0,0);g_orig.SetIndices(device,nullptr);}
 static bool Replay(){
     if(!BeginReplayRecording())return false;
     BeginReplayBufferLookups();
@@ -495,6 +495,24 @@ static void UiWrapCases(){
     CHECK(!shadow.Stage(60,8,bytes,false) && !shadow.Read(SIZE_MAX,8));
     std::puts("PASS actual UI draw replay: captured frame-008 offsets 21576/21606 -> 0, 512KiB DISCARD wrap; exact per-draw bytes, original live draw once, stream restoration and COM lifetime; ReplayBufferVersions=0, zero replica buffers/uploads");
 }
+static void NativeBindingOwnershipCase(){
+    using namespace d2vr_submission;
+    requested=true;bindingsRequested=true;deviceIdentity=device;gate.Configure(true);
+    g_replayBufferVersions=false;
+    auto vb=VB();Begin();
+    CHECK(Hook_SetStreamSource(device,0,vb,0,4)==S_OK);
+    CHECK(g_rec.size()==1 && g_recordRefs.size()==1);
+    CHECK(Hook_SetStreamSource(device,0,vb,0,4)==S_OK);
+    CHECK(g_rec.size()==1 && g_recordRefs.size()==1 && bindings.skipped==1);
+    CHECK(vb->Release()>0); // application relinquishes ownership; recorder pins it
+    CHECK(liveBuffers==1);
+    CHECK(Hook_SetStreamSource(device,0,vb,0,4)==S_OK && g_rec.size()==1);
+    End();CHECK(liveBuffers==0 && g_recordRefs.size()==0);
+    vb=VB();Begin(); // possible allocator address reuse must require a new record
+    CHECK(Hook_SetStreamSource(device,0,vb,0,4)==S_OK && g_rec.size()==1);
+    CHECK(vb->Release()>0);End();CHECK(!liveBuffers);
+    std::puts("PASS native binding publication: exact retained COM ownership, duplicate record elision, application Release, frame teardown and identity reuse; versions OFF");
+}
 int main(int argc,char** argv){
     static_assert(sizeof(void*)==4,"x86 packets");
     driverTable[0]=reinterpret_cast<void*>(&DriverQuery);driverTable[1]=reinterpret_cast<void*>(&DriverAddRef);driverTable[2]=reinterpret_cast<void*>(&DriverRelease);
@@ -504,6 +522,7 @@ int main(int argc,char** argv){
     deviceTable[88]=reinterpret_cast<void*>(&DriverGetDeclaration);deviceTable[103]=reinterpret_cast<void*>(&DriverGetFrequency);
     g_createVB=&DriverCreateVB;g_createIB=&DriverCreateIB;
     g_rec.reserve(4096);g_recData.reserve(4u<<20);observed.reserve(16);
+    if(argc>1 && !std::strcmp(argv[1],"--native-bindings")){NativeBindingOwnershipCase();return 0;}
     if(argc==2 && !strcmp(argv[1],"--ui-wrap")){UiWrapCases();return 0;}
     if(argc==3 && !strcmp(argv[1],"--ui-callback")){UiCallbackCase(unsigned(atoi(argv[2])));return 0;}
     if(argc==2 && !strcmp(argv[1],"--cpu-probe")){Benchmark();return 0;}

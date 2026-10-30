@@ -32,6 +32,7 @@ struct {
 } g_orig;
 @ENUM@
 template<class... A> static void RecEmit(A...){if(g_recActive&&!g_recOverflow)++records;}
+template<class... A> static bool RecEmitBinding(A... args){RecEmit(args...);return g_recActive&&!g_recOverflow;}
 template<class... A> static void RecEmitLocked(A...){if(g_recActive&&!g_recOverflow)++records;}
 template<class... A> static void RecEmitData(A...){if(g_recActive&&!g_recOverflow)++records;}
 template<class... A> static void RecEmitConsumed(A...){if(g_recActive&&!g_recOverflow)++records;}
@@ -155,5 +156,28 @@ int main(){
     CHECK(g_recOverflow&&records==1);
     status=S_OK;Expect(dev,surface,&rect,D3DCOLOR(7));
     CHECK(Hook_ColorFill(dev,surface,&rect,7)==S_OK&&g_recOverflow&&records==0);
+    // Actual geometry hook admission, independent keys and automatic UP/FVF reset.
+    d2vr_submission::requested=true;d2vr_submission::bindingsRequested=true;
+    d2vr_submission::deviceIdentity=dev;d2vr_submission::gate.Configure(true);
+    g_recActive=true;g_recOverflow=false;status=S_OK;
+    Expect(dev,0u,vertex,32u,40u);
+    CHECK(Hook_SetStreamSource(dev,0,vertex,32,40)==S_OK && calls==1 && records==1);
+    Expect(dev,0u,vertex,32u,40u);
+    CHECK(Hook_SetStreamSource(dev,0,vertex,32,40)==S_OK && calls==0 && records==0);
+    Expect(dev,0u,vertex,48u,40u);
+    CHECK(Hook_SetStreamSource(dev,0,vertex,48,40)==S_OK && calls==1 && records==1);
+    Expect(dev,declaration);CHECK(Hook_SetVertexDeclaration(dev,declaration)==S_OK && calls==1);
+    Expect(dev,declaration);CHECK(Hook_SetVertexDeclaration(dev,declaration)==S_OK && calls==0);
+    Expect(dev,DWORD(D3DFVF_XYZ));CHECK(Hook_SetFVF(dev,D3DFVF_XYZ)==S_OK && calls==1);
+    Expect(dev,declaration);CHECK(Hook_SetVertexDeclaration(dev,declaration)==S_OK && calls==1);
+    Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
+    Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==0);
+    float up[9]{};Expect(dev,D3DPT_TRIANGLELIST,1u,up,12u);
+    CHECK(Hook_DrawPrimitiveUP(dev,D3DPT_TRIANGLELIST,1,up,12)==S_OK && calls==1);
+    Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
+    g_recActive=false;Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
+    g_recActive=true;Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
+    g_recOverflow=true;Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
+    g_recOverflow=false;Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
     printf("PASS actual live hooks: %u checks, 24 APIs x 40 versioning/recording/status cases; four draw paths including UP, clip cleanup, intentional suppression, exact arguments/HRESULT/one forward, sticky incomplete packet; CPU fixture, not game evidence\n",checks);
 }

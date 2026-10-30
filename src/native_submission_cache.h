@@ -88,6 +88,49 @@ public:
         return result;
     }
 };
+// Frame-owned bindings. Successful command publication owns every non-null
+// COM identity in the recorder ledger until the epoch changes BEFORE release.
+// Texture/depth binds are intentionally excluded from this admission contract.
+inline bool bindingsRequested=false;
+inline void InvalidateBindings(){if(requested && bindingsRequested)gate.Invalidate();}
+class FrameBindings {
+    struct Value {uintptr_t a=0,b=0,c=0;};
+    Value values_[36];
+    uint64_t valid_=0,epoch_=0;
+    bool busy_=false;
+    void Sync(Epoch& domain){if(epoch_!=domain.Generation()){valid_=0;epoch_=domain.Generation();}}
+public:
+    static constexpr int VertexShader=0,PixelShader=1,Declaration=2,Indices=3;
+    static int Stream(unsigned n){return n<16?int(4+n):-1;}
+    static int Frequency(unsigned n){return n<16?int(20+n):-1;}
+    uint64_t forwarded=0,skipped=0,unowned=0;
+    template<class Send,class Receipt> long Forward(Epoch& domain,Epoch::Ticket ticket,
+        int key,uintptr_t a,uintptr_t b,uintptr_t c,Send send,Receipt published){
+        Sync(domain);
+        if(!ticket || key<0 || key>=36 || busy_ || !domain.CanReuse(ticket)){
+            domain.Invalidate();++forwarded;
+            const long result=send();domain.Invalidate();Sync(domain);return result;
+        }
+        const uint64_t bit=uint64_t(1)<<key;
+        const auto old=values_[key];
+        if((valid_&bit) && old.a==a && old.b==b && old.c==c){++skipped;return 0;}
+        valid_&=~bit;busy_=true;++forwarded;
+        const long result=send();busy_=false;
+        if(result==0 && domain.CanReuse(ticket) && published()){
+            values_[key]={a,b,c};valid_|=bit;
+        }else{++unowned;domain.Invalidate();Sync(domain);}
+        return result;
+    }
+};
+inline thread_local FrameBindings bindings;
+template<class Send,class Receipt> long ForwardBinding(const void* device,uint32_t thread,bool recording,
+    int key,uintptr_t a,uintptr_t b,uintptr_t c,Send send,Receipt published){
+    if(!requested || !bindingsRequested)return send();
+    CheckDevice(device);
+    if(!gate.Enabled() || gate.Paused())return send();
+    if(!recording){gate.Invalidate();const long result=send();gate.Invalidate();return result;}
+    return bindings.Forward(gate,gate.Begin(thread),key,a,b,c,send,published);
+}
 inline thread_local Constants constants;
 // Invalidates successful cache writes around every raw renderer/restore entry.
 inline void Invalidate(){if(requested)gate.Invalidate();}
