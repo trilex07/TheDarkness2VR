@@ -4,6 +4,7 @@
 #include <memory>
 #include <process.h>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace d2vr_pipeline_warmup {
@@ -99,8 +100,11 @@ static bool Capture(IDirect3DDevice9* dev,Record& out) {
     return ValidRecord(out);
 }
 
-// Executes on a device the engine does not own yet. All bindings use private
-// 16x16 resources and a degenerate triangle; Restore() is mandatory.
+// Executes on a device the engine does not own yet. Private 16x16 resources
+// and one covering triangle. Recorded formats, declaration, alpha, fog, clip
+// and samplers stay as captured. Cull, scissor and the depth test are forced
+// only so the triangle is not discarded before the driver compiles; D3DSBT_ALL
+// restores them. Restore() is mandatory.
 class DeviceWarm {
     IDirect3DDevice9* dev_;
     struct Target {uint32_t format;bool depth;uint32_t slot;IDirect3DSurface9* surface;IDirect3DTexture9* depthTexture;};
@@ -159,7 +163,40 @@ class DeviceWarm {
         declarations_.push_back({std::move(elements),object});
         owner.p=nullptr;return object;
     }
+    // DYNAMIC+DISCARD so a new layout does not wait on the previous draw's compile.
+    bool WriteCoverage(const State& s) {
+        void* mapped=nullptr;
+        if(FAILED(vertices_->Lock(0,0,&mapped,D3DLOCK_DISCARD)) || !mapped) return false;
+        auto* bytes=static_cast<uint8_t*>(mapped);
+        std::memset(bytes,0,kVertexBytes);
+        static const float clip[3][4]={
+            {-1.f,-1.f,0.5f,1.f},{3.f,-1.f,0.5f,1.f},{-1.f,3.f,0.5f,1.f}};
+        for(uint32_t stream=0;stream<Streams;++stream) {
+            const uint32_t stride=StreamStride(s,stream);
+            if(!stride) continue;
+            uint8_t* base=bytes+stream*kStreamBytes;
+            for(uint32_t v=0;v<3;++v) {
+                uint8_t* vert=base+size_t(v)*stride;
+                for(uint32_t i=0;i<s.elementCount;++i) {
+                    const auto& e=s.elements[i];
+                    if(e.stream!=stream) continue;
+                    if((e.usage==D3DDECLUSAGE_POSITION || e.usage==D3DDECLUSAGE_POSITIONT) && e.type<=D3DDECLTYPE_FLOAT4) {
+                        float tmp[4];
+                        const uint32_t n=uint32_t(e.type)+1;
+                        for(uint32_t c=0;c<n;++c) tmp[c]=clip[v][c];
+                        std::memcpy(vert+e.offset,tmp,n*sizeof(float));
+                    } else if(e.type==D3DDECLTYPE_D3DCOLOR) {
+                        const uint32_t white=0xffffffffu;
+                        std::memcpy(vert+e.offset,&white,sizeof(white));
+                    }
+                }
+            }
+        }
+        return SUCCEEDED(vertices_->Unlock());
+    }
 public:
+    static constexpr UINT kStreamBytes=3*0x1100;
+    static constexpr UINT kVertexBytes=Streams*kStreamBytes;
     uint32_t substitutedTextures=0;
     explicit DeviceWarm(IDirect3DDevice9* dev):dev_(dev) {}
     DeviceWarm(const DeviceWarm&)=delete;
@@ -183,16 +220,28 @@ public:
         for(uint32_t i=0;i<Streams;++i) if(FAILED(dev_->GetStreamSourceFreq(i,&savedFrequency_[i]))) return false;
         savedStateReady_=true;
         void* data=nullptr;
-        if(FAILED(dev_->CreateVertexBuffer(3*0x1100,D3DUSAGE_WRITEONLY,0,D3DPOOL_DEFAULT,&vertices_,nullptr)) ||
-           FAILED(vertices_->Lock(0,0,&data,0))) return false;
+        if(FAILED(dev_->CreateVertexBuffer(kVertexBytes,D3DUSAGE_DYNAMIC|D3DUSAGE_WRITEONLY,0,D3DPOOL_DEFAULT,&vertices_,nullptr)) ||
+           FAILED(vertices_->Lock(0,0,&data,D3DLOCK_DISCARD))) return false;
         if(!data)return false;
-        std::memset(data,0,3*0x1100);if(FAILED(vertices_->Unlock()))return false;
+        std::memset(data,0,kVertexBytes);if(FAILED(vertices_->Unlock()))return false;
         if(FAILED(dev_->CreateIndexBuffer(3*sizeof(uint16_t),D3DUSAGE_WRITEONLY,D3DFMT_INDEX16,D3DPOOL_DEFAULT,&indices_,nullptr)) ||
            FAILED(indices_->Lock(0,0,&data,0))) return false;
         if(!data)return false;
-        std::memset(data,0,3*sizeof(uint16_t));if(FAILED(indices_->Unlock()))return false;
+        auto* index=static_cast<uint16_t*>(data);
+        index[0]=0;index[1]=1;index[2]=2;
+        if(FAILED(indices_->Unlock()))return false;
         if(FAILED(dev_->BeginScene())) return false;
         scene_=true;
+        // Identity in every register, after the state-block capture, so a shader
+        // that transforms by any constant matrix still emits the clip positions
+        // written below. Apply() restores the engine's constants.
+        if(caps.MaxVertexShaderConst) {
+            const UINT n=std::min<UINT>(256,caps.MaxVertexShaderConst);
+            std::vector<float> constants(size_t(n)*4,0.f);
+            for(UINT i=0;i<n;++i) constants[size_t(i)*4+(i&3)]=1.f;
+            if(FAILED(dev_->SetVertexShaderConstantF(0,constants.data(),n)))
+                Log("[PipelineWarmup] identity constants unavailable; coverage draw continues");
+        }
         return true;
     }
     std::vector<IUnknown*> (*vertex)(void*,const std::vector<uint32_t>&)=nullptr;
@@ -229,9 +278,16 @@ public:
         }
         for(uint32_t i=0;i<Streams;++i) {
             const uint32_t stride=StreamStride(s,i);
-            if(FAILED(dev_->SetStreamSource(i,stride?vertices_:nullptr,0,stride))) return Prepared::DeviceFailure;
+            if(FAILED(dev_->SetStreamSource(i,stride?vertices_:nullptr,stride?i*kStreamBytes:0,stride))) return Prepared::DeviceFailure;
             if(FAILED(dev_->SetStreamSourceFreq(i,s.frequency[i]))) return Prepared::Unsupported;
         }
+        if(FAILED(dev_->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE)) ||
+           FAILED(dev_->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE)) ||
+           FAILED(dev_->SetRenderState(D3DRS_ZENABLE,s.depth?D3DZB_TRUE:D3DZB_FALSE)) ||
+           FAILED(dev_->SetRenderState(D3DRS_ZWRITEENABLE,FALSE)) ||
+           FAILED(dev_->SetRenderState(D3DRS_ZFUNC,D3DCMP_LESSEQUAL)) ||
+           !WriteCoverage(s)) return Prepared::DeviceFailure;
+        dev_->Clear(0,nullptr,D3DCLEAR_TARGET|(s.depth?D3DCLEAR_ZBUFFER:0),0,1.f,0);
         return Prepared::Ready;
     }
     bool Draw(IUnknown* vs,IUnknown* ps) {
@@ -307,8 +363,10 @@ struct Learner {
     std::wstring path;
     Manifest manifest;
     std::unordered_set<uint64_t> seen;
+    std::unordered_map<uint64_t,uint8_t> captureAttempts;
     uintptr_t lastVs=~uintptr_t(0), lastPs=~uintptr_t(0);
     std::atomic<uint64_t> saved{0}, learned{0}, captureFailures{0}, writeFailures{0};
+    std::atomic<bool> saturated{false};
     std::atomic<bool> writing{false};
     ULONGLONG nextTick=0;
     Learner(DWORD owner,std::wstring file):thread(owner),path(std::move(file)) {}
@@ -316,19 +374,37 @@ struct Learner {
 static std::atomic<Learner*> learner{nullptr}; // process lifetime
 constexpr size_t MaxSeenPairs=65536;
 
+inline void NoteCaptureFailure(Learner* l,uint64_t key) {
+    ++l->captureFailures;
+    l->lastVs=l->lastPs=~uintptr_t(0); // the next draw of this pair must retry
+    auto& attempts=l->captureAttempts[key];
+    if(++attempts>=2 || l->captureAttempts.size()>MaxSeenPairs) {
+        l->seen.insert(key);
+        l->captureAttempts.erase(key);
+    }
+}
+// The seen key is inserted only after a usable snapshot. One failed capture
+// stays eligible; a second failure, or a full manifest, is permanent.
 inline void ObserveDraw(IDirect3DDevice9* dev,const void* vs,const void* ps) {
     Learner* l=learner.load(std::memory_order_acquire);
     if(!l || GetCurrentThreadId()!=l->thread.load(std::memory_order_relaxed)) return;
+    if(l->saturated.load(std::memory_order_relaxed)) return;
     const auto v=reinterpret_cast<uintptr_t>(vs),p=reinterpret_cast<uintptr_t>(ps);
     if(v==l->lastVs && p==l->lastPs) return;
     l->lastVs=v;l->lastPs=p;
     if(!v || l->seen.size()>=MaxSeenPairs) return;
+    const uint64_t key=(uint64_t(v)<<32)|uint32_t(p);
+    if(l->seen.find(key)!=l->seen.end()) return;
     try {
-        if(!l->seen.insert((uint64_t(v)<<32)|p).second) return;
         Record record;
-        if(!Capture(dev,record)) {++l->captureFailures;return;}
-        if(l->manifest.Add(record)) ++l->learned;
-    } catch(...) {++l->captureFailures;}
+        if(!Capture(dev,record)) {NoteCaptureFailure(l,key);return;}
+        l->captureAttempts.erase(key);
+        const auto admit=l->manifest.Admit(record);
+        if(admit==Manifest::Admit::Added) ++l->learned;
+        l->seen.insert(key);
+        if(admit==Manifest::Admit::Rejected || l->manifest.Size()>=MaxRecords)
+            l->saturated.store(true,std::memory_order_relaxed);
+    } catch(...) {try{NoteCaptureFailure(l,key);}catch(...){++l->captureFailures;}}
 }
 
 static std::vector<uint32_t> ReadManifestFile(const std::wstring& path) {
@@ -373,8 +449,8 @@ static void Tick(ULONGLONG now=GetTickCount64()) {
     if(now<l->nextTick) return;
     l->nextTick=now+2000;
     if(!l->manifest.Size() || l->saved.load()>=l->manifest.Version() || l->writing.exchange(true)) return;
-    Log("[PipelineWarmup] saving records=%zu learned=%llu captureFailures=%llu writeFailures=%llu",
-        l->manifest.Size(),l->learned.load(),l->captureFailures.load(),l->writeFailures.load());
+    Log("[PipelineWarmup] saving records=%zu learned=%llu captureFailures=%llu writeFailures=%llu saturated=%d",
+        l->manifest.Size(),l->learned.load(),l->captureFailures.load(),l->writeFailures.load(),int(l->saturated.load()));
     try {
         auto job=std::make_unique<WriteJob>();job->owner=l;
         job->data=l->manifest.Serialize(job->version);

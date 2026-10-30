@@ -2783,11 +2783,11 @@ bytecode plus declaration, RT/depth formats, sRGB/alpha-test/fog/clip-plane
 states, sampler texture type/format/usage/sRGB and stream frequencies to
 %LOCALAPPDATA%\Darkness2VR\pipeline-warmup.bin (async write). Next start,
 inside HookDevice after pool creation and before any vtable patch, every
-pending pool copy of a recorded pair draws one degenerate triangle into
+pending pool copy of a recorded pair draws one covering triangle into
 private 16x16 resources, waits for an EVENT query, then restores D3DSBT_ALL,
 RT0/depth and stream frequencies and frees every private resource. No shader
 is created; unmatched shaders/unsupported formats are skipped.
-Render/PipelineWarmupMs bounds the startup cost (default 8000).
+Render/PipelineWarmupMs bounds the startup cost (default 30000, clamp 30000).
 
 x86 REF and NVIDIA HAL/Ex (0x54): learning, whole-file admission, all copies,
 restored state, Reset after warmup, served objects identical. Production and
@@ -2813,3 +2813,6 @@ Actual-source x86 recorder test with the binary's own RPM import redirected: zer
 
 - ConsumedRecordCopy ON-only headset feedback: both eyes, geometry, hands and tentacles correct; recorder RPM sampled exposure 1.070 -> 0.148 ms/application frame against retained historical capture. Instrumented mean frame 15.766 ms, p95 17.812 ms; collector cost about 20 FPS. No isolated full-frame saving or native 90 Hz claim.
 - Next offline candidate batches FrameResourceRefs native-release scope once per nonempty teardown instead of once per reference. Every COM release/ownership contract stays intact; actual worker callbacks can acquire the recorder while their mutation is rejected. x86 builds and reference/reentrant replay/Reset regressions PASS. Runtime effect NOT RUN; validated Steam DLL remains unchanged.
+
+## NVIDIA compiler warmup coverage (2026-10-30)
+`warmed=N` only replayed pipelines already in pipeline-warmup.bin. On the RTX 5070 a recorded-state draw does compile that shader object, including a degenerate triangle, and Reset does not drop it. The 90.88 ms nvgpucomp flush was the first in-process compile of pooled objects that had no stored record. A failed first snapshot never retried that pointer pair, and Add() discarded every record past 1024, so those pipelines hitch on every later launch. Warmup now submits a covering triangle (indices 0,1,2, clip-space positions, identity VS constants, cull none, scissor off, depth test that passes) without replacing the recorded declaration, formats, alpha, fog, clip or samplers. A failed capture is retried once. The manifest holds 4096 records / 32MB. PipelineWarmupMs defaults to 30000. No Reset-time warmup and no synthetic draws for shaders that have no recorded declaration. In-game hitch removal is not measured here.

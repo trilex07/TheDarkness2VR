@@ -181,7 +181,7 @@ static bool g_startupShaderWarmup = false; // OFF; valid-device startup only, no
 static bool g_startupShaderPool = false; // OFF; startup-owned shader objects, transferred once
 static unsigned g_startupShaderCopies=1; // independent startup creation references per exact bytecode
 static bool g_pipelineWarmup=false; // OFF; draws learned pipelines with pooled shaders before device handoff
-static unsigned g_pipelineWarmupMs=8000;
+static unsigned g_pipelineWarmupMs=30000; // clamp ceiling; a cold manifest finishes at startup
 static bool g_reuseStateSnapshots=false; // refresh frame-start state via Capture, release before Reset
 static unsigned g_queryPreloadCount=0; // bounded unused occlusion queries; startup only
 static bool g_skipShadowAtlasDraws = false; // diagnostic A/B only; changes shadow image
@@ -711,7 +711,7 @@ void LoadConfig() {
     g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
     g_startupShaderCopies=GetPrivateProfileIntA("Render","StartupShaderCopies",1,chosenIni)==2?2:1;
     g_pipelineWarmup=GetPrivateProfileIntA("Render","PipelineWarmup",0,chosenIni)!=0;
-    g_pipelineWarmupMs=std::min<unsigned>(30000,GetPrivateProfileIntA("Render","PipelineWarmupMs",8000,chosenIni));
+    g_pipelineWarmupMs=std::min<unsigned>(30000,GetPrivateProfileIntA("Render","PipelineWarmupMs",30000,chosenIni));
     g_reuseStateSnapshots=GetPrivateProfileIntA("Render","ReuseStateSnapshots",0,chosenIni)!=0;
     g_queryPreloadCount=GetPrivateProfileIntA("Render","QueryPreloadCount",0,chosenIni);
     if(g_queryPreloadCount>d2vr_query_preload::MaxQueries)g_queryPreloadCount=0;
@@ -1720,6 +1720,7 @@ static void StartupPipelineWarmup(IDirect3DDevice9* dev) {
         std::vector<d2vr_pipeline_warmup::Record> records;
         const bool valid=!data.empty() && d2vr_pipeline_warmup::Parse(data.data(),data.size(),records);
         for(const auto& record:records) learner->manifest.Add(record);
+        if(learner->manifest.Size()>=d2vr_pipeline_warmup::MaxRecords) learner->saturated.store(true);
         learner->saved.store(learner->manifest.Version());
         if(!records.empty()) {
             const auto start=GetTickCount64();

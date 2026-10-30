@@ -61,6 +61,8 @@ static void Pure(const std::vector<uint32_t>& vs,const std::vector<uint32_t>& ps
     CHECK(parsed[0]==a && parsed[1]==b && parsed[2]==depthOnly);
     for(size_t cut:{size_t(1),size_t(3),data.size()-1}) CHECK(!Parse(data.data(),cut,parsed) && parsed.empty());
     auto trailing=data;trailing.push_back(0);CHECK(!Parse(trailing.data(),trailing.size(),parsed));
+    auto over=data;over[1]=MaxRecords+1;CHECK(!Parse(over.data(),over.size(),parsed) && parsed.empty());
+    CHECK(MaxRecords==4096 && MaxBytes==32u*1024u*1024u);
     auto wrong=data;wrong[2]=StateWords+1;CHECK(!Parse(wrong.data(),wrong.size(),parsed));
     wrong=data;wrong[0]^=1;CHECK(!Parse(wrong.data(),wrong.size(),parsed));
     wrong=data;wrong[4]=PixelVersion;CHECK(!Parse(wrong.data(),wrong.size(),parsed)); // VS slot holding PS bytecode
@@ -92,7 +94,9 @@ struct DeviceSnapshot {
     IDirect3DSurface9* target=nullptr;IDirect3DSurface9* depth=nullptr;IDirect3DVertexShader9* vs=nullptr;IDirect3DPixelShader9* ps=nullptr;
     IDirect3DVertexDeclaration9* declaration=nullptr;IDirect3DBaseTexture9* texture=nullptr;IDirect3DIndexBuffer9* indices=nullptr;
     IDirect3DVertexBuffer9* stream=nullptr;UINT offset=0,stride=0,frequency[Streams]{};D3DVIEWPORT9 viewport{};
-    DWORD states[5]{},srgbTexture=0,second=0;
+    DWORD states[5]{},raster[5]{},srgbTexture=0,second=0;
+    IDirect3DVertexBuffer9* stream1=nullptr;UINT stream1Offset=0,stream1Stride=0;
+    float constant[4]{};bool constantValid=false;
     void Read(IDirect3DDevice9* d) {
         HR(d->GetRenderTarget(0,&target));d->GetDepthStencilSurface(&depth);HR(d->GetVertexShader(&vs));HR(d->GetPixelShader(&ps));
         HR(d->GetVertexDeclaration(&declaration));HR(d->GetTexture(0,&texture));HR(d->GetIndices(&indices));
@@ -100,17 +104,25 @@ struct DeviceSnapshot {
         for(UINT i=0;i<Streams;++i)HR(d->GetStreamSourceFreq(i,&frequency[i]));
         const D3DRENDERSTATETYPE ids[5]={D3DRS_SRGBWRITEENABLE,D3DRS_ALPHATESTENABLE,D3DRS_ALPHAFUNC,D3DRS_FOGENABLE,D3DRS_CLIPPLANEENABLE};
         for(int i=0;i<5;++i)HR(d->GetRenderState(ids[i],&states[i]));
+        const D3DRENDERSTATETYPE rasterIds[5]={D3DRS_CULLMODE,D3DRS_SCISSORTESTENABLE,D3DRS_ZENABLE,D3DRS_ZWRITEENABLE,D3DRS_ZFUNC};
+        for(int i=0;i<5;++i)HR(d->GetRenderState(rasterIds[i],&raster[i]));
+        HR(d->GetStreamSource(1,&stream1,&stream1Offset,&stream1Stride));
+        constantValid=SUCCEEDED(d->GetVertexShaderConstantF(17,constant,1));
         HR(d->GetSamplerState(0,D3DSAMP_SRGBTEXTURE,&srgbTexture));
         IDirect3DSurface9* rt1=nullptr;if(SUCCEEDED(d->GetRenderTarget(1,&rt1))&&rt1){second=1;rt1->Release();}
     }
     bool Same(const DeviceSnapshot& o) const {
         return target==o.target && depth==o.depth && vs==o.vs && ps==o.ps && declaration==o.declaration && texture==o.texture &&
-            indices==o.indices && stream==o.stream && offset==o.offset && stride==o.stride && !memcmp(frequency,o.frequency,sizeof(frequency)) &&
-            !memcmp(&viewport,&o.viewport,sizeof(viewport)) && !memcmp(states,o.states,sizeof(states)) && srgbTexture==o.srgbTexture && second==o.second;
+            indices==o.indices && stream==o.stream && offset==o.offset && stride==o.stride && stream1==o.stream1 &&
+            stream1Offset==o.stream1Offset && stream1Stride==o.stream1Stride && !memcmp(frequency,o.frequency,sizeof(frequency)) &&
+            !memcmp(&viewport,&o.viewport,sizeof(viewport)) && !memcmp(states,o.states,sizeof(states)) && !memcmp(raster,o.raster,sizeof(raster)) &&
+            constantValid==o.constantValid && (!constantValid || !memcmp(constant,o.constant,sizeof(constant))) &&
+            srgbTexture==o.srgbTexture && second==o.second;
     }
     void Release() {
         for(IUnknown* u:{static_cast<IUnknown*>(target),static_cast<IUnknown*>(depth),static_cast<IUnknown*>(vs),static_cast<IUnknown*>(ps),
-            static_cast<IUnknown*>(declaration),static_cast<IUnknown*>(texture),static_cast<IUnknown*>(indices),static_cast<IUnknown*>(stream)}) if(u)u->Release();
+            static_cast<IUnknown*>(declaration),static_cast<IUnknown*>(texture),static_cast<IUnknown*>(indices),
+            static_cast<IUnknown*>(stream),static_cast<IUnknown*>(stream1)}) if(u)u->Release();
         *this=DeviceSnapshot{};
     }
 };
@@ -211,6 +223,15 @@ int wmain(int argc,wchar_t** argv) {
     std::thread([&]{Tick(0);}).join();
     ObserveDraw(device,gameVs,nullptr);CHECK(session.seen.size()==2);
     Tick(0);ObserveDraw(device,gameVs,nullptr);CHECK(session.seen.size()==3 && session.learned==1);
+    // A failed snapshot must not permanently exclude the pair. The second failure gives up.
+    HR(device->SetVertexShader(nullptr));
+    const void* retryKey=reinterpret_cast<const void*>(static_cast<uintptr_t>(0x21));
+    ObserveDraw(device,retryKey,gamePs);CHECK(session.captureFailures==1 && session.seen.size()==3 && session.learned==1);
+    ObserveDraw(device,retryKey,gamePs);CHECK(session.captureFailures==2 && session.seen.size()==4 && session.learned==1);
+    const void* once=reinterpret_cast<const void*>(static_cast<uintptr_t>(0x22));
+    ObserveDraw(device,once,gamePs);CHECK(session.captureFailures==3 && session.seen.size()==4);
+    HR(device->SetVertexShader(gameVs));
+    ObserveDraw(device,once,gamePs);CHECK(session.captureFailures==3 && session.seen.size()==5 && session.learned==1);
     const auto onDisk=ReadManifestFile(session.path);
     d2vr_pipeline_warmup::learner.store(nullptr);
     uint64_t version=0;auto data=session.manifest.Serialize(version);
@@ -235,6 +256,12 @@ int wmain(int argc,wchar_t** argv) {
     IDirect3DSurface9* secondTarget=nullptr;
     HR(device->CreateRenderTarget(64,64,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&secondTarget,nullptr));
     HR(device->SetRenderTarget(1,secondTarget));
+    HR(device->SetRenderState(D3DRS_CULLMODE,D3DCULL_CW));
+    HR(device->SetRenderState(D3DRS_SCISSORTESTENABLE,TRUE));
+    HR(device->SetRenderState(D3DRS_ZWRITEENABLE,TRUE));
+    HR(device->SetRenderState(D3DRS_ZFUNC,D3DCMP_GREATEREQUAL));
+    const float sentinel[4]={2.f,3.f,5.f,7.f};
+    device->SetVertexShaderConstantF(17,sentinel,1);
     DeviceSnapshot before,after;before.Read(device);
     auto report=WarmDevice(device,records,pool.get(),&Lookup,&Lookup,5000);
     after.Read(device);
