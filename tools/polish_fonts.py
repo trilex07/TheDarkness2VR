@@ -40,13 +40,41 @@ LETTERS = [(ch, donor) for ch, _, donor, _ in PL_LETTERS]
 # Font specifications:
 # (font_path, tex_path, count_offset, glyph_count, atlas_w, atlas_h, x_start, y_start, h_span)
 FONTS = [
-    ("EE/Menus/Fonts/SubtitlesFont", "Temp/EE/Menus/Fonts/SubtitlesFontGlyph_en_f.tga", 374, 97, 1024, 64, 0, 0, 0),
-    ("EE/Menus/Fonts/MenuFont", "Temp/EE/Menus/Fonts/MenuFontGlyph_en_f.tga", 1262, 99, 1024, 128, 0, 0, 0),
-    ("Temp/FontCache/darknessheader_19.syn", "Temp/Temp/FontCache/darknessheader_19.synGlyph_en_f.tga", 1048, 111, 1024, 64, 0, 0, 0),
-    ("Temp/FontCache/darknessheader_24.syn", "Temp/Temp/FontCache/darknessheader_24.synGlyph_en_f.tga", 1048, 111, 1024, 64, 0, 0, 0),
-    ("Temp/FontCache/darknessheader_26.syn", "Temp/Temp/FontCache/darknessheader_26.synGlyph_en_f.tga", 1048, 111, 1024, 64, 0, 0, 0),
-    ("Temp/FontCache/darknessheader_32.syn", "Temp/Temp/FontCache/darknessheader_32.synGlyph_en_f.tga", 1048, 111, 1024, 128, 0, 0, 0),
+    ('EE/Menus/Fonts/MenuFont', 'Temp/EE/Menus/Fonts/MenuFontGlyph_en_f.tga', 1262, 99, 1024, 128, 0, 0, 0),
+    ('EE/Menus/Fonts/CommentFont', 'Temp/EE/Menus/Fonts/CommentFontGlyph_en_f.tga', 1101, 99, 1024, 64, 0, 0, 0),
+    ('EE/Menus/Fonts/DebugFont', 'Temp/EE/Menus/Fonts/DebugFontGlyph_en_f.tga', 1105, 99, 512, 32, 0, 0, 0),
+    ('EE/Menus/Fonts/SubtitlesFont', 'Temp/EE/Menus/Fonts/SubtitlesFontGlyph_en_f.tga', 374, 97, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/Corbel_26.syn', 'Temp/Temp/FontCache/Corbel_26.synGlyph_en_f.tga', 1040, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/Corbel_19.syn', 'Temp/Temp/FontCache/Corbel_19.synGlyph_en_f.tga', 1040, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/darknessheader_24.syn', 'Temp/Temp/FontCache/darknessheader_24.synGlyph_en_f.tga', 1048, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/YouMurderer BB_40.syn', 'Temp/Temp/FontCache/YouMurderer BB_40.synGlyph_en_f.tga', 1044, 111, 1024, 128, 0, 0, 0),
+    ('Temp/FontCache/Corbel_32.syn', 'Temp/Temp/FontCache/Corbel_32.synGlyph_en_f.tga', 1040, 111, 1024, 128, 0, 0, 0),
+    ('Temp/FontCache/Requiem_40.syn', 'Temp/Temp/FontCache/Requiem_40.synGlyph_en_f.tga', 1038, 111, 2048, 128, 0, 0, 0),
+    ('Temp/FontCache/Corbel_24.syn', 'Temp/Temp/FontCache/Corbel_24.synGlyph_en_f.tga', 1040, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/Corbel_30.syn', 'Temp/Temp/FontCache/Corbel_30.synGlyph_en_f.tga', 1040, 111, 1024, 128, 0, 0, 0),
+    ('Temp/FontCache/Corbel_50.syn', 'Temp/Temp/FontCache/Corbel_50.synGlyph_en_f.tga', 1040, 111, 2048, 128, 0, 0, 0),
+    ('Temp/FontCache/Arial_20.syn', 'Temp/Temp/FontCache/Arial_20.synGlyph_en_f.tga', 997, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/darknessheader_19.syn', 'Temp/Temp/FontCache/darknessheader_19.synGlyph_en_f.tga', 1048, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/Corbel_17.syn', 'Temp/Temp/FontCache/Corbel_17.synGlyph_en_f.tga', 1040, 111, 512, 64, 0, 0, 0),
+    ('Temp/FontCache/darknessheader_26.syn', 'Temp/Temp/FontCache/darknessheader_26.synGlyph_en_f.tga', 1048, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/Corbel_16.syn', 'Temp/Temp/FontCache/Corbel_16.synGlyph_en_f.tga', 1040, 111, 512, 64, 0, 0, 0),
+    ('Temp/FontCache/Arial_24.syn', 'Temp/Temp/FontCache/Arial_24.synGlyph_en_f.tga', 997, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/Corbel_13.syn', 'Temp/Temp/FontCache/Corbel_13.synGlyph_en_f.tga', 1040, 111, 512, 64, 0, 0, 0),
+    ('Temp/FontCache/Corbel_15.syn', 'Temp/Temp/FontCache/Corbel_15.synGlyph_en_f.tga', 1040, 111, 512, 64, 0, 0, 0),
+    ('Temp/FontCache/Arial_18.syn', 'Temp/Temp/FontCache/Arial_18.synGlyph_en_f.tga', 997, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/Arial_24_b.syn', 'Temp/Temp/FontCache/Arial_24_b.synGlyph_en_f.tga', 997, 111, 1024, 64, 0, 0, 0),
+    ('Temp/FontCache/Arial_30_b.syn', 'Temp/Temp/FontCache/Arial_30_b.synGlyph_en_f.tga', 997, 111, 1024, 128, 0, 0, 0),
+    ('Temp/FontCache/darknessheader_32.syn', 'Temp/Temp/FontCache/darknessheader_32.synGlyph_en_f.tga', 1048, 111, 1024, 128, 0, 0, 0),
 ]
+
+
+def require_font_inventory(cache):
+    """Reject incomplete coverage of live, non-placeholder English atlases."""
+    actual = {path for path, entry in cache.entries.items()
+              if path.endswith('Glyph_en_f.tga') and entry[3] > 16}
+    expected = {font[1] for font in FONTS}
+    require(actual == expected, 'English font inventory mismatch: missing=' +
+            repr(sorted(actual - expected)) + '; absent=' + repr(sorted(expected - actual)))
 
 
 def planar_to_native_dxt3(data: bytes) -> bytes:
@@ -310,6 +338,8 @@ def build_fonts(stage: Path):
     has_tex = (stage / "baseline" / "B.Texture_en.cache").is_file()
     stem_list = ("B.Font", "H.Font", "B.Texture_en", "H.Texture_en") if has_tex else ("B.Font", "H.Font")
     caches = {s: Cache(stage / "baseline", s) for s in stem_list}
+    if has_tex:
+        require_font_inventory(caches["B.Texture_en"])
     patches = {s: {} for s in caches}
     report = []
 
@@ -322,24 +352,25 @@ def build_fonts(stage: Path):
         if has_tex and tex_file.is_file():
             raw_tex = tex_file.read_bytes()
             original_height = th
-            if path.endswith('/MenuFont'):
-                # The menu atlas has no room for 18 full-height glyph quads.
-                # Add transparent rows; retain all native pixel coordinates.
-                # Only English UV v coordinates scale with this English atlas.
+            try:
+                h, b, t = patch_font(h_data, b_data, offset, count, raw_tex, (tw, th, xs, ys, hs))
+            except ValueError as error:
+                if str(error) != 'No unused whole atlas blocks for Polish glyph':
+                    raise
+                # Preserve the original pixel grid; add transparent atlas rows
+                # only when whole-block packing proves the original has no room.
                 th *= 2
-                original_body = b_data
                 scaled = bytearray(b_data)
                 for i in range(count):
                     u0,v0,u1,v1=struct.unpack_from('<4f',b_data,i*16)
                     struct.pack_into('<4f',scaled,i*16,u0,v0/2,u1,v1/2)
-                b_data=bytes(scaled)
-                require(b_data[count*16:]==original_body[count*16:], 'Menu metrics/other languages changed')
+                require(scaled[count*16:]==b_data[count*16:], 'Metrics/other languages changed')
                 raw_tex += bytes(tw*(th-original_height))
                 ht=(stage/'extract/H.Texture_en'/tex_path).read_bytes()
                 dimensions=struct.pack('<4H',tw,original_height,tw,original_height)
-                require(ht.count(dimensions)==1,'Ambiguous menu texture dimensions')
+                require(ht.count(dimensions)==1,'Ambiguous font texture dimensions')
                 patches['H.Texture_en'][tex_path]=ht.replace(dimensions,struct.pack('<4H',tw,th,tw,th))
-            h, b, t = patch_font(h_data, b_data, offset, count, raw_tex, (tw, th, xs, ys, hs))
+                h, b, t = patch_font(h_data, bytes(scaled), offset, count, raw_tex, (tw, th, xs, ys, hs))
             patches["H.Font"][path] = h
             patches["B.Font"][path] = b
             patches["B.Texture_en"][tex_path] = planar_to_native_dxt3(t)

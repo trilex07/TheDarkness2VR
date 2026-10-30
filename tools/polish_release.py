@@ -16,7 +16,7 @@ import subprocess
 import zipfile
 
 from polish_pack import Cache, audio_format, category, chunks, command, require, sha, translate
-from polish_fonts import FONTS, PL_LETTERS, build_fonts, decode_planar_dxt3, planar_to_native_dxt3, decode_native_dxt3
+from polish_fonts import FONTS, PL_LETTERS, require_font_inventory, build_fonts, decode_planar_dxt3, planar_to_native_dxt3, decode_native_dxt3
 from polish_translate import TOKEN
 
 
@@ -40,6 +40,7 @@ def require_original_resource(stage,stem,path):
 
 def validate_fonts(stage):
     import numpy as np
+    require_font_inventory(Cache(stage/"baseline", "B.Texture_en"))
     report=[]
     for font,texture,offset,count,width,height,*_ in FONTS:
         original=(stage/'extract/B.Font'/font).read_bytes()
@@ -51,7 +52,10 @@ def validate_fonts(stage):
         old_codes=struct.unpack_from('<'+str(count)+'H',original,count*44)
         require(len(set(codes))==new_count and list(codes)==sorted(codes),'Glyph code ordering')
         require(body[new_count*46:]==original[count*46:],'Foreign language/font data changed')
-        scale=2 if font.endswith('/MenuFont') else 1
+        ht_path=stage/'extract/H.Texture_en'/texture
+        candidate_header=Cache(stage/'candidate','H.Texture_en')
+        original_header=Cache(stage/'baseline','H.Texture_en')
+        scale=1 if candidate_header.entries[texture]==original_header.entries[texture] else 2
         new_height=height*scale
         rgba=decode_native_dxt3(payload(stage/'candidate','B.Texture_en',texture),width,new_height)
         alpha=rgba[:,:,3]
@@ -300,7 +304,7 @@ def font_only_release(source_package, accepted_cache, receipt_path, out):
             'Accepted cache is not a complete source release preimage')
     require(not out.exists(), 'Release destination already exists')
     fonts = source.get('fonts', [])
-    require(len(fonts) == 6 and len({f['font'] for f in fonts}) == 6 and
+    require(len(fonts) == len(FONTS) and {f['font'] for f in fonts} == {f[0] for f in FONTS} and
             all(f.get('status') == 'BINARY_AND_GLYPH_PASS' and len(f['glyphs']) == 18
                 for f in fonts), 'Source font validation is incomplete')
     font_names = {stem+suffix for stem in ('B.Font','H.Font','B.Texture_en','H.Texture_en')

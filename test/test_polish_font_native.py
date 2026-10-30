@@ -2,11 +2,21 @@
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
-from polish_fonts import planar_to_native_dxt3, decode_native_dxt3
+from polish_fonts import FONTS, require_font_inventory, planar_to_native_dxt3, decode_native_dxt3
 
 class NativeFontTests(unittest.TestCase):
+    def test_inventory_rejects_omitted_corbel_and_arial(self):
+        entries = {font[1]: (0, 0, 1024, 1024) for font in FONTS}
+        entries['Temp/JapaneseGlyph_en_f.tga'] = (0, 0, 16, 16)
+        require_font_inventory(SimpleNamespace(entries=entries))
+        for family in ('Corbel_26', 'Arial_20'):
+            incomplete = {k: v for k, v in entries.items() if family not in k}
+            with self.assertRaisesRegex(ValueError, 'inventory mismatch'):
+                require_font_inventory(SimpleNamespace(entries=incomplete))
+
     def test_known_bc2_block_color_and_alpha(self):
         block=bytes.fromhex('1032547698badcfe00f8000000000000')
         rgba=decode_native_dxt3(block,4,4)

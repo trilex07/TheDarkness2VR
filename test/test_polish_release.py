@@ -40,7 +40,8 @@ class PolishReleaseTests(unittest.TestCase):
         manifest_path = package/'manifest.json'
         manifest = json.loads(manifest_path.read_text())
         manifest['source_commit']='fixture-source'
-        manifest['fonts']=[dict(font='font'+str(i),status='BINARY_AND_GLYPH_PASS',glyphs=[{}]*18) for i in range(6)]
+        from polish_fonts import FONTS
+        manifest['fonts']=[dict(font=f[0],status='BINARY_AND_GLYPH_PASS',glyphs=[{}]*18) for f in FONTS]
         manifest_path.write_text(json.dumps(manifest))
         (package/'SHA256SUMS').write_text(''.join(installer.sha(p)+'  '+p.relative_to(package).as_posix()+'\n' for p in sorted(package.rglob('*')) if p.is_file() and p.name!='SHA256SUMS'))
         receipt=root/'rollback.json';receipt.write_text(json.dumps(dict(original=old)))

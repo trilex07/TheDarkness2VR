@@ -33,3 +33,13 @@ speech and text archive bytes are copied unchanged from the verified rollback
 receipt. No DLL, INI, EXE, SteamVR setting or game process is changed by the builder.
 Use the existing verified installer only while the game is closed, retaining its
 new rollback package. Runtime font rendering remains pending headset acceptance.
+
+
+## Complete English font coverage
+
+The readable six-atlas build omitted 19 live English fonts, including Corbel and
+Arial families. The generator now covers all 25 nonempty English atlases (450
+Polish glyphs), and rejects an incomplete native texture inventory. Four empty
+Japanese-only placeholders remain unchanged. Atlas growth is used only when
+unused blocks cannot hold the added glyphs; original glyph pixels and metrics
+remain validated with the native BC2 decoder. Headset acceptance remains pending.
