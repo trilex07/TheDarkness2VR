@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "@REPO@/src/up_geometry_capture.h"
+#include "@REPO@/src/shader_register_history.h"
 #include "@REPO@/src/native_constant_source.h"
 #include "@REPO@/src/small_record_copy.h"
 #include "@REPO@/src/record_payload_storage.h"
@@ -19,6 +20,7 @@ static unsigned checks=0,driverCalls=0;
 #define HOOK_MARK(x) ((void)0)
 @TYPES@
 static bool g_recActive=true,g_recOverflow=false;
+static d2vr_shader_registers::History g_vsConstantHistory;
 static std::vector<Rec> g_rec;
 static d2vr_record_payload::Storage g_recData;
 static auto& g_recLock=d2vr_record_sync::held;
@@ -169,5 +171,25 @@ int main() {
         CHECK(draw()==D3D_OK && driverCalls==2 && g_recOverflow==active);
         CHECK(g_rec.size()==(active?1u:0u) && g_recLock==0);
     }
+    // Actual RecEmitData must transfer only successfully captured owned bytes.
+    Reset();d2vr_submission::requested=true;d2vr_submission::gate.Configure(true);
+    float constants[16]{};constants[0]=63;unsigned sends=0;
+    auto send=[&]()->long{++sends;return D3D_OK;};
+    auto packet=d2vr_submission::constants.Begin(d2vr_submission::gate,GetCurrentThreadId(),d2vr_submission::Stage::Vertex,0,4);
+    RecEmitData(OP_SetVSConstF,constants,sizeof(constants),0,4,0,0,{},4,UINT32_MAX,-1,nullptr,-1,false,&packet);
+    CHECK(packet.captured && !g_recOverflow);
+    constants[0]=99; // Caller and arena can both be overwritten after ownership transfer.
+    std::memset(g_recData.data(),0xcc,g_recData.size());
+    CHECK(d2vr_submission::constants.Forward(d2vr_submission::gate,packet,send)==D3D_OK && sends==1);
+    constants[0]=63;
+    packet=d2vr_submission::constants.Begin(d2vr_submission::gate,GetCurrentThreadId(),d2vr_submission::Stage::Vertex,0,4);
+    RecEmitData(OP_SetVSConstF,constants,sizeof(constants),0,4,0,0,{},4,UINT32_MAX,-1,nullptr,-1,false,&packet);
+    CHECK(packet.captured);
+    CHECK(d2vr_submission::constants.Forward(d2vr_submission::gate,packet,send)==D3D_OK && sends==1);
+    g_recOverflow=true;
+    packet=d2vr_submission::constants.Begin(d2vr_submission::gate,GetCurrentThreadId(),d2vr_submission::Stage::Vertex,0,4);
+    RecEmitData(OP_SetVSConstF,constants,sizeof(constants),0,4,0,0,{},4,UINT32_MAX,-1,nullptr,-1,false,&packet);
+    CHECK(!packet.captured && d2vr_submission::constants.Forward(d2vr_submission::gate,packet,send)==D3D_OK && sends==2);
+    d2vr_submission::requested=false;d2vr_submission::gate.Configure(false);
     printf("PASS actual UP hooks+replay: %u checks; both index formats/nonzero minima, all primitive extents, overwritten inputs, inaccessible prefix, initialized arena padding, overflow rejection/original once; no GPU/HMD claim\n",checks);
 }

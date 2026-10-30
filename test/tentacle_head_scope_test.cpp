@@ -7,6 +7,7 @@
 #include <cstring>
 #include <initializer_list>
 #include "../src/stereo_math.h"
+#include "../src/native_submission_cache.h"
 static unsigned checks=0;
 #define CHECK(x) do {++checks;if(!(x)){std::printf("FAIL line %d: %s\n",__LINE__,#x);std::exit(1);}} while(0)
 struct D3DVERTEXBUFFER_DESC {UINT Size=302920;};

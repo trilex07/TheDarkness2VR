@@ -427,6 +427,7 @@ struct RecLockGuard {
 // write must not become a successful right-eye operation. Preserve the native
 // HRESULT and keep failure sticky until the next independent recording.
 static inline HRESULT RecordLiveResult(HRESULT result) {
+    if(FAILED(result))d2vr_submission::Invalidate();
     if(FAILED(result) && g_recActive) {
         RecLockGuard lock;
         if(g_recActive)g_recOverflow=true;
@@ -461,6 +462,7 @@ struct DeviceSnapshot {
         targetCount = std::min<DWORD>(4, caps.NumSimultaneousRTs);
         vertexFloatLimit = caps.MaxVertexShaderConst;
         pixelFloatLimit = D3DSHADER_VERSION_MAJOR(caps.PixelShaderVersion)>=3 ? 224 : 32;
+        d2vr_submission::InternalStateBlockCreation ownSnapshot;
         if (FAILED(dev->CreateStateBlock(D3DSBT_ALL, &state)) || !state) {Release();return false;}
         owner=dev;
         }
@@ -652,7 +654,7 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
                                const d2vr_native_constants::Proof& proof = {},
                                unsigned payloadSlot = 4, uint32_t recordCount = UINT32_MAX,
                                int referenceBase=-1,d2vr_shader_registers::Reference* reference=nullptr,
-                               int auxiliaryBase=-1,bool nativeConsumed=false) {
+                               int auxiliaryBase=-1,bool nativeConsumed=false,d2vr_submission::Packet* ownedUpload=nullptr) {
     if(reference){reference->valid=false;reference->partialBase=-1;}
     if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){d2vr_record_sync::conflict=true;return;}
     if (!g_recActive) return;
@@ -670,6 +672,8 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
         else g_vsConstantHistory.live.Invalidate(a0,a1);
         if(reference)*reference=d2vr_shader_registers::Reference(g_vsConstantHistory.live,referenceBase,auxiliaryBase,a0,a1);
     }
+    if(ownedUpload && !g_recOverflow && uint64_t(off)+bytes<=g_recData.size())
+        d2vr_submission::constants.Capture(d2vr_submission::gate,*ownedUpload,g_recData.data()+off,bytes,a0,a1);
     uint32_t args[5]={a0,a1,a2,a3,0};
     args[payloadSlot]=off; // internal callers use slots 0, 1 or 4
     RecEmitLocked(op, recordCount==UINT32_MAX ? (uint32_t)(bytes / 4) : recordCount,
@@ -677,9 +681,10 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
 }
 // Only for hooks that forward this source to the native setter before returning.
 static inline void RecEmitConsumed(RecOp op, const void* data, size_t bytes, UINT start, UINT count,
-                                   UINT registers, const d2vr_native_constants::Proof& proof = {}) {
+                                   UINT registers, const d2vr_native_constants::Proof& proof = {},
+                                   d2vr_submission::Packet* ownedUpload=nullptr) {
     RecEmitData(op,data,bytes,start,count,0,0,proof,4,UINT32_MAX,-1,nullptr,-1,
-                d2vr_record_copy::NativeConsumedRange(start,count,registers));
+                d2vr_record_copy::NativeConsumedRange(start,count,registers),ownedUpload);
 }
 
 // replay context: original device functions
@@ -1488,6 +1493,7 @@ struct TentacleHeadScope {
            std::fabs(attached[12])>=0.15f || std::fabs(attached[13])>=0.15f ||
            attached[14]<=-0.16f || attached[14]>=-0.06f ||
            std::fabs(attached[15])>=0.05f) return;
+        d2vr_submission::Invalidate();
         applied=SUCCEEDED(g_orig.SetVertexShaderConstantF(dev,0,attached,4));
         if(applied) {
             static volatile LONG reported=0;
@@ -1497,7 +1503,7 @@ struct TentacleHeadScope {
         }
     }
     ~TentacleHeadScope() {
-        if(applied) g_orig.SetVertexShaderConstantF(dev,0,original,4);
+        if(applied){d2vr_submission::Invalidate();g_orig.SetVertexShaderConstantF(dev,0,original,4);}
     }
 };
 // Keep C++ restoration scopes outside Replay's existing SEH boundary.
@@ -1874,6 +1880,12 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
     const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShaderConstantF(dev,s,d,n);
     if(!d2vr_record_sync::NativeMutation())return g_orig.SetPixelShaderConstantF(dev,s,d,n);
+    d2vr_submission::Packet submission;
+    if(d2vr_submission::requested){
+        d2vr_submission::CheckDevice(dev);
+        submission=d2vr_submission::constants.Begin(
+            d2vr_submission::gate,GetCurrentThreadId(),d2vr_submission::Stage::Pixel,s,n);
+    }
 #ifdef D2VR_MATCHED_CAPTURE
     const float* native=d;
 #endif
@@ -1882,13 +1894,19 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
         const auto proof=d2vr_native_constants::InspectCurrent(
             nativeSlot,nativeFrame,d,sizeof(float)*4*n,
             d2vr_native_constants::Stage::Pixel,nativeOwner);
-        RecEmitConsumed(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n, 224, proof);
+        RecEmitConsumed(OP_SetPSConstF, d, sizeof(float) * 4 * n, s, n, 224, proof,
+                        submission.ticket ? &submission:nullptr);
     }
     float adjusted[224*4];
     if (g_submitMode == 4 && g_replayEye < 0 && d &&
         CompensatePsConstants(adjusted, d, s, n, g_activePsInverse, g_activePsViewExtents,
-                              MakeEyeParams(0))) d = adjusted;
-    const HRESULT result=RecordLiveResult(g_orig.SetPixelShaderConstantF(dev,s,d,n));
+                              MakeEyeParams(0))) {
+        d = adjusted;
+        if(submission.ticket)d2vr_submission::constants.Capture(d2vr_submission::gate,submission,adjusted,size_t(n)*16,s,n);
+    }
+    const auto send=[&](){return g_orig.SetPixelShaderConstantF(dev,s,d,n);};
+    const HRESULT result=RecordLiveResult(d2vr_submission::requested ?
+        d2vr_submission::constants.Forward(d2vr_submission::gate,submission,send):send());
     if(SUCCEEDED(result) && g_replayEye<0 && !g_recActive) {
         RecLockGuard lock;g_psEyeHistory.InvalidateUnrecorded(s,n);
     }
@@ -2604,6 +2622,8 @@ static PFN_EndStateBlock g_origEndStateBlock = nullptr;
 static PFN_BeginStateBlock g_origBeginStateBlock = nullptr;
 
 static HRESULT STDMETHODCALLTYPE Hook_BeginStateBlock(IDirect3DDevice9* dev) {
+    if(d2vr_submission::requested)
+        d2vr_submission::gate.Deny(d2vr_submission::Epoch::OpaqueStateBlock);
     d2vr_record_sync::NativeMutation();
     const HRESULT result=g_origBeginStateBlock(dev);
     d2vr_stateblock::Began(dev,result);
@@ -2612,11 +2632,15 @@ static HRESULT STDMETHODCALLTYPE Hook_BeginStateBlock(IDirect3DDevice9* dev) {
 
 static HRESULT STDMETHODCALLTYPE Hook_CreateStateBlock(IDirect3DDevice9* dev, D3DSTATEBLOCKTYPE t,
                                                        IDirect3DStateBlock9** out) {
+    if(d2vr_submission::requested && !d2vr_submission::ConsumeInternalStateBlock())
+        d2vr_submission::gate.Deny(d2vr_submission::Epoch::OpaqueStateBlock);
     HRESULT hr = g_origCreateStateBlock(dev, t, out);
     if (SUCCEEDED(hr) && out && *out) PatchStateBlock(*out);
     return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_EndStateBlock(IDirect3DDevice9* dev, IDirect3DStateBlock9** out) {
+    if(d2vr_submission::requested)
+        d2vr_submission::gate.Deny(d2vr_submission::Epoch::OpaqueStateBlock);
     d2vr_record_sync::NativeMutation();
     HRESULT hr = g_origEndStateBlock(dev, out);
     d2vr_stateblock::Ended(dev,hr);

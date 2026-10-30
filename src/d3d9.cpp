@@ -41,6 +41,7 @@
 #include "async_log.h"
 #include "small_record_copy.h"
 #include "recorder_sync.h"
+#include "replay_constant_window.h"
 #include "stateblock_recording.h"
 #include "native_constant_source.h"
 #include "native_constant_gate.h"
@@ -749,6 +750,9 @@ void LoadConfig() {
     Log("[ReplayBufferVersions] enabled=%d; startup-only; quarantined after reported hang/CPU regression",int(g_replayBufferVersions));
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
+    d2vr_submission::requested=GetPrivateProfileIntA("Render","NativeSubmissionFilter",0,chosenIni)!=0;
+    d2vr_submission::gate.Configure(d2vr_submission::requested);
+    Log("[NativeSubmission] requested=%d; owned final float packets only; opaque state fails closed",int(d2vr_submission::requested));
     g_replayConstantReuse = GetPrivateProfileIntA("Render", "ReplayConstantReuse", 0, chosenIni)!=0;
     g_replayConstantBindWindow = GetPrivateProfileIntA("Render", "ReplayConstantBindWindow", 0, chosenIni)!=0;
     g_nativeOwnedConstantCopyRequested = GetPrivateProfileIntA("Render", "NativeOwnedConstantCopy", 0, chosenIni)!=0;
@@ -2026,6 +2030,12 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
         return g_origSetVertexShaderConstantF(dev,StartRegister,pConstantData,Vector4fCount);
     if(!d2vr_record_sync::NativeMutation())
         return g_origSetVertexShaderConstantF(dev,StartRegister,pConstantData,Vector4fCount);
+    d2vr_submission::Packet submission;
+    if(d2vr_submission::requested){
+        d2vr_submission::CheckDevice(dev);
+        submission=d2vr_submission::constants.Begin(
+            d2vr_submission::gate,GetCurrentThreadId(),d2vr_submission::Stage::Vertex,StartRegister,Vector4fCount);
+    }
     d2vr_shader_registers::Reference rawReference;
     if(!(g_hookMask&8) || !d2vr_replay::g_recActive) {
         d2vr_replay::RecLockGuard lock;
@@ -2083,7 +2093,7 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
                                  sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount,camera[0],camera[1],proof,
                                  4,UINT32_MAX,d2vr_replay::ActiveWvpRegister(d2vr_replay::g_activeVs),&rawReference,
                                  d2vr_replay::ActiveStpRegister(d2vr_replay::g_activeVs),
-                                 d2vr_record_copy::NativeConsumedRange(StartRegister,Vector4fCount,256));
+                                 d2vr_record_copy::NativeConsumedRange(StartRegister,Vector4fCount,256),submission.ticket ? &submission:nullptr);
     }
 
     // ---- True stereo: live pass renders eye 0 (eye 1 comes from the replay pass) ----
@@ -2119,6 +2129,8 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
                                             uploadCount, d2vr_replay::g_activeVs, sp,
                                             &rawReference,&perspectiveUpload)) {
             pConstantData = s_tmpConst;
+            if(submission.ticket)d2vr_submission::constants.Capture(d2vr_submission::gate,submission,
+                s_tmpConst,size_t(uploadCount)*16,uploadStart,uploadCount);
             StartRegister=uploadStart;Vector4fCount=uploadCount;
             if(perspectiveUpload) {
                 g_had3DCameraThisFrame = true;
@@ -2126,7 +2138,9 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
             }
         }
     }
-    const HRESULT result=g_origSetVertexShaderConstantF(dev, StartRegister, pConstantData, Vector4fCount);
+    const auto send=[&](){return g_origSetVertexShaderConstantF(dev,StartRegister,pConstantData,Vector4fCount);};
+    const HRESULT result=d2vr_submission::requested ?
+        d2vr_submission::constants.Forward(d2vr_submission::gate,submission,send):send();
     if(FAILED(result)) {
         d2vr_replay::RecLockGuard lock;
         d2vr_replay::g_vsConstantHistory.live.Invalidate(StartRegister,Vector4fCount);
@@ -3642,6 +3656,12 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
             (int)d2vr_replay::g_recOverflow, (int)eye0Ok, (int)eye1Ok,
             (long)InterlockedExchange(&d2vr_replay::g_shiftCount, 0),
             d2vr_replay::g_vsInfo.Size(), (int)zeroCopy, (int)g_replayTestClear);
+        if(d2vr_submission::requested) {
+            const auto& calls=d2vr_submission::constants;
+            Log("[NativeSubmission] enabled=%d denied=0x%X VS forwarded=%llu skipped=%llu uncaptured=%llu PS forwarded=%llu skipped=%llu uncaptured=%llu",
+                int(d2vr_submission::gate.Enabled()),d2vr_submission::gate.Reasons(),
+                calls.forwarded[0],calls.skipped[0],calls.uncaptured[0],calls.forwarded[1],calls.skipped[1],calls.uncaptured[1]);
+        }
         const uint64_t* c = d2vr_replay::g_recCounts;
         Log("[TrueStereo] ops: Begin=%llu End=%llu Clear=%llu RT=%llu DSS=%llu Draw=%llu DIP=%llu DPUP=%llu DIPUP=%llu VS=%llu VSCF=%llu Tex=%llu RS=%llu TSS=%llu Smp=%llu VP=%llu SB=%llu",
             c[3], c[4], c[5], c[1], c[2], c[13], c[14], c[15], c[16], c[19], c[20], c[9], c[8], c[10], c[11], c[7], c[36]);
@@ -5937,6 +5957,7 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
+    d2vr_submission::Invalidate();
     // Reset must never destroy an eye's frozen stream or wait inside a driver
     // callback. Refuse a busy device before touching any dependent resources.
     d2vr_replay::RecLockGuard recorder;
@@ -5987,6 +6008,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origReset(dev, pp);
+    d2vr_submission::Invalidate();
     d2vr_stateblock::Ended(dev,hr);
     d2vr_shader_preload::EndReset(dev,hr);
     QueryPreloadEndReset(dev,hr);
@@ -6006,6 +6028,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
+    d2vr_submission::Invalidate();
     // Reset must never destroy an eye's frozen stream or wait inside a driver
     // callback. Refuse a busy device before touching any dependent resources.
     d2vr_replay::RecLockGuard recorder;
@@ -6053,6 +6076,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
+    d2vr_submission::Invalidate();
     if(g_origResetEx)d2vr_stateblock::Ended(dev,hr);
     d2vr_shader_preload::EndReset(dev,g_origResetEx?hr:E_FAIL);
     QueryPreloadEndReset(dev,g_origResetEx?hr:E_FAIL);
@@ -6069,7 +6093,12 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     return hr;
 }
 
-static void VrFrame(IDirect3DDevice9* dev, const char* caller) {
+static void VrFrameBody(IDirect3DDevice9* dev,const char* caller);
+static void VrFrame(IDirect3DDevice9* dev,const char* caller) {
+    d2vr_submission::Epoch::Bypass raw(d2vr_submission::gate);
+    VrFrameBody(dev,caller);
+}
+static void VrFrameBody(IDirect3DDevice9* dev, const char* caller) {
     if((g_objectDrawPadToggle || g_submissionPadToggle) && (InterlockedExchange(&g_objectDrawToggleRequests,0)&1)) {
         if(g_submissionPadToggle) {
             const bool enabled=!(g_replayConstantBatch && g_replayConstantWindow);
@@ -6319,6 +6348,7 @@ static bool ShouldRouteDisplayToHeadsetOnly() {
 
 HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* dev, const RECT* a, const RECT* b, HWND w,
                                        const RGNDATA* r) {
+    d2vr_submission::Invalidate();
     if(g_insidePresentation) return g_origPresent(dev,a,b,w,r);
     PresentationScope presenting;
     AdaptivePresentationScope adaptive;
@@ -6369,6 +6399,7 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* dev, const RECT* a, con
 
 HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a, const RECT* b, HWND w,
                                          const RGNDATA* r, DWORD flags) {
+    d2vr_submission::Invalidate();
     if(g_insidePresentation) return g_origPresentEx ? g_origPresentEx(dev,a,b,w,r,flags):D3D_OK;
     PresentationScope presenting;
     AdaptivePresentationScope adaptive;
@@ -6759,11 +6790,39 @@ static void InstallQueryPreload(IDirect3DDevice9* dev) {
 #endif
 }
 
+using SubmissionQueryInterface=HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*,REFIID,void**);
+static SubmissionQueryInterface g_submissionQueryInterface=nullptr;
+static HRESULT STDMETHODCALLTYPE SubmissionDeviceQueryInterface(IDirect3DDevice9* dev,REFIID iid,void** out) {
+    const HRESULT result=g_submissionQueryInterface(dev,iid,out);
+    if(SUCCEEDED(result) && out && *out &&
+       (*out!=dev || !(IsEqualGUID(iid,__uuidof(IUnknown)) || IsEqualGUID(iid,__uuidof(IDirect3DDevice9)) ||
+                      IsEqualGUID(iid,__uuidof(IDirect3DDevice9Ex)))))
+        d2vr_submission::gate.Deny(d2vr_submission::Epoch::InterfaceEscape);
+    return result;
+}
+using SubmissionSoftwareProcessing=HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*,BOOL);
+static SubmissionSoftwareProcessing g_submissionSoftwareProcessing=nullptr;
+static HRESULT STDMETHODCALLTYPE SubmissionSetSoftwareProcessing(IDirect3DDevice9* dev,BOOL enabled) {
+    // Mixed vertex processing may select a different float bank. Never infer
+    // bank identity from an earlier successful hardware upload.
+    d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
+    return g_submissionSoftwareProcessing(dev,enabled);
+}
 void HookDevice(IDirect3DDevice9* dev) {
     d2vr_sampling::InvalidateSamplerCaps();
     StartAsyncLogging();
     g_renderThreadId = GetCurrentThreadId();
-    if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) return;
+    if (InterlockedCompareExchange(&g_devHooked, 1, 0) != 0) {
+        if(d2vr_submission::requested)d2vr_submission::gate.Deny(d2vr_submission::Epoch::DeviceReplaced);
+        return;
+    }
+    if(d2vr_submission::requested) {
+        d2vr_submission::deviceIdentity=dev;
+        g_submissionQueryInterface=reinterpret_cast<SubmissionQueryInterface>(PatchVTable(dev,0,reinterpret_cast<void*>(&SubmissionDeviceQueryInterface)));
+        if(!g_submissionQueryInterface)d2vr_submission::gate.Deny(d2vr_submission::Epoch::InterfaceEscape);
+        g_submissionSoftwareProcessing=reinterpret_cast<SubmissionSoftwareProcessing>(PatchVTable(dev,77,reinterpret_cast<void*>(&SubmissionSetSoftwareProcessing)));
+        if(!g_submissionSoftwareProcessing)d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
+    }
     StartupShaderWarmup(dev); // before our CreateShader hooks; native owner not yet supplied this device
     d2vr_shader_preload::Initialize(dev);
     StartupPipelineWarmup(dev);

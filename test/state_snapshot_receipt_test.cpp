@@ -1,3 +1,4 @@
+#include "../src/native_submission_cache.h"
 #define NOMINMAX
 #include <windows.h>
 #include <d3d9.h>

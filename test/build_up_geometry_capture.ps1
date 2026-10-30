@@ -24,7 +24,8 @@ if(!$types){throw 'Record types missing'}
 $core=@((Extract 'struct RecLockGuard {' $true),
     (Extract 'static inline HRESULT RecordLiveResult('),
     (Extract 'static inline uint32_t RecPushLocked('),(Extract 'static inline uint32_t RecPush('),
-    (Extract 'static inline void RecEmitLocked('),(Extract 'static inline void RecEmit(')) -join "`n"
+    (Extract 'static inline void RecEmitLocked('),(Extract 'static inline void RecEmit('),
+    (Extract 'static inline void RecEmitData(')) -join "`n"
 $hooks=@((Extract 'static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP('),
     (Extract 'static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(')) -join "`n"
 $replay=$source.Substring($source.IndexOf('static bool ReplayStream('))

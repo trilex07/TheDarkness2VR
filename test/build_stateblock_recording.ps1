@@ -14,7 +14,7 @@ function Extract([string]$name){
 if($source -notmatch '60,.*Hook_BeginStateBlock' -or $source -notmatch '61,.*Hook_EndStateBlock'){throw 'Begin/End device hooks must both be installed'}
 $out=Join-Path $env:TEMP 'd2vr-stateblock-recording'
 New-Item -ItemType Directory -Force -Path $out|Out-Null
-[IO.File]::WriteAllText((Join-Path $out 'actual_stateblock_recording.inl'),(Extract 'BeginStateBlock')+"`n"+(Extract 'EndStateBlock'))
+[IO.File]::WriteAllText((Join-Path $out 'actual_stateblock_recording.inl'),(Extract 'BeginStateBlock')+"`n"+(Extract 'EndStateBlock')+"`n"+(Extract 'CreateStateBlock'))
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 Push-Location $out

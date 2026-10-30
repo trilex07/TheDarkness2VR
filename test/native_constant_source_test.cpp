@@ -219,10 +219,11 @@ static void ObserveInverseProjection(const float*,UINT,UINT,int){}
 static int MakeEyeParams(int){return 0;}
 static bool CompensatePsConstants(float*,const float*,UINT,UINT,int,int,int){return false;}
 static unsigned consumedRegisters=0;
-static void RecEmitConsumed(int,const void* data,size_t bytes,UINT,UINT,UINT registers,const Proof& proof) {
+static void RecEmitConsumed(int,const void* data,size_t bytes,UINT first,UINT count,UINT registers,const Proof& proof,d2vr_submission::Packet* ownedUpload=nullptr) {
     consumedRegisters=registers;
     copied=Copy(proof,recorded,data,bytes);
     if(!copied)d2vr_record_copy::Copy(recorded,data,bytes,true,&ReadProcessMemory);
+    if(ownedUpload && !g_recOverflow)d2vr_submission::constants.Capture(d2vr_submission::gate,*ownedUpload,recorded,bytes,first,count);
 }
 static HRESULT STDMETHODCALLTYPE Forward(void*,UINT,const float* data,UINT count) {
     // The original API is a separate consumer, after recorder capture.
@@ -349,6 +350,44 @@ __declspec(naked) static void FramePointerOmittedProducer() {
         ret
     }
 }
+
+static void NativeFloatSubmissionIntegration() {
+    d2vr_submission::requested=true;d2vr_submission::gate.Configure(true);
+    auto* device=reinterpret_cast<IDirect3DDevice9*>(0x1357);d2vr_submission::deviceIdentity=device;
+    g_recActive=true;g_recOverflow=false;forwardStatus=S_OK;
+    float values[16]{};values[0]=73;
+    unsigned before=forwardCalls;
+    Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==S_OK,"ON actual PS initial upload");
+    Check(forwardCalls==before+1,"ON initial native send");
+    Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==S_OK && forwardCalls==before+1,
+          "ON actual PS exact captured duplicate skips native only");
+    values[0]=74;
+    Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==S_OK && forwardCalls==before+2,
+          "ON changed actual PS bytes send");
+    g_recOverflow=true;
+    Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==S_OK && forwardCalls==before+3,
+          "ON overflow refuses ownership and forwards");
+    g_recOverflow=false;
+    Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==S_OK && forwardCalls==before+4,
+          "ON cannot reuse bytes after unowned send");
+    values[0]=75;forwardStatus=E_INVALIDARG;
+    Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==E_INVALIDARG,"ON native failure preserved");
+    before=forwardCalls;forwardStatus=S_OK;g_recOverflow=false;
+    Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==S_OK && forwardCalls==before+1,"ON retry after failure forwards");
+    g_recActive=false;before=forwardCalls;
+    for(unsigned i=0;i<2;++i)Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==S_OK,"ON unrecorded original source forwarded");
+    Check(forwardCalls==before+2,"ON no raw native-pointer comparisons when recording absent");
+    before=forwardCalls;g_recActive=true;
+    Check(Native_SetPSConstF(reinterpret_cast<IDirect3DDevice9*>(0x2468),0,values,4,nullptr,0,0)==S_OK && forwardCalls==before+1,
+          "ON shared-vtable different device must forward");
+    Check(d2vr_submission::gate.Reasons()&d2vr_submission::Epoch::DeviceReplaced,"ON different device permanently rejects cached bank identity");
+    d2vr_submission::gate.Deny(d2vr_submission::Epoch::OpaqueStateBlock);
+    g_recActive=true;before=forwardCalls;
+    for(unsigned i=0;i<2;++i)Native_SetPSConstF(device,0,values,4,nullptr,0,0);
+    Check(forwardCalls==before+2,"ON opaque native state permanently declines optimization");
+    d2vr_submission::requested=false;d2vr_submission::gate.Configure(false);
+}
+
 int main() {
     enabled=true;admitted=true;
     for(unsigned i=0;i<1000;++i) {
@@ -466,6 +505,7 @@ int main() {
     NestedFields();
     Check(!AdmitImage("wrong",nullptr),"wrong image SHA rejects");
     VirtualFree(materialBlock,0,MEM_RELEASE);
+    NativeFloatSubmissionIntegration();
     std::printf("PASS actual x86 gate/hook/native-shaped producer ABI: %u checks; copies=%llu materialCopies=%llu activeStackCopies=%llu injectedFaults=%llu\n",checks,counts.copies,counts.materialCopies,counts.activeStackCopies,counts.faults);
     return 0;
 }

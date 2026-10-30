@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <atomic>
+#include "native_submission_cache.h"
 namespace d2vr_record_sync {
 // Sleep only for short CPU bookkeeping. Native calls release every nesting
 // level; callbacks can enter the recorder without depending on their caller.
@@ -15,6 +16,11 @@ inline bool Busy(){return nativeDepth!=0 || nativeCalls.load(std::memory_order_a
 // Hooks may forward while recording is off (notably during replay). They must
 // still invalidate a pair whose native state changed outside its command stream.
 inline bool NativeMutation(){
+    if(d2vr_submission::requested){
+        d2vr_submission::gate.ObserveMutation(GetCurrentThreadId());
+        if(Callback() || nativeCalls.load(std::memory_order_acquire)!=0)
+            d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
+    }
     if(Callback() || nativeCalls.load(std::memory_order_acquire)!=0){conflict.store(true,std::memory_order_release);return false;}
     return true;
 }

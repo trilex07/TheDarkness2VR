@@ -12,6 +12,8 @@ static IDirect3DDevice9* const other=reinterpret_cast<IDirect3DDevice9*>(0x2000)
 static IDirect3DStateBlock9* const block=reinterpret_cast<IDirect3DStateBlock9*>(0x3000);
 static HRESULT STDMETHODCALLTYPE Begin(IDirect3DDevice9* d){CHECK(d==device);++begins;return beginResult;}
 static HRESULT STDMETHODCALLTYPE End(IDirect3DDevice9* d,IDirect3DStateBlock9** out){CHECK(d==device);++ends;if(SUCCEEDED(endResult)&&out)*out=block;return endResult;}
+static HRESULT STDMETHODCALLTYPE Create(IDirect3DDevice9* d,D3DSTATEBLOCKTYPE,IDirect3DStateBlock9** out){CHECK(d==device);if(out)*out=block;return S_OK;}
+static auto g_origCreateStateBlock=&Create;
 static auto g_origBeginStateBlock=&Begin;
 static auto g_origEndStateBlock=&End;
 static void PatchStateBlock(IDirect3DStateBlock9* b){CHECK(b==block);++patches;}
@@ -34,5 +36,21 @@ int main(){
     CHECK(d2vr_stateblock::Active(device));
     d2vr_stateblock::Ended(device,D3DERR_DEVICELOST);CHECK(d2vr_stateblock::Active(device));
     d2vr_stateblock::Ended(device,S_OK);CHECK(!d2vr_stateblock::Active(device));
+    d2vr_submission::requested=true;d2vr_submission::gate.Configure(true);
+    CHECK(d2vr_submission::gate.Enabled());
+    {
+        d2vr_submission::InternalStateBlockCreation snapshot;
+        IDirect3DStateBlock9* out=nullptr;
+        CHECK(Hook_CreateStateBlock(device,D3DSBT_ALL,&out)==S_OK && out==block);
+        CHECK(d2vr_submission::gate.Enabled());
+        CHECK(!d2vr_submission::ConsumeInternalStateBlock()); // recursive exemption already consumed
+    }
+    beginResult=S_OK;endResult=S_OK;
+    CHECK(Hook_BeginStateBlock(device)==S_OK);
+    CHECK(d2vr_submission::gate.Reasons()&d2vr_submission::Epoch::OpaqueStateBlock);
+    CHECK(Hook_EndStateBlock(device,nullptr)==S_OK);
+    d2vr_submission::gate.Invalidate();
+    CHECK(!d2vr_submission::gate.Enabled());
+    d2vr_submission::requested=false;d2vr_submission::gate.Configure(false);
     printf("PASS actual Begin/EndStateBlock: %u checks, 1000 cycles, failed begin/end/nested begin, device identity, exact HRESULT/original-once, reset transition; CPU fixture\n",checks);
 }

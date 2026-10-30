@@ -26,15 +26,21 @@ public:
     void Deny(Denial reason){denied_.fetch_or(reason,std::memory_order_acq_rel);Invalidate();}
     uint32_t Reasons()const{return denied_.load(std::memory_order_acquire);}
     uint64_t Generation()const{return epoch_.load(std::memory_order_acquire);}
+    bool Requested()const{return requested_.load(std::memory_order_acquire);}
+    bool Paused()const{return pauses_.load(std::memory_order_acquire)!=0;}
     bool Enabled()const{return requested_.load(std::memory_order_acquire) && !Reasons();}
     // Explicit thread identities avoid a Windows query in every setter. Zero
     // is invalid, and callers must use actual runtime thread IDs, never a hash.
     void ObserveMutation(uint32_t thread){
         if(!requested_.load(std::memory_order_acquire))return;
         if(!thread){Deny(UncontrolledMutation);return;}
-        uint32_t expected=0;
-        owner_.compare_exchange_strong(expected,thread,std::memory_order_acq_rel);
-        if(owner_.load(std::memory_order_acquire)!=thread)Deny(ForeignThread);
+        uint32_t owner=owner_.load(std::memory_order_acquire);
+        if(!owner){
+            uint32_t expected=0;
+            owner_.compare_exchange_strong(expected,thread,std::memory_order_acq_rel);
+            owner=owner_.load(std::memory_order_acquire);
+        }
+        if(owner!=thread)Deny(ForeignThread);
     }
     Ticket Begin(uint32_t thread) {
         ObserveMutation(thread);
@@ -50,10 +56,11 @@ public:
     // while native code is restoring state outside the intercepted setters.
     class Bypass {
         Epoch& gate_;
+        bool active_;
     public:
-        explicit Bypass(Epoch& gate):gate_(gate){gate_.Pause();}
+        explicit Bypass(Epoch& gate):gate_(gate),active_(gate.Requested()){if(active_)gate_.Pause();}
         Bypass(const Bypass&)=delete;
-        ~Bypass(){gate_.Resume();}
+        ~Bypass(){if(active_)gate_.Resume();}
     };
 private:
     std::atomic<unsigned> pauses_{0};
