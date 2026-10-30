@@ -30,7 +30,7 @@ if(Test-Path -LiteralPath $DiagnosticIni -PathType Leaf) {
  $diagnostic=(Resolve-Path -LiteralPath $DiagnosticIni).Path
  foreach($key in 'ImagePreservingPresent','ImagePreservingInput','ProtectedHeadTracking','ProtectedGestureActions',
   'ProtectedLeftAim','ProtectedLeftThrow','ProtectedTrackedHands','NativeCameraCover','MatchedFrameCapture',
-  'PresentReadiness','CpuSyncTiming','ProductionResolution') {
+  'PresentReadiness','CpuSyncTiming','CommandHistory','ProductionResolution') {
   if([D2vrProfileGate]::GetPrivateProfileInt('Diagnostics',$key,0,$diagnostic)){$required.Add("Diagnostics/$key")}
  }
 }

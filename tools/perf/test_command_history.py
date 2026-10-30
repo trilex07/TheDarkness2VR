@@ -36,6 +36,7 @@ class ActualHistory(unittest.TestCase):
             self.assertNotIn(forbidden,scope)
         self.assertLess(source.index('WaitForSingleObject(exportEvent'),source.index('fopen_s('))
         self.assertIn('"CommandHistory",0,',source)
+        self.assertIn("'CommandHistory'",(ROOT/'tools/assert-candidate-profile.ps1').read_text())
         self.assertIn('!Building(d)',source)
     def test_all_real_draws_and_producer_flags_preserved(self):
         source=(ROOT/'src/stereo_replay.inl').read_text()
