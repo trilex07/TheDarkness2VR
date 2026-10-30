@@ -9,6 +9,8 @@
 #include "../src/native_constant_gate.h"
 #include "../src/small_record_copy.h"
 #include "../src/shader_register_history.h"
+#include "../src/stateblock_recording.h"
+#include "../src/recorder_sync.h"
 static d2vr_shader_registers::EyeHistory g_psEyeHistory;
 using IDirect3DDevice9=void;
 using namespace d2vr_native_constants;
@@ -197,6 +199,17 @@ static void PixelSubmissionFailures() {
         float inherited[16];
         Check(g_psEyeHistory.eyeCarry.Matrix(0,inherited)==(active||FAILED(status)),
               "only successful unrecorded PS upload invalidates inherited rows");
+    }
+    auto* device=reinterpret_cast<void*>(0x1234);
+    for(HRESULT status:{S_OK,S_FALSE,E_INVALIDARG}) {
+        g_recActive=true;g_recOverflow=false;forwardStatus=status;
+        g_psEyeHistory.Clear();g_psEyeHistory.eyeCarry.Write(0,4,values,sizeof(values));
+        const auto calls=forwardCalls,locks=resultLocks;
+        d2vr_stateblock::Began(device,S_OK);
+        Check(Native_SetPSConstF(device,0,values,4,nullptr,0,0)==status,"stateblock PS raw HRESULT");
+        Check(forwardCalls==calls+1 && resultLocks==locks && !g_recOverflow,"stateblock PS no recording or failure mutation");
+        float inherited[16];Check(g_psEyeHistory.eyeCarry.Matrix(0,inherited),"stateblock PS preserves live history");
+        d2vr_stateblock::Ended(device,S_OK);
     }
     g_recActive=true;g_recOverflow=false;forwardStatus=S_OK;
 }
