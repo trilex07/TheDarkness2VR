@@ -2717,3 +2717,15 @@ Client initializer CA49E0 creates that reference from DarkitectClientImpl.
 It is an engine-tool receiver, not a demonstrated native game-menu predicate.
 Do not route laser clicks through its +17C Windows-message callback.
 Complete private exports remain in TEMP/d2vr-menu-client-*-20261030.txt.
+
+
+## Fresh native mouse poll ABI (2026-10-30)
+
+Added an x86 GetDeviceData gateway capturing the current ESI owner and exact
+return address before compiler register reuse, plus strict value-only native
+mouse context admission. Pinned the complete constructor and inline 20-byte
+state layout in the existing private-image auditor. No native hook, injection,
+EXE write, menu-visibility assumption or Steam deployment is introduced.
+Actual-source x86 gateway regression PASS (18071 checks / 3000 ABI calls),
+existing mouse merge PASS (172147 checks), pinned EXE audit PASS. Full native
+menu laser remains incomplete pending activation/surface and host integration.

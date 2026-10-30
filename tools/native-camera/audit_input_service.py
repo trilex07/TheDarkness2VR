@@ -173,6 +173,7 @@ def inspect(blob):
         raise ValueError("native mouse position getter changed")
     # Validate the complete concrete polling funnel, not guessed COM slots.
     for address, count, expected in (
+        (0x821400, 0x79, "abd98e7652244d6eb61ebac0a5f879044829789a86845f257631fca3f07511a5"),
         (0x9A5D90, 0x178, "3212759191b224c699c8355473f8368982aa078beb24f8f535d46e30c44260d6"),
         (0xD993C0, 0x124, "ee8424992af96d195371fd69177fabac7ea710d4ba5a240df483d4a9f981e8d7"),
         (0x744830, 0xC26, "189c6ff0d04450ac5e536da45286000e0bc72a232dfae335b04ed91797060f00"),
@@ -190,6 +191,10 @@ def inspect(blob):
             "event_count_field": "0x1B8", "event_index_field": "0x1CC",
             "current_state_buffer_field": "0x1C4", "previous_state_buffer_field": "0x1C8",
             "state_bytes_field": "0x1C0",
+            "constructor": "0x821400; complete 0x79-byte method",
+            "inline_current_state": "owner+0x1F4",
+            "inline_previous_state": "owner+0x208",
+            "state_bytes": 20, "event_capacity": 256,
             "native_postprocessing": "overwrites all returned uAppData with zero; overflow can rebuild events via slot +0x68",
             "live_owner_thread_and_lifetime_verified": False,
             "input_injection_admitted": False,

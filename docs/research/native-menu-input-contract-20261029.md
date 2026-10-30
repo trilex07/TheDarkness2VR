@@ -372,3 +372,37 @@ quick press/release, independent physical ownership and 4096 exhaustive
 six-poll transition sequences. No native hook, menu surface or gameplay input
 route is connected by this commit. Those remain necessary for full acceptance.
 The accepted Steam DLL and profiles remain unchanged.
+
+
+## Fresh native mouse polling boundary, 2026-10-30
+
+The complete 821400 constructor (0x79 bytes) fixes the mouse layout: 20-byte
+current and previous states are inline at +1F4/+208, with 256 buffered events.
+The static private-image auditor now pins the complete constructor alongside
+9A5D90. No executable bytes are included in this change.
+
+`native_menu_mouse_poll.h` captures ESI and the exact public API return address
+before the C++ prologue. Its x86 stdcall gateway copies the original five
+arguments, calls the supplied dispatcher once and consumes exactly 20 bytes of
+public arguments. The admission routine requires caller 9A5E70, exact mouse
+type, current device, buffer/capacity, inline state pointers, HWND and decoder
+index zero. Failed admission leaves its output unchanged. This descriptor is
+valid only during the current native call; it is not a retained object lease.
+The host must still verify the image, window thread and complete writable
+extents, preserve LastError around postprocessing, and reject reentrant polls.
+No hook is installed and no input is injected by this header.
+
+Actual-source optimized x86 gateway regression: 18071 checks PASS, including
+3000 public ABI calls across success, overflow and failure; exact caller/ESI,
+nonvolatile registers, stack balance, unchanged arguments, HRESULT/LastError
+and exactly one original call. The missing-field test iterates a stable copy
+rather than invalidating its own unordered_map iterator. Existing button merge
+regression remains PASS (172147 checks).
+
+The recovered Engine GetMainMenuGameRules getter 7EF860 returns Engine+48
+through global 10C1D94. Presence alone does not establish visibility. Getter
+9E3600 selects a 0x30-byte entry from Engine+88/+8C by its receiver's +14 index,
+returning entry+1C. It is not a universal current-menu predicate. Neither getter
+is used to take input ownership. Private complete exports remain in TEMP.
+Native menu activation, submitted geometry and host hook remain outstanding.
+Steam retains the separately deployed 5372cbd2 UI replay candidate.
