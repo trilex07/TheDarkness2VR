@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+#include "mapped_vertex_copy.h"
 namespace d2vr_ui_vertices {
 // Only bytes copied while the native writable Lock is still owned can be used.
 // DISCARD starts a new validity generation, even outside the updated range.
@@ -18,7 +19,7 @@ public:
     bool Stage(size_t offset,size_t size,const void* data,bool discard){
         if(discard)Clear();
         if(staged_ || offset>bytes_.size() || size>bytes_.size()-offset || !data || !size){Clear();return false;}
-        std::memcpy(bytes_.data()+offset,data,size);pending_={offset,offset+size};staged_=true;return true;
+        CopyMappedVertexBytes(bytes_.data()+offset,data,size);pending_={offset,offset+size};staged_=true;return true;
     }
     bool Commit(bool success){
         if(!success){Clear();return false;}
