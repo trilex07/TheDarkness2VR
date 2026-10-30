@@ -28,6 +28,7 @@
 #include "replay_constant_batch.h"
 #include "replay_state_cache.h"
 #include "replay_constant_window.h"
+#include "replay_constant_reuse.h"
 #include "record_payload_storage.h"
 #include "projection_history.h"
 #include "projection_estimate_window.h"
@@ -393,6 +394,7 @@ static uint64_t g_unhookedStateBlock = 0;
 #ifdef D2VR_MATCHED_CAPTURE
 struct ConstantUploadWindow {
     d2vr_replay_batch::UploadCounts counts;
+    uint64_t reused[2]{};
     uint64_t streams = 0, batched = 0, windowed = 0, bindWindowed = 0, captureBypass = 0, otherEyes = 0;
     void Report(uint64_t frame, long long beginQpc, long long endQpc, long long frequency) {
         if (!streams) return;
@@ -400,6 +402,7 @@ struct ConstantUploadWindow {
             frame,beginQpc,endQpc,frequency,streams,otherEyes,batched,windowed,bindWindowed,captureBypass,
             counts.records[0],counts.calls[0],counts.vectors[0],counts.failures[0],
             counts.records[1],counts.calls[1],counts.vectors[1],counts.failures[1],counts.exceptions);
+        if(g_replayConstantReuse)Log("[ReplayConstantReuse] VSskipped=%llu PSskipped=%llu; exact final-eye packets; driver call counts remain in ReplayUploads",reused[0],reused[1]);
         const auto& native=d2vr_native_constants::counts;
         Log("[NativeOwnedConstantCopy] tid=%lu enabled=%d admitted=%d attempts=%llu proved=%llu copies=%llu bytes=%llu faults=%llu materialEnabled=%d materialProved=%llu materialCopies=%llu activeStackProved=%llu activeStackCopies=%llu nestedProved=%llu nestedCopies=%llu; cumulative on reporting thread",
             GetCurrentThreadId(),int(d2vr_native_constants::enabled.load()),int(d2vr_native_constants::admitted.load()),
@@ -2079,6 +2082,13 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     // to avoid adding 8KB of stack probes on every OFF/adjacent replay.
     static d2vr_replay_batch::ConstantWindow constantWindow;
     if (windowEnabled) constantWindow.Reset(g_frameStart.vertexFloatLimit,g_frameStart.pixelFloatLimit);
+    static d2vr_replay_batch::ConstantReuse constantReuse;
+    bool reuseEnabled=g_replayConstantReuse;
+#ifdef D2VR_MATCHED_CAPTURE
+    reuseEnabled=reuseEnabled && !MatchedCaptureRecordingActive();
+#endif
+    constantReuse.Reset(reuseEnabled,
+        g_frameStart.vertexFloatLimit,g_frameStart.pixelFloatLimit);
     auto forwardConstants = [dev,&replayComplete](d2vr_replay_batch::Stage stage, unsigned first,
                                  const float* values, unsigned count) -> long {
         const HRESULT result=stage == d2vr_replay_batch::Stage::Vertex ?
@@ -2090,14 +2100,17 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 #ifdef D2VR_MATCHED_CAPTURE
     const bool auditUploads = d2vr_cpu_sync::timing.enabled;
     d2vr_replay_batch::UploadCounts uploadCounts;
-    auto sendConstants = [&](d2vr_replay_batch::Stage stage, unsigned first,
+    auto countedConstants = [&](d2vr_replay_batch::Stage stage, unsigned first,
                              const float* values, unsigned count) -> long {
         return auditUploads ? uploadCounts.Forward(stage,first,values,count,forwardConstants) :
                               forwardConstants(stage,first,values,count);
     };
 #else
-    const auto sendConstants = forwardConstants;
+    const auto countedConstants = forwardConstants;
 #endif
+    auto sendConstants = [&](d2vr_replay_batch::Stage stage,unsigned first,const float* values,unsigned count)->long {
+        return constantReuse.Forward(stage,first,values,count,countedConstants);
+    };
     __try {
         g_vsConstantHistory.eyeCarry.ForEachValidRun(g_frameStart.vertexFloatLimit,
             [&](unsigned first,const float* values,unsigned count){
@@ -2110,7 +2123,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 sendConstants(d2vr_replay_batch::Stage::Pixel,first,values,count);});
     } __except (1) {
         d2vr_record_sync::RecoverReplayException();
-        replayComplete=false;
+        constantReuse.Abort();replayComplete=false;
     }
     for (size_t i = 0; i < g_rec.size(); ++i) {
         const Rec& r = g_rec[i];
@@ -2127,6 +2140,13 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             r.op==OP_SetVSConstF ? d2vr_replay_batch::Stage::Vertex :
             r.op==OP_SetPSConstF ? d2vr_replay_batch::Stage::Pixel :
                                   d2vr_replay_batch::Stage::None, sendConstants);
+        // StateBlocks can replace both float banks. The tentacle DIP scope
+        // writes c0..c3 outside sendConstants; discard those rows even if its
+        // restore fails. Diagnostic readbacks are opaque to the state cache.
+        const bool draw=r.op>=OP_DrawPrimitive && r.op<=OP_DrawIndexedPrimitiveUP;
+        if((r.op!=OP_SetVSConstF && r.op!=OP_SetPSConstF && !draw &&
+            !IsConstantMaterialBinding(r.op,&r)) || (g_lightRbBudget>0 && draw))constantReuse.Clear();
+        if(r.op==OP_DrawIndexedPrimitive)constantReuse.Invalidate(d2vr_replay_batch::Stage::Vertex,0,4);
         switch ((RecOp)r.op) {
         case OP_SetRenderTarget:
             if(r.a[0]==0) InvalidateShadowAtlasPass();
@@ -2418,7 +2438,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         }
         } __except (1) {
             d2vr_record_sync::RecoverReplayException();
-            stateCache.Clear();bindings.Clear();
+            stateCache.Clear();bindings.Clear();constantReuse.Abort();
             replayComplete=false;
             constants.Abort(); constantWindow.Abort(); batchEnabled=false;
 #ifdef D2VR_MATCHED_CAPTURE
@@ -2437,6 +2457,8 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 #ifdef D2VR_MATCHED_CAPTURE
     if (auditUploads) {
         g_constantUploadWindow.counts.Add(uploadCounts);
+        g_constantUploadWindow.reused[0]+=constantReuse.skipped[0];
+        g_constantUploadWindow.reused[1]+=constantReuse.skipped[1];
         ++g_constantUploadWindow.streams;
         g_constantUploadWindow.otherEyes += eye != 1;
         g_constantUploadWindow.batched += g_replayConstantBatch && !MatchedCaptureRecordingActive();

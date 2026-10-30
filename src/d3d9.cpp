@@ -197,6 +197,7 @@ static bool g_replayStateFilter = false; // independent opt-in until PSVR2 accep
 static bool g_replayBufferVersions = false; // quarantined after b6d2bfbf runtime regression; restart required
 static bool g_replayConstantBatch = false; // OFF; adjacent replay float4 uploads only
 static bool g_replayConstantWindow = false; // OFF; independent follow-up, not part of adjacent A/B
+static bool g_replayConstantReuse = false; // OFF; exact replay-eye float state, reset per stream
 static bool g_replayConstantBindWindow = false; // OFF; float packets may cross inert material bindings
 static bool g_nativeOwnedConstantCopyRequested = false;
 static bool g_nativeOwnedMaterialCopyRequested = false;
@@ -740,11 +741,13 @@ void LoadConfig() {
     Log("[ReplayBufferVersions] enabled=%d; startup-only; quarantined after reported hang/CPU regression",int(g_replayBufferVersions));
     g_replayConstantBatch = GetPrivateProfileIntA("Render", "ReplayConstantBatch", 0, chosenIni)!=0;
     g_replayConstantWindow = GetPrivateProfileIntA("Render", "ReplayConstantWindow", 0, chosenIni)!=0;
+    g_replayConstantReuse = GetPrivateProfileIntA("Render", "ReplayConstantReuse", 0, chosenIni)!=0;
     g_replayConstantBindWindow = GetPrivateProfileIntA("Render", "ReplayConstantBindWindow", 0, chosenIni)!=0;
     g_nativeOwnedConstantCopyRequested = GetPrivateProfileIntA("Render", "NativeOwnedConstantCopy", 0, chosenIni)!=0;
     d2vr_native_constants::enabled = g_nativeOwnedConstantCopyRequested;
     g_nativeOwnedMaterialCopyRequested = GetPrivateProfileIntA("Render", "NativeOwnedMaterialCopy", 0, chosenIni)!=0;
     d2vr_native_constants::materialEnabled = g_nativeOwnedMaterialCopyRequested;
+    if(g_replayConstantReuse) Log("[ReplayConstantReuse] requested=1; exact final eye bits, per-stream ownership, StateBlock/scope invalidation; capture bypass");
     if(g_replayConstantBindWindow) Log("[ReplayConstantBindWindow] requested=1; independent bindings + validated public render states; draw/resource/stateblock/vendor-command barriers retained");
     if(g_replayConstantWindow) Log("[ReplayConstantWindow] requested=1; requires ReplayConstantBatch and no active matched capture");
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");

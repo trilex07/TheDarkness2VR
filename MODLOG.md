@@ -2754,3 +2754,15 @@ calls a factory, hooks UI, retains native objects or injects input. Production
 omits it. Actual-source snapshot264, pointer bridge65, Python ownership5 and
 pinned EXE audit PASS; both x86 builds PASS. No Steam deployment/FPS claim.
 Actual native menu surface and cursor/navigation host integration remain open.
+
+
+## Exact final-eye replay float reuse candidate (2026-10-30)
+
+Added independent ReplayConstantReuse (default OFF): suppress only whole packets
+already accepted as D3D_OK with identical final right-eye bits in this stream.
+Own CPU copies only; StateBlock/opaque-command/callback/SEH invalidation and
+tentacle c0-c3 scope exclusion. Existing diagnostics count actual forwarding
+after reuse. Regression FAIL before / PASS after, both x86 builds and affected
+actual-source replay/buffer/stereo/StateBlock tests PASS. Repeated-packet fixture
+512 -> 2 calls is synthetic; no runtime FPS gain, 1 ms saving or Steam change
+claimed. See docs/research/replay-constant-reuse-20261030.md.

@@ -21,6 +21,7 @@ template<class T>static bool ReplayInheritedBuffers(T*){return true;}
 #include <cstdio>
 #include <cassert>
 #include "../../src/replay_constant_window.h"
+#include "../../src/replay_constant_reuse.h"
 #include "../../src/shader_register_history.h"
 using namespace d2vr_replay_batch;
 static_assert(sizeof(void*)==4,"production ABI");
@@ -40,7 +41,8 @@ static unsigned lastVsFirst=0,lastVsCount=0;
 static unsigned rejectAt=0;
 static unsigned inheritedVariant=~0u,inheritedMode=0;
 static bool g_replayConstantBatch=false,g_replayConstantWindow=false,capture=false,compensate=false;
-static bool g_replayConstantBindWindow=false;
+static bool g_replayConstantBindWindow=false,g_replayConstantReuse=false;
+static int g_lightRbBudget=0;
 static bool g_recOverflow=false;
 static d2vr_shader_registers::History g_vsConstantHistory;
 static d2vr_shader_registers::EyeHistory g_psEyeHistory;
@@ -49,6 +51,7 @@ static struct {unsigned vertexFloatLimit=256,pixelFloatLimit=224;} g_frameStart;
 [[maybe_unused]] static bool MatchedCaptureRecordingActive(){return capture;}
 namespace d2vr_cpu_sync {static struct {bool enabled=true;} timing;}
 static struct {
+    uint64_t reused[2]{};
     UploadCounts counts;unsigned streams=0,otherEyes=0,batched=0,windowed=0,bindWindowed=0,captureBypass=0;
 } g_constantUploadWindow;
 static bool g_skipLightVsShift=false;
@@ -550,8 +553,9 @@ static void RenderStateReduction(){
 }
 int main(){
     HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();InheritedAcrossFrames();PixelInheritedAcrossFrames();RenderStateReduction();unsigned streams=0,records=0;
-    for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
+    for(bool reuse:{false,true})for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
     for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
+        g_replayConstantReuse=reuse;
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
         g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
         g_frameStart.vertexFloatLimit=caps;g_frameStart.pixelFloatLimit=caps==96?32:224;
@@ -566,11 +570,12 @@ int main(){
             const auto inputs=c.records[0]+c.records[1];
             unsigned wanted=0;for(const auto& r:g_rec)wanted+=r.op==OP_SetVSConstF || r.op==OP_SetPSConstF;
             assert(inputs==wanted && c.exceptions==0 && g_constantUploadWindow.streams==1);
-            if(mode==0 || captured)assert(apiCalls==inputs);
+            if((mode==0 && !reuse) || captured)assert(apiCalls==inputs);
         } else assert(g_constantUploadWindow.streams==0);
 #endif
         ++streams;records+=unsigned(g_rec.size());
     }
+    g_replayConstantReuse=false;
     // Diagnostic forwarding records entry before an SEH fault and never retries it.
     g_rec.clear();arena.assign(16*4,0);Rec one;one.op=OP_SetVSConstF;one.a[1]=4;g_rec.push_back(one);
     capture=false;g_replayConstantBatch=true;g_replayConstantWindow=true;
@@ -581,5 +586,73 @@ int main(){
 #ifdef D2VR_MATCHED_CAPTURE
     assert(g_constantUploadWindow.counts.exceptions==1 && g_constantUploadWindow.counts.calls[0]==1);
 #endif
+    // Exact final-eye packet reuse across real draw barriers. Compare every
+    // driver bank at the observer with the unfiltered actual source loop.
+    g_rec.clear();arena.assign(128,0);
+    for(unsigned i=0;i<32;++i){const uint32_t b=0x7fc00000u+i;memcpy(arena.data()+i*4,&b,4);}
+    capture=false;compensate=true;bindingTransforms=false;activeWvpBase=-1;activeStpBase=-1;
+    checkOtherState=checkBindingSnapshots=false;g_activePsInverse=-1;g_activeVs=&vertexMetadata;
+    g_replayConstantBatch=g_replayConstantWindow=g_replayConstantBindWindow=true;
+    const auto addPacket=[&](unsigned op,unsigned first,unsigned offset){
+        Rec r;r.op=op;r.a[0]=first;r.a[1]=4;r.a[4]=offset;g_rec.push_back(r);
+    };
+    for(unsigned draw=0;draw<256;++draw){
+        addPacket(OP_SetVSConstF,8,0);addPacket(OP_SetPSConstF,16,64);
+        Rec r;r.op=OP_DrawIndexedPrimitive;g_rec.push_back(r);
+    }
+    unsigned before=0;
+    for(unsigned enabled=0;enabled<2;++enabled){
+        g_replayConstantReuse=enabled!=0;collectReference=enabled==0;
+        if(!enabled){expected.clear();expectedBindings.clear();expectedState.clear();}
+        driver={};g_vsConstantHistory.Clear();g_psEyeHistory.Clear();g_constantUploadWindow={};
+        apiCalls=apiFail=checkAt=0;g_recOverflow=false;
+        assert(Actual());assert(checkAt==256);
+        if(!enabled)before=apiCalls;
+        else {
+            if(before!=512 || apiCalls!=2){fprintf(stderr,"FAIL actual-source float reuse expected 512 -> 2, got %u -> %u\n",before,apiCalls);return 1;}
+#ifdef D2VR_MATCHED_CAPTURE
+            assert(g_constantUploadWindow.reused[0]==255 && g_constantUploadWindow.reused[1]==255);
+            assert(g_constantUploadWindow.counts.calls[0]+g_constantUploadWindow.counts.calls[1]==apiCalls);
+#endif
+        }
+    }
+    // The tentacle scope bypasses sendConstants for VS c0..c3. Its draw
+    // boundary must discard those rows even when a restore may have failed.
+    for(auto& r:g_rec)if(r.op==OP_SetVSConstF)r.a[0]=0;
+    expected.clear();expectedBindings.clear();expectedState.clear();
+    for(unsigned enabled=0;enabled<2;++enabled){
+        g_replayConstantReuse=enabled!=0;collectReference=enabled==0;
+        driver={};g_vsConstantHistory.Clear();g_psEyeHistory.Clear();g_constantUploadWindow={};
+        apiCalls=apiFail=checkAt=0;g_recOverflow=false;
+        assert(Actual());assert(checkAt==256 && apiCalls==(enabled?257u:512u));
+    }
+    // A captured StateBlock replaces the float banks between equal uploads.
+    // The following repeated bytes must still be submitted after that restore.
+    g_rec.clear();addPacket(OP_SetVSConstF,0,0);addPacket(OP_SetPSConstF,0,64);
+    Rec block;block.op=OP_ApplyStateBlock;block.a[0]=0x3000;g_rec.push_back(block);
+    addPacket(OP_SetVSConstF,0,0);addPacket(OP_SetPSConstF,0,64);
+    Rec draw;draw.op=OP_DrawPrimitive;g_rec.push_back(draw);applyPixelBlock=true;
+    for(unsigned enabled=0;enabled<2;++enabled){
+        g_replayConstantReuse=enabled!=0;collectReference=enabled==0;
+        if(!enabled){expected.clear();expectedBindings.clear();expectedState.clear();}
+        driver={};g_vsConstantHistory.Clear();g_psEyeHistory.Clear();apiCalls=apiFail=checkAt=0;g_recOverflow=false;
+        assert(Actual());assert(checkAt==1 && apiCalls==4);
+    }
+    applyPixelBlock=false;
+    // Public inert RS may preserve residency, vendor/unknown RS must drop it.
+    for(unsigned opaque=0;opaque<2;++opaque){
+        g_rec.clear();addPacket(OP_SetVSConstF,8,0);addPacket(OP_SetPSConstF,16,64);g_rec.push_back(draw);
+        Rec state;state.op=OP_SetRenderState;state.a[0]=opaque?D3DRS_POINTSIZE:D3DRS_ZWRITEENABLE;
+        state.a[1]=opaque?0x5a534552u:1u;g_rec.push_back(state);
+        addPacket(OP_SetVSConstF,8,0);addPacket(OP_SetPSConstF,16,64);g_rec.push_back(draw);
+        expected.clear();expectedBindings.clear();expectedState.clear();
+        for(unsigned enabled=0;enabled<2;++enabled){
+            g_replayConstantReuse=enabled!=0;collectReference=enabled==0;
+            driver={};g_vsConstantHistory.Clear();g_psEyeHistory.Clear();apiCalls=apiFail=checkAt=0;g_recOverflow=false;
+            assert(Actual());assert(apiCalls==((enabled && !opaque)?2u:4u));
+        }
+    }
+    g_replayConstantReuse=false;
+    printf("PASS actual replay constant reuse: 512 -> 2 driver calls, 256 exact draw bank observations; transformed VS/PS NaN payload bits; StateBlock invalidation PASS (synthetic, no FPS claim)\n");
     printf("PASS actual replay float loop: %u streams / %u records / %u checks; OFF/adjacent/window/independent-bind/capture, shader+viewport-dependent transformed bits, shader 8->4, independent 20->4, public RS 16->2 setters; exact setter args/order/state at draws, vendor/invalid RS barriers, failed/null binds, caps, failures, forwarding receipts, SEH at float/no retry\n",streams,records,checks);
 }
