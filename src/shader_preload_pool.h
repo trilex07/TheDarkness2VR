@@ -125,6 +125,15 @@ public:
         }
         if(object) object->Release();
     }
+    // Borrowed pointers to still-pool-owned objects; ownership never moves.
+    // Valid only while no Take/Clear can run, i.e. before device handoff.
+    std::vector<Object*> PendingObjects(const void* device,const std::vector<uint32_t>& code) {
+        std::vector<Object*> out;
+        if(device!=device_) return out;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(auto* e=Find(code)) out.assign(e->objects.begin(),e->objects.begin()+e->count);
+        return out;
+    }
     size_t Size() const {std::lock_guard<std::mutex> lock(mutex_);return entries_.size();}
     size_t Pending() const {
         std::lock_guard<std::mutex> lock(mutex_);size_t count=0;

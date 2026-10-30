@@ -49,6 +49,10 @@ static bool SkipObjectDrawForTest(D3DPRIMITIVETYPE,UINT){return skipDraw;}
 static bool SkipShadowDrawForTest(IDirect3DDevice9*){return false;}
 static bool RecordUiPrimitive(IDirect3DDevice9*,D3DPRIMITIVETYPE,UINT,UINT){return false;}
 struct WorldDiffuseScope {explicit WorldDiffuseScope(IDirect3DDevice9*){}};
+static int g_replayEye=-1;
+static const void* g_boundVs=nullptr;
+static const void* g_boundPs=nullptr;
+namespace d2vr_pipeline_warmup {static void ObserveDraw(IDirect3DDevice9*,const void*,const void*){}}
 struct TentacleHeadScope {explicit TentacleHeadScope(IDirect3DDevice9*){}};
 static unsigned clipBegins=0,clipEnds=0;
 struct UiClipState{};

@@ -18,6 +18,7 @@ static bool g_shadowScreenDepth=false,g_disableDepthOfField=false,g_disableCompo
 static bool g_disableFxaa=false,g_shaderDebugDump=false,g_recActive=false;
 static int g_submitMode=4,g_activePsInverse=-1,g_activePsViewExtents=-1;
 static uint32_t g_activePsHash=0;
+static const void* g_boundPs=nullptr;
 template<class... T> static void Log(const char*,T...){}
 static unsigned records=0;
 static void RecEmit(unsigned,unsigned,uint32_t){++records;}

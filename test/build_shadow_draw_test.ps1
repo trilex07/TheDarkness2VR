@@ -22,7 +22,9 @@ $prefix=@'
 #include <cassert>
 #include <cstdio>
 bool g_skipShadowAtlasDraws=false,g_skipObjectDraws=false,shadow=false;
-int g_replayEye=-1,queries=0,calls=0,scopes=0;
+int g_replayEye=-1,queries=0,calls=0,scopes=0,observed=0;
+const void* g_boundVs=nullptr;const void* g_boundPs=nullptr;
+namespace d2vr_pipeline_warmup {void ObserveDraw(IDirect3DDevice9*,const void*,const void*){++observed;}}
 bool IsShadowAtlasPass(IDirect3DDevice9*){++queries;return shadow;}
 void Log(const char*,...){}
 struct WorldDiffuseScope {explicit WorldDiffuseScope(IDirect3DDevice9*){++scopes;}};
@@ -50,7 +52,7 @@ int main(){
  vp.Width=1024;vp.Height=512;assert(!IsShadowAtlas(rt,vp));
  vp.Height=1024;rt.Format=D3DFMT_A8R8G8B8;assert(!IsShadowAtlas(rt,vp));
  rt.Format=D3DFMT_R5G6B5;rt.Height=1024;assert(!IsShadowAtlas(rt,vp));
- shadow=true;Run(E_FAIL);assert(calls==4 && queries==0);
+ shadow=true;Run(E_FAIL);assert(calls==4 && queries==0 && observed==4);
  g_skipShadowAtlasDraws=true;shadow=false;Run(E_FAIL);assert(calls==8);
  shadow=true;
  for(int eye=-1;eye<=1;++eye){g_replayEye=eye;int before=scopes;Run(D3D_OK);assert(calls==8 && scopes==before);}
@@ -64,7 +66,13 @@ int main(){
  assert(SkipObjectDrawForTest(D3DPT_TRIANGLESTRIP,3));
  assert(SkipObjectDrawForTest(D3DPT_TRIANGLEFAN,3));
  g_skipObjectDraws=false;Run(E_FAIL,12);assert(calls==24);
- puts("PASS actual four draw wrappers: default OFF/no query, native HRESULT, non-atlas forwarding, live+both replay eyes skipped; classifier excludes camera/full/invalid targets. No FPS claim.");
+ // Pipeline learning: forwarded live draws only; skipped and replay-eye draws never learn.
+ const int learned=observed;
+ for(int eye=0;eye<=1;++eye){g_replayEye=eye;Run(E_FAIL);}
+ assert(calls==32 && observed==learned);
+ g_replayEye=-1;g_skipObjectDraws=true;Run(D3D_OK,12);assert(calls==32 && observed==learned);
+ g_skipObjectDraws=false;Run(E_FAIL);assert(calls==36 && observed==learned+4);
+ puts("PASS actual four draw wrappers: default OFF/no query, native HRESULT, non-atlas forwarding, live+both replay eyes skipped; classifier excludes camera/full/invalid targets; pipeline learning live forwarded draws only. No FPS claim.");
 }
 '@
 [IO.File]::WriteAllText((Join-Path $out 'test.cpp'),$prefix+"`n"+$src.Substring($classStart,$classEnd-$classStart)+$drawSource+$suffix)

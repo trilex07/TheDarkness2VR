@@ -36,6 +36,7 @@ struct IDirect3DVertexShader9 {};
 static d2vr_shader_metadata::Vertices<VsInfo> g_vsInfo;
 static std::shared_ptr<VsInfo> g_activeVsOwner;
 static VsInfo* g_activeVs=nullptr;
+static const void* g_boundVs=nullptr;
 static unsigned lockDepth=0;
 static d2vr_shader_registers::History g_vsConstantHistory;
 static d2vr_shader_registers::EyeHistory g_psEyeHistory;
