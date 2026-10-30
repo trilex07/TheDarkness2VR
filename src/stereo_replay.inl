@@ -1617,12 +1617,65 @@ static void EndScaledUiClip(IDirect3DDevice9* dev, const UiClipState& state) {
     g_orig.SetRenderState(dev, D3DRS_SCISSORTESTENABLE, state.enabled);
 }
 
+static bool RecordUiPrimitive(IDirect3DDevice9* dev,D3DPRIMITIVETYPE type,UINT first,UINT primitives) {
+    if(g_replayBufferVersions || !g_recActive || !g_activeVs || g_activeVs->hash!=0x7070C5BCu || !primitives)return false;
+    RecLockGuard guard;
+    if(g_recOverflow)return true;
+    IDirect3DVertexBuffer9* buffer=nullptr;IDirect3DVertexDeclaration9* declaration=nullptr;
+    UINT offset=0,stride=0,frequency=0,count=MAXD3DDECLLENGTH+1;
+    D3DVERTEXELEMENT9 elements[MAXD3DDECLLENGTH+1]{};
+    bool queried=false;
+    {
+        d2vr_record_sync::DriverScope native;
+        queried=SUCCEEDED(dev->GetStreamSource(0,&buffer,&offset,&stride)) && buffer &&
+            SUCCEEDED(dev->GetStreamSourceFreq(0,&frequency)) && frequency==1 &&
+            SUCCEEDED(dev->GetVertexDeclaration(&declaration)) && declaration &&
+            SUCCEEDED(declaration->GetDeclaration(elements,&count));
+    }
+    bool handled=true;
+    if(queried) {
+        auto version=BufferInfo(buffer);
+        if(!version) {
+            D3DVERTEXBUFFER_DESC desc{};
+            {d2vr_record_sync::DriverScope native;queried=SUCCEEDED(buffer->GetDesc(&desc));}
+            if(queried && !(desc.Usage&D3DUSAGE_DYNAMIC))handled=false;
+            else queried=false;
+        } else {
+            const unsigned widths[]={4,8,12,16,4,4,4,8,4,4,8,4,8,4,4,4,8};
+            queried=count>1 && count<=MAXD3DDECLLENGTH+1 && elements[count-1].Stream==0xff;
+            for(UINT i=0;queried && i+1<count;++i)
+                queried=elements[i].Stream==0 && elements[i].Method==D3DDECLMETHOD_DEFAULT && elements[i].Type<sizeof(widths)/sizeof(widths[0]) &&
+                    uint64_t(elements[i].Offset)+widths[elements[i].Type]<=stride;
+            d2vr_up_geometry::Plan plan;
+            const uint64_t begin=uint64_t(offset)+uint64_t(first)*stride;
+            const uint8_t* vertices=nullptr;
+            if(queried && version->cpuOnly && version->valid && !version->locks &&
+               !version->unsupportedAlias.load() && d2vr_up_geometry::NonIndexed(type,primitives,stride,plan) &&
+               begin<=version->size && plan.vertices<=version->size-begin)
+                vertices=version->ui.Read(size_t(begin),plan.vertices);
+            if(!vertices || g_rec.size()>399998 || g_recData.size()>UINT32_MAX-plan.vertices)queried=false;
+            else try {
+                const auto data=uint32_t(g_recData.size());
+                g_recData.resize(g_recData.size()+plan.vertices);
+                std::memcpy(g_recData.data()+data,vertices,plan.vertices);
+                // Replay owns the exact CPU bytes consumed by this live draw.
+                RecEmitLocked(OP_DrawPrimitiveUP,0,type,primitives,stride,data);
+                // DrawPrimitiveUP clears stream 0; the original DrawPrimitive
+                // does not. Restore that binding, including offset and stride.
+                RecEmitLocked(OP_SetStreamSource,0,0,uint32_t(uintptr_t(buffer)),offset,stride);
+            }catch(...){queried=false;}
+        }
+    }
+    if(handled && !queried)g_recOverflow=true;
+    {d2vr_record_sync::DriverScope native;if(declaration)declaration->Release();if(buffer)buffer->Release();}
+    return handled;
+}
 static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
     d2vr_record_sync::NativeMutation();
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if(!g_replayBufferVersions) {
         // Exact pre-versioning path: no recorder lock spans a native Draw.
-        if(g_recActive)RecEmit(OP_DrawPrimitive, 0, t, sv, pc);
+        if(g_recActive && !RecordUiPrimitive(dev,t,sv,pc))RecEmit(OP_DrawPrimitive, 0, t, sv, pc);
         const UiClipState clip=BeginScaledUiClip(dev);
         const HRESULT hr=RecordLiveResult(DrawPrimitiveWithDiffuse(dev, t, sv, pc));
         EndScaledUiClip(dev,clip);return hr;
@@ -2552,7 +2605,7 @@ static bool InstallReplayHooks(void* dev) {
     int ok = 0;
     int installed = 0;
     for (Slot& s : slots) {
-        if(!g_replayBufferVersions && (s.idx==26 || s.idx==27))continue;
+        if(!g_replayBufferVersions && s.idx==27)continue;
         const bool wantRecordHooks = (g_hookMask & 1) != 0;
         const bool wantVsHooks = (s.idx == 91 || s.idx == 92) ? ((g_hookMask & 4) != 0) : wantRecordHooks;
         if (!wantVsHooks) continue;
@@ -2561,6 +2614,8 @@ static bool InstallReplayHooks(void* dev) {
         ++installed;
     }
     Log("Replay hooks installed: %d/%d (mask=0x%X)", ok, installed, g_hookMask);
+    if(!g_replayBufferVersions && (g_hookMask&1))
+        Log("[UIVertices] VS7070C5BC DrawPrimitive snapshots: owned CPU bytes, stream-0 restoration; general VB/IB replicas remain OFF");
     return ok > 20;
 }
 

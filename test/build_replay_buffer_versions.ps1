@@ -1,7 +1,8 @@
-param([switch]$RequireConsistentReplay,[switch]$BaselineDeadlocks,[switch]$BaselineCpu)
+param([switch]$RequireConsistentReplay,[switch]$BaselineDeadlocks,[switch]$BaselineCpu,[switch]$UiWrap,[string]$SourceRef)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $source=if($BaselineDeadlocks -or $BaselineCpu){(& git -C $repo show '1dd6205e:src/stereo_replay.inl') -join "`n"}else{Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw}
+if($SourceRef){$source=(& git -C $repo show "${SourceRef}:src/stereo_replay.inl") -join "`n"}
 function FunctionText([string]$name) {
     $match=[regex]::Match($source,'(?m)^static[^\r\n]*\b'+$name+'\(')
     if(-not $match.Success){throw "Missing actual function $name"}
@@ -22,8 +23,10 @@ $enum=[regex]::Match($source,'(?s)enum RecOp : uint16_t \{.*?\};').Value
 $record=[regex]::Match($source,'(?s)struct Rec \{.*?\};').Value
 $records=foreach($name in 'RecEmitLocked','RecEmit') {FunctionText $name}
 $hooks=foreach($name in 'Hook_SetStreamSource','Hook_SetIndices','Hook_DrawPrimitive','Hook_DrawIndexedPrimitive') {FunctionText $name}
+if($source.Contains('static bool RecordUiPrimitive(')){$hooks=@((FunctionText 'RecordUiPrimitive'))+$hooks}
+else{$hooks=@('[[maybe_unused]] static bool RecordUiPrimitive(IDirect3DDevice9*,D3DPRIMITIVETYPE,UINT,UINT){return false;}')+$hooks}
 $replay=$source.Substring($source.IndexOf('static bool ReplayStream('))
-$cases=foreach($op in 'SetStreamSource','SetIndices','DrawPrimitive','DrawIndexedPrimitive','BufferWrite') {
+$cases=foreach($op in 'SetStreamSource','SetIndices','DrawPrimitive','DrawIndexedPrimitive','DrawPrimitiveUP','BufferWrite') {
     $case=[regex]::Match($replay,"(?s)        case OP_${op}:.*?(?=        case |        default:)")
     if(-not $case.Success){throw "Missing actual replay case $op"}
     $case.Value
@@ -31,6 +34,10 @@ $cases=foreach($op in 'SetStreamSource','SetIndices','DrawPrimitive','DrawIndexe
 $fixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'replay_buffer_versions_test.cpp') -Raw
 $out=Join-Path $env:TEMP 'd2vr-replay-buffer-versions'
 New-Item -ItemType Directory -Force -Path $out|Out-Null
+if($SourceRef){
+    (& git -C $repo show "${SourceRef}:src/replay_buffers.inl")|Set-Content (Join-Path $out 'selected_buffers.inl') -Encoding UTF8
+    $fixture=$fixture.Replace('#include "replay_buffers.inl"','#include "selected_buffers.inl"')
+}
 if($BaselineDeadlocks -or $BaselineCpu){
     # Compile the recovery baseline's actual lock, hooks, buffer interception and
     # replay cases. Only the driver and surrounding frame fixture are doubled.
@@ -52,6 +59,16 @@ $exe=Join-Path $out 'test.exe'
 cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /WX /O2 /MD /std:c++17 /I`"$repo\src`" `"$generated`" /Fo:`"$out\test.obj`" /Fe:`"$exe`""
 if($LASTEXITCODE -ne 0){throw 'Buffer version regression build failed'}
 if($BaselineCpu){& $exe --cpu-probe;if($LASTEXITCODE -ne 0){throw 'Baseline CPU fixture failed'};exit 0}
+if($UiWrap){
+    & $exe --ui-wrap;if($LASTEXITCODE -ne 0){throw 'UI ring wrap regression failed'}
+    foreach($kind in 1,2){
+        $process=Start-Process -FilePath $exe -ArgumentList @('--ui-callback',"$kind") -NoNewWindow -PassThru
+        $null=$process.Handle
+        if(-not $process.WaitForExit(5000)){$process.Kill();throw 'CPU UI capture callback deadlocked'}
+        if($process.ExitCode -ne 0){throw 'CPU UI capture callback failed'}
+    }
+    exit 0
+}
 if($BaselineDeadlocks){
     foreach($probe in 'draw','worker','lock','unlock','replay'){
         $process=Start-Process -FilePath $exe -ArgumentList @('--sync-probe',$probe) -NoNewWindow -PassThru
