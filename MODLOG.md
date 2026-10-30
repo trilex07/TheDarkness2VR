@@ -2729,3 +2729,38 @@ EXE write, menu-visibility assumption or Steam deployment is introduced.
 Actual-source x86 gateway regression PASS (18071 checks / 3000 ABI calls),
 existing mouse merge PASS (172147 checks), pinned EXE audit PASS. Full native
 menu laser remains incomplete pending activation/surface and host integration.
+
+## Optional local constant policy
+
+The owned-constant classifier accepts an optional compile-time private policy.
+Without that file it preserves the existing public site set. Source address,
+extent, owner/frame/parent checks and image admission remain unchanged.
+The private policy and its private image auditor are explicitly gitignored;
+no new executable addresses, offsets, fingerprints or image bytes are published.
+PublicPolicy on the existing x86 fixture verifies the baseline independently.
+
+Validation: full local eighteen-site extension 413273 actual-source checks PASS;
+public-only policy 412337 checks PASS; both x86 DLL flavors PASS. Previous
+buffer/Reset/projection regression results remain applicable: those source paths
+are unchanged. No measured runtime gain, deployment, or MAIN modification.
+MAIN needs the locally retained policy header to build the eighteen-site extension;
+a public checkout alone deliberately does not activate unpublished contracts.
+
+
+## 2026-10-30 — Carry owned-copy coverage onto tested mapped-copy baseline
+
+Rebased the optional owned-source policy onto 21e9b5b5, preserving MAIN's deployed
+mapped-copy implementation. The deployed baseline still has only the previous
+field table; the previously validated eighteen additional submission sites are
+included in the local ignored policy for this candidate, not in public history.
+Build with that local header to exercise the full candidate. Public checkout alone
+retains the original coverage. DirectRecordCopy and ReplayBufferVersions remain
+unchanged; no profile or Steam changes.
+
+Validation on this combination: 413273 private-policy and 412337 public-policy
+actual-source x86 checks PASS; private producer-contract audit PASS; both x86
+builds PASS; six VB/IB cases, NOOVERWRITE, Reset/lifetimes, recorder reentrancy,
+UI ring DISCARD and worker callbacks PASS. Offline gate/copy/stub-forward for
+64 bytes: RPM 707.8 ns versus owned 53.9 ns. No per-frame saving is claimed:
+runtime frequency of these extra sites is not measured. This is integration of
+the retained optimization, not a second mapped-copy fix or a new discovery.

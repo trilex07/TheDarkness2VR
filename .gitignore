@@ -9,3 +9,7 @@
 tests/psvr2/out/
 test_vt.cpp
 TheDarkness2VR/
+
+# Local executable contracts: never publish these policy inputs.
+/src/native_constant_private_policy.h
+/test/native_private_constant_contracts.py
