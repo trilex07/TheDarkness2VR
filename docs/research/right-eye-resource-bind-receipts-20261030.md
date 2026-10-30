@@ -73,3 +73,44 @@ are introduced. Success adds an HRESULT check; failures avoid recording and
 diagnostic queries. Runtime CPU/GPU/FPS impact is unmeasured. No game launch,
 Steam deployment, merge or physical acceptance was performed. Permanent removal
 of the observed flicker remains unconfirmed until MAIN's consolidated PSVR2 test.
+
+## MAIN integration validation
+
+Integrated onto exact MAIN 969b3b98 on codex/main-right-eye-resource-bind.
+Cherry-pick fc6012d3 changes only the two native resource hooks in production.
+No configuration, FOV, constant transformation, buffer versioning, haptics,
+hands, tentacles, menu, font, input, OpenXR or Steam files were changed.
+
+Original pointers come from PatchVTable slots 39/65 and are also supplied directly
+to the replay original-call table. The hooks do not hold the recorder lock across
+the original call. RecEmit locks only after the accepted synchronous bind returns.
+Accepted native bindings own their resources before recorder reference retention;
+INTZ ownership transfer and balanced GetContainer references are unchanged.
+Reset cleanup and replay resource ledgers are unchanged. This preserves the
+existing render-thread contract; it does not claim arbitrary concurrent device
+calls are serialized by these hooks.
+
+The MAIN fixture additionally verifies nested native callback completion ordering
+and five successive accepted binds with binding filtering OFF and ON. Actual
+hooks and replay cases PASS 1649 checks; baseline 969b3b98 fails at check 33.
+Live hooks 5688, surface receipts 128 streams/896 calls, binding cache, projection
+history 145248, StateBlock synchronization 296163, PS metadata concurrency,
+resource lifetimes, color history 2000 segments, UP geometry 4403, left aim 461,
+tracked hands 2233, tentacles 26629, buffer lifecycle/disabled bypass, PS payload
+576, constant batching 80190, and actual float loops 58510 checks per build flavor
+PASS. Both x86 DLL builds and 44 actual-binary profile guard checks PASS.
+An initial UP generated fixture in shared TEMP did not match this checkout and
+failed compilation; regenerated under a private TEMP, the unchanged test PASSed.
+
+Standard DLL SHA256:
+62078C5359D84BF1AC3793ACA48CA1A9716E547CB914FD55686B0CA1C0B3AF1D
+Protected-native DLL SHA256 (Steam candidate):
+1E882174FE6089FA1F698E4DB4F45D0E937E7D712DEF0CA27A9266302D181C68
+
+Private staged packet: %LOCALAPPDATA%/Darkness2VR/packages/right-eye-resource-bind-fc6012d3.
+Its deployment helper validates the recorded game/INI/DLL preimage and refuses
+an active game. Rollback retains the previous CPU candidate and all current INIs.
+No installation or launch while the user tests the Polish font correction.
+Next consolidated PSVR2 gate: flicker at rest/slow head motion, both eyes/depth,
+peripheral rooms, shadows/HUD, tracked hands/tentacles, and outdoor frame pacing
+and CPU time together. Runtime visuals and FPS/CPU impact remain NOT RUN.

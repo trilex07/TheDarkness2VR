@@ -1,12 +1,15 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "../../src/replay_state_cache.h"
+#include "../../src/recorder_sync.h"
 #include <atomic>
 static std::atomic<bool> g_bufferUnsafeAlias{false};
 static bool g_bufferWritesApplied=false;
 [[maybe_unused]] static void BeginReplayBufferLookups(){}
 static void ClearReplayBufferLookups(){}
 static bool g_replayBufferVersions=true,g_replayStateFilter=true,g_replayBindingFilter=true;
+static bool EndReplayRecording(bool complete){return complete;}
+
 template<class T>static T* ReplayBuffer(T* p,bool&){return p;}
 template<class T>static bool ReplayInheritedBuffers(T*){return true;}
 #include <windows.h>

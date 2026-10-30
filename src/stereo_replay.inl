@@ -386,8 +386,8 @@ static int g_sbHooked = 0;
 
 static std::vector<Rec> g_rec;
 static d2vr_record_payload::Storage g_recData;
-static bool g_recActive = false;
-static bool g_recOverflow = false;
+static std::atomic<bool> g_recActive{false};
+static std::atomic<bool> g_recOverflow{false};
 static uint64_t g_recCounts[40] = { 0 };
 static uint64_t g_unhookedStateBlock = 0;
 #ifdef D2VR_MATCHED_CAPTURE
@@ -415,20 +415,11 @@ static ConstantUploadWindow g_constantUploadWindow;
 #define HOOK_MARK(n) (g_lastHookId = (n))
 
 // The engine can issue device calls from more than one thread - guard the record stream.
-static std::atomic<LONG> g_recLock{0};
-static_assert(std::atomic<LONG>::is_always_lock_free,"Recorder lock must stay native on x86");
+static auto& g_recLock=d2vr_record_sync::held;
 struct RecLockGuard {
-    RecLockGuard() {
-        LONG expected=0;
-        while (!g_recLock.compare_exchange_weak(expected,1,std::memory_order_acquire,std::memory_order_relaxed)) {
-            expected=0;Sleep(0);
-        }
-    }
-    // Publish the complete payload/record with release ordering. Unlock does
-    // not need a read-modify-write or a second full x86 memory fence.
-    ~RecLockGuard() { g_recLock.store(0,std::memory_order_release); }
+    RecLockGuard(){d2vr_record_sync::Acquire();}
+    ~RecLockGuard(){d2vr_record_sync::Release();}
 };
-
 // Commands below are owned before forwarding the live call. A rejected live
 // write must not become a successful right-eye operation. Preserve the native
 // HRESULT and keep failure sticky until the next independent recording.
@@ -499,16 +490,19 @@ static DeviceSnapshot g_frameStart;
 static uint64_t g_wvpHistoryGeneration=0;
 static d2vr_shader_registers::History g_vsConstantHistory;
 static d2vr_shader_registers::EyeHistory g_psEyeHistory;
-static FrameResourceRefs<IUnknown> g_recordRefs;
+static FrameResourceRefs<IUnknown,d2vr_record_sync::DriverScope> g_recordRefs;
+static bool DeferredBufferWritesPending();
 static void FinishBufferRecording();
 static void BeginBufferRecording();
-static void ReleaseRecordingLocked(bool keepSnapshot=false) {
-    FinishBufferRecording();
+static bool ReleaseRecordingLocked(bool keepSnapshot=false) {
+    if(d2vr_record_sync::Busy()){g_recOverflow=true;g_recActive=false;return false;}
     g_recActive = false;
+    FinishBufferRecording();
     g_rec.clear();
     g_recData.clear();
     g_recordRefs.Clear();
-    g_frameStart.Release(keepSnapshot);
+    {d2vr_record_sync::DriverScope native;g_frameStart.Release(keepSnapshot);}
+    return true;
 }
 
 static void ReleaseRecording(bool keepSnapshot=false) {
@@ -518,9 +512,13 @@ static void ReleaseRecording(bool keepSnapshot=false) {
 static void RecBeginFrame(IDirect3DDevice9* dev) {
     RecLockGuard lock;
     g_hadWorldDrawThisFrame=false;
-    ReleaseRecordingLocked(g_reuseStateSnapshots);
+    if(!ReleaseRecordingLocked(g_reuseStateSnapshots))return;
+    if(DeferredBufferWritesPending()){g_recOverflow=true;return;}
+    d2vr_record_sync::conflict=false;
     g_recordRefs.Begin(g_uniqueReplayRefs);
-    if (!g_frameStart.Capture(dev,g_reuseStateSnapshots)) {
+    bool captured=false;
+    {d2vr_record_sync::DriverScope native;captured=g_frameStart.Capture(dev,g_reuseStateSnapshots);}
+    if (!captured || d2vr_record_sync::conflict.load()) {
         static int s_captureFails = 0;
         if (s_captureFails++ < 8) Log("[Record] frame-start capture failed - recording stays off");
         return;
@@ -544,6 +542,9 @@ static inline bool RecOnRenderThread() {
 
 // Caller holds g_recLock until the payload and its command are both published.
 static inline uint32_t RecPushLocked(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {}) {
+    if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){
+        d2vr_record_sync::conflict=true;g_recOverflow=true;return 0;
+    }
     if (bytes > (size_t)8 * 1024 * 1024) {g_recOverflow=true;bytes=0;} // incomplete packet
     uint32_t off = (uint32_t)g_recData.size();
     g_recData.resize(off + bytes);
@@ -602,6 +603,7 @@ static void CollectLightReadbackTarget(IDirect3DSurface9* s) {
 static void NoteRecordedWorldDraw(); // caller holds g_recLock
 static inline void RecEmitLocked(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
                            uint32_t a2 = 0, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
+    if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){d2vr_record_sync::conflict=true;return;}
     if (!g_recActive || g_recOverflow) return;
     if (g_rec.size() >= 400000) { g_recOverflow = true; return; }
     Rec r;
@@ -635,6 +637,7 @@ static inline void RecEmitLocked(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t
 }
 static inline void RecEmit(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
                            uint32_t a2 = 0, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
+    if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){d2vr_record_sync::conflict=true;return;}
     if (!g_recActive || g_recOverflow) return;
     RecLockGuard lock;
     RecEmitLocked(op,n,a0,a1,a2,a3,a4,a5);
@@ -646,6 +649,7 @@ static inline void RecEmitData(RecOp op, const void* data, size_t bytes,
                                int referenceBase=-1,d2vr_shader_registers::Reference* reference=nullptr,
                                int auxiliaryBase=-1) {
     if(reference){reference->valid=false;reference->partialBase=-1;}
+    if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){d2vr_record_sync::conflict=true;return;}
     if (!g_recActive) return;
     RecLockGuard lock;
     if (!g_recActive) return;
@@ -724,6 +728,7 @@ static bool RememberVertexShader(IDirect3DVertexShader9* shader,VsInfo& analyzed
 }
 static void ResetProjectionHistories() {
     RecLockGuard lock;
+    if(d2vr_record_sync::replaying.load()){d2vr_record_sync::conflict=true;return;}
     g_vsConstantHistory.Clear();
     g_psEyeHistory.Clear();
     g_vsInfo.ForEach([](VsInfo& info){info.wvpHistory={};});
@@ -1025,8 +1030,11 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDirect3DVertexShader9* sh) {
+    d2vr_record_sync::NativeMutation();
     const HRESULT result=g_orig.SetVertexShader(dev,sh);
     if(FAILED(result))return result;
+    RecLockGuard metadata;
+    if(!d2vr_record_sync::NativeMutation())return result;
     if (g_recActive) RecEmit(OP_SetVertexShader, 0, (uint32_t)(uintptr_t)sh);
     if (sh) {
         RecLockGuard lock;
@@ -1314,6 +1322,7 @@ typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateSurface)(IDirect3DDevice9*, IDirect
 typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateTexture)(IDirect3DDevice9*, IDirect3DBaseTexture9*, IDirect3DBaseTexture9*);
 
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWORD idx, IDirect3DSurface9* s) {
+    d2vr_record_sync::NativeMutation();
     if(idx==0) InvalidateShadowAtlasPass();
     if (d2vr_trace::g_enabled) {
         d2vr_trace::Emit(GetTickCount64(), GetCurrentThreadId(), "SetRenderTarget", 0,
@@ -1330,6 +1339,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWO
 }
 static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, const D3DRECT* rects,
                                             DWORD flags, D3DCOLOR color, float z, DWORD st) {
+    d2vr_record_sync::NativeMutation();
     // Clear is legal outside BeginScene. Capture its pre-state and command
     // before the native call, rather than losing the next frame's background.
     RecordPreSceneWrite(dev);
@@ -1341,23 +1351,28 @@ static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, 
     return RecordLiveResult(g_orig.Clear(dev, count, rects, flags, color, z, st));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetTransform(IDirect3DDevice9* dev, D3DTRANSFORMSTATETYPE st, const D3DMATRIX* m) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetTransform,m,sizeof(D3DMATRIX),st,0,0,0,{},1,0);
     return RecordLiveResult(g_orig.SetTransform(dev, st, m));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetViewport(IDirect3DDevice9* dev, const D3DVIEWPORT9* vp) {
+    d2vr_record_sync::NativeMutation();
     InvalidateShadowAtlasPass();
     if (g_recActive) RecEmitData(OP_SetViewport,vp,sizeof(D3DVIEWPORT9),0,0,0,0,{},0,0);
     return RecordLiveResult(g_orig.SetViewport(dev, vp));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetClipPlane(IDirect3DDevice9* dev, DWORD index, const float* plane) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive && plane) RecEmitData(OP_SetClipPlane, plane, sizeof(float)*4, index);
     return RecordLiveResult(g_orig.SetClipPlane(dev, index, plane));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderState(IDirect3DDevice9* dev, D3DRENDERSTATETYPE st, DWORD v) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetRenderState, 0, st, v);
     return RecordLiveResult(g_orig.SetRenderState(dev, st, v));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetTextureStageState(IDirect3DDevice9* dev, DWORD stage, D3DTEXTURESTAGESTATETYPE t, DWORD v) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetTextureStageState, 0, stage, t, v);
     return RecordLiveResult(g_orig.SetTextureStageState(dev, stage, t, v));
 }
@@ -1374,6 +1389,7 @@ static DWORD ResolveSamplerValue(IDirect3DDevice9* dev, D3DSAMPLERSTATETYPE t, D
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWORD smp, D3DSAMPLERSTATETYPE t, DWORD v) {
+    d2vr_record_sync::NativeMutation();
     v = ResolveSamplerValue(dev, t, v);
     if (g_recActive) RecEmit(OP_SetSamplerState, 0, smp, t, v);
     return RecordLiveResult(g_orig.SetSamplerState(dev, smp, t, v));
@@ -1531,6 +1547,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     return g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect(IDirect3DDevice9* dev, const RECT* r) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) {
         if (r) RecEmitData(OP_SetScissorRect,r,sizeof(RECT),0,0,0,0,{},0,1);
         else RecEmit(OP_SetScissorRect, 0);
@@ -1593,6 +1610,7 @@ static void EndScaledUiClip(IDirect3DDevice9* dev, const UiClipState& state) {
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
+    d2vr_record_sync::NativeMutation();
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if(!g_replayBufferVersions) {
         // Exact pre-versioning path: no recorder lock spans a native Draw.
@@ -1601,17 +1619,21 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* dev, D3DPR
         const HRESULT hr=RecordLiveResult(DrawPrimitiveWithDiffuse(dev, t, sv, pc));
         EndScaledUiClip(dev,clip);return hr;
     }
-    // Keep native consumption ordered with worker-thread buffer Unlock records.
+    // Publish before forwarding. Overlapping native calls invalidate the pair;
+    // never wait for a driver callback while owning recorder bookkeeping.
     RecLockGuard guard;
     if (g_recActive) RecEmitLocked(OP_DrawPrimitive, 0, t, sv, pc);
+    d2vr_record_sync::DriverScope native;
     const UiClipState clip = BeginScaledUiClip(dev);
     HRESULT hr = DrawPrimitiveWithDiffuse(dev, t, sv, pc);
-    if(FAILED(hr) && g_recActive)g_recOverflow=true;
     EndScaledUiClip(dev, clip);
+    native.Resume();
+    if(FAILED(hr) && g_recActive)g_recOverflow=true;
     return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
+    d2vr_record_sync::NativeMutation();
     if (d2vr_trace::g_enabled) d2vr_trace::NoteDraw();
     if(!g_replayBufferVersions) {
         // Exact pre-versioning path: no recorder lock spans a native Draw.
@@ -1620,20 +1642,26 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* dev
         const HRESULT hr=RecordLiveResult(DrawIndexedPrimitiveWithDiffuse(dev, t, bvi, mvi, nv, si, pc));
         EndScaledUiClip(dev,clip);return hr;
     }
-    // Keep native consumption ordered with worker-thread buffer Unlock records.
+    // Publish before forwarding. Overlapping native calls invalidate the pair;
+    // never wait for a driver callback while owning recorder bookkeeping.
     RecLockGuard guard;
     if (g_recActive) RecEmitLocked(OP_DrawIndexedPrimitive, 0, t, (uint32_t)bvi, mvi, nv, si, pc);
+    d2vr_record_sync::DriverScope native;
     const UiClipState clip = BeginScaledUiClip(dev);
     HRESULT hr = DrawIndexedPrimitiveWithDiffuse(dev, t, bvi, mvi, nv, si, pc);
-    if(FAILED(hr) && g_recActive)g_recOverflow=true;
     EndScaledUiClip(dev, clip);
+    native.Resume();
+    if(FAILED(hr) && g_recActive)g_recOverflow=true;
     return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     UINT pc, const void* vb, UINT stride) {
+    d2vr_record_sync::NativeMutation();
     HOOK_MARK(83);
-    if (g_recActive && !g_recOverflow) {
-        RecLockGuard lock;
+    RecLockGuard guard;
+    if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0)
+        d2vr_record_sync::conflict=true;
+    else if (g_recActive && !g_recOverflow) {
         d2vr_up_geometry::Plan plan;
         if(!d2vr_up_geometry::NonIndexed(t,pc,stride,plan) ||
            !d2vr_up_geometry::SourceRange(vb,0,plan.vertices) || g_rec.size()>=400000 ||
@@ -1643,6 +1671,7 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3D
             RecEmitLocked(OP_DrawPrimitiveUP,0,t,pc,stride,off);
         }
     }
+    d2vr_record_sync::DriverScope native;
     const UiClipState clip = BeginScaledUiClip(dev);
     HRESULT hr = RecordLiveResult(DrawPrimitiveUPWithDiffuse(dev, t, pc, vb, stride));
     EndScaledUiClip(dev, clip);
@@ -1650,9 +1679,12 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* dev, D3D
 }
 static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t,
     UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
+    d2vr_record_sync::NativeMutation();
     HOOK_MARK(84);
-    if (g_recActive && !g_recOverflow) {
-        RecLockGuard lock;
+    RecLockGuard guard;
+    if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0)
+        d2vr_record_sync::conflict=true;
+    else if (g_recActive && !g_recOverflow) {
         d2vr_up_geometry::Plan plan;
         // Single atomic record: aux fields live in the data arena (no adjacent-record pairing,
         // which breaks when the engine records from a second thread between two RecEmit calls).
@@ -1674,42 +1706,53 @@ static HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* d
             RecEmitLocked(OP_DrawIndexedPrimitiveUP,0,t,mvi,nv,pc,(uint32_t)fmt,auxOff);
         }
     }
+    d2vr_record_sync::DriverScope native;
     const UiClipState clip = BeginScaledUiClip(dev);
     HRESULT hr = RecordLiveResult(DrawIndexedPrimitiveUPWithDiffuse(dev, t, mvi, nv, pc, ib, fmt, vb, stride));
     EndScaledUiClip(dev, clip);
     return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexDeclaration(IDirect3DDevice9* dev, IDirect3DVertexDeclaration9* d) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetVertexDeclaration, 0, (uint32_t)(uintptr_t)d);
     return RecordLiveResult(g_orig.SetVertexDeclaration(dev, d));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetFVF(IDirect3DDevice9* dev, DWORD fvf) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetFVF, 0, fvf);
     return RecordLiveResult(g_orig.SetFVF(dev, fvf));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetVSConstI, d, sizeof(int) * 4 * n, s, n);
     return RecordLiveResult(g_orig.SetVertexShaderConstantI(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstB(IDirect3DDevice9* dev, UINT s, const BOOL* d, UINT n) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetVSConstB, d, sizeof(BOOL) * n, s, n);
     return RecordLiveResult(g_orig.SetVertexShaderConstantB(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSource(IDirect3DDevice9* dev, UINT num, IDirect3DVertexBuffer9* vb, UINT off, UINT stride) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetStreamSource, 0, num, (uint32_t)(uintptr_t)vb, off, stride);
     return RecordLiveResult(g_orig.SetStreamSource(dev, num, vb, off, stride));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetStreamSourceFreq(IDirect3DDevice9* dev, UINT num, UINT freq) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetStreamSourceFreq, 0, num, freq);
     return RecordLiveResult(g_orig.SetStreamSourceFreq(dev, num, freq));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3DIndexBuffer9* ib) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetIndices, 0, (uint32_t)(uintptr_t)ib);
     return RecordLiveResult(g_orig.SetIndices(dev, ib));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* ps) {
+    d2vr_record_sync::NativeMutation();
     const HRESULT result=g_orig.SetPixelShader(dev,ps);
     if(FAILED(result))return result;
+    RecLockGuard metadata;
+    if(!d2vr_record_sync::NativeMutation())return result;
     if (g_recActive) RecEmit(OP_SetPixelShader, 0, (uint32_t)(uintptr_t)ps);
     SetActivePixelShaderMetadata(ps);
     return result;
@@ -1717,6 +1760,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDir
 #pragma optimize("y", off)
 __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n,
     const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner) {
+    if(!d2vr_record_sync::NativeMutation())return g_orig.SetPixelShaderConstantF(dev,s,d,n);
 #ifdef D2VR_MATCHED_CAPTURE
     const float* native=d;
 #endif
@@ -1743,15 +1787,18 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
 #pragma optimize("y", on)
 D2VR_CONSTANT_GATE(Hook_SetPSConstF,Native_SetPSConstF)
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetPSConstI, d, sizeof(int) * 4 * n, s, n);
     return RecordLiveResult(g_orig.SetPixelShaderConstantI(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPSConstB(IDirect3DDevice9* dev, UINT s, const BOOL* d, UINT n) {
+    d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmitData(OP_SetPSConstB, d, sizeof(BOOL) * n, s, n);
     return RecordLiveResult(g_orig.SetPixelShaderConstantB(dev, s, d, n));
 }
 static HRESULT STDMETHODCALLTYPE Hook_StretchRect(IDirect3DDevice9* dev, IDirect3DSurface9* a, const RECT* ra,
     IDirect3DSurface9* b, const RECT* rb, D3DTEXTUREFILTERTYPE f) {
+    d2vr_record_sync::NativeMutation();
     RecordPreSceneWrite(dev);
     if (g_recActive) {
         uint32_t oa = 0, ob = 0;
@@ -1762,6 +1809,7 @@ static HRESULT STDMETHODCALLTYPE Hook_StretchRect(IDirect3DDevice9* dev, IDirect
     return RecordLiveResult(g_orig.StretchRect(dev, a, ra, b, rb, f));
 }
 static HRESULT STDMETHODCALLTYPE Hook_ColorFill(IDirect3DDevice9* dev, IDirect3DSurface9* s, const RECT* r, D3DCOLOR c) {
+    d2vr_record_sync::NativeMutation();
     RecordPreSceneWrite(dev);
     if (g_recActive) {
         uint32_t off = 0;
@@ -1930,15 +1978,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     static int s_dumpFrames = 0;
     const bool dump = (s_dumpFrames < 3);
     if (dump) ++s_dumpFrames;
-    // Hold the record lock for the whole replay: the engine records from a second thread
-    // (texture uploads) and a concurrent push_back would invalidate g_rec references here.
-    LONG expectedLock=0;
-    while (!g_recLock.compare_exchange_weak(expectedLock,1,std::memory_order_acquire,std::memory_order_relaxed)) {
-        expectedLock=0;Sleep(0);
-    }
-    if(g_replayBufferVersions && g_bufferWritesApplied) {
-        g_recLock.store(0,std::memory_order_release);g_replayEye=-1;return false;
-    }
+    if(!BeginReplayRecording()){g_replayEye=-1;return false;}
     BeginReplayBufferLookups();
     const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)
     g_vsConstantHistory.BeginReplay();
@@ -1963,7 +2003,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                                            g_frameStart.pixelFloatLimit);
     const bool windowEnabled = batchEnabled && g_replayConstantWindow;
     const bool bindWindowEnabled = windowEnabled && g_replayConstantBindWindow;
-    // The existing recording lock serializes replay. Retain storage, not state,
+    // Replay phase ownership serializes replay. Retain storage, not state,
     // to avoid adding 8KB of stack probes on every OFF/adjacent replay.
     static d2vr_replay_batch::ConstantWindow constantWindow;
     if (windowEnabled) constantWindow.Reset(g_frameStart.vertexFloatLimit,g_frameStart.pixelFloatLimit);
@@ -1997,6 +2037,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             [&](unsigned first,const float* values,unsigned count){
                 sendConstants(d2vr_replay_batch::Stage::Pixel,first,values,count);});
     } __except (1) {
+        d2vr_record_sync::RecoverReplayException();
         replayComplete=false;
     }
     for (size_t i = 0; i < g_rec.size(); ++i) {
@@ -2304,6 +2345,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
                 constants.Flush(sendConstants);
         }
         } __except (1) {
+            d2vr_record_sync::RecoverReplayException();
             stateCache.Clear();bindings.Clear();
             replayComplete=false;
             constants.Abort(); constantWindow.Abort(); batchEnabled=false;
@@ -2331,23 +2373,27 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         g_constantUploadWindow.captureBypass += g_replayConstantBatch && MatchedCaptureRecordingActive();
     }
 #endif
+    d2vr_record_sync::Acquire();
     if(g_replayBufferVersions && g_bufferUnsafeAlias.load(std::memory_order_acquire))replayComplete=false;
-    g_bufferWritesApplied=true;
+    replayComplete=EndReplayRecording(replayComplete);
     g_vsConstantHistory.EndReplay(replayComplete);
     g_psEyeHistory.EndReplay(replayComplete);
     if(g_replayBufferVersions)ClearReplayBufferLookups();
-    g_recLock.store(0,std::memory_order_release);
+    d2vr_record_sync::Release();
     g_replayEye = -1;
     return replayComplete;
 }
 
 // ------------------------------------------------------------- state block hooks
 static HRESULT STDMETHODCALLTYPE Hook_SBApply(IDirect3DStateBlock9* sb) {
+    d2vr_record_sync::NativeMutation();
     const HRESULT result=g_origSBApply ? g_origSBApply(sb):D3DERR_INVALIDCALL;
     if(FAILED(result))return result;
     InvalidateShadowAtlasPass();
     {
-        RecLockGuard lock;g_vsConstantHistory.live.Clear();
+        RecLockGuard lock;
+        if(!d2vr_record_sync::NativeMutation())return result;
+        g_vsConstantHistory.live.Clear();
         if(!g_recActive){g_vsConstantHistory.eyeCarry.Clear();g_psEyeHistory.Clear();}
     }
     // Apply can restore VS/PS without passing through either shader setter.
@@ -2422,6 +2468,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateStateBlock(IDirect3DDevice9* dev, D3
     return hr;
 }
 static HRESULT STDMETHODCALLTYPE Hook_EndStateBlock(IDirect3DDevice9* dev, IDirect3DStateBlock9** out) {
+    d2vr_record_sync::NativeMutation();
     HRESULT hr = g_origEndStateBlock(dev, out);
     if (SUCCEEDED(hr) && out && *out) PatchStateBlock(*out);
     return hr;

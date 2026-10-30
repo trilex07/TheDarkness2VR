@@ -1,4 +1,5 @@
 static bool g_replayBufferVersions=true;
+#include "recorder_sync.h"
 #include <windows.h>
 #include <d3d9.h>
 #include <cstdint>
@@ -97,15 +98,15 @@ int main(){
         RUN(DrawPrimitive,dev,D3DPT_TRIANGLELIST,3u,2u);
         RUN(DrawIndexedPrimitive,dev,D3DPT_TRIANGLELIST,-2,3u,6u,4u,2u);
         float vertices[18]{};uint16_t elements[6]{0,1,2,3,4,5};
-        // UP recording owns one extra lock even on a successful live draw.
+        // UP forwarding owns one CPU scope; failure reporting may reenter it.
         Expect(dev,D3DPT_TRIANGLELIST,2u,vertices,12u);
         CHECK(Hook_DrawPrimitiveUP(dev,D3DPT_TRIANGLELIST,2,vertices,12)==status);
-        CHECK(calls==1 && locks==unsigned(active&&FAILED(status))+unsigned(active&&!oldOverflow));
+        CHECK(calls==1 && locks==1u+unsigned(active&&FAILED(status)));
         CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));
         CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;
         Expect(dev,D3DPT_TRIANGLELIST,0u,6u,2u,elements,D3DFMT_INDEX16,vertices,12u);
         CHECK(Hook_DrawIndexedPrimitiveUP(dev,D3DPT_TRIANGLELIST,0,6,2,elements,D3DFMT_INDEX16,vertices,12)==status);
-        CHECK(calls==1 && locks==unsigned(active&&FAILED(status))+unsigned(active&&!oldOverflow));
+        CHECK(calls==1 && locks==1u+unsigned(active&&FAILED(status)));
         CHECK(g_recOverflow==(oldOverflow||(active&&FAILED(status))));
         CHECK(records==unsigned(active&&!oldOverflow));g_recOverflow=oldOverflow;
     }
