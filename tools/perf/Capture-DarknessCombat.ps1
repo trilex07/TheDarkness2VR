@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateRange(30,120)][int]$DurationSec = 45,
     [ValidateRange(5,20)][int]$BaselineSec = 10,
     [ValidateRange(0,60)][int]$ArmDelaySec = 15,
@@ -6,6 +6,7 @@ param(
     [string]$OutputRoot = (Join-Path $env:LOCALAPPDATA 'Darkness2VR\perf'),
     [switch]$OutdoorTransition,
     [switch]$AudioCues,
+    [switch]$CommandHistory,
     [string]$SymbolSource = '',
     [string]$LocalVrDir = (Join-Path $env:LOCALAPPDATA 'Darkness2VR'),
     [switch]$Preflight
@@ -118,7 +119,7 @@ if (Get-Process presentmon -ErrorAction SilentlyContinue) {
 # Outdoor stack attribution requires the EXACT measured DLL's symbols. MAIN
 # snapshots DLL/PDB/MAP from one link before any other build can overwrite them.
 $symbolFiles = @()
-if ($OutdoorTransition) {
+if ($OutdoorTransition -or $CommandHistory -or $SymbolSource) {
     if (-not $SymbolSource) { throw 'Outdoor capture requires -SymbolSource with the exact DLL/PDB/MAP build.' }
     foreach ($name in @('d3d9.dll','d3d9.pdb','d3d9.map')) {
         $path = Join-Path $SymbolSource $name
@@ -139,6 +140,15 @@ if ($ArmDelaySec) { Start-Sleep -Seconds $ArmDelaySec }
 $game = @(Get-Process DarknessII -ErrorAction SilentlyContinue)
 if ($game.Count -ne 1 -or $game[0].Path -ne $exe) {
     throw 'Start the audited DarknessII.exe through Steam and load gameplay before capture; no game was launched or changed.'
+}
+# Explicit diagnostic mode only. These events control an in-memory recorder;
+# the game render thread never waits for the collector or export worker.
+$historyArm=$null; $historyExport=$null
+if ($CommandHistory) {
+    $historyArm=[Threading.EventWaitHandle]::OpenExisting("Local\D2VRCommandHistoryArm-$($game[0].Id)")
+    $historyExport=[Threading.EventWaitHandle]::OpenExisting("Local\D2VRCommandHistoryExport-$($game[0].Id)")
+    $oldHistory=Join-Path $LocalVrDir "command-history-$($game[0].Id).bin"
+    if (Test-Path -LiteralPath $oldHistory) { throw 'History already exported for this process; refusing stale/repeated capture.' }
 }
 $compositor = @(Get-Process vrcompositor -ErrorAction SilentlyContinue)
 $server = @(Get-Process vrserver -ErrorAction SilentlyContinue)
@@ -232,6 +242,10 @@ try {
     Start-Sleep -Seconds 2
     $pm.Refresh()
     if ($pm.HasExited) { throw "PresentMon stopped before capture: $($pm.ExitCode)" }
+    if ($CommandHistory) {
+        $manifest.commandHistory=[ordered]@{armSignalQpc=[System.Diagnostics.Stopwatch]::GetTimestamp(); exportSignalQpc=$null; file=$null; sha256=$null}
+        $null=$historyArm.Set()
+    }
     foreach ($phase in $phasePlan) {
         $mark = Write-D2vrPhaseMarker $wpr $instance $phase.label
         if ($AudioCues) { Invoke-D2vrCue $phase.cue }
@@ -258,7 +272,7 @@ try {
     if ($manifest.phases.Count -and -not $manifest.phases[-1].endQpc) {
         $manifest.phases[-1].endQpc=$manifest.endQpc
     }
-    if ($AudioCues) {
+    if ($AudioCues -and -not $CommandHistory) {
         try { Invoke-D2vrCue 5 } catch { $manifest.errors += "End cue: $($_.Exception.Message)" }
     }
     $manifest.endUtc = [DateTime]::UtcNow.ToString('o')
@@ -317,6 +331,33 @@ try {
         $manifest.errors += "WPR cleanup: $($_.Exception.Message)"
         & $wpr -cancel -instancename $instance 2>&1 | Out-File (Join-Path $out 'wpr-cancel.txt')
       }
+    }
+    # Disk export is requested AFTER stopping WPR. No per-draw or in-capture
+    # history file I/O is added to the measured render/driver critical path.
+    if ($CommandHistory -and $historyExport) {
+        try {
+            $manifest.commandHistory.exportSignalQpc=[System.Diagnostics.Stopwatch]::GetTimestamp()
+            $null=$historyExport.Set()
+            $deadline=[DateTime]::UtcNow.AddSeconds(5)
+            while (-not (Test-Path -LiteralPath $oldHistory) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }
+            if (-not (Test-Path -LiteralPath $oldHistory)) { throw 'Command history export unavailable; no matching history evidence.' }
+            # Writer completion is signalled by exclusive file ownership, not a
+            # guessed delay. Retry copy if the worker is still closing its file.
+            $destination=Join-Path $out 'command-history.bin'
+            do {
+                try {
+                    $stream=[IO.File]::Open($oldHistory,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+                    try {$copy=[IO.File]::Create($destination);try {$stream.CopyTo($copy)} finally {$copy.Dispose()}} finally {$stream.Dispose()}
+                    break
+                } catch { if ([DateTime]::UtcNow -ge $deadline) {throw};Start-Sleep -Milliseconds 100 }
+            } while ($true)
+            $manifest.commandHistory.file='command-history.bin'
+            $manifest.commandHistory.sha256=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+        } catch { $manifest.errors += "Command history: $($_.Exception.Message)" }
+        finally { $historyArm.Dispose();$historyExport.Dispose() }
+        if ($AudioCues) {
+            try { Invoke-D2vrCue 5 } catch { $manifest.errors += "End cue: $($_.Exception.Message)" }
+        }
     }
     foreach ($name in $paths) {
         $path = Join-Path $GameDir $name

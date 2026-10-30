@@ -1,4 +1,4 @@
-// Darkness2VR v0.4.0 — D3D9/D3D9Ex proxy + OpenXR
+// Darkness2VR v0.4.0 â€” D3D9/D3D9Ex proxy + OpenXR
 // Method 2: Frustum-Aligned Same-Frame Stereo 3D (D3D11 Stereo Shift + INTZ Depth + Comfort Profile)
 // Log: %LOCALAPPDATA%\Darkness2VR\d3d9.log
 // Config: %LOCALAPPDATA%\Darkness2VR\Darkness2VR.ini or beside DarknessII.exe
@@ -1294,8 +1294,8 @@ void PollHotkeys() {
         g_vrWorldAnchorValid = false;
         Beep(700 + g_trackingSubMode * 200, 50);
         const char* names[] = {
-            "0 (Immersive VR Dome - Obraz Dookoła 150° + Śledzenie Głowy w Pokoju)",
-            "1 (Ultra-Szeroka Panorama 180° - Pełne Otoczenie VR)",
+            "0 (Immersive VR Dome - Obraz DookoĹ‚a 150Â° + Ĺšledzenie GĹ‚owy w Pokoju)",
+            "1 (Ultra-Szeroka Panorama 180Â° - PeĹ‚ne Otoczenie VR)",
             "2 (Ekran Kinowy 3D - Framed 3D Cinema Screen)"
         };
         Log(">>> [HOTKEY F9] TrackingSubMode changed to: %s <<<", names[g_trackingSubMode]);
@@ -1544,6 +1544,7 @@ static void BeginTrackedFrame();
 #include "gpu_timing.inl"
 #ifdef D2VR_MATCHED_CAPTURE
 #include "cpu_sync_timing.inl"
+#include "command_history.h"
 #endif
 int g_frames = 0;
 volatile LONG g_xrInitTried = 0;
@@ -2450,7 +2451,7 @@ static bool EnsureD11StereoPipeline() {
     // Method 2 Pixel Shader:
     // 1. Maps each eye's asymmetric OpenXR frustum (fovTan) through tangent space so straight-ahead (0,0)
     //    samples the exact center (0.5, 0.5) of the game frame in BOTH eyes (0.000 deg divergence).
-    // 2. In Mode 0 & 1: Immersive Wrap-Around VR ("Obraz Dookoła") with cylindrical/spherical curvature
+    // 2. In Mode 0 & 1: Immersive Wrap-Around VR ("Obraz DookoĹ‚a") with cylindrical/spherical curvature
     //    surrounds the player's head without black cinema borders.
     // 3. In Mode 2: Framed 3D Cinema Screen.
     // 4. Applies calibrated horizontal stereo shift between Left Eye (-disp) and Right Eye (+disp)
@@ -2493,7 +2494,7 @@ static bool EnsureD11StereoPipeline() {
         "    float ty = lerp(fovTan.z, fovTan.w, i.uv.y);\n"
         "    float2 baseUV;\n"
         "    if (posCfg.y < 1.5) {\n"
-        "        // Immersive Wrap-Around VR (\"Obraz Dookoła\")\n"
+        "        // Immersive Wrap-Around VR (\"Obraz DookoĹ‚a\")\n"
         "        // Cylindrical & spherical angular projection wraps the game seamlessly around the player\n"
         "        float angX = atan(tx);\n"
         "        float angY = atan2(ty, sqrt(1.0 + tx * tx));\n"
@@ -4746,14 +4747,14 @@ bool InitXR() {
         if(XR_SUCCEEDED(r))break;
     }
     if (XR_FAILED(r)) {
-        Log("xrCreateInstance failed (%d) — connect headset / OpenXR runtime first", (int)r);
+        Log("xrCreateInstance failed (%d) â€” connect headset / OpenXR runtime first", (int)r);
         return false;
     }
 
     XrSystemGetInfo sgi{ XR_TYPE_SYSTEM_GET_INFO };
     sgi.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     if (XR_FAILED(xrGetSystem(g_xrInstance, &sgi, &g_xrSystem))) {
-        Log("xrGetSystem failed — no HMD");
+        Log("xrGetSystem failed â€” no HMD");
         return false;
     }
 
@@ -5481,14 +5482,14 @@ void SubmitXR(IDirect3DDevice9* dev) {
             const float rightSign = swapEyes ? +1.0f : -1.0f;
 
             // Compute projection span parameters based on TrackingSubMode (F9)
-            // Mode 0: Immersive VR Dome 150° (Obraz Dookoła - room-anchored head tracking)
-            // Mode 1: Ultra-Szeroka Panorama 180° (Pełne Otoczenie VR)
+            // Mode 0: Immersive VR Dome 150Â° (Obraz DookoĹ‚a - room-anchored head tracking)
+            // Mode 1: Ultra-Szeroka Panorama 180Â° (PeĹ‚ne Otoczenie VR)
             // Mode 2: Ekran Kinowy 3D (Framed 3D Cinema Screen)
             // g_viewScale (F4) scales the FOV span: higher = smaller on-screen elements, pulled back view, more HUD visible
             float invTwoHalfTanX = (0.5f / 1.309f) * g_viewScale;
             float invTwoHalfTanY = invTwoHalfTanX * aspect;
             if (g_trackingSubMode == 1) {
-                // 180° cylindrical panorama (halfAngleX = pi / 2 = 1.570796 rad)
+                // 180Â° cylindrical panorama (halfAngleX = pi / 2 = 1.570796 rad)
                 invTwoHalfTanX = (0.5f / 1.5707963f) * g_viewScale;
                 invTwoHalfTanY = invTwoHalfTanX * aspect;
             } else if (g_trackingSubMode == 2) {
@@ -5526,7 +5527,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
                 // Determine projection camera pose:
                 // SubMode 0: Immersive VR Dome anchored in room space with comfort yaw deadzone follow (+-28 deg)
-                // SubMode 1: Ultra-Wide 180° Panorama following head orientation directly
+                // SubMode 1: Ultra-Wide 180Â° Panorama following head orientation directly
                 // SubMode 2: 3D Cinema Screen
                 XrPosef viewPose = layerHead;
                 if (g_trackingSubMode == 0 && g_headLookMode == 0) {
@@ -6280,7 +6281,7 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* dev, const RECT* a, con
     if (dp == 1 || (dp % 600) == 0)
         Log("[PresentHook] DevicePresent count=%ld dev=%p", dp, dev);
     if (InterlockedCompareExchange(&g_presentSeen, 1, 0) == 0) {
-        Log("Hook_Present@17 detected — SubmitMode 4 stereo submits at Present@17 (not EndScene@42)");
+        Log("Hook_Present@17 detected â€” SubmitMode 4 stereo submits at Present@17 (not EndScene@42)");
     }
     IDirect3DSurface9* bb = nullptr;
     dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb);
@@ -6327,7 +6328,7 @@ HRESULT STDMETHODCALLTYPE Hook_PresentEx(IDirect3DDevice9Ex* dev, const RECT* a,
 #endif
     PollHotkeys();
     if (InterlockedCompareExchange(&g_presentSeen, 1, 0) == 0) {
-        Log("Hook_PresentEx@121 detected — SubmitMode 4 stereo submits at PresentEx@121 (not EndScene@42)");
+        Log("Hook_PresentEx@121 detected â€” SubmitMode 4 stereo submits at PresentEx@121 (not EndScene@42)");
     }
     IDirect3DDevice9* base = dev;
     IDirect3DSurface9* bb = nullptr;
@@ -6748,6 +6749,17 @@ void HookDevice(IDirect3DDevice9* dev) {
     d2vr_replay::g_orig.SetVertexShaderConstantF = g_origSetVertexShaderConstantF;
     d2vr_replay::InstallReplayHooks(dev);
     InstallQueryPreload(dev);
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_replay::d2vr_command_history::Install(dev);
+    if(d2vr_replay::d2vr_command_history::configured){
+        g_origSetTexture=d2vr_replay::g_orig.SetTexture;
+        g_origSetDepthStencilSurface=d2vr_replay::g_orig.SetDepthStencilSurface;
+        if(d2vr_replay::g_origSBApply && d2vr_replay::g_origSBApply!=d2vr_replay::d2vr_command_history::Apply){
+            d2vr_replay::d2vr_command_history::originalApply=d2vr_replay::g_origSBApply;
+            d2vr_replay::g_origSBApply=d2vr_replay::d2vr_command_history::Apply;
+        }
+    }
+#endif
 
     // SwapChain present hooks are installed after the first successful Device::Reset only.
 

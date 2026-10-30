@@ -189,9 +189,16 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
     d2vr_cpu_sync::Scope cpuProducer(d2vr_cpu_sync::D3D9Fence);
 #endif
     if (FAILED(slot.producer->Issue(D3DISSUE_END))) return false;
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_replay::d2vr_command_history::Scope command(dev,::d2vr_command_history::ProducerFlush,
+        d2vr_replay::g_replayEye,0,capture,D3DGETDATA_FLUSH);
+#endif
     if(deferProducer) {
         // Submit on the original thread; worker only polls this issued query.
         hr=slot.producer->GetData(nullptr,0,D3DGETDATA_FLUSH);
+#ifdef D2VR_MATCHED_CAPTURE
+        command.Finish(hr);
+#endif
         g_srcW=slot.width; g_srcH=slot.height;
         return hr==S_OK || hr==S_FALSE;
     }
@@ -202,6 +209,9 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
         SwitchToThread();
         hr=slot.producer->GetData(nullptr,0,0);
     }
+#ifdef D2VR_MATCHED_CAPTURE
+    command.Finish(hr);
+#endif
     g_srcW = slot.width; g_srcH = slot.height;
     return hr == S_OK;
 }

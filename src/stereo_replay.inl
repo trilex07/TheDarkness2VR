@@ -721,6 +721,9 @@ static void BeginBufferRecording() { g_bufferFrameOpen=g_replayBufferVersions;g_
 // ------------------------------------------------------------- state
 static StereoParams g_stereo;          // current eye params (live pass = eye 0)
 static int g_replayEye = -1;           // -1 = live/mono, 0/1 = eye during replay
+#ifdef D2VR_MATCHED_CAPTURE
+#include "command_history_win.inl"
+#endif
 static int g_stereoMode = 1;           // 0 = mono, 1 = same-frame dual eye, 2 = validation replay (shift 0)
 static d2vr_shader_metadata::Vertices<VsInfo> g_vsInfo;
 static bool VertexShaderAnalysisKnown(IDirect3DVertexShader9* shader,const DWORD* code,size_t words) {
@@ -1526,7 +1529,12 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_command_history::Scope command(dev,d2vr_command_history::Draw,g_replayEye,0,t,sv,pc);
+    return command.Finish(g_orig.DrawPrimitive(dev, t, sv, pc));
+#else
     return g_orig.DrawPrimitive(dev, t, sv, pc);
+#endif
 }
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
@@ -1536,7 +1544,12 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_command_history::Scope command(dev,d2vr_command_history::DrawIndexed,g_replayEye,0,t,uint32_t(bvi),mvi,nv,si,pc);
+    return command.Finish(g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc));
+#else
     return g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
+#endif
 }
 static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT pc, const void* vb, UINT stride) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
@@ -1545,7 +1558,12 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_command_history::Scope command(dev,d2vr_command_history::DrawUP,g_replayEye,0,t,pc,stride);
+    return command.Finish(g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride));
+#else
     return g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
+#endif
 }
 static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
@@ -1554,7 +1572,12 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_command_history::Scope command(dev,d2vr_command_history::DrawIndexedUP,g_replayEye,0,t,mvi,nv,pc,fmt,stride);
+    return command.Finish(g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride));
+#else
     return g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+#endif
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetScissorRect(IDirect3DDevice9* dev, const RECT* r) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetScissorRect(dev,r);
@@ -2543,6 +2566,12 @@ static void PatchStateBlock(IDirect3DStateBlock9* sb) {
     DWORD old = 0;
     if (VirtualProtect(&vt[5], sizeof(void*), PAGE_READWRITE, &old)) {
         g_origSBApply = reinterpret_cast<PFN_SBApply>(vt[5]);
+#ifdef D2VR_MATCHED_CAPTURE
+        if(d2vr_command_history::configured){
+            d2vr_command_history::originalApply=g_origSBApply;
+            g_origSBApply=d2vr_command_history::Apply;
+        }
+#endif
         vt[5] = reinterpret_cast<void*>(&Hook_SBApply);
         VirtualProtect(&vt[5], sizeof(void*), old, &old);
         g_sbHooked = 1;

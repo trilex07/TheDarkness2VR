@@ -53,16 +53,19 @@ class StereoTransferOrder(unittest.TestCase):
         self.assertIn('"LastConsumerReaderFence", 0, chosenIni', source)
 
     def test_shared_overwrite_and_resize_still_wait_before_mutation(self):
-        source = (ROOT / 'src/d3d9.cpp').read_text(encoding='utf-8')
+        source = (ROOT / 'src/shared_capture.inl').read_text(encoding='utf-8')
         start = source.index('static bool CaptureBackbufferToShared(')
-        body = source[start:source.index('// ---------------------------------------------------------------- True stereo eye pair', start)]
-        self.assertLess(body.index('WaitSharedReader()'), body.index('dev->StretchRect('))
+        body = source[start:]
+        self.assertLess(body.index('WaitSharedReader(slot)'), body.index('dev->StretchRect('))
         start = source.index('static bool EnsureSharedCapture(')
-        body = source[start:source.index('static bool CaptureBackbufferToShared(', start)]
-        self.assertLess(body.index('if (!WaitSharedReader()) return false;'), body.index('ReleaseSharedCapture();'))
-        start = source.index('static bool ReleaseSharedCapture()')
-        body = source[start:source.index('static bool WaitSharedReader()', start)]
-        self.assertGreater(body.index('g_sharedReaderFence.Reset()'), body.index('g_sharedTex9->Release()'))
+        body = source[start:source.index('static bool PrepareSplitSharedCapture(', start)]
+        self.assertLess(body.index('ReleaseSharedCaptureSlot(slot)'), body.index('dev->CreateTexture('))
+        start = source.index('static bool ReleaseSharedCaptureSlot(')
+        body = source[start:source.index('static bool ReleaseSharedCapture()', start)]
+        self.assertLess(body.index('!WaitSharedReader(slot)'), body.index('FreeSharedCaptureSlot(slot)'))
+        start = source.index('static void FreeSharedCaptureSlot(')
+        body = source[start:source.index('static bool HasSharedReaderDependency(', start)]
+        self.assertGreater(body.index('slot=SharedCaptureSlot{}'), body.index('slot.tex9->Release()'))
 
     def test_deferred_packet_is_retained_until_reader_completion(self):
         source = (ROOT / 'src/d3d9.cpp').read_text(encoding='utf-8')
@@ -70,18 +73,20 @@ class StereoTransferOrder(unittest.TestCase):
         self.assertIn('job->deferReader=g_deferStereoTransferReader && g_lastConsumerReaderFence;', source)
         start = source.index('static bool StartStereoTransfer(')
         body = source[start:source.index('static bool FinishStereoTransfer(', start)]
-        self.assertLess(body.index('pending.Start('), body.index('g_deferredTransferReader=job;'))
-        self.assertLess(body.index('g_deferredTransferReader=job;'), body.index('TrackIssuedRead(ops)'))
-        start = source.index('static bool WaitSharedReader() {')
-        body = source[start:source.index('static bool EnsureSharedCapture(', start)]
-        self.assertLess(body.index('g_sharedReaderFence.Wait(true,ops)'), body.index('g_deferredTransferReader.reset();'))
+        self.assertLess(body.index('pending.Start('), body.index('slot.deferred=job;'))
+        self.assertLess(body.index('slot.deferred=job;'), body.index('TrackIssuedRead(ops)'))
+        source = (ROOT / 'src/shared_capture.inl').read_text(encoding='utf-8')
+        start = source.index('static bool WaitSharedReader(SharedCaptureSlot& slot) {')
+        body = source[start:source.index('static void FreeSharedCaptureSlot(', start)]
+        self.assertLess(body.index('slot.fence.Wait(true,ops)'), body.index('slot.deferred.reset();'))
 
     def test_reset_refuses_to_release_an_incomplete_deferred_reader(self):
         source = (ROOT / 'src/d3d9.cpp').read_text(encoding='utf-8')
-        start = source.index('static bool ReleaseSharedCapture()')
-        body = source[start:source.index('static bool WaitSharedReader() {', start)]
-        self.assertLess(body.index('g_stereoTransferQueue->Drain()'), body.index('!WaitSharedReader()'))
-        self.assertLess(body.index('return false;'), body.index('g_sharedFence9->Release()'))
+        shared = (ROOT / 'src/shared_capture.inl').read_text(encoding='utf-8')
+        start = shared.index('static bool ReleaseSharedCapture()')
+        body = shared[start:shared.index('static bool EnsureSharedCapture(', start)]
+        self.assertLess(body.index('g_stereoTransferQueue->Drain()'), body.index('!WaitSharedReader(slot)'))
+        self.assertLess(body.index('return false;'), body.index('FreeSharedCaptureSlot(slot)'))
         self.assertEqual(source.count('if(!ReleaseSharedCapture()) return D3DERR_DEVICELOST;'), 2)
 
     def test_old_interleaving_reproduces_right_image_in_both_eyes(self):
