@@ -1,4 +1,6 @@
-# Frame-owned native binding candidate (offline only)
+# Frame-owned native binding candidate (initial offline record)
+
+Historical evidence at 1c70e039. Current consolidation/deployment: [native CPU candidate](native-cpu-consolidated-20261030.md).
 
 Accepted Steam baseline remains 4a26aabd, ConsumedRecordCopy=1; no deployment or gameplay run performed.
 
