@@ -453,6 +453,28 @@ static void UiCallbackCase(unsigned kind){
     End();buffer->Release();CHECK(!liveBuffers && !g_bufferObjects);
     printf("PASS CPU UI shadow callback kind %u: worker completed, ambiguous pair marked, no native call under recorder lock\n",kind);
 }
+static void MappedPointerContract(){
+    g_replayBufferVersions=false;g_activeVs=nullptr;
+    auto buffer=VB(128);void *first=nullptr,*second=nullptr;
+    CHECK(SUCCEEDED(buffer->Lock(0,128,&first,D3DLOCK_DISCARD)));
+    std::memset(first,0x42,128);
+    CHECK(SUCCEEDED(buffer->Lock(32,32,&second,D3DLOCK_NOOVERWRITE)));
+    // This driver exposes overlapping mappings of the same storage. A proxy
+    // must not split the first pointer into CPU staging and the second into
+    // native storage when it discovers the extra lock too late.
+    static_cast<unsigned char*>(first)[40]=0x91;
+    CHECK(static_cast<unsigned char*>(second)[8]==0x91);
+    static_cast<unsigned char*>(second)[9]=0x73;
+    CHECK(static_cast<unsigned char*>(first)[41]==0x73);
+    CHECK(SUCCEEDED(buffer->Unlock()));
+    static_cast<unsigned char*>(first)[42]=0x55;
+    CHECK(SUCCEEDED(buffer->Unlock()));
+    auto native=reinterpret_cast<DriverBuffer*>(buffer);
+    CHECK(native->data[40]==0x91 && native->data[41]==0x73 && native->data[42]==0x55);
+    CHECK(native->data[0]==0x42 && native->data[127]==0x42);
+    buffer->Release();CHECK(!liveBuffers && !g_bufferObjects);
+    std::puts("PASS actual Lock/Unlock overlapping pointer ownership, partial writes and pointer lifetime");
+}
 static void UiWrapCases(){
     g_replayBufferVersions=false;g_activeVs=nullptr;
     auto buffer=VB(524288);
@@ -508,7 +530,7 @@ int main(int argc,char** argv){
     deviceTable[88]=reinterpret_cast<void*>(&DriverGetDeclaration);deviceTable[103]=reinterpret_cast<void*>(&DriverGetFrequency);
     g_createVB=&DriverCreateVB;g_createIB=&DriverCreateIB;
     g_rec.reserve(4096);g_recData.reserve(4u<<20);observed.reserve(16);
-    if(argc==2 && !strcmp(argv[1],"--ui-wrap")){UiWrapCases();return 0;}
+    if(argc==2 && !strcmp(argv[1],"--ui-wrap")){MappedPointerContract();UiWrapCases();return 0;}
     if(argc==3 && !strcmp(argv[1],"--ui-callback")){UiCallbackCase(unsigned(atoi(argv[2])));return 0;}
     if(argc==2 && !strcmp(argv[1],"--cpu-probe")){Benchmark();return 0;}
     if(argc==3 && !strcmp(argv[1],"--sync-probe")){SynchronizationProbe(argv[2]);return 0;}

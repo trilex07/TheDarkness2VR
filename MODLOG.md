@@ -2747,3 +2747,22 @@ missing contract: a resource owner identified before its first write whose entir
 lifetime excludes UI consumption. Existing ETW does not provide that contract or
 per-resource byte totals. Consequently no measured eliminated-copy gain or numeric
 runtime upper bound can be claimed. Existing SSE4.1 copying stays intact.
+
+
+## 2026-10-30 — Staging pointer ownership gate
+
+Added an actual-source Lock/Unlock regression with overlapping native mappings,
+partial writes through both returned pointers and a write after the first Unlock.
+The driver fixture explicitly models shared storage; forwarding hooks preserve it.
+This is a required compatibility case, not evidence that the captured game uses
+nested locks. D3D9 permits multiple outstanding VB locks:
+https://learn.microsoft.com/en-us/windows/win32/api/d3d9helper/nf-d3d9helper-idirect3dvertexbuffer9-lock
+
+A first-lock staging pointer cannot safely fall back to a native pointer after a
+second overlapping Lock: writes through the previously returned pointer must stay
+observable. Full-range NOOVERWRITE upload also needs an exact dirty-write contract;
+its locked range alone is not proof that every byte was written by the application.
+No staging implementation is enabled and no CPU gain is claimed. A broader coherent
+mapping implementation is not disproved by this test, but a minimal conditional
+redirection is not justified by the captured ownership evidence. Existing SSE4.1
+shadowing remains unchanged. UI, buffer/callback regressions and both x86 builds PASS.
