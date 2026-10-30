@@ -8,7 +8,8 @@ namespace d2vr_replay {
 // This is a frame-lifetime ledger, NOT a resource/shader cache. Interface aliases
 // remain distinct; no QueryInterface, hashing of shader bytes or cross-frame reuse.
 // Caller serializes Retain/Clear with the record-stream lock.
-template<class Resource>
+struct DirectRefScope {};
+template<class Resource,class RefScope=DirectRefScope>
 class FrameResourceRefs {
 public:
     FrameResourceRefs() = default;
@@ -30,10 +31,10 @@ public:
         owned_.push_back(resource);
         try { if(unique_) Insert(resource); }
         catch (...) {owned_.pop_back();throw;}
-        resource->AddRef();
+        [[maybe_unused]] RefScope native;resource->AddRef();
     }
     void Clear() {
-        for (Resource* resource : owned_) resource->Release();
+        for (Resource* resource : owned_) {[[maybe_unused]] RefScope native;resource->Release();}
         owned_.clear();
         count_=0;
         if(++generation_==0) {for(auto& slot:seen_) slot.generation=0;generation_=1;}

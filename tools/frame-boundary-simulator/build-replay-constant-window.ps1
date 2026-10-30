@@ -23,7 +23,7 @@ $psEnd=$src.IndexOf('        case OP_SetPSConstI:', $ps,[StringComparison]::Ordi
 $bindVS=$src.IndexOf('        case OP_SetVertexShader: {',$cases,[StringComparison]::Ordinal)
 $bindPS=$src.IndexOf('        case OP_SetPixelShader:',$vsEnd,[StringComparison]::Ordinal)
 $footer=$src.IndexOf('        // Finish the packet at its LAST original constant command,',$psEnd,[StringComparison]::Ordinal)
-$end=$src.IndexOf('    g_recLock.store(0,std::memory_order_release);',$footer,[StringComparison]::Ordinal)
+$end=$src.IndexOf('    d2vr_record_sync::Release();',$footer,[StringComparison]::Ordinal)
 if(@($begin,$cases,$vs,$vsEnd,$ps,$psEnd,$bindVS,$bindPS,$footer,$end) | Where-Object {$_ -lt 0}){throw 'Actual replay source boundaries missing'}
 # Compile actual admission, forwarding lambda, float cases, look-ahead, SEH and
 # receipt aggregation. Non-float commands become observers of the driver banks.
@@ -50,7 +50,7 @@ if(!$block.Success -or (!$SourceRevision -and $block.Value -notmatch 'g_vsConsta
 $actual="    d2vr_replay_state::Cache stateCache;stateCache.Configure(g_replayStateFilter);`n" + $src.Substring($begin,$cases-$begin) + "        switch ((RecOp)r.op) {`n" +
     $src.Substring($bindVS,$vsEnd-$bindVS) + $src.Substring($bindPS,$psEnd-$bindPS) +
     ($extraCases -join "`n") + $block.Value +
-    "        default: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks(); break;`n        }`n" + $src.Substring($footer,$end-$footer)
+    "        default: if(!IsConstantMaterialBinding(r.op,&r)) CheckBanks(); break;`n        }`n" + $src.Substring($footer,$end-$footer+'    d2vr_record_sync::Release();'.Length)
 [IO.File]::WriteAllText((Join-Path $out 'actual_replay_float_loop.inl'),$actual)
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

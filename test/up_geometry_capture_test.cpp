@@ -1,4 +1,6 @@
 #define NOMINMAX
+#include "@REPO@/src/recorder_sync.h"
+#include "@REPO@/src/replay_state_cache.h"
 #include <windows.h>
 #include <d3d9.h>
 #include <atomic>
@@ -18,7 +20,7 @@ static unsigned checks=0,driverCalls=0;
 static bool g_recActive=true,g_recOverflow=false;
 static std::vector<Rec> g_rec;
 static d2vr_record_payload::Storage g_recData;
-static std::atomic<LONG> g_recLock{0};
+static auto& g_recLock=d2vr_record_sync::held;
 static std::atomic<bool> g_wideRecordCopy{true};
 static std::atomic<bool> g_directRecordCopy{false};
 static uint64_t g_recCounts[40]{};
@@ -53,6 +55,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9*,D3DPRIMITIVET
 }
 @HOOKS@
 static bool Replay() {
+    d2vr_replay_state::Cache stateCache;
     const uint8_t* dataBase=g_recData.data();IDirect3DDevice9* dev=nullptr;
     bool replayComplete=!g_recOverflow;
     for(const auto& r:g_rec)switch((RecOp)r.op) {

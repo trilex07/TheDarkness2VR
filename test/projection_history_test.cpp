@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include <windows.h>
+#include "../src/recorder_sync.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

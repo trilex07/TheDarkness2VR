@@ -4,6 +4,7 @@ static bool g_replayBufferVersions=true;
 // the bound bytes immediately. This proves ordering, not hardware timings.
 #include <d3d9.h>
 #include "replay_state_cache.h"
+#include "recorder_sync.h"
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -25,9 +26,9 @@ void operator delete(void* p,size_t) noexcept {std::free(p);}
 @RECORD@
 static std::vector<Rec> g_rec;
 static d2vr_record_payload::Storage g_recData;
-static bool g_recActive=false,g_recOverflow=false;
+static std::atomic<bool> g_recActive{false},g_recOverflow{false};
 static uint64_t g_recCounts[40]{};
-static d2vr_replay::FrameResourceRefs<IUnknown> g_recordRefs;
+static d2vr_replay::FrameResourceRefs<IUnknown,d2vr_record_sync::DriverScope> g_recordRefs;
 @LOCK@
 static void NoteRecordedWorldDraw(){}
 static HRESULT RecordLiveResult(HRESULT hr){if(FAILED(hr))g_recOverflow=true;return hr;}
@@ -40,6 +41,9 @@ static IDirect3DPixelShader9* g_replayPs=nullptr;
 static const void* replayTex[16]{};
 static void LightInputReadback(IDirect3DDevice9*,IDirect3DPixelShader9*,const void**,int){CHECK(false);}
 static size_t liveBuffers=0,driverLocks=0;
+static void (*driverCallback)()=nullptr;
+static unsigned callbackKind=0;
+static void DriverCallback(unsigned kind){if(driverCallback && callbackKind==kind){auto f=driverCallback;driverCallback=nullptr;f();}}
 struct DriverBuffer {
     void** table;
     ULONG refs=1;
@@ -56,12 +60,13 @@ static HRESULT STDMETHODCALLTYPE DriverQuery(IUnknown* object,REFIID,void** out)
 static ULONG STDMETHODCALLTYPE DriverAddRef(IUnknown* object){return ++reinterpret_cast<DriverBuffer*>(object)->refs;}
 static ULONG STDMETHODCALLTYPE DriverRelease(IUnknown* object){auto b=reinterpret_cast<DriverBuffer*>(object);auto n=--b->refs;if(!n)delete b;return n;}
 static HRESULT STDMETHODCALLTYPE DriverLock(IUnknown* object,UINT offset,UINT bytes,void** out,DWORD flags){
-    auto b=reinterpret_cast<DriverBuffer*>(object);++driverLocks;
+    auto b=reinterpret_cast<DriverBuffer*>(object);++driverLocks;DriverCallback(1);
     if(b->failLock || offset>b->data.size() || bytes>b->data.size()-offset)return D3DERR_INVALIDCALL;
     if(flags&D3DLOCK_DISCARD)std::memset(b->data.data(),0xcd,b->data.size());
     ++b->locks;*out=b->data.data()+offset;return D3D_OK;
 }
 static HRESULT STDMETHODCALLTYPE DriverUnlock(IUnknown* object){
+    DriverCallback(2);
     auto b=reinterpret_cast<DriverBuffer*>(object);
     if(b->failUnlock || !b->locks)return D3DERR_INVALIDCALL;
     --b->locks;return D3D_OK;
@@ -73,7 +78,7 @@ static HRESULT STDMETHODCALLTYPE DriverSetPrivate(IUnknown* object,REFGUID,const
     return D3D_OK;
 }
 static HRESULT STDMETHODCALLTYPE DriverGetPrivate(IUnknown* object,REFGUID key,void* data,DWORD* bytes){
-    auto b=reinterpret_cast<DriverBuffer*>(object);CHECK(*bytes==4);
+    auto b=reinterpret_cast<DriverBuffer*>(object);CHECK(*bytes==4);DriverCallback(4);
     if(key.Data1==0x447458e9) {if(!b->metadata)return D3DERR_NOTFOUND;b->metadata->AddRef();std::memcpy(data,&b->metadata,4);}
     else {if(!b->tag)return D3DERR_NOTFOUND;std::memcpy(data,&b->tag,4);}
     return D3D_OK;
@@ -106,7 +111,7 @@ static void** deviceObject=deviceTable;
 static auto device=reinterpret_cast<IDirect3DDevice9*>(&deviceObject);
 static uint32_t Word(IUnknown* buffer,UINT byte){uint32_t v;auto b=reinterpret_cast<DriverBuffer*>(buffer);CHECK(byte+4<=b->data.size());std::memcpy(&v,b->data.data()+byte,4);return v;}
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9*,D3DPRIMITIVETYPE type,UINT start,UINT count){
-    CHECK(g_recLock.load()==1);
+    CHECK(g_recLock.load()==0);DriverCallback(3);
     CHECK(type==D3DPT_POINTLIST && count==1 && boundVB[0]);
     observed.push_back(Word(boundVB[0],streamOffset[0]+start*streamStride[0]));return D3D_OK;
 }
@@ -121,11 +126,10 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev,D3DPRIMITIV
 static IDirect3DVertexBuffer9* VB(UINT bytes=128,DWORD usage=D3DUSAGE_DYNAMIC|D3DUSAGE_WRITEONLY){IDirect3DVertexBuffer9* b=nullptr;CHECK(SUCCEEDED(Hook_CreateVB(device,bytes,usage,0,D3DPOOL_DEFAULT,&b,nullptr)));return b;}
 static IDirect3DIndexBuffer9* IB(D3DFORMAT format=D3DFMT_INDEX32){IDirect3DIndexBuffer9* b=nullptr;CHECK(SUCCEEDED(Hook_CreateIB(device,128,D3DUSAGE_DYNAMIC|D3DUSAGE_WRITEONLY,format,D3DPOOL_DEFAULT,&b,nullptr)));return b;}
 template<class T> static void Write(T* buffer,UINT offset,uint32_t value,DWORD flags){void* p=nullptr;CHECK(SUCCEEDED(buffer->Lock(offset,4,&p,flags)));std::memcpy(p,&value,4);CHECK(SUCCEEDED(buffer->Unlock()));}
-static void Begin(){RecLockGuard guard;FinishBufferRecording();g_rec.clear();g_recData.clear();g_recordRefs.Begin(true);g_recOverflow=false;g_recActive=true;g_bufferFrameOpen=true;g_bufferWritesApplied=false;g_bufferUnsafeAlias.store(false);observed.clear();}
+static void Begin(){RecLockGuard guard;FinishBufferRecording();g_rec.clear();g_recData.clear();g_recordRefs.Begin(true);g_recOverflow=false;d2vr_record_sync::conflict=false;g_recActive=true;g_bufferFrameOpen=true;g_bufferWritesApplied=false;g_bufferUnsafeAlias.store(false);observed.clear();}
 static void End(){RecLockGuard guard;g_recActive=false;FinishBufferRecording();g_rec.clear();g_recData.clear();g_recordRefs.Clear();for(UINT slot=0;slot<16;++slot)g_orig.SetStreamSource(device,slot,nullptr,0,0);g_orig.SetIndices(device,nullptr);}
 static bool Replay(){
-    RecLockGuard guard;g_recActive=false;
-    if(g_bufferWritesApplied)return false;
+    if(!BeginReplayRecording())return false;
     d2vr_replay_state::Cache stateCache;
     bool replayComplete=!g_recOverflow && !g_bufferUnsafeAlias.load();IDirect3DDevice9* dev=device;const int eye=1;
     const uint8_t* dataBase=g_recData.data();
@@ -134,8 +138,7 @@ static bool Replay(){
 @CASES@
     default:CHECK(false);
     }
-    g_bufferWritesApplied=true;
-    return replayComplete;
+    RecLockGuard guard;return EndReplayRecording(replayComplete);
 }
 static void BufferCases(){
     unsigned corrected=0;
@@ -202,13 +205,26 @@ static void LifecycleCases(){
     vb=VB();Write(vb,0,1,D3DLOCK_DISCARD);Begin();Write(vb,0,2,0);g_recOverflow=true;
     Write(vb,4,3,D3DLOCK_NOOVERWRITE);Write(vb,0,4,0);CHECK(!Replay());End();
     CHECK(BufferInfo(vb)->valid && Word(BufferInfo(vb)->replica,0)==4 && Word(BufferInfo(vb)->replica,4)==3);vb->Release();
-    // Recorder lock serializes worker uploads with capture; no global device queries.
+    // Ordered worker uploads retain every range and command; no device queries.
     vb=VB(4096);Write(vb,0,0,D3DLOCK_DISCARD);Begin();
     std::thread worker([&]{for(UINT i=0;i<256;++i)Write(vb,i*4,i,D3DLOCK_NOOVERWRITE);});
-    std::thread recorder([]{for(UINT i=0;i<256;++i)RecEmit(OP_SetIndices,0,0);});worker.join();recorder.join();
+    worker.join();
+    std::thread recorder([]{for(UINT i=0;i<256;++i)RecEmit(OP_SetIndices,0,0);});recorder.join();
     CHECK(g_bufferFrameBytes==1024 && g_rec.size()==512);CHECK(Replay());
     for(UINT i=0;i<256;++i)CHECK(Word(BufferInfo(vb)->replica,i*4)==i);
     End();vb->Release();CHECK(!liveBuffers && !g_bufferObjects && !g_bufferReplicaBytes);
+    // Concurrent uploads/recording may overlap a native lease. Never invent
+    // an order: reject that pair if needed, but retain every baseline write.
+    vb=VB(4096);Write(vb,0,0,D3DLOCK_DISCARD);Begin();
+    std::thread uploader([&]{for(UINT i=0;i<256;++i)Write(vb,i*4,i,D3DLOCK_NOOVERWRITE);});
+    std::thread concurrentRecorder([]{for(UINT i=0;i<256;++i)RecEmit(OP_SetIndices,0,0);});
+    uploader.join();concurrentRecorder.join();
+    const bool conflicted=g_recOverflow || d2vr_record_sync::conflict.load();
+    CHECK(Replay()==!conflicted);End();
+    for(UINT i=0;i<256;++i)CHECK(Word(BufferInfo(vb)->replica,i*4)==i);
+    Begin();Hook_SetStreamSource(device,0,vb,0,4);Hook_DrawPrimitive(device,D3DPT_POINTLIST,255,1);
+    observed.clear();CHECK(Replay());CHECK(observed.size()==1 && observed[0]==255);End();vb->Release();
+    CHECK(!liveBuffers && !g_bufferObjects && !g_bufferReplicaBytes);
     std::puts("PASS abandoned frame, pre-frame upload, owner release, READONLY, failed Lock/Unlock, zero size, static/unknown rejection, Reset, quota, worker uploads");
 }
 static HRESULT STDMETHODCALLTYPE FailReplica(IDirect3DDevice9*,UINT,DWORD,DWORD,D3DPOOL,IDirect3DVertexBuffer9** out,HANDLE*){*out=nullptr;return E_OUTOFMEMORY;}
@@ -267,7 +283,80 @@ static void Benchmark(){
     std::printf("BENCH inherited binding scan: %.3f us/apply (16 streams, one bound); no per-draw scan.\n",remapMs*1000);
     g_orig.SetStreamSource(device,0,nullptr,0,0);native->Release();vb->Release();
 }
-int main(){
+static void ReenterRecorder(){CHECK(SUCCEEDED(Hook_SetIndices(device,nullptr)));}
+static void WorkerRecorder(){std::thread worker(ReenterRecorder);worker.join();}
+static void RaiseDriverFault(){RaiseException(0xe0d20001,0,0,nullptr);}
+static bool FaultedUpload(BufferVersion* v,const void* data){
+    __try{return UploadBufferRange(v,0,4,0,data);}
+    __except(EXCEPTION_EXECUTE_HANDLER){d2vr_record_sync::RecoverReplayException();return false;}
+}
+static bool FaultedMetadata(IUnknown* source){
+    __try{BufferInfo(source);return true;}
+    __except(EXCEPTION_EXECUTE_HANDLER){d2vr_record_sync::RecoverReplayException();return false;}
+}
+static void SynchronizationFaultCases(){
+    auto vb=VB();Write(vb,0,111,D3DLOCK_DISCARD);auto version=BufferInfo(vb);uint32_t data=222;
+    callbackKind=1;driverCallback=RaiseDriverFault;CHECK(!FaultedUpload(version,&data));
+    CHECK(!d2vr_record_sync::Busy() && !d2vr_record_sync::depth && !d2vr_record_sync::nativeDepth && !g_recLock.load());
+    bool complete=true;CHECK(!ReplayBuffer(vb,complete) && !complete);ResetBufferReplicas();vb->Release();
+    vb=VB();callbackKind=4;driverCallback=RaiseDriverFault;CHECK(!FaultedMetadata(vb));
+    CHECK(!d2vr_record_sync::Busy() && !d2vr_record_sync::depth && !d2vr_record_sync::nativeDepth);
+    Write(vb,0,333,D3DLOCK_DISCARD);Begin();Hook_SetStreamSource(device,0,vb,0,4);
+    Hook_DrawPrimitive(device,D3DPT_POINTLIST,0,1);observed.clear();CHECK(Replay());CHECK(observed[0]==333);End();vb->Release();
+    CHECK(!liveBuffers && !g_bufferObjects && !g_bufferReplicaBytes);
+    puts("PASS native upload/metadata SEH: abandoned CPU/native leases recovered, unknown replica rejected, next frame works");
+}
+static IDirect3DVertexBuffer9* callbackBuffer=nullptr;
+static void CallbackWrite(){Write(callbackBuffer,0,333,D3DLOCK_DISCARD);}
+static void WorkerWrite(){std::thread worker(CallbackWrite);worker.join();}
+static void CallbackWriteAgain(){Write(callbackBuffer,0,444,D3DLOCK_NOOVERWRITE);}
+static void WriteAndArmDrain(){CallbackWrite();callbackKind=1;driverCallback=CallbackWriteAgain;}
+static void CallbackReset(){ResetBufferReplicas();CHECK(g_recOverflow);CHECK(BufferInfo(callbackBuffer)->replica);}
+static void SynchronizationProbe(const char* mode){
+    auto vb=VB();callbackBuffer=vb;Write(vb,0,111,D3DLOCK_DISCARD);Begin();Hook_SetStreamSource(device,0,vb,0,4);
+    const bool writes=strstr(mode,"write")!=nullptr;
+    callbackKind=!strcmp(mode,"lock")?1:!strcmp(mode,"unlock")?2:3;
+    driverCallback=!strcmp(mode,"worker")?WorkerRecorder:writes?CallbackWrite:!strcmp(mode,"reset")?CallbackReset:ReenterRecorder;
+    if(!strcmp(mode,"worker-write"))driverCallback=WorkerWrite;
+    if(!strcmp(mode,"drain-write"))driverCallback=WriteAndArmDrain;
+    if(callbackKind==1 || callbackKind==2)Write(vb,0,222,D3DLOCK_DISCARD);
+    else if(!strncmp(mode,"replay",6) || !strcmp(mode,"upload-write")){
+        driverCallback=nullptr;if(!strcmp(mode,"upload-write"))Write(vb,0,222,0);
+        Hook_DrawPrimitive(device,D3DPT_POINTLIST,0,1);
+        const auto records=g_rec.size(),bytes=g_recData.size();
+        if(!strcmp(mode,"upload-write"))callbackKind=1;
+        driverCallback=writes?CallbackWrite:ReenterRecorder;
+        CHECK(!Replay());CHECK(g_rec.size()==records && g_recData.size()==bytes);
+    }else Hook_DrawPrimitive(device,D3DPT_POINTLIST,0,1);
+    CHECK(g_recOverflow || d2vr_record_sync::conflict.load());CHECK(!Replay());
+    End();CHECK(BufferInfo(vb)->valid);
+    if(!strcmp(mode,"drain-write")){
+        CHECK(DeferredBufferWritesPending());CHECK(Word(BufferInfo(vb)->replica,0)==333);
+        End();CHECK(!DeferredBufferWritesPending());
+    }
+    const uint32_t expected=!strcmp(mode,"drain-write")?444:writes?333:(callbackKind==1 || callbackKind==2)?222:111;
+    CHECK(Word(BufferInfo(vb)->replica,0)==expected);
+    // A rejected ambiguous pair must not poison geometry or ownership next frame.
+    Begin();Hook_SetStreamSource(device,0,vb,0,4);Hook_DrawPrimitive(device,D3DPT_POINTLIST,0,1);
+    CHECK(observed.size()==1 && observed[0]==expected);observed.clear();CHECK(Replay());
+    CHECK(observed.size()==1 && observed[0]==expected);End();vb->Release();
+    CHECK(!liveBuffers && !g_bufferObjects && !g_bufferReplicaBytes);
+    CHECK(!d2vr_record_sync::Busy() && !d2vr_record_sync::depth && !d2vr_record_sync::nativeDepth);
+    std::printf("PASS %s: callback completes, ambiguous pair rejected, exact range baseline and next eye recover, no leaks\n",mode);
+}
+static void DeferredBenchmark(){
+    auto vb=VB();callbackBuffer=vb;Write(vb,0,111,D3DLOCK_DISCARD);
+    auto frame=[&]{Begin();Hook_SetStreamSource(device,0,vb,0,4);callbackKind=3;driverCallback=CallbackWrite;
+        Hook_DrawPrimitive(device,D3DPT_POINTLIST,0,1);CHECK(!Replay());End();};
+    frame();frame();const auto before=allocations.load();const auto start=std::chrono::steady_clock::now();
+    for(unsigned f=0;f<1000;++f)frame();
+    const auto added=allocations.load()-before;CHECK(added==0);
+    const auto us=std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-start).count()/1000;
+    std::printf("BENCH callback-write recovery %.3f us/frame, steady allocations=%zu, retained range bytes=%zu (two bounded arenas)\n",
+        us,added,g_deferredBufferData.capacity()+g_applyingBufferData.capacity());
+    CHECK(!DeferredBufferWritesPending());vb->Release();CHECK(!liveBuffers && !g_bufferObjects);
+}
+int main(int argc,char** argv){
     static_assert(sizeof(void*)==4,"x86 packets");
     driverTable[0]=reinterpret_cast<void*>(&DriverQuery);driverTable[1]=reinterpret_cast<void*>(&DriverAddRef);driverTable[2]=reinterpret_cast<void*>(&DriverRelease);
     driverTable[4]=reinterpret_cast<void*>(&DriverSetPrivate);driverTable[5]=reinterpret_cast<void*>(&DriverGetPrivate);
@@ -275,7 +364,9 @@ int main(){
     deviceTable[101]=reinterpret_cast<void*>(&DriverGetStream);deviceTable[105]=reinterpret_cast<void*>(&DriverGetIndices);
     g_createVB=&DriverCreateVB;g_createIB=&DriverCreateIB;
     g_rec.reserve(4096);g_recData.reserve(4u<<20);observed.reserve(16);
-    BufferCases();LifecycleCases();BoundaryCases();Benchmark();CHECK(!liveBuffers && !g_bufferObjects);
+    if(argc==2 && !strcmp(argv[1],"--cpu-probe")){Benchmark();return 0;}
+    if(argc==3 && !strcmp(argv[1],"--sync-probe")){SynchronizationProbe(argv[2]);return 0;}
+    BufferCases();LifecycleCases();BoundaryCases();Benchmark();DeferredBenchmark();SynchronizationFaultCases();CHECK(!liveBuffers && !g_bufferObjects);
     // Disabled startup path must not dereference the supplied device/resource,
     // scan inherited bindings, or mark writes applied. No driver object needed.
     g_replayBufferVersions=false;

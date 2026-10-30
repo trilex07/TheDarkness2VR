@@ -40,6 +40,7 @@
 #include "persistent_log.h"
 #include "async_log.h"
 #include "small_record_copy.h"
+#include "recorder_sync.h"
 #include "native_constant_source.h"
 #include "native_constant_gate.h"
 #include "startup_shader_warmup.h"
@@ -1965,6 +1966,8 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
     const float* pConstantData,
     UINT Vector4fCount,const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner)
 {
+    if(!d2vr_record_sync::NativeMutation())
+        return g_origSetVertexShaderConstantF(dev,StartRegister,pConstantData,Vector4fCount);
     d2vr_shader_registers::Reference rawReference;
     if(!(g_hookMask&8) || !d2vr_replay::g_recActive) {
         d2vr_replay::RecLockGuard lock;
@@ -5867,6 +5870,14 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
+    // Reset must never destroy an eye's frozen stream or wait inside a driver
+    // callback. Refuse a busy device before touching any dependent resources.
+    d2vr_replay::RecLockGuard recorder;
+    if(d2vr_record_sync::Busy()) {d2vr_replay::g_recOverflow=true;return D3DERR_DEVICELOST;}
+    if(!d2vr_replay::ReleaseRecordingLocked())return D3DERR_DEVICELOST;
+    d2vr_replay::ResetBufferReplicas();
+    d2vr_record_sync::DriverScope resetLease;
+
     d2vr_replay::ReleaseLightReadbackTargets();
     d2vr_shader_preload::BeginReset(dev);
     QueryPreloadBeginReset(dev);
@@ -5898,8 +5909,6 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         g_sysmem->Release();
         g_sysmem = nullptr;
     }
-    d2vr_replay::ReleaseRecording();
-    d2vr_replay::ResetBufferReplicas();
     d2vr_replay::ResetProjectionHistories();
     if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
@@ -5929,6 +5938,13 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
+    // Reset must never destroy an eye's frozen stream or wait inside a driver
+    // callback. Refuse a busy device before touching any dependent resources.
+    d2vr_replay::RecLockGuard recorder;
+    if(d2vr_record_sync::Busy()) {d2vr_replay::g_recOverflow=true;return D3DERR_DEVICELOST;}
+    if(!d2vr_replay::ReleaseRecordingLocked())return D3DERR_DEVICELOST;
+    d2vr_record_sync::DriverScope resetLease;
+
     d2vr_replay::ReleaseLightReadbackTargets();
     d2vr_shader_preload::BeginReset(dev);
     QueryPreloadBeginReset(dev);
@@ -5958,7 +5974,6 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
         g_sysmem = nullptr;
     }
     // ResetEx preserves default-pool buffers; their replay replicas survive too.
-    d2vr_replay::ReleaseRecording();
     d2vr_replay::ResetProjectionHistories();
     if(g_liveEndSnapshot)g_liveEndSnapshot->Release();
     g_rightColorHistory.Release();
