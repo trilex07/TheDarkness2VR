@@ -2729,3 +2729,16 @@ EXE write, menu-visibility assumption or Steam deployment is introduced.
 Actual-source x86 gateway regression PASS (18071 checks / 3000 ABI calls),
 existing mouse merge PASS (172147 checks), pinned EXE audit PASS. Full native
 menu laser remains incomplete pending activation/surface and host integration.
+
+
+## Native menu pointer/poll coordination (2026-10-30)
+
+Joined submitted-surface ray/capture, one-shot navigation and native button
+ownership in an owner-thread value-only bridge. Cursor failure, stale poses,
+menu/device lifetime replacement and reentrant callbacks cannot commit a new
+click. Queued clicks at incompatible pre-poll cursor locations are cancelled
+instead of being delivered to another widget. Physical mouse holds survive.
+Native surface/activation, poll-hook installation and cursor/navigation host
+routing remain outstanding; no claim of a working native menu laser.
+Optimized x86 integration and existing pointer/poll/merge/snapshot tests PASS;
+both renderer x86 configurations PASS. No Steam deployment or FPS claim.

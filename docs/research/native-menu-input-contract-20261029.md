@@ -435,3 +435,36 @@ TEMP/d2vr-menu-flash-surface-20261030.txt, both EVIDENCE COMPLETE.
 
 Steam retains the separately tested/deployed mapped-copy candidate 21e9b5b5.
 Full native main/pause/options laser and runtime half-rate support remain open.
+
+
+## Pointer-to-native-poll transaction, 2026-10-30
+
+`native_menu_pointer_bridge.h` joins the actual surface/ray/capture and native
+mouse ownership components. An owner-thread host supplies the renderer's
+successful submission receipt, a fresh tracked aim, client-pixel surface bounds,
+and admitted current mouse poll buffers. The bridge retains no object pointers
+or buffers. Cursor movement must succeed before a synthetic button is committed.
+It returns Back/scroll actions once for the host's existing native navigation
+route. It does not manufacture a surface, visibility predicate or lifetime lease.
+
+Cancellation on focus/tracking/submission loss retains a release for a committed
+hold. Replaced menus cannot receive a new click before that release drains.
+Receiver lifetime identity prevents a release leaking into a replacement device,
+even when native addresses are reused. Failed/overflow calls retain ownership;
+physical button holds survive synthetic releases. Cursor failure, C++ exceptions
+and reentrant polls cannot commit a new press. Invalid geometry cancels even on
+a duplicate application frame.
+
+GetDeviceData does not provide per-button cursor locations. Multiple XR updates
+that move an undelivered queued click therefore cancel that click instead of
+applying it to a different widget. Lossless multi-position batching still needs
+an owned decoder boundary; this bridge does not claim to provide it.
+
+Actual-source optimized x86 integration regression: 65 checks PASS, including
+ray-to-client coordinates, drag beyond the surface, quick clicks, overflow,
+receiver/menu replacement, stale/unsubmitted frames, physical ownership, cursor
+failure/exception, reentrancy, Back and scroll. Native menu visibility, submitted
+surface acquisition, installation of the admitted native hook, cursor setter
+and navigation routing remain unconnected. This is an integration component,
+not a functioning native main/pause/options laser or a runtime FPS improvement.
+Steam retains the user's mapped-copy candidate 21e9b5b5.

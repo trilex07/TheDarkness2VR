@@ -47,6 +47,7 @@
 #include "startup_shader_warmup.h"
 #include "native_image_guard.h"
 #include "native_menu_input_snapshot.h"
+#include "native_menu_pointer_bridge.h"
 #include "vr_input.h"
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
