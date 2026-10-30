@@ -1,4 +1,4 @@
-"""Authentic Polish font generator with 16KB-planar DXT3 atlas encoding.
+"""Polish font generator: filtered extractor input, native raw DXT3 output.
 
 Draws real visual diacritics (acute, dot, ogonek, stroke) for all 18 Polish letters:
 ĄąĆćĘęŁłŃńÓóŚśŹźŻż. Preserves all other languages (1..6) and native glyphs intact.
@@ -47,6 +47,33 @@ FONTS = [
     ("Temp/FontCache/darknessheader_26.syn", "Temp/Temp/FontCache/darknessheader_26.synGlyph_en_f.tga", 1048, 111, 1024, 64, 0, 0, 0),
     ("Temp/FontCache/darknessheader_32.syn", "Temp/Temp/FontCache/darknessheader_32.synGlyph_en_f.tga", 1048, 111, 1024, 128, 0, 0, 0),
 ]
+
+
+def planar_to_native_dxt3(data: bytes) -> bytes:
+    """Undo the cache compression filter before writing an uncompressed resource.
+
+    Native 0x66C330 scatters each DWORD plane at a 16-byte block stride.
+    Raw TOC entries bypass that filter (0xA552A0); DXT3 upload copies them
+    directly (0xE120F0). Extractor output has NOT applied this unfilter.
+    """
+    require(len(data) > 0 and len(data) % 16384 == 0, 'DXT3 filter chunk length')
+    source = np.frombuffer(data, dtype=np.uint8).reshape(-1, 4, 1024, 4)
+    return source.transpose(0, 2, 1, 3).copy().tobytes()
+
+
+def decode_native_dxt3(data: bytes, width: int, height: int) -> np.ndarray:
+    """Independent Pillow BC2 decoder, exactly the raw bytes submitted to D3D9."""
+    import io
+    from PIL import Image
+    require(width > 0 and height > 0 and width % 4 == height % 4 == 0,
+            'DXT3 atlas dimensions')
+    require(len(data) == width * height, 'DXT3 atlas byte count')
+    # DDS_HEADER with a FOURCC DXT3 pixel format; no mipmaps or pitch padding.
+    header = struct.pack('<7I11I8I5I', 124, 0x81007, height, width, len(data), 0, 0,
+                         *([0]*11), 32, 4, 0x33545844, 0, 0, 0, 0, 0,
+                         0x1000, 0, 0, 0, 0)
+    with Image.open(io.BytesIO(b'DDS ' + header + data)) as image:
+        return np.array(image.convert('RGBA'))
 
 
 def decode_planar_dxt3(raw_bytes: bytes, width: int, height: int) -> np.ndarray:
@@ -315,14 +342,14 @@ def build_fonts(stage: Path):
             h, b, t = patch_font(h_data, b_data, offset, count, raw_tex, (tw, th, xs, ys, hs))
             patches["H.Font"][path] = h
             patches["B.Font"][path] = b
-            patches["B.Texture_en"][tex_path] = t
+            patches["B.Texture_en"][tex_path] = planar_to_native_dxt3(t)
             report.append({
                 "font": path,
                 "texture": tex_path,
                 "glyphs": count + 18,
                 "width": tw,
                 "height": th,
-                "mode": "authentic visual diacritics in 16KB-planar DXT3 atlas"
+                "mode": "authentic visual diacritics in native interleaved DXT3 raw atlas"
             })
         else:
             h, b = patch_font(h_data, b_data, offset, count)

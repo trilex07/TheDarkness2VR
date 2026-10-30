@@ -16,7 +16,7 @@ import subprocess
 import zipfile
 
 from polish_pack import Cache, audio_format, category, chunks, command, require, sha, translate
-from polish_fonts import FONTS, PL_LETTERS, build_fonts, decode_planar_dxt3
+from polish_fonts import FONTS, PL_LETTERS, build_fonts, decode_planar_dxt3, planar_to_native_dxt3, decode_native_dxt3
 from polish_translate import TOKEN
 
 
@@ -53,7 +53,9 @@ def validate_fonts(stage):
         require(body[new_count*46:]==original[count*46:],'Foreign language/font data changed')
         scale=2 if font.endswith('/MenuFont') else 1
         new_height=height*scale
-        alpha=decode_planar_dxt3(payload(stage/'candidate','B.Texture_en',texture),width,new_height)
+        rgba=decode_native_dxt3(payload(stage/'candidate','B.Texture_en',texture),width,new_height)
+        alpha=rgba[:,:,3]
+        old_rgba=decode_native_dxt3(planar_to_native_dxt3((stage/'extract/B.Texture_en'/texture).read_bytes()),width,height)
         old_alpha=decode_planar_dxt3((stage/'extract/B.Texture_en'/texture).read_bytes(),width,height)
         for i,code in enumerate(old_codes):
             j=codes.index(code)
@@ -64,6 +66,7 @@ def validate_fonts(stage):
             x0,x1=max(0,math.floor(u0*width)),min(width,math.ceil(u1*width))
             y0,y1=max(0,math.floor(v0*height)),min(height,math.ceil(v1*height))
             require(np.array_equal(alpha[y0:y1,x0:x1],old_alpha[y0:y1,x0:x1]),'Native glyph sampled pixels changed')
+            require(np.array_equal(rgba[y0:y1,x0:x1],old_rgba[y0:y1,x0:x1]),'Native glyph color pixels changed')
         glyphs=[]
         for letter,code,donor,accent in PL_LETTERS:
             i=codes.index(code);uv=struct.unpack_from('<4f',body,i*16)
@@ -309,6 +312,7 @@ def font_only_release(source_package, accepted_cache, receipt_path, out):
                     builder_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
                     source_manifest_sha256=sha(source_package/'manifest.json'),
                     accepted_receipt_sha256=sha(receipt_path),
+                    archive_validation=source.get('archives', []),
                     files=files, preimage_profiles={'accepted':actual}, fonts=fonts,
                     preserved_files={name:actual[name] for name in sorted(NAMES-font_names)},
                     runtime='NOT_RUN; glyph rendering and game stability require MAIN validation')
@@ -338,13 +342,50 @@ def font_only_release(source_package, accepted_cache, receipt_path, out):
     return manifest
 
 
+
+def repaired_font_release(stage, accepted_cache, receipt_path, out):
+    """Build corrected raw atlases; keep accepted localization bytes unchanged."""
+    import tempfile
+    from polish_package_install import NAMES
+    require(not out.exists(), 'Release destination already exists')
+    receipt=json.loads(receipt_path.read_text(encoding='utf-8-sig'))
+    accepted=receipt['original']
+    require(set(accepted)==NAMES, 'Incomplete accepted rollback receipt')
+    require({n:sha(accepted_cache/n) for n in NAMES}==accepted,
+            'Accepted cache differs from rollback receipt')
+    font_names={stem+ext for stem in ('B.Font','H.Font','B.Texture_en','H.Texture_en')
+                for ext in ('.cache','.toc')}
+    require({p.name for p in (stage/'baseline').iterdir()}==font_names,
+            'Repaired stage must contain only the eight font archive files')
+    build_fonts(stage)
+    fonts=validate_fonts(stage)
+    archives=verify_archives(stage)
+    out.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.repaired-font-source-',dir=out.parent) as tmp:
+        source=Path(tmp);(source/'payload').mkdir()
+        for name in sorted(NAMES):
+            origin=stage/'candidate'/name if name in font_names else accepted_cache/name
+            shutil.copyfile(origin,source/'payload'/name)
+        manifest=dict(files={n:sha(source/'payload'/n) for n in sorted(NAMES)},
+                      preimage_profiles={'accepted':accepted},fonts=fonts,archives=archives,
+                      source_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip())
+        json_write(source/'manifest.json',manifest)
+        (source/'SHA256SUMS').write_text(''.join(sha(p)+'  '+p.relative_to(source).as_posix()+'\n'
+            for p in sorted(source.rglob('*')) if p.is_file()),encoding='utf8')
+        return font_only_release(source,accepted_cache,receipt_path,out)
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fonts-only',action='store_true')
+    parser.add_argument('--repaired-fonts',action='store_true')
     for name in ('source-package','accepted-cache','accepted-receipt','stage','previous-stage','backlog','out','quickbms','bms-script'):parser.add_argument('--'+name,type=Path)
     parser.add_argument('--deployed-manifest',type=Path)
     args=parser.parse_args()
-    if args.fonts_only:
+    if args.repaired_fonts:
+        require(all((args.stage,args.accepted_cache,args.accepted_receipt,args.out)), 'Repaired font input paths required')
+        result=repaired_font_release(args.stage,args.accepted_cache,args.accepted_receipt,args.out)
+        print(json.dumps(dict(package=str(args.out),mode=result['mode'],runtime=result['runtime'])))
+    elif args.fonts_only:
         require(all((args.source_package,args.accepted_cache,args.accepted_receipt,args.out)), 'Font-only input paths required')
         result=font_only_release(args.source_package,args.accepted_cache,args.accepted_receipt,args.out)
         print(json.dumps(dict(package=str(args.out),mode=result['mode'],runtime=result['runtime'])))
