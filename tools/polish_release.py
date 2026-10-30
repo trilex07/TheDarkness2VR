@@ -278,8 +278,76 @@ def release(stage, previous_stage, backlog, out, quickbms, bms_script, deployed_
     print(json.dumps(dict(package=str(archive),sha256=sha(archive),source_commit=commit)))
 
 
+def font_only_release(source_package, accepted_cache, receipt_path, out):
+    """Isolate fonts from a verified release; retain accepted text/audio exactly.
+
+    Inputs are explicit private paths. This function never discovers an install,
+    calls the installer, changes Steam, or launches a game. The immutable rollback
+    receipt (not a mutable stage) identifies the accepted 16-file preimage.
+    """
+    import tempfile
+    from polish_package_install import NAMES, verify
+    source = verify(source_package)
+    receipt = json.loads(receipt_path.read_text(encoding='utf-8-sig'))
+    accepted = receipt['original']
+    require(set(accepted) == NAMES, 'Incomplete accepted rollback receipt')
+    actual = {name: sha(accepted_cache/name) for name in sorted(NAMES)}
+    require(actual == accepted, 'Accepted cache differs from rollback receipt')
+    require(any(actual == profile for profile in source['preimage_profiles'].values()),
+            'Accepted cache is not a complete source release preimage')
+    require(not out.exists(), 'Release destination already exists')
+    fonts = source.get('fonts', [])
+    require(len(fonts) == 6 and len({f['font'] for f in fonts}) == 6 and
+            all(f.get('status') == 'BINARY_AND_GLYPH_PASS' and len(f['glyphs']) == 18
+                for f in fonts), 'Source font validation is incomplete')
+    font_names = {stem+suffix for stem in ('B.Font','H.Font','B.Texture_en','H.Texture_en')
+                  for suffix in ('.cache','.toc')}
+    files = {name: source['files'][name] if name in font_names else actual[name]
+             for name in sorted(NAMES)}
+    manifest = dict(schema=1, mode='FONTS_ONLY_ACCEPTED_TEXT_AUDIO_UNCHANGED',
+                    source_commit=source['source_commit'],
+                    builder_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                    source_manifest_sha256=sha(source_package/'manifest.json'),
+                    accepted_receipt_sha256=sha(receipt_path),
+                    files=files, preimage_profiles={'accepted':actual}, fonts=fonts,
+                    preserved_files={name:actual[name] for name in sorted(NAMES-font_names)},
+                    runtime='NOT_RUN; glyph rendering and game stability require MAIN validation')
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.polish-font-package-',dir=out.parent) as tmp:
+        staged = Path(tmp)/'package';(staged/'payload').mkdir(parents=True)
+        for name, expected in files.items():
+            origin=source_package/'payload'/name if name in font_names else accepted_cache/name
+            shutil.copyfile(origin,staged/'payload'/name)
+            require(sha(staged/'payload'/name)==expected,'Font package copy changed: '+name)
+        json_write(staged/'manifest.json',manifest)
+        (staged/'tools').mkdir()
+        for tool in ('polish_package_install.py','polish_pack.py'):
+            shutil.copyfile(Path(__file__).parent/tool,staged/'tools'/tool)
+        (staged/'README.md').write_text(
+            'Font-only candidate. Do not install while the game is running.\n'
+            'Verify: python -B tools/polish_package_install.py verify --package <package>\n'
+            'MAIN installs only after the game is closed, using explicit --cache and --backup paths.\n'
+            'Rollback: python -B tools/polish_package_install.py rollback --backup <backup> --cache <cache>\n'
+            'All accepted text and speech files are preserved byte for byte.\n'
+            'The previous full localization release is NOT reinstalled.\n'
+            'Runtime font appearance and the reported enemy hang remain unverified.\n',encoding='utf8')
+        sums={p.relative_to(staged).as_posix():sha(p) for p in sorted(staged.rglob('*')) if p.is_file()}
+        (staged/'SHA256SUMS').write_text(''.join(value+'  '+name+'\n' for name,value in sums.items()),encoding='utf8')
+        verify(staged)
+        staged.rename(out)
+    return manifest
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    for name in ('stage','previous-stage','backlog','out','quickbms','bms-script'):parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--fonts-only',action='store_true')
+    for name in ('source-package','accepted-cache','accepted-receipt','stage','previous-stage','backlog','out','quickbms','bms-script'):parser.add_argument('--'+name,type=Path)
     parser.add_argument('--deployed-manifest',type=Path)
-    args=parser.parse_args();release(args.stage,args.previous_stage,args.backlog,args.out,args.quickbms,args.bms_script,args.deployed_manifest)
+    args=parser.parse_args()
+    if args.fonts_only:
+        require(all((args.source_package,args.accepted_cache,args.accepted_receipt,args.out)), 'Font-only input paths required')
+        result=font_only_release(args.source_package,args.accepted_cache,args.accepted_receipt,args.out)
+        print(json.dumps(dict(package=str(args.out),mode=result['mode'],runtime=result['runtime'])))
+    else:
+        require(all((args.stage,args.previous_stage,args.backlog,args.out,args.quickbms,args.bms_script)), 'Full release input paths required')
+        release(args.stage,args.previous_stage,args.backlog,args.out,args.quickbms,args.bms_script,args.deployed_manifest)

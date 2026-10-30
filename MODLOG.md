@@ -2636,3 +2636,17 @@ frame, thread and contract refusals. Headset visibility acceptance NOT RUN.
 Native menu laser still needs its native surface/input connection; existing
 VR Settings laser is separate and is not presented as native-menu completion.
 Both final x86 DLL builds and actual-source camera dispatch10000 PASS.
+
+
+## SIDE 2026-10-30 - isolate Polish fonts from rejected full localization
+
+Prepared a font-only release mode after MAIN's failed full-package session.
+It verifies the immutable accepted rollback receipt and all source-package
+checksums, then overlays only Font/Texture archive pairs. All eight text/audio
+files remain identical to the accepted backup. The package carries installer,
+SHA-256 manifest and rollback support. It never accesses Steam implicitly or
+launches the game. Separate tests cover source tampering, mixed accepted caches,
+byte-preserved speech/text, deterministic packages and complete rollback.
+The existing six-atlas source is retained; no speculative texture transforms or
+new speech replacements are introduced. Runtime font appearance and hang cause
+remain unverified. No deployment while the user tests the VR recovery candidate.

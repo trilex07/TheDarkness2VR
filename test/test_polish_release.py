@@ -35,6 +35,63 @@ class PolishReleaseTests(unittest.TestCase):
         (package/'SHA256SUMS').write_text(''.join(installer.sha(p)+'  '+p.relative_to(package).as_posix()+'\n' for p in sorted(package.rglob('*')) if p.is_file()))
         return package,cache,old,new
 
+    def font_package(self, root):
+        package, cache, old, new = self.package(root)
+        manifest_path = package/'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        manifest['source_commit']='fixture-source'
+        manifest['fonts']=[dict(font='font'+str(i),status='BINARY_AND_GLYPH_PASS',glyphs=[{}]*18) for i in range(6)]
+        manifest_path.write_text(json.dumps(manifest))
+        (package/'SHA256SUMS').write_text(''.join(installer.sha(p)+'  '+p.relative_to(package).as_posix()+'\n' for p in sorted(package.rglob('*')) if p.is_file() and p.name!='SHA256SUMS'))
+        receipt=root/'rollback.json';receipt.write_text(json.dumps(dict(original=old)))
+        return package,cache,receipt,old,new
+
+    def test_font_only_release_preserves_accepted_speech_and_text(self):
+        from polish_release import font_only_release
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);package,cache,receipt,old,new=self.font_package(root)
+            result=font_only_release(package,cache,receipt,root/'font-only')
+            checked=installer.verify(root/'font-only')
+            self.assertEqual(result,checked)
+            self.assertEqual(len(result['preserved_files']),8)
+            for name in installer.NAMES:
+                expected=old[name] if name in result['preserved_files'] else new[name]
+                self.assertEqual(installer.sha(root/'font-only'/'payload'/name),expected)
+            self.assertEqual({n:installer.sha(cache/n) for n in old},old)
+
+    def test_font_only_package_is_reproducible_and_rollback_protected(self):
+        from polish_release import font_only_release
+        with tempfile.TemporaryDirectory() as folder,patch.object(installer,'game_free'):
+            root=Path(folder);package,cache,receipt,old,new=self.font_package(root)
+            font_only_release(package,cache,receipt,root/'first')
+            font_only_release(package,cache,receipt,root/'second')
+            a={p.relative_to(root/'first').as_posix():installer.sha(p) for p in (root/'first').rglob('*') if p.is_file()}
+            b={p.relative_to(root/'second').as_posix():installer.sha(p) for p in (root/'second').rglob('*') if p.is_file()}
+            self.assertEqual(a,b)
+            self.assertIn('tools/polish_package_install.py',a)
+            installed=installer.install(root/'first',cache,root/'backup')
+            self.assertEqual(installed['status'],'INSTALLED_VERIFIED')
+            for name in ('H.Misc.cache','H.Misc_en.cache','B.Misc_en.cache','F.Misc_en.cache'):
+                self.assertEqual(installer.sha(cache/name),old[name])
+            installer.rollback(root/'backup',cache)
+            self.assertEqual({n:installer.sha(cache/n) for n in old},old)
+
+    def test_font_only_release_rejects_changed_or_mixed_accepted_cache(self):
+        from polish_release import font_only_release
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);package,cache,receipt,old,new=self.font_package(root)
+            (cache/'H.Misc_en.cache').write_bytes(b'unexpected speech')
+            self.assertRaises(ValueError,font_only_release,package,cache,receipt,root/'out')
+            self.assertFalse((root/'out').exists())
+
+    def test_font_only_release_rejects_tampered_source_without_output(self):
+        from polish_release import font_only_release
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);package,cache,receipt,old,new=self.font_package(root)
+            (package/'payload'/'B.Font.cache').write_bytes(b'corruption')
+            self.assertRaises(ValueError,font_only_release,package,cache,receipt,root/'out')
+            self.assertFalse((root/'out').exists())
+
     def test_install_then_rollback_restores_every_original_hash(self):
         with tempfile.TemporaryDirectory() as folder,patch.object(installer,'game_free'):
             root=Path(folder);package,cache,old,new=self.package(root)

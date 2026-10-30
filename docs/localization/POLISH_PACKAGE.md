@@ -78,3 +78,29 @@ Verify startup, Polish menu/subtitle diacritics, existing Polish speech, native
 scene timing/lip sync and retained nonverbal clips in one normal session. Keep
 the accepted performance/VR build. Restore this localization backup on startup
 or audio regression. Runtime status remains NOT RUN until actual game evidence.
+
+
+## Font-only recovery candidate after the failed full release
+
+The full `251316ec` localization package is quarantined following the reported
+17 FPS / 70 ms CPU session and hang at an enemy. That session also used an
+incorrect VR DLL build flavor; it does not isolate an audio or font root cause.
+Do not reinstall the full pack as part of the rendering recovery.
+
+`polish_release.py --fonts-only` produces a separate private 16-file installer
+package. Only the eight Font/Texture archive and TOC files come from the verified
+six-atlas release. The other eight files, including Languages.cl and all speech,
+come byte for byte from the immutable accepted rollback backup. No new audio
+serialization, retiming, generated translations or DLL/INI changes are included.
+Both source-package checksums and the complete backup/preimage receipt must pass.
+It makes no writes to Steam and does not start the game.
+
+```
+python -B tools/polish_release.py --fonts-only --source-package <verified-full-private-package> --accepted-cache <accepted-rollback-directory> --accepted-receipt <rollback.json> --out <new-private-font-package>
+```
+
+The resulting manifest records both input receipt hashes and the unchanged text
+and audio file hashes. The existing installer provides backup and rollback.
+This isolates font validation in the next consolidated game session; it is not
+proof that the enemy hang or runtime font rendering has been fixed. MAIN must
+leave the user's current VR/FPS test untouched until that session ends.
