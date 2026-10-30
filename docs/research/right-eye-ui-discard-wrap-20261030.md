@@ -83,3 +83,48 @@ Local build artifacts, SHA256:
   `988AD9FB9C92C05A91371438A116716893565A0B52D860A55C5F0F28667E5D7B`
 
 MAIN owns deployment and final PSVR2 pause/HUD/blood checks on this candidate.
+
+## Follow-up: mapped-memory CPU cost
+
+MAIN supplied the existing valid capture at
+`C:\Users\Trilex\AppData\Local\Darkness2VR\perf\20261030T121752Z-a99117c2`
+for integrated DLL `5372cbd2` (SHA256
+`4176B8F2AD4D9C12491D4EE06CF26F2B71C01A168DEFA28FD93162030813865E`).
+`cpu-raw-window.json` contains 826 render-thread samples at
+`vcruntime140.dll!0x67c361ee` in the 3-4 second window. The short raw stacks
+include `73F5B7 -> 7778DD -> 992311 -> 14850252`, `73F5B7 -> A87C1C`, and
+`4291DA -> 482BAA -> 5C200C -> 524C66`, above the memcpy PC. MAIN identified
+native COM Unlock call sites there. The missing mod frame/FPO prevents assigning
+the entire reported 51.327 seconds in vcruntime to Shadow::Stage. MAIN also
+observed 108-137 ms frames before ETW; collector overhead alone is insufficient
+to explain the slowdown. No additional capture/profiler was started here.
+
+Source inspection does confirm Stage reads every tracked dynamic-VB write,
+including non-UI buffers. Native writable mappings can be write-combined;
+[Microsoft documents the severe cost of reading such mappings](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-map).
+This is a memory-type hazard, not proof that this D3D9 driver's actual mappings
+were WC: the supplied trace does not record their page protections.
+
+The narrow correction replaces only Stage's mapped-source copy with SSE4.1
+MOVNTDQA loads, guarded by runtime CPUID, with CRT fallback. Intel documents
+streaming loads for WC memory and the required ordering in its
+[optimization manual](https://cdrdv2-public.intel.com/821612/248966-Optimization-Reference-Manual-V1-050.pdf)
+and [architecture manual](https://cdrdv2-public.intel.com/874240/325462-090-sdm-vol-1-2abcd-3abcd-4.pdf).
+CPU MFENCE before/after the streaming reads orders prior native WC writes and
+finishes reads before Unlock/reuse. This adds no GPU synchronization, allocation,
+VirtualQuery, native D3D call, GPU replica or change to lock pointers/flags/ranges.
+Resource ownership, shadow generations, draw capture and stream restoration
+remain as above. All dynamic-VB writes are still mirrored: their bandwidth cost
+has not been removed, and speedup on WB mappings/unsupported CPUs is not claimed.
+
+`test/build_mapped_vertex_copy.ps1 -SourceRef 973eafea` compiles the actual old
+Stage over VirtualAlloc PAGE_WRITECOMBINE pages. Four 256 KiB captures measured
+3.351 ms; the changed actual Stage measured 0.920 ms on the same PC. These are
+single bounded CPU fixture observations, not game timing or an FPS claim.
+Tests also PASS every source/destination alignment, guarded range ends,
+fallback copies and sixteen overwrites of the same WC address. Existing UI-wrap
+and both callback regressions PASS; general VB/IB consistency and eleven
+callback probes PASS. Both x86 builds PASS, as do live recording/resource
+binding, UP geometry, StateBlocks, projection/FOV, hands, tentacles and replay
+state receipts. Headset acceptance and runtime performance of this follow-up
+remain NOT RUN. No Steam/MAIN modification or deployment.
