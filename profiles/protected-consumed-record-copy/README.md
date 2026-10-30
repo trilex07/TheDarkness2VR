@@ -1,12 +1,9 @@
-# Consumed recorder copy A/B
+# Consumed recorder copy MAIN test
 
-Same DLL, scene, resolution and INIs in both arms; only `Render/ConsumedRecordCopy`
-0/1 differs. Restart between arms.
+MAIN validation uses ONE ON-only outdoor combat launch compared with retained historical measurements. Do not require a redundant OFF launch. Source defaults remain OFF; apply on.overrides.ini to the accepted protected profile for the authorized test.
 
-Require the startup receipt `[ConsumedRecordCopy] enabled=1` in the ON arm. Compare
-render-thread CPU busy and frame time in the same outdoor combat route. In an ETW
-capture, `RecPushLocked -> ReadProcessMemory` should drop to the few undeclared
-payloads (transform, viewport, rects, out-of-range uploads). Right-eye constants,
-hands, tentacles and FOV must be unchanged.
+Require startup receipt [ConsumedRecordCopy] enabled=1. DirectRecordCopy and ReplayBufferVersions remain OFF. Check stereo constants, geometry, independent hands, tentacles, CPU frame time and stability together. Keep exact DLL/PDB/MAP and effective INIs.
 
-Rollback: select the OFF overlay and restart.
+The narrower consumed path still reuses DirectCopy's PAGE_GUARD exception/re-arm helper. Own-page fault regressions do not prove concurrent protection restoration safety. Roll back the complete verified DLL/INI package on crash, hang or corruption; restart with ConsumedRecordCopy=0.
+
+Offline call-count and loop timings are not gameplay FPS evidence. See docs/investigations/consumed-record-copy-main-20261030.md.
