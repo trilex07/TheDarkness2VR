@@ -14,9 +14,10 @@
 using namespace d2vr_record_copy;
 static_assert(sizeof(void*) == 4, "Exercise the production x86 ABI");
 static unsigned readCalls = 0, probeCalls = 0, cases = 0;
+static ReadMemory g_realRead = nullptr; // set while this binary's RPM import is redirected
 static BOOL WINAPI CountRead(HANDLE p, LPCVOID src, LPVOID dst, SIZE_T n, SIZE_T* read) {
     ++readCalls;
-    return ReadProcessMemory(p, src, dst, n, read);
+    return g_realRead ? g_realRead(p, src, dst, n, read) : ReadProcessMemory(p, src, dst, n, read);
 }
 static BOOL WINAPI WrongCount(HANDLE, LPCVOID, LPVOID dst, SIZE_T n, SIZE_T* read) {
     ++readCalls; memset(dst, 0xee, n); *read = n - 1; return TRUE;
@@ -44,6 +45,7 @@ static auto& g_recLock=d2vr_record_sync::held;
 static bool g_smallRecordCopyAdmitted=false;
 static std::atomic<bool> g_wideRecordCopy{false};
 static std::atomic<bool> g_directRecordCopy{false};
+static std::atomic<bool> g_consumedRecordCopy{false};
 static RuntimeControl g_smallRecordCopyControl;
 #include "actual_record_types.inl"
 static std::vector<Rec> g_rec;
@@ -232,8 +234,132 @@ static bool GuardRaises(const volatile uint8_t* p) {
     __except(GetExceptionCode()==STATUS_GUARD_PAGE_VIOLATION?EXCEPTION_EXECUTE_HANDLER:EXCEPTION_CONTINUE_SEARCH) {return true;}
     return false;
 }
+// Every ReadProcessMemory reached by the production recorder in this binary goes
+// through this import slot, including the default argument of the copy helper.
+static void** ImportSlot(const char* name) {
+    auto* base=reinterpret_cast<uint8_t*>(GetModuleHandleA(nullptr));
+    const auto* nt=reinterpret_cast<const IMAGE_NT_HEADERS*>(base+reinterpret_cast<const IMAGE_DOS_HEADER*>(base)->e_lfanew);
+    const auto& dir=nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    for(auto* d=reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR*>(base+dir.VirtualAddress);d->Name;++d) {
+        auto* names=reinterpret_cast<const IMAGE_THUNK_DATA*>(base+d->OriginalFirstThunk);
+        auto* slots=reinterpret_cast<IMAGE_THUNK_DATA*>(base+d->FirstThunk);
+        for(;names->u1.AddressOfData;++names,++slots) {
+            if(IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal))continue;
+            const auto* byName=reinterpret_cast<const IMAGE_IMPORT_BY_NAME*>(base+names->u1.AddressOfData);
+            if(!strcmp(reinterpret_cast<const char*>(byName->Name),name))return reinterpret_cast<void**>(&slots->u1.Function);
+        }
+    }
+    return nullptr;
+}
+static void RedirectRead(bool counted) {
+    static void** slot=ImportSlot("ReadProcessMemory");
+    assert(slot);
+    DWORD old=0;
+    assert(VirtualProtect(slot,sizeof(void*),PAGE_READWRITE,&old));
+    if(counted){g_realRead=reinterpret_cast<ReadMemory>(*slot);*slot=reinterpret_cast<void*>(&CountRead);}
+    else {*slot=reinterpret_cast<void*>(g_realRead);g_realRead=nullptr;}
+    VirtualProtect(slot,sizeof(void*),old,&old);
+}
+static void ResetRecording() {
+    g_rec.clear();g_recData.clear();g_recOverflow=false;g_recActive=true;g_vsConstantHistory.Clear();
+}
+// Installed protected profile: SmallRecordCopy admitted + WideRecordCopy, so the
+// legacy path issues one RPM syscall for every non-native-owned payload.
+static void TestConsumedCopy(uint8_t* memory,size_t page) {
+    RedirectRead(true);
+    g_smallRecordCopyAdmitted=true;g_wideRecordCopy=true;g_directRecordCopy=false;
+    g_smallRecordCopyControl.Request(1);
+    float matrix[16];for(unsigned i=0;i<16;++i)matrix[i]=float(i)*1.5f-3.f;
+    const int ints[4]={7,-8,9,10};const BOOL bools[2]={TRUE,FALSE};
+    for(bool consumed:{false,true}) {
+        g_consumedRecordCopy=consumed;ResetRecording();
+        const unsigned before=readCalls;
+        RecEmitConsumed(OP_SetPSConstF,matrix,sizeof(matrix),0,4,224);
+        RecEmitConsumed(OP_SetPSConstI,ints,sizeof(ints),15,1,16);
+        RecEmitConsumed(OP_SetVSConstB,bools,sizeof(bools),14,2,16);
+        d2vr_shader_registers::Reference reference;
+        RecEmitData(OP_SetVSConstF,matrix,sizeof(matrix),0,4,0,0,{},4,UINT32_MAX,0,&reference,-1,
+                    NativeConsumedRange(0,4,256));
+        assert(reference.valid && !memcmp(reference.values,matrix,sizeof(matrix)));
+        assert(readCalls==before+(consumed?0u:4u));
+        // Ranges the runtime may reject unread, and payloads of non-declared
+        // setters, keep the guard-admitted RPM path.
+        RecEmitConsumed(OP_SetPSConstF,matrix,sizeof(matrix),222,4,224);
+        RecEmitConsumed(OP_SetVSConstI,ints,sizeof(ints),16,1,16);
+        RecEmitConsumed(OP_SetPSConstB,bools,0,0,0,16);
+        RecEmitData(OP_SetTransform,matrix,sizeof(matrix),7,0,0,0,{},1,0);
+        assert(readCalls==before+(consumed?3u:7u));
+        assert(!g_recOverflow && g_rec.size()==8 && g_recLock==0);
+        const void* sources[]={matrix,ints,bools,matrix,matrix,ints,bools,matrix};
+        const size_t sizes[]={64,16,8,64,64,16,0,64};
+        const unsigned slots[]={4,4,4,4,4,4,4,1};
+        for(unsigned i=0;i<8;++i) {
+            assert(g_rec[i].a[slots[i]]+sizes[i]<=g_recData.size());
+            Equal(g_recData.data()+g_rec[i].a[slots[i]],sources[i],sizes[i]);
+        }
+        assert(g_rec[0].op==OP_SetPSConstF && g_rec[0].n==16 && g_rec[0].a[0]==0 && g_rec[0].a[1]==4);
+        assert(g_rec[2].op==OP_SetVSConstB && g_rec[2].n==2 && g_rec[2].a[0]==14 && g_rec[2].a[1]==2);
+        cases+=4;
+    }
+    // A consumer-declared payload never weakens the fault contract: identical
+    // readable-prefix/zero-tail bytes, sticky overflow, unchanged protection,
+    // and a PAGE_GUARD that still raises for the native consumer afterwards.
+    g_consumedRecordCopy=true;
+    DWORD old=0;
+    for(DWORD mode:{PAGE_NOACCESS,PAGE_READWRITE|PAGE_GUARD})for(size_t start:{page-16,page,page+8}) {
+        assert(VirtualProtect(memory+page,page,mode,&old));
+        std::vector<uint8_t> want(memory+start,memory+(start<page?page:start));
+        want.resize(64,0);
+        ResetRecording();
+        d2vr_shader_registers::Reference reference;
+        RecEmitData(OP_SetVSConstF,memory+start,64,0,4,0,0,{},4,UINT32_MAX,0,&reference,-1,true);
+        assert(g_recOverflow && g_rec.empty() && !reference.valid && g_recLock==0);
+        assert(g_recData.size()==64 && !memcmp(g_recData.data(),want.data(),64));
+        assert(Protection(memory+page)==mode);
+        g_recOverflow=false;g_recData.clear();
+        RecEmitConsumed(OP_SetPSConstF,memory+start,64,0,4,224);
+        assert(g_recOverflow && g_rec.empty() && !memcmp(g_recData.data(),want.data(),64));
+        assert(Protection(memory+page)==mode);
+        if(mode&PAGE_GUARD)assert(GuardRaises(memory+page));
+        assert(VirtualProtect(memory+page,page,PAGE_READWRITE,&old));cases+=4;
+    }
+    RedirectRead(false);
+    // One recorded frame from the 2026-10-30 combat receipts: 4,533 float
+    // payloads, 2,836 native-owned; 1,697 remaining, split 60/40 VS/PS by
+    // record count. Sizes approximate the replay's mean VS/PS upload widths.
+    std::vector<uint8_t> vs(144,0x3c),ps(32,0x5a);
+    double ms[3]{};
+    const char* names[]={"legacy VirtualQuery","protected RPM","consumed"};
+    for(int mode=0;mode<3;++mode) {
+        g_smallRecordCopyAdmitted=mode==1;g_consumedRecordCopy=mode==2;
+        LARGE_INTEGER f,b,e;QueryPerformanceFrequency(&f);
+        double best=1e30;
+        for(unsigned trial=0;trial<7;++trial) {
+            QueryPerformanceCounter(&b);
+            for(unsigned frame=0;frame<20;++frame) {
+                ResetRecording();
+                for(unsigned i=0;i<1697;++i) {
+                    if(i%5<3)RecEmitData(OP_SetVSConstF,vs.data(),vs.size(),i%200,9,0,0,{},4,UINT32_MAX,-1,nullptr,-1,
+                                         NativeConsumedRange(i%200,9,256));
+                    else RecEmitConsumed(OP_SetPSConstF,ps.data(),ps.size(),i%200,2,224);
+                }
+            }
+            QueryPerformanceCounter(&e);
+            assert(!g_recOverflow && g_rec.size()==1697);
+            const double t=double(e.QuadPart-b.QuadPart)*1e3/double(f.QuadPart)/20.0;
+            if(t<best)best=t;
+        }
+        ms[mode]=best;
+    }
+    for(int mode=0;mode<3;++mode)
+        std::printf("Recorder frame (1697 non-native-owned constant payloads), %s: %.3f ms (best of 7 x 20, x86 actual RecEmitData)\n",names[mode],ms[mode]);
+    std::printf("Consumed copy saves %.3f ms/frame against the protected RPM profile (synthetic lower bound)\n",ms[1]-ms[2]);
+    ResetRecording();g_consumedRecordCopy=false;g_smallRecordCopyAdmitted=false;g_wideRecordCopy=false;
+    puts("PASS consumed record copy: zero RPM for in-range consumer payloads, legacy RPM elsewhere, unchanged fault/guard contract");
+}
 int main(int argc, char** argv) {
     assert(argc == 2);
+    assert(GetPrivateProfileIntA("Render", "ConsumedRecordCopy", 0, argv[1]) == 0);
     TestAtomicPayloadRecords();
     assert(GetFileAttributesA(argv[1]) != INVALID_FILE_ATTRIBUTES);
     // Use the production default, including an INI whose encoding is not recognized.
@@ -413,6 +539,7 @@ int main(int argc, char** argv) {
         std::printf("RecPush %zu B: legacy VirtualQuery %.1f ns/call, direct %.1f ns/call (best of 5 x 20000, synthetic)\n",bytes,ns[0],ns[1]);
     }
     g_recData.clear();g_directRecordCopy=false;
+    TestConsumedCopy(memory,page);
     VirtualFree(memory, 0, MEM_RELEASE);
     std::printf("PASS small-record-copy: %u byte/range checks; x86 guard admission, exact counts, legacy fallback, actual RecPush offsets/append/bounds/sanity, and default OFF\n", cases);
 }

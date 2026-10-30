@@ -192,6 +192,7 @@ static bool g_submissionPackage = false; // include wide owned capture + frame r
 static bool g_submissionStatus = false;
 static std::atomic<bool> g_wideRecordCopy{false};
 static std::atomic<bool> g_directRecordCopy{false}; // diagnostic opt-in; 0 restores legacy copies
+static std::atomic<bool> g_consumedRecordCopy{false}; // in-range constant setter payloads only
 static bool g_triangleHoldRecenter = false; // short triangle tap retains menu
 static volatile LONG g_objectDrawToggleRequests = 0;
 static bool g_replayBindingFilter = false; // independent opt-in until PSVR2 acceptance
@@ -726,6 +727,9 @@ void LoadConfig() {
 #endif
     Log("[DirectRecordCopy] enabled=%d; diagnostic opt-in; fault fallback retained; PAGE_GUARD restoration/concurrency not runtime-verified",
         int(g_directRecordCopy.load()));
+    g_consumedRecordCopy = GetPrivateProfileIntA("Render", "ConsumedRecordCopy", 0, chosenIni)!=0;
+    Log("[ConsumedRecordCopy] enabled=%d; in-range VS/PS F/I/B setter payloads read by the forwarded native call; fault and PAGE_GUARD fallback retained",
+        int(g_consumedRecordCopy.load()));
     g_wideRecordCopy = GetPrivateProfileIntA("Render", "WideRecordCopy", 0, chosenIni)!=0;
     if(g_wideRecordCopy) Log("[WideRecordCopy] requested=1 limit=65536; requires SmallRecordCopy guard admission; exact-count RPM, legacy fallback; no permission cache");
     g_triangleHoldRecenter = GetPrivateProfileIntA("Render", "TriangleHoldRecenter", 0, chosenIni)!=0;
@@ -2078,7 +2082,8 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
         d2vr_replay::RecEmitData(d2vr_replay::OP_SetVSConstF, pConstantData,
                                  sizeof(float) * 4 * Vector4fCount, StartRegister, Vector4fCount,camera[0],camera[1],proof,
                                  4,UINT32_MAX,d2vr_replay::ActiveWvpRegister(d2vr_replay::g_activeVs),&rawReference,
-                                 d2vr_replay::ActiveStpRegister(d2vr_replay::g_activeVs));
+                                 d2vr_replay::ActiveStpRegister(d2vr_replay::g_activeVs),
+                                 d2vr_record_copy::NativeConsumedRange(StartRegister,Vector4fCount,256));
     }
 
     // ---- True stereo: live pass renders eye 0 (eye 1 comes from the replay pass) ----

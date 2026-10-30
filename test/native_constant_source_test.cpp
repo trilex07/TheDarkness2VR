@@ -218,7 +218,9 @@ static int OP_SetPSConstF=1;
 static void ObserveInverseProjection(const float*,UINT,UINT,int){}
 static int MakeEyeParams(int){return 0;}
 static bool CompensatePsConstants(float*,const float*,UINT,UINT,int,int,int){return false;}
-static void RecEmitData(int,const void* data,size_t bytes,UINT,UINT,int,int,const Proof& proof) {
+static unsigned consumedRegisters=0;
+static void RecEmitConsumed(int,const void* data,size_t bytes,UINT,UINT,UINT registers,const Proof& proof) {
+    consumedRegisters=registers;
     copied=Copy(proof,recorded,data,bytes);
     if(!copied)d2vr_record_copy::Copy(recorded,data,bytes,true,&ReadProcessMemory);
 }
@@ -351,6 +353,7 @@ int main() {
     enabled=true;admitted=true;
     for(unsigned i=0;i<1000;++i) {
         copied=false;Parent();Check(copied,"actual hook accepts active native-shaped local frame");
+        Check(consumedRegisters==224,"actual PS hook declares the forwarded 224-register consumer");
         Check(std::memcmp(recorded,forwarded,sizeof(recorded))==0,"recorder and forwarded payload bits match");
     }
     float outerLocal[16];for(unsigned i=0;i<16;++i)outerLocal[i]=float(i+1)/16;

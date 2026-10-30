@@ -30,8 +30,36 @@ $pushLocked=[regex]::Match($replay,'(?s)static inline uint32_t RecPushLocked\(.*
 $emitLocked=[regex]::Match($replay,'(?s)static inline void RecEmitLocked\(.*?\r?\n\}')
 $emit=[regex]::Match($replay,'(?s)static inline void RecEmit\(.*?\r?\n\}')
 $emitData=[regex]::Match($replay,'(?s)static inline void RecEmitData\(.*?\r?\n\}')
+$emitConsumed=[regex]::Match($replay,'(?s)static inline void RecEmitConsumed\(.*?\r?\n\}')
 $types=[regex]::Match($replay,'(?s)enum RecOp : uint16_t \{.*?struct Rec \{.*?\r?\n\};')
-foreach($part in @($lock,$push,$pushLocked,$emitLocked,$emit,$emitData,$types)){if(-not $part.Success){throw 'Actual recorder source boundary missing'}}
+foreach($part in @($lock,$push,$pushLocked,$emitLocked,$emit,$emitData,$emitConsumed,$types)){if(-not $part.Success){throw 'Actual recorder source boundary missing'}}
+if(-not $renderer.Contains('static std::atomic<bool> g_consumedRecordCopy{false};') -or
+   -not $renderer.Contains('g_consumedRecordCopy = GetPrivateProfileIntA("Render", "ConsumedRecordCopy", 0, chosenIni)!=0;')) {
+    throw 'ConsumedRecordCopy must default OFF and be read once from the chosen INI'
+}
+if(-not [regex]::IsMatch((Get-Content -LiteralPath (Join-Path $repo 'Darkness2VR.ini') -Raw),'(?m)^ConsumedRecordCopy=0\r?$')) {
+    throw 'Shipped INI must keep ConsumedRecordCopy=0'
+}
+# Each consumer-declared payload must reach its native setter in the same call.
+$vsHook=[regex]::Match($renderer,'(?s)d2vr_native_constants::Stage::Vertex,nativeOwner\);(.*?)const HRESULT result=g_origSetVertexShaderConstantF\(dev, StartRegister, pConstantData, Vector4fCount\);')
+if(-not $vsHook.Success -or -not $vsHook.Groups[1].Value.Contains('d2vr_record_copy::NativeConsumedRange(StartRegister,Vector4fCount,256));') -or
+   [regex]::IsMatch($vsHook.Groups[1].Value,'\breturn\b')) {
+    throw 'VS float consumer declaration must precede the native forward without an early return'
+}
+$psHook=[regex]::Match($replay,'(?s)RecEmitConsumed\(OP_SetPSConstF, d, sizeof\(float\) \* 4 \* n, s, n, 224, proof\);(.*?)g_orig\.SetPixelShaderConstantF\(dev,s,d,n\)')
+if(-not $psHook.Success -or [regex]::IsMatch($psHook.Groups[1].Value,'\breturn\b')) {
+    throw 'PS float consumer declaration must precede the native forward without an early return'
+}
+foreach($site in @(@('VSConstI','int) * 4','SetVertexShaderConstantI'),@('VSConstB','BOOL)','SetVertexShaderConstantB'),
+                   @('PSConstI','int) * 4','SetPixelShaderConstantI'),@('PSConstB','BOOL)','SetPixelShaderConstantB'))) {
+    $line='if (g_recActive) RecEmitConsumed(OP_Set'+$site[0]+', d, sizeof('+$site[1]+' * n, s, n, 16);'
+    $at=$replay.IndexOf($line)
+    $forward='return RecordLiveResult(g_orig.'+$site[2]+'(dev, s, d, n));'
+    if($at -lt 0 -or $replay.IndexOf($forward,$at) -ne $replay.IndexOf("`n",$at)+5){throw "$($site[0]) must forward the declared source immediately"}
+}
+if(([regex]::Matches($replay+$renderer,'RecEmitConsumed\(|NativeConsumedRange\(')).Count -ne 8) {
+    throw 'Unexpected consumer-declared recorder call site'
+}
 if(-not $pushLocked.Value.Contains('d2vr_record_copy::Copy(g_recData.data() + off, data, bytes, SmallRecordCopyIsEnabled(),') -or
    -not $pushLocked.Value.Contains('g_wideRecordCopy.load()?d2vr_record_copy::kWideLimit:d2vr_record_copy::kSmallLimit')) {
     throw 'Actual RecPush must forward effective guard admission to the existing copy helper'
@@ -40,7 +68,7 @@ if(-not $pushLocked.Value.Contains('d2vr_record_copy::Copy(g_recData.data() + of
 $enabled=[regex]::Match($renderer,'(?s)static inline bool SmallRecordCopyIsEnabled\(\) \{.*?\r?\n\}')
 if(-not $enabled.Success){throw 'Copy-control integration missing'}
 $types.Value|Set-Content -LiteralPath (Join-Path $outDir 'actual_record_types.inl') -Encoding utf8
-($enabled.Value + "`n" + $lock.Value + "`n" + $pushLocked.Value + "`n" + $push.Value + "`n" + $emitLocked.Value + "`n" + $emit.Value + "`n" + $emitData.Value) | Set-Content -LiteralPath (Join-Path $outDir 'actual_rec_push.inl') -Encoding utf8
+($enabled.Value + "`n" + $lock.Value + "`n" + $pushLocked.Value + "`n" + $push.Value + "`n" + $emitLocked.Value + "`n" + $emit.Value + "`n" + $emitData.Value + "`n" + $emitConsumed.Value) | Set-Content -LiteralPath (Join-Path $outDir 'actual_rec_push.inl') -Encoding utf8
 Push-Location $outDir
 try {
     $test=Join-Path $here 'small_record_copy_test.cpp'

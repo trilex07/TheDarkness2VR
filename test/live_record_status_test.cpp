@@ -34,6 +34,7 @@ struct {
 template<class... A> static void RecEmit(A...){if(g_recActive&&!g_recOverflow)++records;}
 template<class... A> static void RecEmitLocked(A...){if(g_recActive&&!g_recOverflow)++records;}
 template<class... A> static void RecEmitData(A...){if(g_recActive&&!g_recOverflow)++records;}
+template<class... A> static void RecEmitConsumed(A...){if(g_recActive&&!g_recOverflow)++records;}
 // These calls use an explicit empty ownership proof, which a variadic stub
 // cannot deduce. Match the actual shared data-emission signature instead.
 struct Proof{};
