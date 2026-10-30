@@ -1,0 +1,93 @@
+{
+  "capture_directory": "C:\\Users\\Trilex\\AppData\\Local\\Darkness2VR\\perf\\20261030T141042Z-3536db8b",
+  "renderer_changed": false,
+  "runtime_improvement_verified": false,
+  "symbol_limitation": "Original installed PDB age20 unavailable; current age32 is not matching. Specific functions fingerprinted separately.",
+  "files": [
+    {
+      "name": "combat.etl",
+      "bytes": 2781872128,
+      "sha256": "9FD4F30952AE4F95041F099C8CDA226ADD930760EEE3344542E4B3D727E47B4C"
+    },
+    {
+      "name": "manifest.json",
+      "bytes": 71659,
+      "sha256": "ECABF569E68D784B1E64D21BE3D4C7D70512ABCD851730174958C6068D3E3F1D"
+    },
+    {
+      "name": "presentmon.csv",
+      "bytes": 310413,
+      "sha256": "B39D877775CF9318EB93247220DA2BEDC12A1F1C7FBAF22BC8A9AB67145A9042"
+    },
+    {
+      "name": "presentmon-summary.json",
+      "bytes": 11114,
+      "sha256": "5E25C222A803937F7BE64AEB398FD4A386DDAB7093326FD71989AC2E4ECD0B76"
+    },
+    {
+      "name": "qpc-origin.json",
+      "bytes": 80,
+      "sha256": "CF4A38BA34BB0CCF2C31C05508189DAE4B0713DF96BC549A1C82B6E1C2B23C72"
+    },
+    {
+      "name": "d3d9.log",
+      "bytes": 429129,
+      "sha256": "3098F215F861E37F6FB9141BCFBC9607BF5B4EE289870CA9F6C6913CD09924B0"
+    },
+    {
+      "name": "d3d9-emergency.log",
+      "bytes": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "name": "cpu-raw-all.py",
+      "bytes": 2596,
+      "sha256": "357F3A183B5BA5C9992960D0FE3FBE205F526908B906851CE302BEBCE6F6A69D"
+    },
+    {
+      "name": "cpu-raw-all.json",
+      "bytes": 32310864,
+      "sha256": "4F7CC3070AFC7667B355B860BAAB09AA2BB8438823475CB5607ED05CE9141505"
+    },
+    {
+      "name": "critical-frames.json",
+      "bytes": 247230,
+      "sha256": "8465C708A6D3367F5BE7CED9EE886E6924A516928EE6151161B3785779A273BA"
+    },
+    {
+      "name": "cpu-wait-frame-0.json",
+      "bytes": 418464,
+      "sha256": "F8F0EA6F09864993D58990735ADD94B2D5FF989886F40BD1C515DBCFBFF50B1F"
+    },
+    {
+      "name": "cpu-wait-frame-1.json",
+      "bytes": 485776,
+      "sha256": "DA000FF6BA60FEA29DED5E6B69B4DA6947AB63E25F348D55520A1B468D7DD6BB"
+    },
+    {
+      "name": "cpu-wait-frame-3.json",
+      "bytes": 307649,
+      "sha256": "DDEE756AAB79090B0D3763F88D2EE87209B2F93F092B7E9267D0C899C4FCE90A"
+    },
+    {
+      "name": "cpu-wait-frame-10.json",
+      "bytes": 13685453,
+      "sha256": "27796872F57409EDFF6B08E319D8E274F1583129215E8F66A78F8BBA8D71D1E1"
+    },
+    {
+      "name": "tail-query-frames.json",
+      "bytes": 7458,
+      "sha256": "9156DDFBDB8A9E62643F69C843236FDFABD5A524D1006EB7358B049D0260D105"
+    },
+    {
+      "name": "nvidia-cache-policy-readonly.json",
+      "bytes": 835,
+      "sha256": "161B0C084AD613D17EDEC5FE50FA44B3450A5EF87F66D368592E55C57CC7C616"
+    },
+    {
+      "name": "etw-stats.txt",
+      "bytes": 967,
+      "sha256": "AA9368DED086C87C19434490E083F13CF7B4AD0D4B78A5DFBCAAE23FBED4D141"
+    }
+  ]
+}
