@@ -2729,3 +2729,21 @@ EXE write, menu-visibility assumption or Steam deployment is introduced.
 Actual-source x86 gateway regression PASS (18071 checks / 3000 ABI calls),
 existing mouse merge PASS (172147 checks), pinned EXE audit PASS. Full native
 menu laser remains incomplete pending activation/surface and host integration.
+
+
+## 2026-10-30 — UI shadow eligibility counterexample
+
+Strengthened the actual-source UI replay regression: create a previously unknown
+VB and write it with no UI shader active, then bind UI only after Unlock. Repeat
+through NOOVERWRITE updates and a DISCARD wrap. The original shadow path passes;
+a temporary shader-at-Unlock filter fails with recorder overflow. The temporary
+filter was reverted. A never-seen-UI exclusion loses the same first required write.
+
+No production eligibility filter is enabled. D3D9 creation flags/FVF and past draw
+usage do not prove immutable future consumers; a later declaration/shader binding
+can use the same resource. Recovering uncaptured bytes after the first UI draw
+would require a readback or loss of that draw, neither permitted here. Required
+missing contract: a resource owner identified before its first write whose entire
+lifetime excludes UI consumption. Existing ETW does not provide that contract or
+per-resource byte totals. Consequently no measured eliminated-copy gain or numeric
+runtime upper bound can be claimed. Existing SSE4.1 copying stays intact.

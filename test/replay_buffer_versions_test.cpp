@@ -454,16 +454,20 @@ static void UiCallbackCase(unsigned kind){
     printf("PASS CPU UI shadow callback kind %u: worker completed, ambiguous pair marked, no native call under recorder lock\n",kind);
 }
 static void UiWrapCases(){
-    g_replayBufferVersions=false;g_activeVs=&uiShader;
+    g_replayBufferVersions=false;g_activeVs=nullptr;
     auto buffer=VB(524288);
     Begin();g_bufferFrameOpen=false;Hook_SetStreamSource(device,0,buffer,0,24);
     const UINT draws[][2]={{19624,2},{19630,2},{19640,12},{19676,2},{19682,76},{19910,2},{19916,64},{20148,28},{20232,176},{20760,84},{21012,128},{21396,2},{21402,14},{21444,2},{21450,14},{21492,2},{21498,12},{21534,2},{21540,12},{21576,10},{21606,78},{0,40}};
     uiObserved.clear();
     for(unsigned i=0;i<sizeof(draws)/sizeof(draws[0]);++i){
         const UINT first=draws[i][0],count=draws[i][1],bytes=count*3*24;
+        // Creation and writes precede discovery of this buffer as a UI input.
+        // A shader at Unlock is not an immutable resource consumer contract.
+        g_activeVs=nullptr;
         void* mapped=nullptr;
         CHECK(SUCCEEDED(buffer->Lock(first*24,bytes,&mapped,i==0||first==0?D3DLOCK_DISCARD:D3DLOCK_NOOVERWRITE)));
         std::memset(mapped,0x31+i,bytes);CHECK(SUCCEEDED(buffer->Unlock()));
+        g_activeVs=&uiShader;
         CHECK(SUCCEEDED(Hook_DrawPrimitive(device,D3DPT_TRIANGLELIST,first,count)));
     }
     CHECK(!g_recOverflow && uiObserved.size()==sizeof(draws)/sizeof(draws[0]));
