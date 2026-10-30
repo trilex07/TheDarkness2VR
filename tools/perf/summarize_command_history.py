@@ -46,12 +46,42 @@ def read(path):
             'overwritten':overwritten,'missing_ends':missing,'snapshot_overhead_ms':snapshot*1000/freq,
             'foreign_mutations':foreign,'events':events}
 
+DRAWS={'draw','drawIndexed','drawUP','drawIndexedUP'}
+
+def first_use_intervals(events):
+    """Per producer flush: shaders first bound by a draw since the previous flush.
+
+    "First" means first within the retained ring only; pointer identities are
+    not hashes and may be reused after release. Intervals before the first
+    retained flush are marked 'window_start' because earlier use is unknown.
+    """
+    seen_vs,seen_ps,seen_pair=set(),set(),set()
+    rows=[];pending={'vs':0,'ps':0,'pairs':0,'draws':0}
+    for e in events:
+        if e['name'] in DRAWS and e['pipeline']['known']&3==3:
+            vs,ps=e['pipeline']['vs'],e['pipeline']['ps']
+            pending['draws']+=1
+            if vs not in seen_vs: seen_vs.add(vs);pending['vs']+=1
+            if ps not in seen_ps: seen_ps.add(ps);pending['ps']+=1
+            if (vs,ps) not in seen_pair: seen_pair.add((vs,ps));pending['pairs']+=1
+        elif e['name']=='producerFlush':
+            rows.append({'sequence':e['sequence'],'frame':e['frame'],'eye':e['args'][0],
+                'flush_ms':e['wall_ms'],'new_vs':pending['vs'],'new_ps':pending['ps'],
+                'new_pairs':pending['pairs'],'draws':pending['draws'],'window_start':not rows})
+            pending={'vs':0,'ps':0,'pairs':0,'draws':0}
+    return rows
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('history',type=Path)
     parser.add_argument('--around-qpc',type=int)
     parser.add_argument('--before',type=int,default=32,choices=range(0,513))
+    parser.add_argument('--first-use',action='store_true',help='per-flush first-bound shader counts')
     args=parser.parse_args();result=read(args.history);events=result.pop('events')
+    if args.first_use:
+        result['first_use']=first_use_intervals(events)
+        result['limits']='First use within the retained ring only; pointer IDs are not hashes. Driver compilation still requires ETW worker evidence.'
+        print(json.dumps(result,indent=2));return
     if args.around_qpc is not None:
         index=min(range(len(events)),key=lambda i:abs(events[i]['begin']-args.around_qpc)) if events else -1
     else: index=next((i for i,e in enumerate(events) if e['sequence']==result['trigger_sequence']),len(events)-1)

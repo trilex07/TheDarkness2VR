@@ -46,6 +46,21 @@ class ActualHistory(unittest.TestCase):
         self.assertEqual(shared.count('GetData(nullptr,0,D3DGETDATA_FLUSH)'),2)
         renderer=(ROOT/'src/d3d9.cpp').read_text()
         self.assertIn('g_origSetTexture=d2vr_replay::g_orig.SetTexture;',renderer)
+    def test_first_use_counts_reset_at_each_flush(self):
+        def draw(vs,ps,known=3):
+            return {'name':'drawIndexed','pipeline':{'vs':vs,'ps':ps,'known':known}}
+        def flush(seq,eye):
+            return {'name':'producerFlush','sequence':seq,'frame':seq,'args':[eye,1,0,0,0,0],'wall_ms':0.1}
+        rows=history.first_use_intervals([
+            draw(1,10),draw(2,10),flush(1,0),
+            draw(1,10),draw(2,10),flush(2,1),
+            draw(1,11),draw(3,12),draw(4,99,known=1),flush(3,0)])
+        self.assertTrue(rows[0]['window_start'])
+        self.assertEqual((rows[0]['new_vs'],rows[0]['new_ps'],rows[0]['new_pairs']),(2,1,2))
+        self.assertEqual((rows[1]['new_vs'],rows[1]['new_ps'],rows[1]['new_pairs'],rows[1]['draws']),(0,0,0,2))
+        self.assertFalse(rows[2]['window_start'])
+        # The unknown-pipeline draw is excluded rather than counted as a new shader.
+        self.assertEqual((rows[2]['new_vs'],rows[2]['new_ps'],rows[2]['new_pairs'],rows[2]['draws']),(1,2,2,2))
     def test_export_after_etw_stop_and_exact_symbols_required(self):
         source=(ROOT/'tools/perf/Capture-DarknessCombat.ps1').read_text(encoding='utf-8-sig')
         self.assertLess(source.index('& $wpr -stop $etl'),source.index('$null=$historyExport.Set()'))
