@@ -75,3 +75,9 @@ snapshot. Fatal first-chance records use the emergency sink; ordinary queued
 lines can be lost at process exit. `[AsyncLog] NOT_ADMITTED`, missing active
 receipt, queue losses or writer errors invalidate a clean performance claim.
 Enable the option in the effective base `[Render]` INI, not only an override.
+
+
+PresentMon 2.6 uses `CPUStartQPCTimeInMs`; the collector accepts that explicit
+millisecond column and canonical `CPUStartQPCTime`. It rejects tick-only,
+relative, missing and nonfinite values when assigning phase rows. This matches
+the retained Python analyzer and does not alter capture providers or game state.

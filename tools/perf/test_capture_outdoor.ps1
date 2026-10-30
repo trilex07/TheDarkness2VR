@@ -34,6 +34,12 @@ Check ((Get-D2vrEtwLoss '' '        3828807 Events were lost in this trace.  Dat
 Check ((Get-D2vrEtwLoss 'Total # Lost Events : 0' '3,828,807 Events were lost in this trace.') -eq 3828807) 'Warning cannot be erased by zero stats'
 Check ((Get-D2vrEtwLoss 'Total # Lost Events : 9' '7 Events were lost in this trace.') -eq 9) 'Highest loss preserved without double-counting'
 Check ((Get-D2vrEtwLoss "Total # Lost Events : 8`nTotal # Lost Events : 8" '') -eq 8) 'Duplicated report counters not summed'
+Check ((Get-D2vrPresentQpcMs ([pscustomobject]@{CPUStartQPCTime='1234.5'})) -eq 1234.5) 'Canonical QPC milliseconds'
+Check ((Get-D2vrPresentQpcMs ([pscustomobject]@{CPUStartQPCTimeInMs='1234.5'})) -eq 1234.5) 'Installed PresentMon 2.6 QPC milliseconds'
+Check ($null -eq (Get-D2vrPresentQpcMs ([pscustomobject]@{CPUStartQPC='12345000';TimeInSeconds='1.2'}))) 'Ticks and relative time are not milliseconds'
+foreach($invalid in @('','NaN','Infinity','-1','garbage')) {
+    Check ($null -eq (Get-D2vrPresentQpcMs ([pscustomobject]@{CPUStartQPCTimeInMs=$invalid}))) 'Invalid timestamp remains unknown'
+}
 $script:wprArgs=@();$script:wprCode=0
 function Mock-Wpr { $script:wprArgs=@($args); $global:LASTEXITCODE=$script:wprCode }
 $m=Write-D2vrPhaseMarker Mock-Wpr own-session 'D2VR exit building'

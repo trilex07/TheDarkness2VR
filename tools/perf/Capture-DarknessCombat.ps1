@@ -77,6 +77,18 @@ function Get-D2vrEtwLoss([AllowNull()][string]$Stats, [AllowNull()][string]$Warn
     if ($values.Count) { return ($values | Measure-Object -Maximum).Maximum }
     return $null
 }
+function Get-D2vrPresentQpcMs($Row) {
+    # PresentMon 2.6 spells the QPC-millisecond column explicitly. Never accept
+    # CPUStartQPC ticks or relative TimeInSeconds as millisecond timestamps.
+    $name = if ($Row.PSObject.Properties['CPUStartQPCTime']) { 'CPUStartQPCTime' }
+        elseif ($Row.PSObject.Properties['CPUStartQPCTimeInMs']) { 'CPUStartQPCTimeInMs' }
+        else { return $null }
+    $value = 0.0
+    if (-not [double]::TryParse([string]$Row.$name,
+        [Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$value) -or
+        [double]::IsNaN($value) -or [double]::IsInfinity($value) -or $value -lt 0) { return $null }
+    return $value
+}
 function Invoke-D2vrCue([int]$Count) {
     # Only the phase boundaries make sound, on this helper process. No focus,
     # game input, controller mapping or VR configuration is changed.
@@ -392,7 +404,8 @@ try {
             $from=$phase.startQpc*1000/$manifest.qpcFrequency
             $to=$phase.endQpc*1000/$manifest.qpcFrequency
             $phase.rows=@($gameRows | Where-Object {
-                [double]$_.CPUStartQPCTime -ge $from -and [double]$_.CPUStartQPCTime -lt $to }).Count
+                $qpcMs=Get-D2vrPresentQpcMs $_
+                $null -ne $qpcMs -and $qpcMs -ge $from -and $qpcMs -lt $to }).Count
             if ($phase.rows -lt 10) { $manifest.errors += "Phase PresentMon rows incomplete: $($phase.id)" }
         }
         $manifest.baselineRows = ($manifest.phases | Select-Object -First 1).rows
