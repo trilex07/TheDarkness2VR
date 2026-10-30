@@ -63,6 +63,23 @@ static void Pure(const std::vector<uint32_t>& vs,const std::vector<uint32_t>& ps
     auto trailing=data;trailing.push_back(0);CHECK(!Parse(trailing.data(),trailing.size(),parsed));
     auto over=data;over[1]=MaxRecords+1;CHECK(!Parse(over.data(),over.size(),parsed) && parsed.empty());
     CHECK(MaxRecords==4096 && MaxBytes==32u*1024u*1024u);
+    Manifest growth;
+    for(uint32_t i=0;i<MaxRecords;++i) {
+        Record next=a;next.state.elements[0].offset=uint16_t((i%1024)*4);
+        next.state.elements[0].usageIndex=uint8_t(i/1024);
+        CHECK(growth.Admit(next)==Manifest::Admit::Added);
+        if(i==1023){uint64_t v=0;auto old=growth.Serialize(v);
+            CHECK(old[1]==1024 && Parse(old.data(),old.size(),parsed) && parsed.size()==1024);}
+    }
+    CHECK(growth.Size()==4096 && growth.Version()==4096);
+    CHECK(growth.Admit(a)==Manifest::Admit::Duplicate);
+    Record extra=a;extra.state.elements[0].usageIndex=4;
+    CHECK(growth.Admit(extra)==Manifest::Admit::Rejected);
+    uint64_t grownVersion=0;auto grown=growth.Serialize(grownVersion);
+    CHECK(Parse(grown.data(),grown.size(),parsed) && parsed.size()==4096 && grownVersion==4096);
+    CHECK(parsed[1024].state.elements[0].usageIndex==1 && parsed.back().state.elements[0].usageIndex==3);
+    std::puts("PASS manifest growth: old 1024 parses; all 4096 survive serialization; duplicate vs capacity rejection distinct");
+
     auto wrong=data;wrong[2]=StateWords+1;CHECK(!Parse(wrong.data(),wrong.size(),parsed));
     wrong=data;wrong[0]^=1;CHECK(!Parse(wrong.data(),wrong.size(),parsed));
     wrong=data;wrong[4]=PixelVersion;CHECK(!Parse(wrong.data(),wrong.size(),parsed)); // VS slot holding PS bytecode
