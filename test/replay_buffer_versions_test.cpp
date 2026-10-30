@@ -5,6 +5,7 @@ static bool g_replayBufferVersions=true;
 #include <d3d9.h>
 #include "replay_state_cache.h"
 #include "recorder_sync.h"
+#include "stateblock_recording.h"
 #include <atomic>
 #include <chrono>
 #include <thread>
