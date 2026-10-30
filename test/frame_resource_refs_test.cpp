@@ -1,4 +1,6 @@
 #include "../src/frame_resource_refs.h"
+#include "../src/recorder_sync.h"
+#include <thread>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -103,7 +105,53 @@ static void TestTenThousandFrames() {
     CHECK(adds[0]==20480000ULL && adds[1]==640000ULL);
     std::printf("PASS 10000 frames/mode: COM AddRef+Release pairs %llu -> %llu; all resources alive through replay\n",adds[0],adds[1]);
 }
+// Actual recorder synchronization: native releases may synchronously wait on
+// another thread that enters the recorder. Retaining the mutex deadlocks this
+// dependency; dropping the native lease would admit an unrecorded mutation.
+struct CallbackResource {
+    unsigned refs=1;
+    void AddRef(){CHECK(!d2vr_record_sync::held.load());++refs;}
+    void Release(){
+        CHECK(!d2vr_record_sync::held.load() && !d2vr_record_sync::depth);
+        CHECK(d2vr_record_sync::Callback() && d2vr_record_sync::nativeCalls.load()==1);
+        HANDLE done=CreateEventW(nullptr,TRUE,FALSE,nullptr);CHECK(done);
+        std::thread callback([done]{
+            d2vr_record_sync::Acquire();
+            CHECK(!d2vr_record_sync::NativeMutation());
+            d2vr_record_sync::Release();
+            CHECK(SetEvent(done));
+        });
+        CHECK(WaitForSingleObject(done,2000)==WAIT_OBJECT_0);
+        callback.join();CHECK(CloseHandle(done));
+        CHECK(refs>1);--refs;
+    }
+};
+struct CountedNativeScope : d2vr_record_sync::DriverScope {
+    inline static unsigned entries=0;
+    CountedNativeScope(){++entries;}
+};
+static void TestReleaseCallbackAndNestedLock(){
+    CallbackResource objects[3];
+    d2vr_replay::FrameResourceRefs<CallbackResource,CountedNativeScope> refs;
+    d2vr_record_sync::Acquire();d2vr_record_sync::Acquire();
+    refs.Begin(false);
+    for(unsigned i=0;i<12;++i)refs.Retain(&objects[i%3]);
+    CountedNativeScope::entries=0;
+    refs.Clear();
+    CHECK(CountedNativeScope::entries==1);
+    CHECK(d2vr_record_sync::depth==2 && d2vr_record_sync::held.load()==1);
+    CHECK(!d2vr_record_sync::nativeDepth && !d2vr_record_sync::nativeCalls.load());
+    CHECK(d2vr_record_sync::conflict.load());
+    for(const auto& object:objects)CHECK(object.refs==1);
+    refs.Clear(); // empty teardown neither calls native code nor loses nesting
+    CHECK(CountedNativeScope::entries==1);
+    CHECK(d2vr_record_sync::depth==2);
+    d2vr_record_sync::Release();d2vr_record_sync::Release();
+    CHECK(!d2vr_record_sync::held.load());d2vr_record_sync::conflict=false;
+    puts("PASS release callbacks: recorder available to worker, mutations rejected, nested lock/lease and ownership restored");
+}
 int main() {
+    TestReleaseCallbackAndNestedLock();
     {
         // Exercise table growth/collisions, bounded saturation fallback and
         // generation reuse without dereferencing stale previous-frame keys.

@@ -34,7 +34,14 @@ public:
         [[maybe_unused]] RefScope native;resource->AddRef();
     }
     void Clear() {
-        for (Resource* resource : owned_) {[[maybe_unused]] RefScope native;resource->Release();}
+        // One native lease covers the release batch. Callbacks remain rejected
+        // for its entire lifetime; no COM call holds the recorder mutex. Resume
+        // before changing the ledger, rather than handing the lock back once
+        // per reference (potentially thousands of times per frame).
+        if (!owned_.empty()) {
+            [[maybe_unused]] RefScope native;
+            for (Resource* resource : owned_) resource->Release();
+        }
         owned_.clear();
         count_=0;
         if(++generation_==0) {for(auto& slot:seen_) slot.generation=0;generation_=1;}
