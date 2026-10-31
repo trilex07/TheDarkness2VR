@@ -13,7 +13,16 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: X double tap weapon toggle (pure alternate)
+## Current installed MAIN candidate: X double tap toggle + left trigger DOWN/UP
+
+Authorized MAIN deployment completed 2026-10-31 20:41 Europe/Warsaw (DLL only).
+- **Current DLL SHA256**: 6CA7A1F5A40E29FBD7451CD7051D72C170D9FF33C16CE589ED968A882541AF80 (protected-native)
+- **Source**: side/unarmed-trigger-dpad-on-installed ee40c864
+- **Behaviour**: X double tap alternates DPAD_RIGHT/DPAD_LEFT (headset 20:39: switching confirmed). Left trigger with an empty left hand alternates DPAD_DOWN/DPAD_UP; right trigger always fires. UnarmedTriggerDpad defaults to 1 (Steam INI has no key).
+- **Package**: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/unarmed-lefttrigger-20261031T204143841
+- **Validation**: MSVC x86 build PASS, host tests PASS, profile gate PASS; headset NOT RUN for the trigger change.
+
+## Previous MAIN candidate: X double tap weapon toggle (pure alternate) (superseded)
 
 Authorized MAIN deployment completed 2026-10-31 20:36 Europe/Warsaw (DLL only).
 - **Current DLL SHA256**: 15D89E52DFB304F2FE3ABD4C6CF980718E13872927770AB7560674B8A9980994 (protected-native)
