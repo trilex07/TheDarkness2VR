@@ -69,7 +69,7 @@ static int ProbeWeaponIdentity(int slot,const BYTE* gun) {
     char text[96];
     Log("[WeaponWheelProbe] slot=%d gun=%p vtable=%08X type=%08X; scanning own strings",slot,gun,
         *(const DWORD*)gun,*(const DWORD*)(gun+4));
-    for(int off=0;off<0x400 && logged<24;off+=4) {
+    for(int off=8;off<0x400 && logged<24;off+=4) {
         DWORD p=0;
         __try { p=*(const DWORD*)(gun+off); } __except(EXCEPTION_EXECUTE_HANDLER) { break; }
         if(p<0x10000 || p>=0x7FFF0000) continue;
@@ -91,6 +91,27 @@ static int ProbeWeaponIdentity(int slot,const BYTE* gun) {
             }
         }
     }
+    // The model lives in the type object (+4); both identical pistols shared it.
+    const BYTE* type=nullptr;
+    __try { type=*(const BYTE* const*)(gun+4); } __except(EXCEPTION_EXECUTE_HANDLER) { type=nullptr; }
+    for(int off=0;type && off<0x100 && logged<48;off+=4) {
+        DWORD p=0;
+        __try { p=*(const DWORD*)(type+off); } __except(EXCEPTION_EXECUTE_HANDLER) { break; }
+        if(p<0x10000 || p>=0x7FFF0000) continue;
+        for(int inner=-4;inner<0x60 && logged<48;inner+=4) {
+            DWORD q=p;
+            __try {
+                if(inner>=0) q=*(const DWORD*)(p+inner);
+                if(q<0x10000 || q>=0x7FFF0000) continue;
+                if(!PrintableString((const char*)q,text,sizeof(text))) continue;
+            } __except(EXCEPTION_EXECUTE_HANDLER) { continue; }
+            const int match=IconForName(text);
+            if(icon<0 && match>=0) icon=match;
+            if(inner<0) Log("[WeaponWheelProbe] slot=%d type+%02X -> \"%s\"%s",slot,off,text,match>=0 ? " (icon match)":"");
+            else Log("[WeaponWheelProbe] slot=%d type+%02X/+%02X -> \"%s\"%s",slot,off,inner,text,match>=0 ? " (icon match)":"");
+            ++logged;
+        }
+    }
     Log("[WeaponWheelProbe] slot=%d strings=%d icon=%s",slot,logged,
         icon>=0 ? d2vr_weapon_icons::Name(d2vr_weapon_icons::Icon(icon)) : "family fallback");
     return icon;
@@ -99,6 +120,7 @@ static int ProbeWeaponIdentity(int slot,const BYTE* gun) {
 struct WeaponLoadoutSample {
     d2vr_wheel::Loadout loadout;
     DWORD object[3]{};   // saved weapon objects (identity changes -> re-probe)
+    DWORD type[3]{};     // object+4: same value = same weapon model (headset 23:20)
     int icon[3]{-1,-1,-1};
 };
 static SRWLOCK g_weaponLoadoutLock=SRWLOCK_INIT;
@@ -119,6 +141,7 @@ static void CaptureWeaponLoadout(BYTE* inventory) {
         for(int slot=0;slot<3;++slot) {
             auto ref=*(DWORD**)(inventory+0x12C+28*ids[slot]);
             s.object[slot]=ref ? *ref : 0;
+            s.type[slot]=s.object[slot] ? *(DWORD*)(uintptr_t)(s.object[slot]+4) : 0;
             s.loadout.owned[slot]=s.object[slot]!=0;
         }
         for(int hand=0;hand<2;++hand) {
@@ -187,6 +210,17 @@ static d2vr_weapon_icons::Icon IconForSlot(const WeaponLoadoutSample& s,int slot
     return slot==d2vr_wheel::kSlotTwoHanded ? I::AssaultRifle : slot==d2vr_wheel::kSlotEmpty ? I::EmptyHand : I::Pistol;
 }
 
+static d2vr_weapon_wheel_graphics::Slot SlotForItem(const WeaponLoadoutSample& s,const d2vr_wheel::Item& it) {
+    const auto& l=s.loadout;
+    if(it.kind==d2vr_wheel::Kind::TwoHanded) return {IconForSlot(s,d2vr_wheel::kSlotTwoHanded),true,false};
+    const int slot=it.slot>=0 ? it.slot : l.RightOneHanded();
+    return {IconForSlot(s,slot),true,it.kind==d2vr_wheel::Kind::Dual};
+}
+static bool SameOneHandedModel(const WeaponLoadoutSample& s) {
+    return s.type[1] && s.type[1]==s.type[2];
+}
+static d2vr_wheel::EquipMemory g_equipMemory;
+
 static XrQuaternionf QuatFromBasis(const XrVector3f& x,const XrVector3f& y,const XrVector3f& z) {
     const float tr=x.x+y.y+z.z; XrQuaternionf q{};
     if(tr>0) { const float s=std::sqrt(tr+1)*2; q.w=.25f*s; q.x=(y.z-z.y)/s; q.y=(z.x-x.z)/s; q.z=(x.y-y.x)/s; }
@@ -223,7 +257,7 @@ static void PublishWheelDisplay(bool open) {
         d.pose[h]=w.pose;
         auto& g=d.wheel[h];
         g.count=w.menu.count; g.selected=w.pick.hover; g.equipped=w.menu.equipped;
-        for(int i=0;i<w.menu.count;++i) g.slots[i]={IconForSlot(g_wheelOpenLoadout,w.menu.slot[i]),true};
+        for(int i=0;i<w.menu.count;++i) g.slots[i]=SlotForItem(g_wheelOpenLoadout,w.menu.item[i]);
     }
     d.space=g_wheelSpace;
     AcquireSRWLockExclusive(&g_wheelDisplayLock);
@@ -233,7 +267,7 @@ static void PublishWheelDisplay(bool open) {
         const auto& a=old.wheel[h]; const auto& b=d.wheel[h];
         same=a.count==b.count && a.selected==b.selected && a.equipped==b.equipped &&
              !memcmp(&old.pose[h],&d.pose[h],sizeof(XrPosef));
-        for(int i=0;i<b.count && same;++i) same=a.slots[i].icon==b.slots[i].icon;
+        for(int i=0;i<b.count && same;++i) same=a.slots[i].icon==b.slots[i].icon && a.slots[i].dual==b.slots[i].dual;
     }
     d.revision=same ? old.revision : old.revision+1;
     g_wheelDisplay=d;
@@ -249,7 +283,7 @@ static void OpenWheels() {
     for(auto& w:g_wheelHand) w=WheelHand{};
     const int h=g_hands[1].gripValid ? 1 : 0;
     auto& w=g_wheelHand[h];
-    w.menu=d2vr_wheel::WeaponMenu(l);
+    w.menu=d2vr_wheel::WeaponMenu(l,SameOneHandedModel(g_wheelOpenLoadout));
     if(g_hands[h].gripValid && w.menu.count) {
         w.anchor=g_hands[h].grip.position;
         // Plane faces the head, upright in the tracking space.
@@ -263,21 +297,26 @@ static void OpenWheels() {
         w.pose.orientation=QuatFromBasis(x,y,z);
         w.shown=true;
     }
-    Log("[WeaponWheel] open at %s hand: %d weapon(s) [%d %d %d]%s; hands right=%d left=%d",h ? "right":"left",
-        w.menu.count,w.menu.slot[0],w.menu.slot[1],w.menu.slot[2],w.shown ? "" : " (hidden)",l.hand[0],l.hand[1]);
+    static const char* const kKind[]={"single","dual","two-handed"};
+    char items[96]=""; size_t used=0;
+    for(int i=0;i<w.menu.count && used<sizeof(items);++i)
+        used+=size_t(_snprintf_s(items+used,sizeof(items)-used,_TRUNCATE,"%s%s:%d",i?" ":"",kKind[int(w.menu.item[i].kind)],w.menu.item[i].slot));
+    Log("[WeaponWheel] open at %s hand: [%s] equipped=%d%s; hands right=%d left=%d sameModel=%d",h ? "right":"left",
+        items,w.menu.equipped,w.shown ? "" : " (hidden)",l.hand[0],l.hand[1],(int)SameOneHandedModel(g_wheelOpenLoadout));
 }
 
 static void CloseWheels(bool commit) {
-    int pick=-1;
+    int pick=-1; d2vr_wheel::Item item{};
     for(const auto& w:g_wheelHand)
-        if(commit && w.shown && w.pick.touched && w.pick.hover>=0 && w.pick.hover<w.menu.count)
-            pick=w.menu.slot[w.pick.hover];
+        if(commit && w.shown && w.pick.touched && w.pick.hover>=0 && w.pick.hover<w.menu.count) {
+            pick=w.pick.hover; item=w.menu.item[pick];
+        }
     if(commit) {
         WeaponLoadoutSample now;
         const bool fresh=CopyWeaponLoadout(now);
-        if(pick>=0 && fresh && now.loadout.hand[0]!=pick) g_wheelEquip.Start(pick);
-        Log("[WeaponWheel] release: pick=%d fresh=%d main hand=%d -> %s",pick,(int)fresh,
-            fresh ? now.loadout.hand[0] : -1,g_wheelEquip.Active() ? "equip (closed-loop D-pad)" : "no change");
+        if(pick>=0 && fresh && !d2vr_wheel::Matches(item,now.loadout)) g_wheelEquip.Start(item);
+        Log("[WeaponWheel] release: pick=%d kind=%d slot=%d fresh=%d hands right=%d left=%d -> %s",pick,int(item.kind),item.slot,(int)fresh,
+            fresh ? now.loadout.hand[0] : -1,fresh ? now.loadout.hand[1] : -1,g_wheelEquip.Active() ? "equip (closed-loop D-pad)" : "no change");
     } else Log("[WeaponWheel] cancelled");
     for(auto& w:g_wheelHand) w=WheelHand{};
     PublishWheelDisplay(false);
@@ -288,7 +327,9 @@ static bool WeaponWheelContext(const XINPUT_GAMEPAD& gp,bool focused) {
     if(!focused || !g_in3DGameplayMode || (gp.wButtons & XINPUT_GAMEPAD_START) || g_nativeCinematicPlaying)
         return false;
     NativeGameplaySample sample;
-    if(CopyNativeGameplay(sample) && (sample.alternateHeldTarget || sample.demonHold)) return false;
+    // Holding an object with a tentacle keeps the wheel/flicks (user 23:26);
+    // only a character held for an execution blocks them.
+    if(CopyNativeGameplay(sample) && sample.demonHold==2) return false;
     return true;
 }
 
@@ -332,6 +373,7 @@ static uint16_t ReadPadSetting(const char* key,const char* fallback,uint16_t fal
 // Physical A (PSVR2 Cross): reload by default (stock X, user request 23:11).
 // While an enemy is held for an execution the stock A choice passes through.
 static uint16_t PhysicalAButton() {
+    if(!g_inputContext) return XINPUT_GAMEPAD_A; // menus: A confirms (user 23:26)
     NativeGameplaySample sample;
     if(CopyNativeGameplay(sample) && sample.demonHold==2) return XINPUT_GAMEPAD_A;
     return ReadPadSetting("AButton","X",XINPUT_GAMEPAD_X);
@@ -355,22 +397,24 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
                 const int before=w.pick.hover;
                 w.pick.Update(u,v,w.menu.count,kWheelDeadM);
                 if(w.pick.hover!=before && w.pick.hover>=0)
-                    Log("[WeaponWheel] %s hand hovers slot %d",h ? "right":"left",w.menu.slot[w.pick.hover]);
+                    Log("[WeaponWheel] %s hand hovers item %d (kind=%d slot=%d)",h ? "right":"left",w.pick.hover,
+                        int(w.menu.item[w.pick.hover].kind),w.menu.item[w.pick.hover].slot);
             }
             PublishWheelDisplay(true);
         }
         WeaponLoadoutSample loadout;
         const bool fresh=CopyWeaponLoadout(loadout);
         if(!fresh) loadout.loadout.valid=false;
-        const int target=g_wheelEquip.target, presses=g_wheelEquip.presses;
-        const auto result=g_wheelEquip.Step(loadout.loadout,now);
+        const int target=int(g_wheelEquip.target.kind)*10+g_wheelEquip.target.slot, presses=g_wheelEquip.presses;
+        const auto result=g_wheelEquip.Step(loadout.loadout,g_equipMemory,now);
         if(g_wheelEquip.presses!=presses)
-            Log("[WeaponWheel] equip slot %d: press %d buttons=0x%04X (main hand=%d)",target,g_wheelEquip.presses,
-                g_wheelEquip.bits,loadout.loadout.hand[0]);
+            Log("[WeaponWheel] equip target=%d (kind*10+slot): press %d buttons=0x%04X (hands right=%d left=%d; learned R/L/D/2H=%04X/%04X/%04X/%04X)",
+                target,g_wheelEquip.presses,g_wheelEquip.bits,loadout.loadout.hand[0],loadout.loadout.hand[1],
+                g_equipMemory.button[1],g_equipMemory.button[2],g_equipMemory.button[3],g_equipMemory.button[0]);
         if(result==d2vr_wheel::Equip::Result::Done)
-            Log("[WeaponWheel] equip slot %d confirmed (hands right=%d left=%d)",target,loadout.loadout.hand[0],loadout.loadout.hand[1]);
+            Log("[WeaponWheel] equip target=%d confirmed (hands right=%d left=%d)",target,loadout.loadout.hand[0],loadout.loadout.hand[1]);
         else if(result==d2vr_wheel::Equip::Result::Failed)
-            Log("[WeaponWheel] equip slot %d FAILED after %d press(es) (hands right=%d left=%d fresh=%d)",target,presses,
+            Log("[WeaponWheel] equip target=%d FAILED after %d press(es) (hands right=%d left=%d fresh=%d)",target,presses,
                 loadout.loadout.hand[0],loadout.loadout.hand[1],(int)fresh);
         gp.wButtons|=g_wheelEquip.Bits(now);
     }

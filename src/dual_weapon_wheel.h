@@ -120,58 +120,111 @@ struct Loadout {
     int RightOneHanded() const { return swapped ? kSlotOneB : kSlotOneA; }
     int LeftOneHanded() const { return swapped ? kSlotOneA : kSlotOneB; }
 };
+// Wheel entries. The game holds at most one two-handed and two one-handed
+// weapons; when both one-handed weapons are the same model they are offered
+// as "one weapon" and "dual wield" (user request 2026-10-31 23:26).
+inline bool IsOneHanded(int slot) { return slot==kSlotOneA || slot==kSlotOneB; }
+enum class Kind : uint8_t { Single, Dual, TwoHanded };
+struct Item { Kind kind=Kind::Single; int slot=-1; }; // Single: slot, or -1 = either one-handed
 struct Menu {
     int count=0;
-    int slot[4]{8,8,8,8};  // native slot shown in each sector
-    int equipped=-1;       // sector currently in that hand
+    Item item[4]{};
+    int equipped=-1;
 };
-// One wheel: every owned weapon, one-handed first, then two-handed.
-// equipped = the weapon in the main (right) hand.
-inline Menu WeaponMenu(const Loadout& l) {
+inline bool Matches(const Item& it,const Loadout& l) {
+    if(!l.valid) return false;
+    switch(it.kind) {
+    case Kind::TwoHanded: return l.hand[0]==kSlotTwoHanded;
+    case Kind::Dual: return IsOneHanded(l.hand[0]) && IsOneHanded(l.hand[1]);
+    default: return (it.slot<0 ? IsOneHanded(l.hand[0]) : l.hand[0]==it.slot) && l.hand[1]==kSlotEmpty;
+    }
+}
+inline Menu WeaponMenu(const Loadout& l,bool sameModel) {
     Menu m;
     if(!l.valid) return m;
-    for(int slot:{l.RightOneHanded(),l.LeftOneHanded(),kSlotTwoHanded})
-        if(l.owned[slot]) m.slot[m.count++]=slot;
-    for(int i=0;i<m.count;++i) if(m.slot[i]==l.hand[0]) m.equipped=i;
+    int ones[2], n=0;
+    for(int slot:{l.RightOneHanded(),l.LeftOneHanded()}) if(l.owned[slot]) ones[n++]=slot;
+    if(n==1 || (n==2 && sameModel)) m.item[m.count++]={Kind::Single,n==1 ? ones[0] : -1};
+    else for(int i=0;i<n;++i) m.item[m.count++]={Kind::Single,ones[i]};
+    if(n==2) m.item[m.count++]={Kind::Dual,-1};
+    if(l.owned[kSlotTwoHanded]) m.item[m.count++]={Kind::TwoHanded,kSlotTwoHanded};
+    for(int i=0;i<m.count;++i) if(Matches(m.item[i],l)) m.equipped=i;
     return m;
 }
 
-// Closed-loop equip of one weapon into the main hand with stock D-pad presses
-// (headset log 2026-10-31 23:08: DPAD_LEFT alternates the main hand between the
-// two one-handed weapons; DPAD_RIGHT selects the two-handed weapon; DPAD_DOWN
-// draws from an empty hand). Press, wait for the native hand to change (or
-// kSettleMs), re-evaluate; give up after kMaxPresses.
+// Which stock D-pad button produced which loadout, learned from the native
+// hands (headset 2026-10-31 23:20, no two-handed weapon owned: RIGHT -> one
+// weapon from slot 1, LEFT -> one weapon from slot 2, DOWN with an empty left
+// hand -> dual wield). Keys: 0 two-handed, 1/2 single from that slot, 3 dual.
+struct EquipMemory {
+    uint16_t button[4]{};
+    static int Key(const Loadout& l) {
+        if(!l.valid) return -1;
+        if(l.hand[0]==kSlotTwoHanded) return 0;
+        if(IsOneHanded(l.hand[0]) && IsOneHanded(l.hand[1])) return 3;
+        if(IsOneHanded(l.hand[0]) && l.hand[1]==kSlotEmpty) return l.hand[0];
+        return -1;
+    }
+    void Learn(uint16_t pressed,const Loadout& after) { const int k=Key(after); if(k>=0 && pressed) button[k]=pressed; }
+};
+
+// Closed-loop equip: press, wait until the native hands change (or
+// kSettleMs), re-evaluate; never repeat a button that did nothing from the
+// same state; give up after kMaxPresses.
 struct Equip {
     static constexpr uint64_t kPulseMs=150, kSettleMs=700;
     static constexpr int kMaxPresses=4;
     enum class Result { Idle, Pending, Done, Failed };
-    int target=-1, presses=0, lastHand=-1;
-    uint16_t bits=0;
+    Item target{}; bool active=false;
+    int presses=0, lastHand[2]{-1,-1};
+    uint16_t bits=0, tried=0;
     uint64_t pulseUntil=0, settleUntil=0;
-    void Start(int slot) { *this=Equip{}; target=slot; }
-    bool Active() const { return target>=0; }
-    static uint16_t Press(int hand0,int target) {
-        if(target==kSlotTwoHanded) return kDpadRight;
-        if(hand0==kSlotEmpty) return kDpadDown;
-        return kDpadLeft; // from the two-handed or the other one-handed weapon
+    void Start(const Item& it) { *this=Equip{}; target=it; active=true; }
+    bool Active() const { return active; }
+    // Candidate buttons for the current state, most likely first.
+    static int Candidates(const Item& t,const Loadout& l,const EquipMemory& mem,uint16_t out[4]) {
+        int n=0;
+        auto add=[&](uint16_t b) { for(int i=0;i<n;++i) if(out[i]==b) return; if(b && n<4) out[n++]=b; };
+        const bool single=IsOneHanded(l.hand[0]) && l.hand[1]==kSlotEmpty;
+        switch(t.kind) {
+        case Kind::TwoHanded: add(mem.button[0]); add(kDpadRight); add(kDpadUp); add(kDpadLeft); break;
+        case Kind::Dual:
+            if(single) { add(mem.button[3]); add(kDpadDown); add(kDpadUp); }
+            else { add(mem.button[1]); add(mem.button[2]); add(kDpadRight); add(kDpadLeft); add(kDpadDown); }
+            break;
+        default: {
+            const int s=t.slot;
+            if(s>0) add(mem.button[s]);
+            else { add(mem.button[1]); add(mem.button[2]); }
+            if(l.hand[0]==kSlotEmpty) add(kDpadDown);
+            if(s==kSlotOneB) { add(kDpadLeft); add(kDpadRight); } else { add(kDpadRight); add(kDpadLeft); }
+            add(kDpadDown);
+        } }
+        return n;
     }
-    // Call every poll with a fresh loadout (valid=false when unknown).
-    Result Step(const Loadout& l,uint64_t now) {
-        if(target<0) return Result::Idle;
+    Result Step(const Loadout& l,EquipMemory& mem,uint64_t now) {
+        if(!active) return Result::Idle;
         if(now<pulseUntil) return Result::Pending;
         if(!l.valid) {
-            if(now>=settleUntil+kSettleMs) { target=-1; return Result::Failed; }
+            if(now>=settleUntil+kSettleMs) { active=false; return Result::Failed; }
             return Result::Pending;
         }
-        if(l.hand[0]==target) { target=-1; return Result::Done; }
-        const bool changed=presses && l.hand[0]!=lastHand;
+        const bool changed=presses && (l.hand[0]!=lastHand[0] || l.hand[1]!=lastHand[1]);
+        if(changed) { mem.Learn(bits,l); tried=0; }
+        if(Matches(target,l)) { active=false; return Result::Done; }
         if(presses && !changed && now<settleUntil) return Result::Pending;
-        if(presses>=kMaxPresses || !l.owned[target]) { target=-1; return Result::Failed; }
-        bits=Press(l.hand[0],target); lastHand=l.hand[0]; ++presses;
+        if(target.kind==Kind::TwoHanded ? !l.owned[kSlotTwoHanded] : target.slot>0 && !l.owned[target.slot]) {
+            active=false; return Result::Failed;
+        }
+        uint16_t c[4]; const int n=Candidates(target,l,mem,c);
+        uint16_t next=0;
+        for(int i=0;i<n && !next;++i) if(!(tried&c[i])) next=c[i];
+        if(!next || presses>=kMaxPresses) { active=false; return Result::Failed; }
+        bits=next; tried|=next; lastHand[0]=l.hand[0]; lastHand[1]=l.hand[1]; ++presses;
         pulseUntil=now+kPulseMs; settleUntil=pulseUntil+kSettleMs;
         return Result::Pending;
     }
-    uint16_t Bits(uint64_t now) const { return target>=0 && now<pulseUntil ? bits : 0; }
+    uint16_t Bits(uint64_t now) const { return active && now<pulseUntil ? bits : 0; }
 };
 
 // Pad button names for [Input] CrouchButton / JumpButton / AButton. 0 = OFF.

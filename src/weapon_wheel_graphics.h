@@ -18,6 +18,7 @@ struct Placement { float x=0,y=0,radius=.9f; };
 struct Slot {
     d2vr_weapon_icons::Icon icon=d2vr_weapon_icons::Icon::EmptyHand;
     bool available=false;
+    bool dual=false; // draw the icon twice (dual wield)
 };
 struct Wheel {
     int count=4;
@@ -109,7 +110,14 @@ template<class Emit> inline void BuildWheel(const Wheel& wheel,bool leftHand,Emi
         // Icon unions use opaque ink so overlapping convex components do not
         // darken each other through repeated alpha blending.
         const Color iconColor=available?white:Color{muted.r,muted.g,muted.b,1.f};
-        detail::Icon(emit,wheel.slots[i].icon,icon.x,icon.y,.46f*p.radius,false,iconColor);
+        if(wheel.slots[i].dual) {
+            // Two overlapping copies; the front copy is drawn last in opaque ink.
+            detail::Icon(emit,wheel.slots[i].icon,icon.x-.06f*p.radius,icon.y-.05f*p.radius,.38f*p.radius,false,iconColor);
+            const Color gapInk=selected?selectedFill:dark; // separates the two silhouettes
+            detail::Icon(emit,wheel.slots[i].icon,icon.x+.06f*p.radius,icon.y+.06f*p.radius,.44f*p.radius,false,
+                         Color{gapInk.r,gapInk.g,gapInk.b,1.f});
+            detail::Icon(emit,wheel.slots[i].icon,icon.x+.06f*p.radius,icon.y+.06f*p.radius,.38f*p.radius,false,iconColor);
+        } else detail::Icon(emit,wheel.slots[i].icon,icon.x,icon.y,.46f*p.radius,false,iconColor);
         if(i==wheel.equipped && available) {
             Placement marker{p.x+.925f*p.radius*std::cos(center),p.y+.925f*p.radius*std::sin(center),p.radius};
             detail::Arc(emit,marker,0,.028f,0,2*Pi,8,accent);

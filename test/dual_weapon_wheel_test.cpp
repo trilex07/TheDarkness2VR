@@ -89,39 +89,50 @@ static Loadout L(bool o0,bool o1,bool o2,int h0,int h1,bool swapped=false) {
 }
 
 static void LoadoutTests() {
-    // Headset 23:08: two one-handed weapons, right hand alternating 1/2.
-    auto two=L(false,true,true,2,8);
-    auto m=WeaponMenu(two);
-    CHECK(m.count==2 && m.slot[0]==1 && m.slot[1]==2 && m.equipped==1);
-    m=WeaponMenu(L(true,true,true,0,8));
-    CHECK(m.count==3 && m.slot[2]==0 && m.equipped==2);
-    m=WeaponMenu(L(true,true,true,1,2,true));               // swapped: right one-handed is slot 2
-    CHECK(m.slot[0]==2 && m.slot[1]==1 && m.equipped==1);
-    CHECK(WeaponMenu(Loadout{}).count==0);
-    CHECK(WeaponMenu(L(true,true,true,kSlotOther,8)).equipped==-1);
+    // Headset 23:20: two identical one-handed pistols, no two-handed weapon.
+    auto single2=L(false,true,true,2,8), single1=L(false,true,true,1,8), dual=L(false,true,true,2,1,true);
+    auto m=WeaponMenu(single2,true);
+    CHECK(m.count==2 && m.item[0].kind==Kind::Single && m.item[0].slot==-1 && m.item[1].kind==Kind::Dual && m.equipped==0);
+    CHECK(WeaponMenu(dual,true).equipped==1);
+    m=WeaponMenu(L(true,true,true,0,8),false);                       // different models: both singles listed
+    CHECK(m.count==4 && m.item[0].slot==1 && m.item[1].slot==2 && m.item[2].kind==Kind::Dual &&
+          m.item[3].kind==Kind::TwoHanded && m.equipped==3);
+    m=WeaponMenu(L(true,true,false,1,8),false);
+    CHECK(m.count==2 && m.item[0].slot==1 && m.item[1].kind==Kind::TwoHanded && m.equipped==0);
+    CHECK(WeaponMenu(Loadout{},true).count==0);
+    CHECK(WeaponMenu(L(true,true,true,kSlotOther,8),true).equipped==-1);
+    CHECK(Matches({Kind::Single,-1},single1) && Matches({Kind::Single,1},single1) && !Matches({Kind::Single,2},single1));
+    CHECK(!Matches({Kind::Single,-1},dual) && Matches({Kind::Dual,-1},dual));
 
     using R=Equip::Result;
-    Equip e; CHECK(e.Step(two,0)==R::Idle && !e.Bits(0));
-    // 2 -> 1: DPAD_LEFT, native hand changes, done.
-    e.Start(1); CHECK(e.Step(two,1000)==R::Pending && e.Bits(1000)==kDpadLeft && e.presses==1);
-    CHECK(e.Step(L(false,true,true,1,8),1100)==R::Pending);       // still inside the pulse
-    CHECK(e.Bits(1149)==kDpadLeft && e.Bits(1150)==0);
-    CHECK(e.Step(L(false,true,true,1,8),1200)==R::Done && !e.Active());
-    // Lands on the wrong weapon first: second press.
-    auto three=L(true,true,true,0,8);
-    e.Start(2); e.Step(three,0); CHECK(e.bits==kDpadLeft);
-    CHECK(e.Step(L(true,true,true,1,8),200)==R::Pending && e.presses==2 && e.Bits(200)==kDpadLeft);
-    CHECK(e.Step(L(true,true,true,2,8),400)==R::Done);
-    // Two-handed uses DPAD_RIGHT; empty hand draws with DPAD_DOWN.
-    e.Start(0); e.Step(L(true,true,true,1,2),0); CHECK(e.bits==kDpadRight);
-    e.Start(1); e.Step(L(true,true,true,8,8),0); CHECK(e.bits==kDpadDown);
-    // No change -> retry after settle, give up after kMaxPresses.
-    e.Start(1); uint64_t t=0;
-    for(int i=0;i<10 && e.Active();++i) { e.Step(two,t); t+=Equip::kPulseMs+Equip::kSettleMs; }
-    CHECK(!e.Active() && e.presses==Equip::kMaxPresses);
-    // Unowned target fails without pressing; unknown loadout fails after settle.
-    e.Start(0); CHECK(e.Step(two,0)==R::Failed && e.presses==0);
-    Loadout unknown; e.Start(1); CHECK(e.Step(unknown,10)==R::Pending); CHECK(e.Step(unknown,700)==R::Failed);
+    EquipMemory mem; Equip e;
+    CHECK(e.Step(single2,mem,0)==R::Idle && !e.Bits(0));
+    // single -> dual: DOWN, learned.
+    e.Start({Kind::Dual,-1}); CHECK(e.Step(single2,mem,1000)==R::Pending && e.Bits(1000)==kDpadDown);
+    CHECK(e.Step(dual,mem,1100)==R::Pending);                         // inside the pulse
+    CHECK(e.Step(dual,mem,1200)==R::Done && mem.button[3]==kDpadDown);
+    // dual -> single: RIGHT first (headset), lands on slot 1.
+    e.Start({Kind::Single,-1}); e.Step(dual,mem,0); CHECK(e.bits==kDpadRight);
+    CHECK(e.Step(single1,mem,200)==R::Done && mem.button[1]==kDpadRight);
+    // v2 failure case: LEFT did nothing from slot 2 -> next press is a different button.
+    EquipMemory fresh; e.Start({Kind::Single,1}); e.Step(single2,fresh,0); CHECK(e.bits==kDpadRight);
+    CHECK(e.Step(single2,fresh,900)==R::Pending && e.bits==kDpadLeft && e.presses==2);
+    CHECK(e.Step(single2,fresh,1800)==R::Pending && e.bits==kDpadDown);
+    CHECK(e.Step(single2,fresh,2700)==R::Failed);                     // every candidate tried, no change
+    // Learned buttons are tried first.
+    EquipMemory learned; learned.button[2]=kDpadUp;
+    e.Start({Kind::Single,2}); e.Step(single1,learned,0); CHECK(e.bits==kDpadUp);
+    // Two-handed: RIGHT first; unowned fails without pressing.
+    e.Start({Kind::TwoHanded,0}); e.Step(L(true,true,true,1,2),mem,0); CHECK(e.bits==kDpadRight);
+    e.Start({Kind::TwoHanded,0}); CHECK(e.Step(single2,mem,0)==R::Failed && e.presses==0);
+    // Empty hand draws with DOWN first.
+    EquipMemory none; e.Start({Kind::Single,-1}); e.Step(L(false,true,true,8,8),none,0); CHECK(e.bits==kDpadDown);
+    // Changed but not yet the target: progress resets the tried set (two-handed -> single -> dual).
+    EquipMemory m2; e.Start({Kind::Dual,-1}); e.Step(L(true,true,true,0,8),m2,0); CHECK(e.bits==kDpadRight);
+    CHECK(e.Step(L(true,true,true,1,8),m2,200)==R::Pending && e.bits==kDpadDown && m2.button[1]==kDpadRight);
+    CHECK(e.Step(L(true,true,true,1,2),m2,400)==R::Done);
+    // Unknown loadout: fails after settle.
+    Loadout unknown; e.Start({Kind::Single,1}); CHECK(e.Step(unknown,mem,10)==R::Pending); CHECK(e.Step(unknown,mem,700)==R::Failed);
 
     uint16_t bits=1;
     CHECK(ParseCrouchButton("r3",bits) && bits==kR3);
@@ -137,8 +148,9 @@ static void RasterTests(const char* ppm) {
     d2vr_wheel_raster::Target left{px.data(),W,H,W,0,0,512}, right{px.data(),W,H,W,512,0,512};
     d2vr_weapon_wheel_graphics::Wheel wl, wr;
     wl.count=1; wl.slots[0]={d2vr_weapon_icons::Icon::Pistol,true}; wl.equipped=0;
-    wr.count=2; wr.slots[0]={d2vr_weapon_icons::Icon::DesertEagle,true};
-    wr.slots[1]={d2vr_weapon_icons::Icon::Carbine,true}; wr.selected=1; wr.equipped=0;
+    wr.count=3; wr.slots[0]={d2vr_weapon_icons::Icon::M1911,true};
+    wr.slots[1]={d2vr_weapon_icons::Icon::M1911,true,true};
+    wr.slots[2]={d2vr_weapon_icons::Icon::Carbine,true}; wr.selected=1; wr.equipped=0;
     const unsigned vl=d2vr_wheel_raster::DrawWheel(left,wl,true,scratch.data());
     const unsigned vr=d2vr_wheel_raster::DrawWheel(right,wr,false,scratch.data());
     CHECK(vl>0 && vr>0 && vl<=d2vr_weapon_wheel_graphics::MaxVerticesPerWheel && vr<=d2vr_weapon_wheel_graphics::MaxVerticesPerWheel);
