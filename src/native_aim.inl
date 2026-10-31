@@ -280,9 +280,11 @@ static void ReleaseSelectedLocalPlayer(uint32_t ref) {
         reinterpret_cast<void(__cdecl*)(void*)>(0x402550)(words);
 }
 #endif
+#include "native_hud.inl"
 static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* manager) {
 #ifdef D2VR_MATCHED_CAPTURE
     if(GetCurrentThreadId()!=g_renderThreadId)return;
+    UpdateNativeHudForView(renderer,reference,manager);
     g_nativeCinematicFrame=0;
     if(g_nativePlayerOwnerAdmitted && g_nativeImageGuard.enabled && g_imagePreservingPresent)
         ObserveNativePauseState(manager);

@@ -592,6 +592,7 @@ static volatile LONG g_cameraUploadWitnessBudget=0;
 static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
+static bool g_hideNativeHud = false;
 static bool g_gpuSplitTiming = false;
 static bool g_smallRecordCopyRequested = false; // OFF; bounded <=192-byte RPM experiment
 static bool g_smallRecordCopyAdmitted = false;
@@ -712,6 +713,8 @@ void LoadConfig() {
     GetPrivateProfileStringA("Render", "NisSharpness", "0.20", nisSharpness, sizeof(nisSharpness), chosenIni);
     g_nisSharpness = nis_upscale::ClampSharpness((float)atof(nisSharpness));
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
+    g_hideNativeHud = GetPrivateProfileIntA("Render", "HideNativeHUD", 0, chosenIni)!=0;
+    Log("[NativeHUD] requested=%d; protected owner callback required",int(g_hideNativeHud));
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
     g_gpuSplitTiming = GetPrivateProfileIntA("Render", "GpuSplitTiming", 0, chosenIni)!=0;
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
