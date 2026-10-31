@@ -158,7 +158,7 @@ bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
 bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
-bool g_unarmedTriggerDpad=true; // VR has no D-pad: empty-hand trigger -> stock D-pad weapon actions
+bool g_unarmedTriggerDpad=false; // opt-in: empty-hand trigger -> stock D-pad (superseded by X double tap)
 bool g_nativeHandsEnabled=false;
 bool g_nativeHandsDirtyBoth=false;
 static bool g_nativeHandsPackInstalled=false;
@@ -790,7 +790,7 @@ void LoadConfig() {
     g_tentacleAimMarker = GetPrivateProfileIntA("Input", "TentacleAimMarker", 1, chosenIni) != 0;
     g_nativeLeftAim = GetPrivateProfileIntA("Input", "NativeLeftAim", 0, chosenIni) != 0;
     g_nativeWeaponPose = GetPrivateProfileIntA("Input", "NativeWeaponPose", 0, chosenIni) != 0;
-    g_unarmedTriggerDpad = GetPrivateProfileIntA("Input", "UnarmedTriggerDpad", 1, chosenIni) != 0;
+    g_unarmedTriggerDpad = GetPrivateProfileIntA("Input", "UnarmedTriggerDpad", 0, chosenIni) != 0;
     if(!GetFullPathNameA(chosenIni,MAX_PATH,g_activeIni,nullptr)) strcpy_s(g_activeIni,chosenIni);
     Log("[UnarmedTriggerDpad] enabled=%d (L trigger + empty off hand -> DPAD_RIGHT dual wield; R trigger + empty main hand -> DPAD_DOWN draw weapon)",(int)g_unarmedTriggerDpad);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
@@ -4503,7 +4503,6 @@ static d2vr_input::DoubleTapDpad g_doubleTapDpadState;
 // Uses only the existing native gameplay sample (no new hook). Without a fresh
 // sample the hand state is Unknown and triggers pass through unchanged.
 static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
-    if(!g_unarmedTriggerDpad) return;
     using d2vr_input::HandSlot;
     HandSlot offHand=HandSlot::Unknown,mainHand=HandSlot::Unknown;
     NativeGameplaySample sample;
@@ -4511,15 +4510,18 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
     // The native sample is refreshed by the renderer and briefly goes stale (>150 ms);
     // keep the last observed hand state for up to 1 s so the mapping does not flicker.
     static HandSlot lastOff=HandSlot::Unknown,lastMain=HandSlot::Unknown;
+    static d2vr_input::WeaponClass lastClass=d2vr_input::WeaponClass::Unknown;
+    d2vr_input::WeaponClass held=d2vr_input::WeaponClass::Unknown;
     static ULONGLONG lastSeen=0;
     const ULONGLONG nowMs=GetTickCount64();
     const bool fresh=context;
     if(fresh) {
         offHand=sample.offHandEquipped ? HandSlot::Armed:HandSlot::Empty;
         mainHand=sample.mainHandEquipped ? HandSlot::Armed:HandSlot::Empty;
-        lastOff=offHand;lastMain=mainHand;lastSeen=nowMs;
+        held=d2vr_input::ClassifyFirearm(sample.firearm[0],sample.firearm[1]);
+        lastOff=offHand;lastMain=mainHand;lastClass=held;lastSeen=nowMs;
     } else if(g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START) && lastSeen && nowMs-lastSeen<1000) {
-        offHand=lastOff;mainHand=lastMain;context=true;
+        offHand=lastOff;mainHand=lastMain;held=lastClass;context=true;
     }
     static const char* const kSlot[]={"unknown","empty","armed"};
     static int lastSlots=-1;
@@ -4529,33 +4531,41 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
         Log("[UnarmedTriggerDpad] native hands main/right(+B0)=%s off/left(+BC)=%s",kSlot[int(mainHand)],kSlot[int(offHand)]);
     }
     int fired=0;
-    gp.wButtons|=g_unarmedTriggerDpadState.Update(gp.bLeftTrigger,gp.bRightTrigger,offHand,mainHand,
+    if(g_unarmedTriggerDpad) gp.wButtons|=g_unarmedTriggerDpadState.Update(gp.bLeftTrigger,gp.bRightTrigger,offHand,mainHand,
         context,nowMs,&fired);
     // [Input] DoubleTapX is re-read on every X press so it can be changed while the
-    // game runs. Values: DPAD_RIGHT (default), DPAD_DOWN, DPAD_LEFT, DPAD_UP, Y, B, A,
+    // game runs. Values: TOGGLE (default: two-handed -> DPAD_LEFT, one-handed -> DPAD_RIGHT,
+    // empty main hand -> DPAD_DOWN), DPAD_RIGHT, DPAD_DOWN, DPAD_LEFT, DPAD_UP, Y, B, A,
     // LB, RB, L3, R3, BACK, AUTO (empty main hand -> DPAD_DOWN else DPAD_RIGHT), OFF.
     static bool prevX=false;
+    static uint16_t lastToggle=0;
     static uint16_t target=0x0008;
     static char targetName[32]="DPAD_RIGHT";
     const bool xNow=(gp.wButtons & XINPUT_GAMEPAD_X)!=0;
     if(xNow && !prevX) {
         char value[32]{};
-        GetPrivateProfileStringA("Input","DoubleTapX","DPAD_RIGHT",value,sizeof(value),g_activeIni[0] ? g_activeIni:".\\Darkness2VR.ini");
+        GetPrivateProfileStringA("Input","DoubleTapX","TOGGLE",value,sizeof(value),g_activeIni[0] ? g_activeIni:".\\Darkness2VR.ini");
         uint16_t bits=0; bool byHand=false;
-        if(!d2vr_input::ParsePadButton(value,bits,byHand)) {
+        const bool toggle=!_stricmp(value,"TOGGLE");
+        if(!toggle && !d2vr_input::ParsePadButton(value,bits,byHand)) {
             static char lastBad[32]{};
             if(strcmp(lastBad,value)) { strcpy_s(lastBad,value); Log("[DoubleTapDpad] unknown DoubleTapX=%s; using DPAD_RIGHT",value); }
             bits=0x0008; strcpy_s(value,"DPAD_RIGHT");
         }
         if(byHand) bits=mainHand==HandSlot::Empty ? 0x0002:0x0008;
+        if(toggle) bits=d2vr_input::ToggleTarget(held,mainHand,lastToggle);
         if(strcmp(targetName,value) || bits!=target) Log("[DoubleTapDpad] DoubleTapX=%s -> buttons=0x%04X",value,bits);
         target=bits; strcpy_s(targetName,value);
     }
     prevX=xNow;
     uint16_t tapped=0;
     g_doubleTapDpadState.Update(gp.wButtons,target,g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START),nowMs,&tapped);
-    if(tapped) Log("[DoubleTapDpad] X double tap (DoubleTapX=%s, main hand %s) -> buttons=0x%04X",targetName,
-        mainHand==HandSlot::Empty ? "empty":mainHand==HandSlot::Armed ? "armed":"unknown",tapped);
+    if(tapped) {
+        lastToggle=tapped;
+        Log("[DoubleTapDpad] X double tap (DoubleTapX=%s, main hand %s, held %s) -> buttons=0x%04X",targetName,
+            mainHand==HandSlot::Empty ? "empty":mainHand==HandSlot::Armed ? "armed":"unknown",
+            held==d2vr_input::WeaponClass::TwoHanded ? "two-handed":held==d2vr_input::WeaponClass::OneHanded ? "one-handed":"unknown",tapped);
+    }
     if(fired&1) Log("[UnarmedTriggerDpad] left trigger, off hand empty -> DPAD_RIGHT (dual wield)");
     if(fired&2) Log("[UnarmedTriggerDpad] right trigger, main hand empty -> DPAD_DOWN (draw weapon)");
 }

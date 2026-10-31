@@ -88,4 +88,25 @@ inline bool ParsePadButton(const char* v,uint16_t& bits,bool& autoByHand) {
     for(const auto& e:table) if(eq(v,e.n)) { bits=e.b; return true; }
     return false;
 }
+// TOGGLE target for the X double tap. Firearm codes follow d2vr::psvr2::Firearm:
+// 0 None, 1 Pistol, 2 Automatic, 3 Burst, 4 Shotgun, 5 Charged, 6 Smg, 7 Rifle.
+// Stock pad: D-pad right selects the two-handed weapon, D-pad left the one-handed
+// (pistols/uzi), D-pad down draws a weapon. Two-handed in the right hand -> LEFT,
+// one-handed -> RIGHT, empty main hand -> DOWN, unknown kind -> alternate.
+enum class WeaponClass : uint8_t { Unknown=0, OneHanded, TwoHanded };
+inline WeaponClass ClassifyFirearm(uint8_t right,uint8_t left) {
+    auto small=[](uint8_t k){ return k==1 || k==2 || k==6; };
+    switch(right) {
+    case 1: case 6: return WeaponClass::OneHanded;
+    case 3: case 4: case 5: case 7: return WeaponClass::TwoHanded;
+    case 2: return small(left) ? WeaponClass::OneHanded:WeaponClass::TwoHanded; // lone automatic = rifle
+    default: return WeaponClass::Unknown;
+    }
+}
+inline uint16_t ToggleTarget(WeaponClass held,HandSlot mainHand,uint16_t lastSent) {
+    if(mainHand==HandSlot::Empty) return 0x0002;
+    if(held==WeaponClass::TwoHanded) return 0x0004;
+    if(held==WeaponClass::OneHanded) return 0x0008;
+    return lastSent==0x0008 ? 0x0004:0x0008;
+}
 }

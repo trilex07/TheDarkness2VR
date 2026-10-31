@@ -86,6 +86,20 @@ int main() {
         CHECK(ParsePadButton("OFF",bits,byHand) && bits==0);
         CHECK(!ParsePadButton("bogus",bits,byHand));
     }
+    { // toggle classification
+        CHECK(ClassifyFirearm(1,0)==WeaponClass::OneHanded);
+        CHECK(ClassifyFirearm(6,1)==WeaponClass::OneHanded);
+        CHECK(ClassifyFirearm(4,0)==WeaponClass::TwoHanded);
+        CHECK(ClassifyFirearm(7,0)==WeaponClass::TwoHanded);
+        CHECK(ClassifyFirearm(2,0)==WeaponClass::TwoHanded);
+        CHECK(ClassifyFirearm(2,1)==WeaponClass::OneHanded);
+        CHECK(ClassifyFirearm(0,0)==WeaponClass::Unknown);
+        CHECK(ToggleTarget(WeaponClass::TwoHanded,A,0)==0x0004);
+        CHECK(ToggleTarget(WeaponClass::OneHanded,A,0)==0x0008);
+        CHECK(ToggleTarget(WeaponClass::OneHanded,E,0)==0x0002);
+        CHECK(ToggleTarget(WeaponClass::Unknown,A,0x0008)==0x0004);
+        CHECK(ToggleTarget(WeaponClass::Unknown,U,0x0004)==0x0008);
+    }
     if(failures) { std::printf("%d failure(s)\n",failures); return 1; }
     std::printf("unarmed_trigger_dpad: all tests passed\n"); return 0;
 }
