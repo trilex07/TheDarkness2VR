@@ -12,7 +12,7 @@
 User explicitly requested implementation: sustained FPS below headset refresh should select half-refresh application rendering, allowing runtime reprojection.
 
 ## Status
-Deployment preflight PASS; authorized MAIN deployment in progress. Runtime/PSVR2 acceptance pending.
+Deployment complete with independently verified installed/rollback hashes. Runtime/PSVR2 acceptance pending.
 
 ## Context Loaded
 BASELINE.md, WORKFLOW.md, FAILED-APPROACHES.md, superseded zero-latency handoff, existing adaptive policy/refresh and VR settings implementation.
@@ -39,7 +39,7 @@ Core OpenXR does not offer a portable switch forcing compositor synthesis. Runti
 - git diff --check passed. No Steam launch/deployment/runtime/HMD tests.
 
 ## Next Steps
-MAIN review/cherry-pick only the task commit onto current integration, build and deploy using backups. Test AUTO at 90/120Hz, transition/probe behavior, OFF/HALF menu, focus loss/session restart, changed/unknown refresh, full stereo, tracking latency, gameplay timing and runtime frame timing. Confirm actual motion smoothing separately. No Steam/game files were touched by SIDE.
+Deployment is complete under explicit MAIN authorization. Test AUTO at 90/120Hz, transition/probe behavior, OFF/HALF menu, focus loss/session restart, changed/unknown refresh, full stereo, tracking latency, gameplay timing and runtime frame timing. Confirm actual motion smoothing separately. Earlier SIDE work did not touch game files; subsequent MAIN deployment is recorded below.
 
 ## Limitations
 This is an application frame limiter, not motion estimation/frame synthesis. No hardware pacing precision, FPS improvement or reprojection acceptance is claimed. Existing unrelated dirty root checkout was left untouched.
@@ -49,3 +49,13 @@ Remote push was rejected by automatic approval review: repository destination/pa
 
 ## MAIN deployment preparation
 Current installed DLL, EXE, Steam/local INIs match the frozen deployment gate. No game is running. Current quarantined image switches remain OFF. The protected-native DLL is required by the preserved profile; verified candidate SHA256 4B50EAF295135D8BBB06B039D91FA739D114266A189C3572D95D0890DF1693C3. Source: 346fac9327493ac6fffc2ebd2bdade07ad52e824. StateBlock lifetime model and actual x86 HAL/Ex regression PASS. Deployment script saves all nine current DLL/INI/cache files with SHA256 verification and Restore.ps1, changes only DLL and Render/AdaptiveFPS, and verifies all preserved contracts. No game launch is part of this deployment.
+
+## Deployment receipt
+Completed 2026-10-31 16:20 Europe/Warsaw. Package:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/adaptive-half-rate-20261031T162023837
+
+deployment.json records full code-source SHA, EXE/DLL identities and all nine installed hashes. candidate/ retains matching DLL/PDB/MAP. rollback/manifest.json and Restore.ps1 retain all nine predeployment files; backup hashes independently rechecked after installation. Steam/local primary profiles changed only Render/AdaptiveFPS=AUTO; diagnostic/lighting profiles and all four caches remain byte-identical. Game stayed closed; no Steam launch or input injection. See BASELINE.md for current exact installed hashes. The accepted baseline was not changed.
+
+The Steam Render profile has FrameBoundaryPolicy=0, SubmitMode=4, StereoMode=1, DisableOpenXR=0. Historical trace keys in the local file are under Input and are not effective Render settings; current LoadConfig prefers the Steam working-directory profile. No historical orphan keys were rewritten.
+
+Next action is manual headset validation, not another deployment: sustained AUTO entry at 90/120Hz, OFF/HALF panel, AUTO uncapped probe, full stereo and runtime reprojection. Current candidate is not headset-accepted. Remote push remains separately unapproved; user authorized MAIN deployment, not remote publication.
