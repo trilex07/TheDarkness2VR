@@ -2467,46 +2467,61 @@ static void DumpEyeFramesIfRequested() {
     ++s_frameIdx;
 }
 
-// ---------------------------------------------------------------- Zero-copy capture (D3D9Ex shared texture)
+// ---------------------------------------------------------------- Zero-copy capture (D3D9Ex shared texture), double-buffered per eye.
 // The old path (GetRenderTargetData -> sysmem -> memcpy -> D3D11) stalls the CPU waiting
 // for the GPU twice per frame (GPU idle, FPS low). D3D9Ex shared textures let D3D11 read
 // the backbuffer copy with zero CPU involvement.
-IDirect3DTexture9* g_sharedTex9 = nullptr;
-IDirect3DSurface9* g_sharedSurf9 = nullptr;
-ID3D11Texture2D* g_sharedTex11 = nullptr;
-ID3D11ShaderResourceView* g_sharedSRV11 = nullptr;
-HANDLE g_sharedHandle = nullptr;
-UINT g_sharedW = 0, g_sharedH = 0;
+//
+// Slot 0 = left eye, slot 1 = right eye. Each eye owns its full producer (D3D9 StretchRect)
+// / consumer (D3D11 blit read) lifetime, so the left-eye D3D11 transfer and the right-eye
+// capture no longer serialize on a single shared surface. This removes the render-thread
+// WaitSharedReader stall between the left-eye producer fence and the right-eye capture
+// without adding frame latency: both eyes are still captured and submitted from the same
+// game frame. All D3D9 calls stay on the render thread; no synchronization is disabled.
+IDirect3DTexture9* g_sharedTex9[2] = { nullptr, nullptr };
+IDirect3DSurface9* g_sharedSurf9[2] = { nullptr, nullptr };
+ID3D11Texture2D* g_sharedTex11[2] = { nullptr, nullptr };
+ID3D11ShaderResourceView* g_sharedSRV11[2] = { nullptr, nullptr };
+HANDLE g_sharedHandle[2] = { nullptr, nullptr };
+UINT g_sharedW[2] = { 0, 0 }, g_sharedH[2] = { 0, 0 };
 int g_zeroCopyFailures = 0;
-IDirect3DQuery9* g_sharedFence9 = nullptr;
-ID3D11Query* g_sharedFence11 = nullptr;
-static void ReleaseSharedCapture() {
-    if (g_sharedFence9) g_sharedFence9->Release();
-    if (g_sharedFence11) g_sharedFence11->Release();
-    if (g_sharedSRV11) g_sharedSRV11->Release();
-    if (g_sharedTex11) g_sharedTex11->Release();
-    if (g_sharedSurf9) g_sharedSurf9->Release();
-    if (g_sharedTex9) g_sharedTex9->Release();
-    g_sharedFence9 = nullptr; g_sharedFence11 = nullptr;
-    g_sharedSRV11 = nullptr; g_sharedTex11 = nullptr;
-    g_sharedSurf9 = nullptr; g_sharedTex9 = nullptr;
-    g_sharedHandle = nullptr; g_sharedW = g_sharedH = 0;
+IDirect3DQuery9* g_sharedFence9[2] = { nullptr, nullptr };
+ID3D11Query* g_sharedFence11[2] = { nullptr, nullptr };
+
+static void ReleaseSharedCaptureSlot(unsigned slot) {
+    if (slot >= 2) return;
+    if (g_sharedFence9[slot]) g_sharedFence9[slot]->Release();
+    if (g_sharedFence11[slot]) g_sharedFence11[slot]->Release();
+    if (g_sharedSRV11[slot]) g_sharedSRV11[slot]->Release();
+    if (g_sharedTex11[slot]) g_sharedTex11[slot]->Release();
+    if (g_sharedSurf9[slot]) g_sharedSurf9[slot]->Release();
+    if (g_sharedTex9[slot]) g_sharedTex9[slot]->Release();
+    g_sharedFence9[slot] = nullptr; g_sharedFence11[slot] = nullptr;
+    g_sharedSRV11[slot] = nullptr; g_sharedTex11[slot] = nullptr;
+    g_sharedSurf9[slot] = nullptr; g_sharedTex9[slot] = nullptr;
+    g_sharedHandle[slot] = nullptr; g_sharedW[slot] = 0; g_sharedH[slot] = 0;
 }
 
-static bool WaitSharedReader() {
-    if (!g_sharedFence11) return false;
-    g_ctx11->End(g_sharedFence11);
+static void ReleaseSharedCapture() {
+    ReleaseSharedCaptureSlot(0);
+    ReleaseSharedCaptureSlot(1);
+}
+
+static bool WaitSharedReader(unsigned slot) {
+    if (slot >= 2 || !g_sharedFence11[slot] || !g_ctx11) return false;
+    g_ctx11->End(g_sharedFence11[slot]);
     g_ctx11->Flush();
     const ULONGLONG start = GetTickCount64();
     HRESULT hr;
-    while ((hr = g_ctx11->GetData(g_sharedFence11, nullptr, 0, 0)) == S_FALSE) {
+    while ((hr = g_ctx11->GetData(g_sharedFence11[slot], nullptr, 0, 0)) == S_FALSE) {
         if (GetTickCount64() - start > 2000) return false;
         SwitchToThread();
     }
     return hr == S_OK;
 }
 
-static bool EnsureSharedCapture(IDirect3DDevice9* dev) {
+static bool EnsureSharedCapture(IDirect3DDevice9* dev, unsigned slot) {
+    if (slot >= 2) return false;
     if (!g_zeroCopyEnabled) return false;
     if (!dev || !g_dev11 || g_zeroCopyFailures > 2) return false;
 
@@ -2516,65 +2531,73 @@ static bool EnsureSharedCapture(IDirect3DDevice9* dev) {
     D3DSURFACE_DESC bd{};
     bb->GetDesc(&bd);
     bb->Release();
-    if (g_sharedSurf9 && g_sharedSRV11) {
-        if (bd.Width != g_sharedW || bd.Height != g_sharedH) {
-            if (!WaitSharedReader()) return false;
-            ReleaseSharedCapture();
-        } else if (g_sharedFence9 && g_sharedFence11) return true;
+    if (g_sharedSurf9[slot] && g_sharedSRV11[slot]) {
+        if (bd.Width != g_sharedW[slot] || bd.Height != g_sharedH[slot]) {
+            if (!WaitSharedReader(slot)) return false;
+            ReleaseSharedCaptureSlot(slot);
+        } else if (g_sharedFence9[slot] && g_sharedFence11[slot]) return true;
     }
 
-    if (!g_sharedTex9) {
+    if (!g_sharedTex9[slot]) {
         HANDLE shared = nullptr;
         HRESULT hr = dev->CreateTexture(bd.Width, bd.Height, 1, D3DUSAGE_RENDERTARGET,
-                                        D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_sharedTex9, &shared);
-        if (FAILED(hr) || !g_sharedTex9) {
+                                        D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+                                        &g_sharedTex9[slot], &shared);
+        if (FAILED(hr) || !g_sharedTex9[slot]) {
             ++g_zeroCopyFailures;
-            Log("[ZeroCopy] CreateTexture(shared) failed hr=0x%08lX - using CPU capture", hr);
+            Log("[ZeroCopy] CreateTexture(shared slot=%u) failed hr=0x%08lX - using CPU capture", slot, hr);
             return false;
         }
-        g_sharedHandle = shared;
-        g_sharedTex9->GetSurfaceLevel(0, &g_sharedSurf9);
-        g_sharedW = bd.Width;
-        g_sharedH = bd.Height;
+        g_sharedHandle[slot] = shared;
+        if (FAILED(g_sharedTex9[slot]->GetSurfaceLevel(0, &g_sharedSurf9[slot]))) {
+            ++g_zeroCopyFailures;
+            ReleaseSharedCaptureSlot(slot);
+            Log("[ZeroCopy] GetSurfaceLevel(shared slot=%u) failed - using CPU capture", slot);
+            return false;
+        }
+        g_sharedW[slot] = bd.Width;
+        g_sharedH[slot] = bd.Height;
     }
-    if (!g_sharedTex11) {
-        HRESULT hr = g_dev11->OpenSharedResource(g_sharedHandle, __uuidof(ID3D11Texture2D),
-                                                 reinterpret_cast<void**>(&g_sharedTex11));
-        if (FAILED(hr) || !g_sharedTex11) {
+    if (!g_sharedTex11[slot]) {
+        HRESULT hr = g_dev11->OpenSharedResource(g_sharedHandle[slot], __uuidof(ID3D11Texture2D),
+                                                 reinterpret_cast<void**>(&g_sharedTex11[slot]));
+        if (FAILED(hr) || !g_sharedTex11[slot]) {
             ++g_zeroCopyFailures;
-            Log("[ZeroCopy] OpenSharedResource failed hr=0x%08lX - using CPU capture", hr);
+            Log("[ZeroCopy] OpenSharedResource(slot=%u) failed hr=0x%08lX - using CPU capture", slot, hr);
+            ReleaseSharedCaptureSlot(slot);
             return false;
         }
-        if (FAILED(g_dev11->CreateShaderResourceView(g_sharedTex11, nullptr, &g_sharedSRV11))) {
-            ++g_zeroCopyFailures; ReleaseSharedCapture(); return false;
+        if (FAILED(g_dev11->CreateShaderResourceView(g_sharedTex11[slot], nullptr, &g_sharedSRV11[slot]))) {
+            ++g_zeroCopyFailures; ReleaseSharedCaptureSlot(slot); return false;
         }
-        Log("[ZeroCopy] shared capture texture ready %ux%u (D3D9Ex -> D3D11)", g_sharedW, g_sharedH);
+        Log("[ZeroCopy] shared capture texture ready %ux%u slot=%u (D3D9Ex -> D3D11)",
+            g_sharedW[slot], g_sharedH[slot], slot);
     }
     D3D11_QUERY_DESC q{D3D11_QUERY_EVENT, 0};
-    if (!g_sharedFence11 && FAILED(g_dev11->CreateQuery(&q, &g_sharedFence11))) return false;
-    if (!g_sharedFence9 && FAILED(dev->CreateQuery(D3DQUERYTYPE_EVENT, &g_sharedFence9))) return false;
-    return g_sharedSurf9 && g_sharedSRV11 && g_sharedFence9 && g_sharedFence11;
+    if (!g_sharedFence11[slot] && FAILED(g_dev11->CreateQuery(&q, &g_sharedFence11[slot]))) return false;
+    if (!g_sharedFence9[slot] && FAILED(dev->CreateQuery(D3DQUERYTYPE_EVENT, &g_sharedFence9[slot]))) return false;
+    return g_sharedSurf9[slot] && g_sharedSRV11[slot] && g_sharedFence9[slot] && g_sharedFence11[slot];
 }
 
-static bool CaptureBackbufferToShared(IDirect3DDevice9* dev) {
-    if (!g_sharedSurf9 || !g_sharedFence9 || !WaitSharedReader()) return false;
+static bool CaptureBackbufferToShared(IDirect3DDevice9* dev, unsigned slot) {
+    if (slot >= 2 || !g_sharedSurf9[slot] || !g_sharedFence9[slot] || !WaitSharedReader(slot)) return false;
     IDirect3DSurface9* src = nullptr;
     // Darkness II renders offscreen; check active RenderTarget0 first
     if (FAILED(dev->GetRenderTarget(0, &src)) || !src) {
         if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &src)) || !src) return false;
     }
-    HRESULT hr = dev->StretchRect(src, nullptr, g_sharedSurf9, nullptr, D3DTEXF_NONE);
+    HRESULT hr = dev->StretchRect(src, nullptr, g_sharedSurf9[slot], nullptr, D3DTEXF_NONE);
     src->Release();
     if (FAILED(hr)) return false;
 
     // GPU fence: D3D9Ex and D3D11 run on separate queues; flush D3D9 batch before D3D11 reads
-    if (FAILED(g_sharedFence9->Issue(D3DISSUE_END))) return false;
+    if (FAILED(g_sharedFence9[slot]->Issue(D3DISSUE_END))) return false;
     const ULONGLONG start = GetTickCount64();
-    while ((hr = g_sharedFence9->GetData(nullptr, 0, D3DGETDATA_FLUSH)) == S_FALSE) {
+    while ((hr = g_sharedFence9[slot]->GetData(nullptr, 0, D3DGETDATA_FLUSH)) == S_FALSE) {
         if (GetTickCount64() - start > 2000) return false;
         SwitchToThread();
     }
-    g_srcW = g_sharedW; g_srcH = g_sharedH;
+    g_srcW = g_sharedW[slot]; g_srcH = g_sharedH[slot];
     return hr == S_OK;
 }
 
@@ -2690,13 +2713,13 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         d2vr_replay::g_recActive = false;
         return;
     }
-    const bool zeroCopy = EnsureSharedCapture(dev);
+    const bool zeroCopy = EnsureSharedCapture(dev, 0) && EnsureSharedCapture(dev, 1);
 
     g_blitPass = 1;
-    bool eye0Ok = zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev);
+    bool eye0Ok = zeroCopy ? CaptureBackbufferToShared(dev, 0) : CopyFrame(dev);
     {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
-        if (zeroCopy) g_uploadSRV = g_sharedSRV11;
+        if (zeroCopy) g_uploadSRV = g_sharedSRV11[0]; // left eye reads shared slot 0
         if (eye0Ok) eye0Ok = RenderStereoEyeD11(0, g_eyeFov[0], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
         g_uploadSRV = saved;
     }
@@ -2726,10 +2749,10 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     QueryPerformanceCounter(&perf[2]);
 
     bool eye1Ok = historyOk && g_rightColorHistory.Save(dev, liveEnd.targets[0]);
-    if (eye1Ok) eye1Ok = zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev);
+    if (eye1Ok) eye1Ok = zeroCopy ? CaptureBackbufferToShared(dev, 1) : CopyFrame(dev);
     {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
-        if (zeroCopy) g_uploadSRV = g_sharedSRV11;
+        if (zeroCopy) g_uploadSRV = g_sharedSRV11[1]; // right eye reads shared slot 1
         if (eye1Ok) eye1Ok = RenderStereoEyeD11(1, g_eyeFov[1], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
         g_uploadSRV = saved;
     }
