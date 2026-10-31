@@ -13,7 +13,18 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: adaptive half-rate (provisional)
+## Current installed MAIN candidate: unarmed trigger D-pad on installed shouldrender-fix build
+
+Authorized MAIN deployment completed 2026-10-31 19:39 Europe/Warsaw (DLL only, INIs untouched).
+- **Current DLL SHA256**: 1D24CC777D4F9001A0437E71696BC84E77A96351BEEFB0D40D14FB253967E442 (protected-native)
+- **Source**: side/unarmed-trigger-dpad-on-installed 0fd55383, on side/shouldrender-fix-snapshot 2ae798d3
+- **Replaced DLL**: 5743F3F471B6713CE4055FF207EB17EE6AC7B96AC4845C579B17F15CFA44CF6E, installed 18:49 from the uncommitted .side-shouldrender-fix tree (HiddenSubmit, window placement, S_PRESENT_MODE_CHANGED, AdaptiveFPS missing-key default AUTO). That tree is now recorded as 2ae798d3. Its installation had no receipt; the half-rate DLL it replaced is d3d9.dll.off-hiddensubmit-20261031-181925 in the game folder.
+- **AdaptiveFPS**: AUTO (installed INIs carry no key; code default AUTO). User confirmed AUTO 2026-10-31 19:38.
+- **New feature**: [Input] UnarmedTriggerDpad (default 1): L trigger + empty off hand -> DPAD_RIGHT (dual wield), R trigger + empty main hand -> DPAD_DOWN (draw). Unknown native hand state passes triggers through.
+- **Package**: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/unarmed-trigger-dpad-20261031T193931147 (deployment.json, candidate DLL/PDB/MAP, rollback/manifest.json + Restore.ps1, all nine DLL/INI/cache files hash-verified).
+- **Validation**: MSVC x86 build PASS, host test unarmed_trigger_dpad PASS, profile gate PASS. Game not launched; headset validation NOT RUN. Check d3d9.log for `[UnarmedTriggerDpad] native hands`.
+
+## Previous MAIN candidate: adaptive half-rate (superseded)
 
 Authorized MAIN deployment completed 2026-10-31 16:20 Europe/Warsaw.
 - **Current DLL SHA256**: 4B50EAF295135D8BBB06B039D91FA739D114266A189C3572D95D0890DF1693C3
