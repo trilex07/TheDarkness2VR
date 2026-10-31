@@ -4555,7 +4555,9 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
             bits=0x0008; strcpy_s(value,"DPAD_RIGHT");
         }
         if(byHand) bits=mainHand==HandSlot::Empty ? 0x0002:0x0008;
-        if(toggle) bits=d2vr_input::ToggleTarget(held,mainHand,lastToggle);
+        // Native firearm kind does not follow the selected weapon (headset 20:35: right=5
+        // for both the uzi and the two-handed weapon), so TOGGLE alternates RIGHT/LEFT.
+        if(toggle) bits=d2vr_input::ToggleTarget(d2vr_input::WeaponClass::Unknown,mainHand,lastToggle);
         if(strcmp(targetName,value) || bits!=target) Log("[DoubleTapDpad] DoubleTapX=%s -> buttons=0x%04X",value,bits);
         target=bits; strcpy_s(targetName,value);
     }
