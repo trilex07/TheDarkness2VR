@@ -419,10 +419,13 @@ static std::vector<uint32_t> ReadManifestFile(const std::wstring& path) {
     CloseHandle(file);
     return data;
 }
-struct WriteJob {Learner* owner;std::vector<uint32_t> data;uint64_t version;};
+struct WriteJob {Learner* owner;std::vector<uint32_t> data;uint64_t version=0;};
 static unsigned __stdcall WriteManifest(void* value) {
     std::unique_ptr<WriteJob> job(static_cast<WriteJob*>(value));bool ok=false;
     try {
+        // No whole-manifest copy/serialization on the Present thread. The
+        // process-lifetime learner owns immutable records until this completes.
+        job->data=job->owner->manifest.Serialize(job->version);
         const std::wstring pending=job->owner->path+L".pending-"+std::to_wstring(GetCurrentProcessId());
         HANDLE file=CreateFileW(pending.c_str(),GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
         if(file!=INVALID_HANDLE_VALUE) {
@@ -438,7 +441,7 @@ static unsigned __stdcall WriteManifest(void* value) {
     job->owner->writing.store(false);
     return 0;
 }
-// Present-thread cadence; file I/O happens on a short-lived worker.
+// Present-thread cadence; serialization and file I/O run on the worker.
 static void Tick(ULONGLONG now=GetTickCount64()) {
     Learner* l=learner.load(std::memory_order_acquire);
     if(!l) return;
@@ -453,7 +456,6 @@ static void Tick(ULONGLONG now=GetTickCount64()) {
         l->manifest.Size(),l->learned.load(),l->captureFailures.load(),l->writeFailures.load(),int(l->saturated.load()));
     try {
         auto job=std::make_unique<WriteJob>();job->owner=l;
-        job->data=l->manifest.Serialize(job->version);
         auto handle=_beginthreadex(nullptr,0,&WriteManifest,job.get(),0,nullptr);
         if(handle) {job.release();CloseHandle(reinterpret_cast<HANDLE>(handle));}
         else {l->writing.store(false);++l->writeFailures;}

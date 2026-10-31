@@ -78,6 +78,31 @@ static void Pure(const std::vector<uint32_t>& vs,const std::vector<uint32_t>& ps
     uint64_t grownVersion=0;auto grown=growth.Serialize(grownVersion);
     CHECK(Parse(grown.data(),grown.size(),parsed) && parsed.size()==4096 && grownVersion==4096);
     CHECK(parsed[1024].state.elements[0].usageIndex==1 && parsed.back().state.elements[0].usageIndex==3);
+    // Production append + persistence concurrency: every serialized file is a
+    // coherent immutable prefix; no iterator invalidation or mixed versions.
+    Manifest concurrent;
+    std::atomic<bool> done{false};std::atomic<unsigned> snapshots{0};
+    std::thread writer([&]{
+        do {
+            uint64_t version=0;const auto words=concurrent.Serialize(version);
+            if(version) {
+                std::vector<Record> prefix;
+                CHECK(Parse(words.data(),words.size(),prefix));
+                CHECK(prefix.size()==version && words[1]==version);
+                for(size_t i=0;i<prefix.size();++i)
+                    CHECK(prefix[i].state.elements[0].offset==uint16_t(i*4));
+                ++snapshots;
+            }
+            std::this_thread::yield();
+        } while(!done.load());
+    });
+    for(uint32_t i=0;i<512;++i) {
+        Record next=a;next.state.elements[0].offset=uint16_t(i*4);
+        CHECK(concurrent.Add(next));std::this_thread::yield();
+    }
+    done.store(true);writer.join();
+    CHECK(snapshots>0 && concurrent.Size()==512);
+    puts("PASS immutable manifest persistence concurrent with exact indexed admission");
     std::puts("PASS manifest growth: old 1024 parses; all 4096 survive serialization; duplicate vs capacity rejection distinct");
 
     auto wrong=data;wrong[2]=StateWords+1;CHECK(!Parse(wrong.data(),wrong.size(),parsed));
@@ -249,6 +274,17 @@ int wmain(int argc,wchar_t** argv) {
     ObserveDraw(device,once,gamePs);CHECK(session.captureFailures==3 && session.seen.size()==4);
     HR(device->SetVertexShader(gameVs));
     ObserveDraw(device,once,gamePs);CHECK(session.captureFailures==3 && session.seen.size()==5 && session.learned==1);
+    // Failed background save must release the single-writer gate and preserve
+    // the old saved version so the next cadence retries the same manifest.
+    const auto goodPath=session.path;
+    session.path=prefix+L"-missing-directory/manifest.bin";
+    session.saved.store(0);session.nextTick=0;Tick(0);
+    for(const auto deadline=GetTickCount64()+5000;session.writing.load() && GetTickCount64()<deadline;)Sleep(10);
+    CHECK(!session.writing && session.saved==0 && session.writeFailures==1);
+    session.path=goodPath;Tick(2000);
+    for(const auto deadline=GetTickCount64()+5000;session.writing.load() && GetTickCount64()<deadline;)Sleep(10);
+    CHECK(!session.writing && session.saved==session.manifest.Version() && session.writeFailures==1);
+    puts("PASS background persistence failure preserves dirty version and permits retry");
     const auto onDisk=ReadManifestFile(session.path);
     d2vr_pipeline_warmup::learner.store(nullptr);
     uint64_t version=0;auto data=session.manifest.Serialize(version);

@@ -29,6 +29,13 @@ foreach($setter in 'g_boundVs=shader;','g_boundPs=identity;'){
     if(-not $replay.Contains($setter)){throw "binding identity update missing: $setter"}
 }
 
+# Persistence must never serialize the whole archive in Present-thread Tick.
+$warmSource=Get-Content -LiteralPath (Join-Path $repo 'src\pipeline_warmup_d3d9.inl') -Raw
+$tickBody=[regex]::Match($warmSource,'(?s)static void Tick\(.*?\r?\n\}')
+$writerBody=[regex]::Match($warmSource,'(?s)static unsigned __stdcall WriteManifest\(.*?\r?\n\}')
+if(-not $tickBody.Success -or $tickBody.Value.Contains('.Serialize(')){throw 'Serialization must stay off the render thread'}
+if(-not $writerBody.Success -or -not $writerBody.Value.Contains('manifest.Serialize(job->version)')){throw 'Writer snapshot missing'}
+
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vcvars=Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat'

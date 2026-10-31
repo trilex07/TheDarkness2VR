@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <memory>
+#include <unordered_map>
 #include <type_traits>
 #include <vector>
 
@@ -120,32 +122,58 @@ inline bool Parse(const uint32_t* words,size_t count,std::vector<Record>& out) {
 
 class Manifest {
     mutable std::mutex mutex_;
-    std::vector<Record> records_;
+    // Immutable records let persistence retain a short pointer snapshot, then
+    // serialize without holding the owner-thread admission lock.
+    std::vector<std::shared_ptr<const Record>> records_;
+    std::unordered_multimap<uint64_t,size_t> index_;
+    static uint64_t Hash(const Record& r) {
+        uint64_t hash=1469598103934665603ull;
+        const auto bytes=[&](const void* data,size_t size) {
+            const auto* p=static_cast<const unsigned char*>(data);
+            for(size_t i=0;i<size;++i) hash=(hash^p[i])*1099511628211ull;
+        };
+        const uint32_t sizes[]={uint32_t(r.vs.size()),uint32_t(r.ps.size())};
+        bytes(sizes,sizeof(sizes));bytes(r.vs.data(),r.vs.size()*4);
+        bytes(r.ps.data(),r.ps.size()*4);bytes(&r.state,sizeof(r.state));
+        return hash;
+    }
     size_t words_=3;
     uint64_t version_=0;
 public:
     enum class Admit { Added, Duplicate, Rejected };
     Admit Admit(const Record& r) {
         if(!ValidRecord(r)) return Admit::Rejected;
+        const auto hash=Hash(r);
         std::lock_guard<std::mutex> lock(mutex_);
-        for(const auto& existing:records_) if(existing==r) return Admit::Duplicate;
+        const auto range=index_.equal_range(hash);
+        for(auto it=range.first;it!=range.second;++it)
+            if(*records_[it->second]==r) return Admit::Duplicate; // exact collision check
         if(records_.size()>=MaxRecords || (words_+RecordWords(r))*4>MaxBytes) return Admit::Rejected;
-        records_.push_back(r);words_+=RecordWords(r);++version_;
+        records_.push_back(std::make_shared<const Record>(r));
+        try {index_.emplace(hash,records_.size()-1);}
+        catch(...) {records_.pop_back();throw;}
+        words_+=RecordWords(r);++version_;
         return Admit::Added;
     }
     bool Add(const Record& r) { return Admit(r)==Admit::Added; }
     size_t Size() const {std::lock_guard<std::mutex> lock(mutex_);return records_.size();}
     uint64_t Version() const {std::lock_guard<std::mutex> lock(mutex_);return version_;}
     std::vector<uint32_t> Serialize(uint64_t& version) const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        std::vector<uint32_t> out;out.reserve(words_);
-        out.push_back(Magic);out.push_back(uint32_t(records_.size()));out.push_back(StateWords);
-        for(const auto& r:records_) {
+        std::vector<std::shared_ptr<const Record>> snapshot;
+        size_t words=0;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            snapshot=records_;words=words_;version=version_;
+        }
+        std::vector<uint32_t> out;out.reserve(words);
+        out.push_back(Magic);out.push_back(uint32_t(snapshot.size()));out.push_back(StateWords);
+        for(const auto& record:snapshot) {
+            const auto& r=*record;
             out.push_back(uint32_t(r.vs.size()));out.insert(out.end(),r.vs.begin(),r.vs.end());
             out.push_back(uint32_t(r.ps.size()));out.insert(out.end(),r.ps.begin(),r.ps.end());
             const auto* s=reinterpret_cast<const uint32_t*>(&r.state);out.insert(out.end(),s,s+StateWords);
         }
-        version=version_;return out;
+        return out;
     }
 };
 
