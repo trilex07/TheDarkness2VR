@@ -54,7 +54,7 @@ int main(){
             for(unsigned i=0;i<20000;++i){fallback.lock();++value;fallback.unlock();}
         });
         for(auto& worker:workers)worker.join();
-        CHECK(value==160000);CHECK(fallback.try_lock());fallback.unlock();
+        CHECK(value==160000);CHECK(!fallback.Held());CHECK(fallback.try_lock());CHECK(fallback.Held());fallback.unlock();CHECK(!fallback.Held());
     }
 #endif
     printf("recorder_lock_test: %llu checks passed\n",checks);

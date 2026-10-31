@@ -45,6 +45,14 @@ struct FakeOps {
 };
 
 static void Pure(const std::vector<uint32_t>& vs,const std::vector<uint32_t>& ps) {
+    VariantSampler sampler;
+    bool visited[1000]{};
+    for(unsigned frame=0;frame<1000;++frame) {
+        unsigned attempts=0;
+        for(unsigned draw=0;draw<1000;++draw)if(sampler.Observe()){++attempts;visited[draw]=true;}
+        CHECK(attempts==1);sampler.BeginFrame();
+    }
+    for(bool sampled:visited)CHECK(sampled); // every stable draw index is revisited
     Manifest manifest;
     const Record a=Sample(vs,ps);Record b=a;b.state.alphaTest=1;Record depthOnly=a;depthOnly.ps.clear();
     CHECK(manifest.Add(a) && !manifest.Add(a) && manifest.Add(b) && manifest.Add(depthOnly) && manifest.Size()==3);
@@ -295,6 +303,33 @@ int wmain(int argc,wchar_t** argv) {
     CHECK(learned.state.alphaTest==1 && learned.state.alphaFunc==D3DCMP_GREATER && learned.state.textures[0].type==D3DRTYPE_TEXTURE &&
           learned.state.textures[0].format==D3DFMT_A8R8G8B8 && learned.state.textures[0].srgb==1 && learned.state.depth==D3DFMT_D24S8);
     puts("PASS learned exact bytecode + effective declaration/targets/depth/render/sampler state from the first live draw only");
+
+    // Revised variant learner reads actual state, including opaque native Apply.
+    // One draw per frame makes its one-snapshot budget deterministic here.
+    {
+        Learner variants(GetCurrentThreadId(),L"");variants.variants=true;variants.nextTick=~0ull;
+        learner.store(&variants);
+        HR(device->SetVertexShader(gameVs));HR(device->SetPixelShader(gamePs));
+        HR(device->SetRenderState(D3DRS_ALPHAFUNC,D3DCMP_LESS));
+        IDirect3DStateBlock9* opaque=nullptr;HR(device->CreateStateBlock(D3DSBT_ALL,&opaque));
+        HR(device->SetRenderState(D3DRS_ALPHAFUNC,D3DCMP_GREATER));
+        ObserveDraw(device,gameVs,gamePs);
+        CHECK(variants.learned==1);Tick(0);
+        HR(opaque->Apply());ObserveDraw(device,gameVs,gamePs);
+        CHECK(variants.learned==2);Tick(0);
+        // Failure is not a permanent negative cache for this pair/state.
+        HR(device->SetVertexShader(nullptr));ObserveDraw(device,gameVs,gamePs);
+        CHECK(variants.captureFailures==1);Tick(0);
+        HR(device->SetVertexShader(gameVs));
+        HR(device->SetRenderState(D3DRS_ALPHAFUNC,D3DCMP_EQUAL));
+        ObserveDraw(device,gameVs,gamePs);CHECK(variants.learned==3);Tick(0);
+        uint64_t v=0;std::vector<Record> exact;const auto words=variants.manifest.Serialize(v);
+        CHECK(Parse(words.data(),words.size(),exact) && exact.size()==3);
+        CHECK(exact[0].state.alphaFunc==D3DCMP_GREATER && exact[1].state.alphaFunc==D3DCMP_LESS && exact[2].state.alphaFunc==D3DCMP_EQUAL);
+        learner.store(nullptr);opaque->Release();
+        HR(device->SetRenderState(D3DRS_ALPHAFUNC,D3DCMP_GREATER));
+        puts("PASS actual-device variants: opaque StateBlock Apply captured; transient failures retry; one attempt/frame; exact state bytes");
+    }
 
     // Startup pool owns two copies of each shader; warmup borrows them only.
     const auto cache=prefix+L"-learned.bin",seed=prefix+L"-seed.bin";

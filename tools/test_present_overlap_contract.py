@@ -16,7 +16,7 @@ class PresentOverlapContract(unittest.TestCase):
         b = between(D3D9, 'static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {',
                     '// ---------------------------------------------------------------- XInput')
         right = b.index('StartStereoTransfer(dev,1,rightTransfer,rightJob,rightCapture)')
-        restore = b.index('dev->StretchRect(g_liveColorBackup, nullptr, liveEnd.targets[0]')
+        restore = b.index('dev->StretchRect(liveBackup, nullptr, liveEnd.targets[0]')
         apply_ = b.index('if(!liveEnd.Apply(dev))')
         overlap = b.index('OverlapNativePresent(rightTransfer)')
         finish = b.index('eye1Ok=FinishStereoTransfer(rightTransfer,rightJob,rightCapture)')

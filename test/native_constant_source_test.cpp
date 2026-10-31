@@ -216,7 +216,7 @@ struct RecLockGuard {RecLockGuard(){++resultLocks;}};
 static int g_replayEye=-1,g_activePsInverse=-1,g_activePsViewExtents=-1,g_submitMode=0;
 static int OP_SetPSConstF=1;
 static void ObserveInverseProjection(const float*,UINT,UINT,int){}
-static int MakeEyeParams(int){return 0;}
+static const int& EyeParamsRef(int){static const int value=0;return value;}
 static bool CompensatePsConstants(float*,const float*,UINT,UINT,int,int,int){return false;}
 static unsigned consumedRegisters=0;
 static void RecEmitConsumed(int,const void* data,size_t bytes,UINT first,UINT count,UINT registers,const Proof& proof,d2vr_submission::Packet* ownedUpload=nullptr) {

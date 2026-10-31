@@ -1,5 +1,6 @@
 // Requires <windows.h>, <d3d9.h> and Log(). No native EXE writes, no hooks.
 #include "pipeline_warmup.h"
+#include "pipeline_variant_sampling.h"
 #include <atomic>
 #include <memory>
 #include <process.h>
@@ -362,6 +363,8 @@ struct Learner {
     std::atomic<DWORD> thread; // device-creation thread, then the Present thread
     std::wstring path;
     Manifest manifest;
+    bool variants=false; // fixed before publication; independent OFF-default switch
+    VariantSampler variantSampler;
     std::unordered_set<uint64_t> seen;
     std::unordered_map<uint64_t,uint8_t> captureAttempts;
     uintptr_t lastVs=~uintptr_t(0), lastPs=~uintptr_t(0);
@@ -389,6 +392,18 @@ inline void ObserveDraw(IDirect3DDevice9* dev,const void* vs,const void* ps) {
     Learner* l=learner.load(std::memory_order_acquire);
     if(!l || GetCurrentThreadId()!=l->thread.load(std::memory_order_relaxed)) return;
     if(l->saturated.load(std::memory_order_relaxed)) return;
+    if(l->variants) {
+        if(!l->variantSampler.Observe()) return;
+        try {
+            Record record;
+            if(!Capture(dev,record)) {++l->captureFailures;return;}
+            const auto admitted=l->manifest.Admit(record);
+            if(admitted==Manifest::Admit::Added)++l->learned;
+            if(admitted==Manifest::Admit::Rejected || l->manifest.Size()>=MaxRecords)
+                l->saturated.store(true,std::memory_order_relaxed);
+        } catch(...) {++l->captureFailures;}
+        return; // exact manifest comparison replaces pointer/signature deduplication
+    }
     const auto v=reinterpret_cast<uintptr_t>(vs),p=reinterpret_cast<uintptr_t>(ps);
     if(v==l->lastVs && p==l->lastPs) return;
     l->lastVs=v;l->lastPs=p;
@@ -449,6 +464,7 @@ static void Tick(ULONGLONG now=GetTickCount64()) {
     // A changed owner restarts the consecutive-pair filter, not the seen set.
     const DWORD current=GetCurrentThreadId();
     if(l->thread.exchange(current,std::memory_order_relaxed)!=current) l->lastVs=l->lastPs=~uintptr_t(0);
+    l->variantSampler.BeginFrame(); // every Present, before the save cadence gate
     if(now<l->nextTick) return;
     l->nextTick=now+2000;
     if(!l->manifest.Size() || l->saved.load()>=l->manifest.Version() || l->writing.exchange(true)) return;

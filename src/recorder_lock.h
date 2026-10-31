@@ -34,6 +34,7 @@ class Lock {
     // backend for this entire lock lifetime; it never mixes the two protocols.
     HANDLE semaphore_=nullptr;
     SRWLOCK fallback_=SRWLOCK_INIT;
+    std::atomic<bool> fallbackHeld_{false};
     void Wait() {WaitForSingleObject(semaphore_,INFINITE);}
     void Wake() {ReleaseSemaphore(semaphore_,1,nullptr);}
     static void Pause() {_mm_pause();}
@@ -54,13 +55,16 @@ public:
     Lock& operator=(const Lock&)=delete;
     bool try_lock() {
 #if defined(_WIN32)
-        if(!semaphore_)return TryAcquireSRWLockExclusive(&fallback_)!=FALSE;
+        if(!semaphore_){
+            if(!TryAcquireSRWLockExclusive(&fallback_))return false;
+            fallbackHeld_.store(true,std::memory_order_relaxed);return true;
+        }
 #endif
         long expected=0;return state_.compare_exchange_strong(expected,1,std::memory_order_acquire);
     }
     void lock() {
 #if defined(_WIN32)
-        if(!semaphore_){AcquireSRWLockExclusive(&fallback_);return;}
+        if(!semaphore_){AcquireSRWLockExclusive(&fallback_);fallbackHeld_.store(true,std::memory_order_relaxed);return;}
 #endif
         long c=0;
         if(state_.compare_exchange_strong(c,1,std::memory_order_acquire)) return;
@@ -75,12 +79,17 @@ public:
     }
     void unlock() {
 #if defined(_WIN32)
-        if(!semaphore_){ReleaseSRWLockExclusive(&fallback_);return;}
+        if(!semaphore_){fallbackHeld_.store(false,std::memory_order_relaxed);ReleaseSRWLockExclusive(&fallback_);return;}
 #endif
         // Holder of 2 must wake one waiter; extra wakes are harmless (the woken
         // thread re-checks with exchange(2) and sleeps again if not free).
         if(state_.exchange(0,std::memory_order_release)==2) Wake();
     }
-    bool Held() const {return state_.load(std::memory_order_relaxed)!=0;}
+    bool Held() const {
+#if defined(_WIN32)
+        if(!semaphore_)return fallbackHeld_.load(std::memory_order_relaxed);
+#endif
+        return state_.load(std::memory_order_relaxed)!=0;
+    }
 };
 }

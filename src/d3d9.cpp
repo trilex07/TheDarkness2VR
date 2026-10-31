@@ -604,6 +604,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 static bool g_deferStereoTransferReader = false; // startup-only; exact reader fence before shared reuse
 static bool g_overlapNativePresent = false; // startup-only; protected mode 4: mirror Present inside right-eye GPU wait
+static bool g_pipelineVariantLearning=false; // actual-state sampler; startup-only, default OFF
 static bool g_reuseSharedCaptureColor = false; // startup-only; split eye slots double as pair color backups
 static int g_stereoTransferMode = 0; // 0 baseline,1 D3D9/11 worker,2 serial MT control,3 owner-wait D3D11 worker,4 single-owner overlap
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
@@ -755,6 +756,8 @@ void LoadConfig() {
     d2vr_submission::requested=GetPrivateProfileIntA("Render","NativeSubmissionFilter",0,chosenIni)!=0;
     d2vr_submission::gate.Configure(d2vr_submission::requested);
     d2vr_submission::bindingsRequested=GetPrivateProfileIntA("Render","NativeBindingFilter",0,chosenIni)!=0;
+    g_pipelineVariantLearning=GetPrivateProfileIntA("Render","PipelineVariantLearning",0,chosenIni)!=0;
+    Log("[PipelineVariants] learning=%d; one actual-device capture/frame; no exhaustive coverage or hitch-removal claim",int(g_pipelineVariantLearning));
     Log("[NativeSubmission] requested=%d; owned final float packets only; opaque state fails closed",int(d2vr_submission::requested));
     g_replayConstantReuse = GetPrivateProfileIntA("Render", "ReplayConstantReuse", 0, chosenIni)!=0;
     g_replayConstantBindWindow = GetPrivateProfileIntA("Render", "ReplayConstantBindWindow", 0, chosenIni)!=0;
@@ -1728,6 +1731,7 @@ static void StartupPipelineWarmup(IDirect3DDevice9* dev) {
     try {
         auto learner=std::make_unique<d2vr_pipeline_warmup::Learner>(GetCurrentThreadId(),
             std::wstring(base)+L"\\Darkness2VR\\pipeline-warmup.bin");
+        learner->variants=g_pipelineVariantLearning;
         const auto data=d2vr_pipeline_warmup::ReadManifestFile(learner->path);
         std::vector<d2vr_pipeline_warmup::Record> records;
         const bool valid=!data.empty() && d2vr_pipeline_warmup::Parse(data.data(),data.size(),records);

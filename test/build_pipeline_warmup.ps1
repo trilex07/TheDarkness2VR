@@ -15,6 +15,7 @@ $warm=$body.IndexOf('StartupPipelineWarmup(dev);')
 $patch=$body.IndexOf('PatchVTable(dev')
 if($pool -lt 0 -or $warm -lt $pool -or $patch -lt $warm){throw 'Warmup must follow pool creation and precede every device vtable patch'}
 if($renderer -notmatch 'GetPrivateProfileIntA\("Render","PipelineWarmup",0,'){throw 'PipelineWarmup must default OFF'}
+if($renderer -notmatch 'GetPrivateProfileIntA\("Render","PipelineVariantLearning",0,'){throw 'PipelineVariantLearning must default OFF'}
 if($renderer -notmatch 'd2vr_pipeline_warmup::Tick\(\);'){throw 'Present-thread manifest tick missing'}
 
 $replay=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw

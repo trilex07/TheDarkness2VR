@@ -9,6 +9,7 @@
 
 #define CHECK(x) do {if(!(x)){std::printf("FAIL line %d: %s\n",__LINE__,#x); std::exit(1);}}while(0)
 #define HR(x) do {HRESULT h=(x);if(FAILED(h)){std::printf("FAIL line %d hr=%08lx: %s\n",__LINE__,h,#x);std::exit(1);}}while(0)
+#include "actual_transfer_history.inl"
 using d2vr_transfer::Ref;
 struct ReaderOps {
     ID3D11DeviceContext* context;ID3D11Query* query;
@@ -38,7 +39,7 @@ static Ref<ID3DBlob> Compile(const char* source,const char* target) {
 }
 static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceContext* ctx,
                      bool deferred=false,UINT width=64,UINT height=64,bool ownerProducer=false,bool split=false,
-                     bool overlapOwner=false,unsigned frames=100) {
+                     bool overlapOwner=false,unsigned frames=100,bool reuseHistory=false) {
     IDirect3DSurface9* rtRaw=nullptr;
     HR(dev9->CreateRenderTarget(width,height,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rtRaw,nullptr));
     auto rt=Adopt(rtRaw); HR(dev9->SetRenderTarget(0,rt.Get()));
@@ -168,9 +169,14 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         }
         CHECK(!fault && !inputs[0].fence.pending);
     }
+    EyeColorHistory history;
+    DWORD previousRight=0;
+    CHECK(!reuseHistory || (split && deferred && overlapOwner));
     for(unsigned frame=0;frame<frames;++frame) {
         const DWORD left=0xff000000|(frame+1)<<16|0x002233;
         const DWORD right=0xff000000|0x00bb0000|(frame+1)<<8|0x000055;
+        const bool uiOnly=reuseHistory && history.pixels && frame%3==1;
+        const DWORD expectedRight=uiOnly?previousRight:right;
         HR(dev9->ColorFill(rt.Get(),nullptr,left));issue(0);
         auto l=packet(0);
         if(overlapOwner) CHECK(!l->producer.Get() && l->producerComplete);
@@ -186,7 +192,10 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             } else CHECK(pending.Start(queue,l,fault));
             track(l);
             // Model main-thread right replay while the worker consumes LEFT.
-            for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,right));
+            if(reuseHistory) CHECK(history.Restore(dev9,rt.Get())); // queued BEFORE slot-one overwrite
+            if(uiOnly) {
+                RECT ui={0,0,8,8};HR(dev9->ColorFill(rt.Get(),&ui,0xffabcdef));
+            } else for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,right));
             if(frame%2) CHECK(pending.Finish()); // other half tests destructor join
         }
         CHECK(!fault && l->thread!=GetCurrentThreadId());
@@ -200,7 +209,17 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         // The second input may be written while the first reader receipt is
         // still pending. No wait/map/poll of the first input precedes this copy.
         if(split)CHECK(inputs[0].retained==l && inputs[0].fence.pending);
+        // Alternate the exact-copy adoption with production fallback Save:
+        // fallback must detach the old shared alias before it writes.
+        if(reuseHistory && frame%5==4) {
+            CHECK(history.Save(dev9,rt.Get()) && !history.adopted);
+            CHECK(history.pixels!=inputs[1].surface.Get());
+        }
         issue(1);auto r=packet(1);
+        if(reuseHistory && frame%5!=4) {
+            history.Adopt(rt.Get(),inputs[1].surface.Get());
+            CHECK(history.adopted && history.pixels==inputs[1].surface.Get());
+        }
         {
             d2vr_transfer::Pending pending;
             if(overlapOwner) {
@@ -210,12 +229,16 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
                 CHECK(pending.Promote() && !pending.Staged());
             } else CHECK(pending.Start(queue,r,fault));
             track(r);
-            HR(dev9->ColorFill(rt.Get(),nullptr,left)); // restore live image in parallel
+            if(reuseHistory) HR(dev9->StretchRect(inputs[0].surface.Get(),nullptr,rt.Get(),nullptr,D3DTEXF_NONE));
+            else HR(dev9->ColorFill(rt.Get(),nullptr,left)); // restore live image in parallel
             CHECK(pending.Finish());
         }
-        CHECK(!fault);verify(1,right);verify(0,left);retire(r);r.reset();
+        CHECK(!fault);verify(1,expectedRight);verify(0,left);retire(r);r.reset();
+        previousRight=expectedRight;
         if(split){retire(l);l.reset();}
     }
+    history.Release(); // COM history ownership drains before slots/Reset.
+    CHECK(!history.target && !history.pixels);
     // A completed receipt must carry no D3D9 interface; an uncompleted one
     // must carry its exact query. Reject both contradictory packets.
     {
@@ -286,7 +309,12 @@ int main() {
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true,true,10);
     HR(d9->ResetEx(&pp,nullptr));
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,false,true,10);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,true,true,40,true);
+    HR(d9->ResetEx(&pp,nullptr));
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true,true,10,true);
+    HR(d9->ResetEx(&pp,nullptr));
+    puts("PASS combined actual-source adopted history + native 0x50 + D3D11 split readers: UI persistence, seed-before-overwrite, fallback detachment, live slot restore, resize/recreate and Reset");
     ctx={};d11={};d9={};api={};DestroyWindow(window);FreeLibrary(module);
-    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 2660 eye transfers (1040 at 2676x2728), including single-owner overlap on native 0x50, two independent shared inputs, MT 0x54 workers, sampled pixel equality, concurrent D3D9 work, query retirement, RAII join, failure latch, Reset/recreate");
+    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 2760 eye transfers (1060 at 2676x2728), including single-owner overlap on native 0x50, two independent shared inputs, MT 0x54 workers, sampled pixel equality, concurrent D3D9 work, query retirement, RAII join, failure latch, Reset/recreate");
     std::puts("No game/OpenXR/Steam calls; this does not prove frame-time improvement or headset acceptance.");
 }

@@ -62,16 +62,20 @@ class Observer {
     // from inside before() (right-eye GPU wait overlap). Null everywhere else.
     struct Forward {
         Observer* self; Present next; IDirect3DSwapChain9* sc; const RECT* a; const RECT* b;
-        HWND w; const RGNDATA* r; DWORD flags; bool measure;
+        HWND w; const RGNDATA* r; DWORD flags; bool measure,sample;
         HRESULT operator()() const {
             ++self->forwarded;
             if(measure) self->cb_.forwardBegin();
-            LARGE_INTEGER begin{},end{};QueryPerformanceCounter(&begin);
+            LARGE_INTEGER begin{},end{};if(sample)QueryPerformanceCounter(&begin);
             const HRESULT hr=next(sc,a,b,w,r,flags);
-            QueryPerformanceCounter(&end);
+            if(sample)QueryPerformanceCounter(&end);
             if(measure) self->cb_.forwardEnd();
-            self->lastForwardTicks.store(uint64_t(end.QuadPart-begin.QuadPart),std::memory_order_relaxed);
-            self->forwardSamples.fetch_add(1,std::memory_order_release);
+            // Only the qualified outer native Present owns this sample.
+            // Nested implementation/overlay forwards must not replace it.
+            if(sample) {
+                self->lastForwardTicks.store(uint64_t(end.QuadPart-begin.QuadPart),std::memory_order_relaxed);
+                self->forwardSamples.fetch_add(1,std::memory_order_release);
+            }
             ++self->returned;
             return hr;
         }
@@ -181,7 +185,7 @@ class Observer {
         const bool ready=qualified && Ready();
         auto next=reinterpret_cast<Present>(entries_[index].next.load(std::memory_order_acquire));
         const bool measureForward=qualified && cb_.forwardBegin && cb_.forwardEnd;
-        const Forward forward{this,next,sc,a,b,w,r,flags,measureForward};
+        const Forward forward{this,next,sc,a,b,w,r,flags,measureForward,qualified};
         Early early{};early.forward=&forward;early.slot.armed=outer && qualified && ready;
         Early* const previousEarly=early_;early_=&early;
         struct Restore {Early* previous;~Restore(){early_=previous;}} restoreEarly{previousEarly};
