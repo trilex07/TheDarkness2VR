@@ -74,3 +74,51 @@ head-attach NPCs or move held-target physics. Existing hand/weapon aim is retain
 
 Rollback: complete verified predeployment package, recorded in the task handoff.
 No game launch, Steam test or physical-headset acceptance by the agent.
+
+## User follow-up: world lighting follows head / FPS drops (21:10 session)
+
+User reports the light/shadow patches on walls and floor move with head motion
+(not merely tentacle shadows). Screenshot is a stationary view of the station
+corridor; it cannot identify the producing shader or prove temporal motion.
+Treat world-lighting bug as OPEN. Do not weaken head tracking or globally suppress
+shadows. Existing C4D1FB10 screen-depth experiment is unproven and stays OFF.
+No speculative shader/atlas patch was deployed.
+
+Retained evidence: private before-d3d9.log in the correction package below,
+original session PID36340. Startup line10 explicitly requested AdaptiveFPS=AUTO;
+both installed primary INIs omitted AdaptiveFPS, inheriting source fallback AUTO.
+HALF applied at frames1431/1500 and20795/21000. At frame21000 policy measured
+43 app FPS; nearby XRCadence window reported42.1 layers/s and40.1 world-bearing
+boundaries/s,32ms boundary p95,22.222ms runtimePeriod,90Hz physical refresh.
+This demonstrates an unwanted application cap, not the cause of every hitch.
+The inherited main default and previous candidate both retained this behavior.
+
+Other stalls remain: CPUSync window ending around frame17072 contains a31.629ms
+producer fence,35.053ms Present-boundary maximum; earlier producer maximum was
+59.845ms. These waits do not establish GPU Busy or prove a compiler/texture cause.
+The2651.668ms maximum at startup is not steady-gameplay frame-time evidence.
+No broad FPS claim or unsupported CPU micro-optimization is made.
+
+Correction: installed AdaptiveFPS=OFF explicitly in both primary INIs, with full
+nine-target DLL/INI/cache backup and unchanged DLL155D6A42. Source missing-key
+fallback and repo candidate default now OFF, and future startup logs include OFF.
+No game launched. Next process launch is required for the installed INI change.
+Package: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/hud-fps-off-20261031T211614129
+Rollback: package/rollback/Restore.ps1. It restores the preceding candidate, which
+had inherited AUTO; this rollback is for recovery, not the desired FPS setting.
+
+Validation: adaptive policy3253 checks PASS; protected head inverse/reconstruction
+117021 checks PASS. Adaptive integration executable compiled but execution was
+blocked by a sharing lock after the existing bounded retry; not a PASS. Initial
+DLL link failed with LNK1101/MSPDB140 mismatch in the restricted environment;
+same build command outside that restriction succeeded. New source DLL built
+but NOT installed: the old installed binary honors explicit OFF without rebuilding.
+
+Next evidence: user loads this same corridor, stationary body/stick/mouse, and
+provides two distinct physical head orientations. Use the existing one-frame
+matched capture only while loaded, one explicit serial per pose, then restore
+capture settings. Require same-frame effective head transforms, source/final eye
+images, shaders, draw banks and light/depth inputs, plus completion receipts.
+Do not activate legacy EnginePresentCallsite from outdated capture instructions:
+current protected native Present ownership is already installed. Capture readbacks
+are diagnostic and must not be used as normal performance measurements.

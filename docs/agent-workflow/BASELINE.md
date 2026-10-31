@@ -13,6 +13,18 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
+## Current profile correction (2026-10-31 21:16 Europe/Warsaw)
+
+Both primary INIs now explicitly set Render/AdaptiveFPS=OFF. DLL unchanged:
+155D6A427E4D53AD5EBEAE206E17C4A7F755ABBD4FEBC2C8D5629FAFF48D1AE1.
+This removes the inherited AUTO half-rate cap on next launch; remaining stutters
+and head-following world lighting are unresolved. No game launch/visual acceptance.
+Full rollback/evidence: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/hud-fps-off-20261031T211614129.
+Previous INI hashes below are historical; current hashes:
+
+- `C:\Program Files (x86)\Steam\steamapps\common\Darkness II\Darkness2VR.ini`: 047601C0B062449398E089E06275E71A87E534695EE9D6CBEEA2E4EDF9D4601F
+- `C:\Users\Trilex\AppData\Local\Darkness2VR\Darkness2VR.ini`: 13274A3D5AA4549F03FD6B3D6E8D532B3720BF7D01831450B83ED68AC6475A07
+
 ## Current installed MAIN candidate: native HUD / head-attached tentacles
 
 Authorized MAIN deployment: 2026-10-31 21:03 Europe/Warsaw. User launches manually.

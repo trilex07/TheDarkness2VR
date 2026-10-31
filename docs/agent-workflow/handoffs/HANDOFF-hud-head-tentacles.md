@@ -45,3 +45,23 @@ use the guard evidence instead of broadening shader suppression or guessing.
 Remote push was rejected by automatic approval review because destination-specific
 permission to export repository contents was not explicit. Local commits retained;
 no remote push or PR creation completed.
+
+## Follow-up: world-lighting bug and FPS correction
+User confirms moving light/shadow patches on walls/floor. OPEN; need two loaded
+same-scene head poses with matched render evidence. No shadow fix claimed.
+Latest log confirms HUD contract/hidden=1 and both-eye mesh-scoped tentacle
+receipts. It does not prove complete HUD visual coverage (screenshot retains
+contextual hint text). User has not explicitly accepted HUD behavior.
+
+Installed correction (2026-10-31 21:16 Europe/Warsaw): AdaptiveFPS=OFF in both
+primary INIs only. DLL155D6A42 unchanged; no Steam/game launch. Nine-target
+verified rollback/evidence package:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/hud-fps-off-20261031T211614129
+Retained before-d3d9.log proves AUTO/HALF at90Hz and42-45 app/layer cadence.
+The missing key inherited AUTO from main, inadvertently preserved in our first
+candidate. Source/repo defaults fixed to OFF, startup reporting explicit.
+Build PASS; policy3253 and protected head117021 PASS; adaptive integration
+execution blocked by sharing lock after bounded retry (not PASS).
+See research note follow-up for exact frame/wait evidence and next capture.
+User launches the game; wait for loaded-scene readiness before any capture.
+No remote push attempted; prior destination approval remains pending.

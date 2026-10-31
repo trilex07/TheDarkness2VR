@@ -690,12 +690,12 @@ void LoadConfig() {
 
     g_asyncLogRequested = GetPrivateProfileIntA("Render", "AsyncLog", 0, chosenIni) != 0;
     char adaptive[32]{};
-    GetPrivateProfileStringA("Render","AdaptiveFPS","AUTO",adaptive,sizeof(adaptive),chosenIni);
+    GetPrivateProfileStringA("Render","AdaptiveFPS","OFF",adaptive,sizeof(adaptive),chosenIni);
     g_adaptiveFPSMode=(!_stricmp(adaptive,"AUTO") || !strcmp(adaptive,"1")) ? d2vr_adaptive::Mode::Auto:
         (!_stricmp(adaptive,"HALF") || !strcmp(adaptive,"2")) ? d2vr_adaptive::Mode::Half:d2vr_adaptive::Mode::Off;
-    if(g_adaptiveFPSMode!=d2vr_adaptive::Mode::Off)
-        Log("[AdaptiveFPS] requested=%s; application half-rate cap; compositor reprojection remains runtime-controlled",
-            g_adaptiveFPSMode==d2vr_adaptive::Mode::Auto ? "AUTO":"HALF");
+    Log("[AdaptiveFPS] requested=%s; application half-rate cap; compositor reprojection remains runtime-controlled",
+            g_adaptiveFPSMode==d2vr_adaptive::Mode::Auto ? "AUTO":
+            g_adaptiveFPSMode==d2vr_adaptive::Mode::Half ? "HALF":"OFF");
     Log("[AsyncLog] requested=%d; startup synchronous, worker starts only at HookDevice", (int)g_asyncLogRequested);
     g_testMode = GetPrivateProfileIntA("Render", "TestMode", 0, chosenIni);
     g_submitMode = GetPrivateProfileIntA("Render", "SubmitMode", 0, chosenIni);
