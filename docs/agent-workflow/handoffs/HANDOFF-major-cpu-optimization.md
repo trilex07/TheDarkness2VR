@@ -83,3 +83,30 @@ Private evidence/build/test logs:
 Next: finish the StateBlock admission contract only if exact source/driver
 regressions prove it; quantify actual duplicates before claiming gains.
 The native-engine closed resource cycle remains excluded. Full 90 Hz goal active.
+
+## Continuation 2026-10-31: replay dependency proof
+Previous turn made progress: integrated and deployed the reviewed four-branch
+candidate; latest feedback and quarantine are in HANDOFF-four-branch-performance.
+Current DLL is source71597871; do not treat this old handoff's initial baseline
+line as the current Steam identity. BASELINE.md contains current exact hashes.
+
+Added stateblock_replay_versions.h: bounded native COM leases, version receipts,
+exact native Apply HRESULT, reject before/after Apply if Capture changes content,
+reject failed Capture and reentrant AddRef/Apply/Release modifications, retain
+metadata until native release completes. Fixed a concrete prerequisite defect:
+successful unknown/distinct QueryInterface now permanently marks the Entry escaped
+and invalidates ALL Version receipts, independent of optional observer callbacks.
+Actual HAL x86 0x20 and native Mode4 flags0x50 test 128 lifetimes each, Capture-after-
+record refusal, original Apply state/HRESULT, retained refs and ResetEx; PASS.
+Fault fixtures cover reentrant Capture during Apply, callback Retain/Clear refusal,
+unknown alias, capacity and exact S_FALSE. Logs: %TEMP%/major-stateblock-replay-*.log.
+
+This remains UNLINKED from renderer; no admission denials cleared, no Steam DLL
+change and ZERO measured runtime saving. Remaining gates before any admission:
+wire every native Create/End/Capture/Apply/alias edge, account for inherited
+per-eye float rows after opaque Apply, integrate replay rejection with publication
+and native-fault recovery, then validate actual recorder source. This dependency
+set provides version proof, not an immutable state snapshot or an eye transform.
+Do not claim the ~1.828ms sampled setter exposure is wholly redundant, current,
+or recoverable. Native render capture still predates Mode4 and has collector cost.
+Goal remains active; no stable90FPS claim.

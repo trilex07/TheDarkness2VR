@@ -37,3 +37,17 @@ and three intended Render settings in Steam/local INIs changed. Unmodified
 profiles and caches retain their previous SHA. Full deployment.json, matching
 DLL/PDB/MAP, 9-file rollback and four-*.log copies are in the named package.
 Manual PSVR2 test READY; game not launched. New combined runtime results pending.
+
+## Gameplay feedback / quarantine
+User reports intermittent right-eye artifacts during gameplay (not menu).
+Both new image-path changes were actually active: SharedCaptureColor active=1,
+split=1, 2676x2728 format22; PresentOverlap issued 6879 early forwards by pair9600.
+No causal attribution established. NativeSubmission remained denied=0x12;
+no float setter failures/exceptions were reported in the retained upload counters.
+Preserved runtime log and exact profiles at runtime-20261031T155300; preserved
+before/after profiles plus learned caches at quarantine-20261031T155425 in the
+package. At rest, changed ONLY OverlapNativePresent and ReuseSharedCaptureColor
+to 0 in both primary Render INIs. Same deployed DLL, Mode4, ConsumedRecordCopy
+and all other settings retained. No game launch or extra micro-test requested.
+Combined image-path optimization acceptance is withheld. This quarantine is
+not evidence that existing flicker was fixed or caused by either new switch.

@@ -24,7 +24,7 @@ struct Entry {
     Observer observer;
     std::atomic<uint64_t> generation{1};
     std::atomic<unsigned> captures{0};
-    std::atomic<bool> alive{true};
+    std::atomic<bool> alive{true},escaped{false};
 };
 inline SRWLOCK registryLock=SRWLOCK_INIT;
 inline std::unordered_map<IDirect3DStateBlock9*,std::shared_ptr<Entry>> registry;
@@ -44,6 +44,7 @@ struct Version {
     uint64_t generation=0;
     bool Current()const {
         return entry && entry->alive.load(std::memory_order_acquire) &&
+            !entry->escaped.load(std::memory_order_acquire) &&
             !entry->captures.load(std::memory_order_acquire) &&
             entry->generation.load(std::memory_order_acquire)==generation;
     }
@@ -66,8 +67,14 @@ inline HRESULT STDMETHODCALLTYPE QueryHook(IDirect3DStateBlock9* self,REFIID iid
     // A distinct alias/unknown successful interface cannot certify ownership.
     if(SUCCEEDED(result) && out && *out &&
        (*out!=self || (!IsEqualGUID(iid,__uuidof(IUnknown)) &&
-                      !IsEqualGUID(iid,__uuidof(IDirect3DStateBlock9)))))
+                      !IsEqualGUID(iid,__uuidof(IDirect3DStateBlock9))))) {
+        // An alias can mutate the native object outside this shadow table.
+        // Invalidating only an optional renderer observer would leave already
+        // retained replay versions falsely current. The entry owns this denial.
+        entry->escaped.store(true,std::memory_order_release);
+        entry->generation.fetch_add(1,std::memory_order_acq_rel);
         if(entry->observer.escape)entry->observer.escape(self);
+    }
     return result;
 }
 inline ULONG STDMETHODCALLTYPE ReleaseHook(IDirect3DStateBlock9* self) {

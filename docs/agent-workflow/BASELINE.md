@@ -19,11 +19,12 @@ Updated 2026-10-31 after authorized four-branch deployment. Both x86 builds and
 affected offline regressions PASS; this new combined candidate is NOT headset-accepted.
 - **Current DLL SHA256**: BFF8B0A9F5BE83C511762E66C78C5903BD9FB3A48FD3D2F81BF15C035FBD1CFA
 - **Current source commit**: 7159787160cf1702836ebd08de4594805421d460
-- **Current Steam INI SHA256**: 3662AF9290B4D75DCCF694EBDB88280FC70F17E7F0AEEEDBA701746985C55638
-- **Current local INI SHA256**: A43FFB95A4BC5C8F5DDDDC8D7AF32E30644329FCF2D913D5A5854E3BB12734BD
+- **Current Steam INI SHA256**: C252004214079D174E89D32A1D2F3EF985C109EB0B0FCAC76B103F2A2AF8E692
+- **Current local INI SHA256**: 6083B9E7A3BEE21464A884FD73AD13657A3C89AB2260CCEBDCEE41197E722049
 - **Current rollback**: %LOCALAPPDATA%/Darkness2VR/packages/four-branch-performance-20261031/rollback
 - **Receipt and matching symbols**: same package, deployment.json and candidate/
-- **New switches ON for manual trial**: OverlapNativePresent, ReuseSharedCaptureColor, PipelineVariantLearning (bounded actual-state sampler, not rejected setter tracker)
+- **Runtime feedback**: intermittent right-eye artifacts during gameplay. Combined candidate NOT visually accepted; cause not established. Log/profile/cache preserved in four-branch-performance-20261031/runtime-20261031T155300 and quarantine-20261031T155425.
+- **Current new switches**: OverlapNativePresent=0 and ReuseSharedCaptureColor=0 quarantined after feedback; PipelineVariantLearning=1 retained. DLL unchanged; no new launch or FPS claim.
 - **Preserved**: Mode4, ConsumedRecordCopy=1, PipelineWarmup=1, DirectRecordCopy=0, ReplayBufferVersions=0, diagnostic NativeCameraCover=0. Game not launched.
 - **Task handoff**: handoffs/HANDOFF-four-branch-performance.md
 
