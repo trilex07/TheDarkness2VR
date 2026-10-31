@@ -92,9 +92,16 @@ struct QuadAtlas {
 };
 static QuadAtlas g_wheelAtlas("WeaponWheel",512,2);
 static QuadAtlas g_ammoAtlas("AmmoHud",128,2);
+static QuadAtlas g_gazeAtlas("GazeDot",64,1);
+static XrSpace g_viewSpace=XR_NULL_HANDLE;
+static bool g_gazeDotDrawn=false;
 static uint64_t g_wheelDrawn=~0ull;
 static int g_ammoDrawn[2]{-3,-3};
-static void ReleaseWeaponWheelRenderer() { g_wheelAtlas.Reset(); g_ammoAtlas.Reset(); g_wheelDrawn=~0ull; g_ammoDrawn[0]=g_ammoDrawn[1]=-3; }
+static void ReleaseWeaponWheelRenderer() {
+    g_wheelAtlas.Reset(); g_ammoAtlas.Reset(); g_gazeAtlas.Reset(); g_wheelDrawn=~0ull; g_ammoDrawn[0]=g_ammoDrawn[1]=-3;
+    g_gazeDotDrawn=false;
+    if(g_viewSpace) { xrDestroySpace(g_viewSpace); g_viewSpace=XR_NULL_HANDLE; }
+}
 
 static void AppendWheelQuads(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,uint32_t limit,
                              XrCompositionLayerQuad quads[2]) {
@@ -157,13 +164,54 @@ static void AppendAmmoQuads(const XrCompositionLayerBaseHeader** layers,uint32_t
     }
 }
 
+// Eye-tracking check: a small ring 1.5 m along the gaze in VIEW space
+// ([EyeTracking] GazeDot). Looking at the four corners must move the ring to
+// the same corners; otherwise fix [EyeTracking] GazeAxes.
+static void AppendGazeDot(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,uint32_t limit,
+                          XrCompositionLayerQuad& quad) {
+    if(!g_gazeDotEnabled || layerCount>=limit) return;
+    XrVector3f d{};
+    if(!LatestGaze(d)) return;
+    if(!g_viewSpace) {
+        static XrSession failedFor=XR_NULL_HANDLE;
+        if(failedFor==g_xrSession) return;
+        XrReferenceSpaceCreateInfo ci{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+        ci.referenceSpaceType=XR_REFERENCE_SPACE_TYPE_VIEW; ci.poseInReferenceSpace.orientation.w=1;
+        if(XR_FAILED(xrCreateReferenceSpace(g_xrSession,&ci,&g_viewSpace))) { g_viewSpace=XR_NULL_HANDLE; failedFor=g_xrSession; Log("[EyeTracking] VIEW space unavailable"); return; }
+    }
+    if(!g_gazeAtlas.Ensure()) return;
+    if(!g_gazeDotDrawn) {
+        auto t=g_gazeAtlas.Cell(0);
+        d2vr_wheel_raster::DrawShape(t,g_gazeAtlas.scratch.data(),[&](auto&& emit) {
+            const d2vr_weapon_wheel_graphics::Placement ring{0,0,1};
+            d2vr_weapon_wheel_graphics::detail::Arc(emit,ring,.62f,.92f,0,2*d2vr_weapon_wheel_graphics::Pi,48,{.92f,.895f,.845f,.95f});
+            d2vr_weapon_wheel_graphics::detail::Arc(emit,ring,0,.22f,0,2*d2vr_weapon_wheel_graphics::Pi,24,{.74f,.055f,.075f,1});
+        });
+        g_gazeDotDrawn=true; ++g_gazeAtlas.revision;
+    }
+    if(!g_gazeAtlas.Publish()) return;
+    XrPosef pose{};
+    pose.position={d.x*1.5f,d.y*1.5f,d.z*1.5f};
+    // Face the eye: quad +Z points back along the gaze.
+    XrVector3f z{-d.x,-d.y,-d.z}, up{0,1,0};
+    XrVector3f x{up.y*z.z-up.z*z.y,up.z*z.x-up.x*z.z,up.x*z.y-up.y*z.x};
+    const float n=std::sqrt(x.x*x.x+x.y*x.y+x.z*x.z);
+    if(n<1e-3f) return;
+    x={x.x/n,x.y/n,x.z/n};
+    const XrVector3f y{z.y*x.z-z.z*x.y,z.z*x.x-z.x*x.z,z.x*x.y-z.y*x.x};
+    pose.orientation=QuatFromBasis(x,y,z);
+    g_gazeAtlas.Quad(quad,0,g_viewSpace,pose,.035f);
+    layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
+}
+
 // Called at frame end with the layers already chosen. Never displaces the
 // world projection layer; skipped when the runtime has no room.
 static void AppendWeaponWheelLayers(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,
-                                    uint32_t capacity,XrCompositionLayerQuad quads[4],bool shouldRender) {
+                                    uint32_t capacity,XrCompositionLayerQuad quads[5],bool shouldRender) {
     if(!layerCount || !shouldRender || g_xrSessionState!=XR_SESSION_STATE_FOCUSED || !g_ctx11) return;
     const uint32_t runtimeMax=std::max(g_wheelAtlas.maxLayers,g_ammoAtlas.maxLayers);
     const uint32_t limit=runtimeMax ? std::min(capacity,runtimeMax) : capacity;
     AppendWheelQuads(layers,layerCount,limit,quads);
     AppendAmmoQuads(layers,layerCount,limit,quads+2);
+    AppendGazeDot(layers,layerCount,limit,quads[4]);
 }

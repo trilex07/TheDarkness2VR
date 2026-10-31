@@ -162,6 +162,8 @@ bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
 bool g_weaponWheelEnabled=true;   // [Input] WeaponWheel: hold R3 -> dual weapon wheels
+bool g_eyeTrackingEnabled=true;   // [EyeTracking] Enabled: read PSVR2 Toolkit gaze from the bridge
+bool g_gazeDotEnabled=true;       // [EyeTracking] GazeDot: debug ring at the gaze (axis check)
 bool g_ammoHudEnabled=true;       // [Input] AmmoHud: magazine counter on the back of each armed hand
 bool g_crouchStickDown=true;      // [Input] CrouchStickDown: right stick Y -> jump/crouch flicks, never camera pitch
 bool g_unarmedTriggerDpad=true; // left trigger + empty left hand -> DPAD_DOWN / DPAD_UP alternating
@@ -805,6 +807,9 @@ void LoadConfig() {
     g_weaponWheelEnabled = GetPrivateProfileIntA("Input", "WeaponWheel", 1, chosenIni) != 0;
     g_crouchStickDown = GetPrivateProfileIntA("Input", "CrouchStickDown", 1, chosenIni) != 0;
     g_ammoHudEnabled = GetPrivateProfileIntA("Input", "AmmoHud", 1, chosenIni) != 0;
+    g_eyeTrackingEnabled = GetPrivateProfileIntA("EyeTracking", "Enabled", 1, chosenIni) != 0;
+    g_gazeDotEnabled = GetPrivateProfileIntA("EyeTracking", "GazeDot", 1, chosenIni) != 0;
+    Log("[EyeTracking] enabled=%d gazeDot=%d (needs AdaptiveTriggers bridge + Toolkit gaze calibration)",(int)g_eyeTrackingEnabled,(int)g_gazeDotEnabled);
     Log("[AmmoHud] enabled=%d (magazine rounds from gun+0xA48 on a grip-space quad; reserve ammo not shown yet)",(int)g_ammoHudEnabled);
     Log("[WeaponWheel] enabled=%d (hold R3: one wheel at the right hand with every owned weapon, move the hand to it, release; closed-loop stock D-pad equip; R3 tap still reaches the game)",(int)g_weaponWheelEnabled);
     Log("[StickFlick] CrouchStickDown=%d (right stick Y never pitches the camera; up -> [Input] JumpButton default A, down -> CrouchButton default R3; physical A -> AButton default X)",(int)g_crouchStickDown);
@@ -4515,6 +4520,7 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
 }
 
 #include "weapon_wheel_input.inl"
+#include "eye_gaze.inl"
 
 static d2vr_input::UnarmedTriggerDpad g_unarmedTriggerDpadState;
 static d2vr_input::DoubleTapDpad g_doubleTapDpadState;
@@ -5744,8 +5750,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
         Log("[WorldActivity] active=%d (render heuristic; native gameplay/menu state unverified)",(int)g_in3DGameplayMode);
     }
 
-    const XrCompositionLayerBaseHeader* layers[7] = { nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr };
-    XrCompositionLayerQuad wheelQuads[4]{};
+    const XrCompositionLayerBaseHeader* layers[8] = { nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr };
+    XrCompositionLayerQuad wheelQuads[5]{};
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
     uint32_t layerCount = 0;
@@ -6100,7 +6106,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
         } else if(settingsResult==VrSettingsRender::Pending)g_vrSettings.SuspendSurface();
         else g_vrSettings.Submitted(false);
     }
-    if(!settingsSubmitted)AppendWeaponWheelLayers(layers,layerCount,7,wheelQuads,fs.shouldRender);
+    if(!settingsSubmitted)AppendWeaponWheelLayers(layers,layerCount,8,wheelQuads,fs.shouldRender);
     XrFrameEndInfo fei{ XR_TYPE_FRAME_END_INFO };
     fei.displayTime = fs.predictedDisplayTime;
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;

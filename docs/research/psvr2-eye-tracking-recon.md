@@ -52,7 +52,10 @@ no native rendering change; cost = one small extra dispatch per eye (measure
 with the existing NIS GPU timing). Needs a second constant buffer per dispatch.
 INI: [Render] FoveatedSharpen=0 default (live A/B), FoveaSharpness, FoveaSize.
 
-## (1) Gaze interaction - candidates (choose with the user)
+## (1) Gaze interaction - candidates
+
+User choice 2026-11-01 00:12: **tentacle grab target** and **throw target**.
+Weapon wheel and menu stay controller-driven.
 
 - Tentacle grab target: when the grab gesture starts, prefer the object/enemy
   nearest the gaze ray instead of the controller ray (native throw/grab aim

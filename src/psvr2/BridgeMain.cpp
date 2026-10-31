@@ -2,6 +2,7 @@
 // Dual-hand delivery is independent. A left command never clears the right
 // trigger. Adapted from the KHARVOX bridge (MIT, CactusVRStudios).
 
+#include "GazeShare.h"
 #include "IpcProtocol.h"
 #include "ToolkitBackend.h"
 
@@ -237,6 +238,51 @@ bool readMessage(HANDLE pipe, HANDLE parent,
         == IpcValidationResult::Valid;
 }
 
+// Gaze publisher: latest Toolkit sample into "Local\\Darkness2VR.Gaze.<gamePid>".
+struct GazeSection {
+    HANDLE mapping{};
+    d2vr::psvr2::GazeShared* view{};
+    bool create(DWORD gamePid, SECURITY_ATTRIBUTES* security) {
+        const std::wstring name = L"Local\\Darkness2VR.Gaze." + std::to_wstring(gamePid);
+        mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, security, PAGE_READWRITE, 0,
+            sizeof(d2vr::psvr2::GazeShared), name.c_str());
+        if (!mapping) return false;
+        view = static_cast<d2vr::psvr2::GazeShared*>(
+            MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, sizeof(d2vr::psvr2::GazeShared)));
+        if (!view) { CloseHandle(mapping); mapping = nullptr; return false; }
+        view->magic = d2vr::psvr2::kGazeMagic;
+        view->version = d2vr::psvr2::kGazeVersion;
+        return true;
+    }
+    void publish(const d2vr::psvr2::gaze_abi::Status& st) {
+        using namespace d2vr::psvr2;
+        if (!view) return;
+        GazeSample s{};
+        s.publishMs = GetTickCount64();
+        s.deviceTimestamp = st.wearable.timestamp;
+        s.frameCounter = st.wearable.frameCounter;
+        const auto copy = [](float* d, const gaze_abi::Vec3& v) { d[0] = v.x; d[1] = v.y; d[2] = v.z; };
+        if (st.wearable.dirCombinedValid) s.flags |= GazeCombinedValid;
+        if (st.wearable.left.dirValid) s.flags |= GazeLeftValid;
+        if (st.wearable.right.dirValid) s.flags |= GazeRightValid;
+        if (st.wearable.left.blinkValid && st.wearable.left.blink) s.flags |= GazeBlinkLeft;
+        if (st.wearable.right.blinkValid && st.wearable.right.blink) s.flags |= GazeBlinkRight;
+        if (st.foveated.trackingState) s.flags |= GazeFoveatedValid;
+        copy(s.dirCombined, st.wearable.dirCombined);
+        copy(s.dirLeft, st.wearable.left.dir);
+        copy(s.dirRight, st.wearable.right.dir);
+        copy(s.foveatedCombined, st.foveated.dirCombined);
+        s.trackingState = st.foveated.trackingState;
+        s.convergenceMm = st.foveated.convergenceMm;
+        GazeWrite(*view, s);
+    }
+    void close() {
+        if (view) UnmapViewOfFile(view);
+        if (mapping) CloseHandle(mapping);
+        view = nullptr; mapping = nullptr;
+    }
+};
+
 struct PipeThreadContext {
     std::wstring pipePath;
     std::string token;
@@ -366,6 +412,11 @@ int wmain() {
         }
 
         ToolkitBackend backend;
+        GazeSection gaze;
+        if (!gaze.create(parentId, &security.attributes)) writeLog("[PSVR2TK] gaze section unavailable");
+        std::uint32_t gazeLastFrame = 0, gazeSamples = 0;
+        std::uint64_t gazeReportAt = 0;
+        bool gazeAnnounced = false;
         TriggerDeliveryState delivery[2]{};
         bool driverWasActive = false;
         std::uint64_t connectionGeneration = 0;
@@ -439,8 +490,26 @@ int wmain() {
                     }
                 }
             }
-            WaitForSingleObject(shutdownEvent, 50);
+            bool gazeLive = false;
+            if (backend.initialized() && driverWasActive && backend.hasGaze() && gaze.view) {
+                if (!gazeAnnounced) { writeLog("[PSVR2TK] gaze API available; publishing"); gazeAnnounced = true; }
+                gaze_abi::Status st{};
+                if (backend.gazeStatus(st, 0) && st.wearable.frameCounter != gazeLastFrame) {
+                    gazeLastFrame = st.wearable.frameCounter;
+                    gaze.publish(st);
+                    ++gazeSamples;
+                }
+                gazeLive = true;
+                if (now >= gazeReportAt) {
+                    if (gazeReportAt) writeLog("[PSVR2TK] gaze samples/10s=" + std::to_string(gazeSamples));
+                    gazeSamples = 0;
+                    gazeReportAt = now + 10000;
+                }
+            }
+            // Gaze needs a fast poll; triggers alone keep the 50 ms cadence.
+            WaitForSingleObject(shutdownEvent, gazeLive ? 4 : 50);
         }
+        gaze.close();
 
         shutdownRequested.store(true, std::memory_order_release);
         if (shutdownEvent) SetEvent(shutdownEvent);

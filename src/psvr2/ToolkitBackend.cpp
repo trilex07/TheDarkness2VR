@@ -124,6 +124,8 @@ BackendLoadResult ToolkitBackend::loadFromDirectory(
         unload();
         return BackendLoadResult::CapiExportMissing;
     }
+    // Eye tracking is optional: older Toolkit builds keep triggers working.
+    gazeStatus_ = loadExport<GazeStatusFn>(capiModule_, "psvr2_toolkit_gaze_status");
     return BackendLoadResult::Ready;
 }
 
@@ -176,6 +178,14 @@ int ToolkitBackend::apply(const TriggerCommand& requested) {
     return result;
 }
 
+bool ToolkitBackend::gazeStatus(gaze_abi::Status& out, std::uint32_t timeoutMs) {
+    if (!initialized_ || !gazeStatus_) return false;
+    bool ok = false;
+    __try { ok = gazeStatus_(&out, timeoutMs); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+    return ok;
+}
+
 void ToolkitBackend::shutdown() {
     if (!initialized_) return;
     if (setTriggerEffect_) {
@@ -195,6 +205,7 @@ void ToolkitBackend::unload() {
     deinit_ = nullptr;
     getDriverActive_ = nullptr;
     setTriggerEffect_ = nullptr;
+    gazeStatus_ = nullptr;
     getModuleHandle_ = nullptr;
     if (capiModule_ && capiModule_ != loaderModule_)
         FreeLibrary(capiModule_);
