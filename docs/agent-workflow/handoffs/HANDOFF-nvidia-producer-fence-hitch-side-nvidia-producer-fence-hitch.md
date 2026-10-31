@@ -20,22 +20,32 @@ Previous `side/zero-latency-render-pipeline` (a7f1df69) marked SUPERSEDED (4cdb7
   FLUSH, moving it across driver lock, or speculative prewarming. Not repeated.
 
 ## Change (protected/DiagnosticCapture build only; release build behaviour unchanged)
-`[CPUSync] producer outlier capture= qpcBegin= qpcIssued= qpcEnd= issueMs= flushMs= totalMs= hr= tid=`
-logged only when one mode-4 producer call ≥ 11.111 ms (cap 256). Splits Issue vs GetData(FLUSH) and gives
-QPC on the PresentMon clock. Files: src/cpu_sync_timing.inl, src/shared_capture.inl.
+Exact boundaries in `CaptureBackbufferToShared` (src/shared_capture.inl):
+- issue = QPC immediately before/after `slot.producer->Issue(D3DISSUE_END)` only.
+- flush = QPC immediately before/after the first `GetData(nullptr,0,D3DGETDATA_FLUSH)` only.
+- `command_history::Scope` construction (between the two) and `Finish()` (after flush) are outside both.
+- totalMs = issueMs + flushMs (inter-call gap excluded). Mode 0/3 later flags-0 polls are not timed.
+Log (only when totalMs >= 11.111, max 256 per process; also on Issue failure if >= threshold):
+`[CPUSync] producer outlier mode= capture= frame=<g_trackedFrame.id> issueQpc=a..b issueMs= issueHr= flushQpc=c..d flushMs= flushHr= totalMs= tid=`
+flushQpc=0..0 / flushHr=0x8000000A (E_PENDING) means Issue failed and flush never ran.
+Fences, worker scheduling, call order and HRESULT handling are unchanged; the release build uses the identical
+original calls via a macro. Overhead when CPUSync on: 4 QPC reads + one compare per producer call (~2/frame).
 
 ## Validation (offline)
 - build.ps1 (release x86) PASS; build.ps1 -DiagnosticCapture (protected x86) PASS.
-- build_shared_capture_slots PASS (23182 checks); build_stereo_transfer_worker PASS (2660 real D3D9Ex/D3D11 transfers,
-  pixel equality, query retirement, Reset/recreate).
-- build_query_preload_pool / build_light_readback_lifetime: FAIL at CreateDevice(D3DDEVTYPE_REF) — REF rasterizer not
-  available on this host; they do not compile the changed code. Environmental, not a regression.
+- test/build_producer_outlier_trace.ps1 PASS: threshold, inter-call gap excluded, exact fields/QPC/HRESULT,
+  issue-only, disabled, cap 256, non-outlier overhead 92.1 ns/call measured (~0.2 us/frame at 2 calls/frame).
+- build_shared_capture_slots PASS; build_stereo_transfer_worker PASS (real D3D9Ex/D3D11, pixel equality,
+  query retirement, Reset/recreate).
+- NOT RUN (environmental): build_query_preload_pool and build_light_readback_lifetime require
+  CreateDevice(D3DDEVTYPE_REF); the D3D9 REF rasterizer (d3d9ref.dll, SDK) is absent on this host, so they fail at
+  device creation. They do not compile the changed code. Run them only on a host with the REF rasterizer.
 
-## MAIN: minimum next trace (one session, only when convenient)
-Deploy this branch's protected build, same INIs, CPUSync on, PresentMon-only (no WPR needed). Then:
-1. Match each `producer outlier` QPC range to the PresentMon interval containing it.
-2. If flushMs ≈ totalMs and lies inside the 50+ ms interval → spike = GetData(FLUSH) driver wait (same class as proven
-   compiler stalls). If issueMs dominates → Issue blocking (new finding). If no outlier inside the spike → producer
-   fence is not the cause; inspect engine Present boundary max (46.4 ms) next.
-3. Only if (2) attributes to FLUSH and a WPR capture is anyway authorized: enable existing command history to name
-   preceding binds. No fix is proposed before this.
+## MAIN: minimal capture procedure (one launch)
+1. Build `build.ps1 -DiagnosticCapture` from this branch; install via the normal protected procedure with the
+   current mode-4 INIs unchanged except `[Diagnostics] CpuSyncTiming=1`; keep rollback backup.
+2. Run the existing PresentMon-only collector: 5 s stationary + 25 s combat. No WPR.
+3. From d3d9.log take every `producer outlier` line; from PresentMon take every interval > 22.22 ms.
+4. Classify each spike: contains a flush range with flushMs ~ spike excess -> GetData(FLUSH) driver wait;
+   issueMs dominant -> Issue blocking; no producer outlier inside -> producer fence not the cause
+   (next: engine Present boundary). Report table: spike QPC, frame, issueMs, flushMs, spike ms.

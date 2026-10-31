@@ -42,23 +42,34 @@ struct Timing {
         ReleaseSRWLockExclusive(&lock);
     }
     // Per-call identity for rare producer-fence outliers only. The window
-    // aggregate cannot prove which call (or which sub-step) owns a stall, nor
-    // relate it to one PresentMon interval. Values are QPC ticks on the same
-    // clock as PresentMon/ETW; logging happens only after an already >=11.111 ms
-    // stall, so ordinary frames add no file I/O.
+    // aggregate cannot prove which call owns a stall, nor relate it to one
+    // PresentMon interval. Each interval brackets exactly one driver call:
+    // issue=[Issue(D3DISSUE_END)], flush=[GetData(D3DGETDATA_FLUSH)]. Command
+    // history construction/Finish lie outside both. QPC is the PresentMon/ETW
+    // clock. Logging happens only after an already >=11.111 ms stall (cap 256),
+    // so ordinary frames add four QPC reads and no file I/O.
+    struct ProducerCall {
+        LARGE_INTEGER issueBegin{},issueEnd{},flushBegin{},flushEnd{};
+        HRESULT issueHr=E_PENDING,flushHr=E_PENDING;
+        bool timed=false;
+    };
+    static constexpr LONG producerOutlierCap=256;
+    static constexpr double producerOutlierMs=11.111;
     LONG producerOutliers=0;
-    void ProducerOutlier(unsigned capture,const LARGE_INTEGER& begin,
-                         const LARGE_INTEGER& issued,HRESULT hr) {
-        if(!enabled) return;
-        LARGE_INTEGER end{};
-        if(!QueryPerformanceCounter(&end) || end.QuadPart<begin.QuadPart) return;
-        const double totalMs=(end.QuadPart-begin.QuadPart)*1000.0/frequency.QuadPart;
-        if(totalMs<11.111 || InterlockedIncrement(&producerOutliers)>256) return;
-        Log("[CPUSync] producer outlier capture=%u qpcBegin=%lld qpcIssued=%lld qpcEnd=%lld issueMs=%.3f flushMs=%.3f totalMs=%.3f hr=0x%08lX tid=%lu",
-            capture,begin.QuadPart,issued.QuadPart,end.QuadPart,
-            (issued.QuadPart-begin.QuadPart)*1000.0/frequency.QuadPart,
-            (end.QuadPart-issued.QuadPart)*1000.0/frequency.QuadPart,
-            totalMs,hr,GetCurrentThreadId());
+    double Ms(const LARGE_INTEGER& a,const LARGE_INTEGER& b) const {
+        return b.QuadPart>=a.QuadPart ? (b.QuadPart-a.QuadPart)*1000.0/frequency.QuadPart : 0.0;
+    }
+    // Returns true when an event was logged.
+    bool ProducerOutlier(const ProducerCall& c,int mode,unsigned capture,unsigned long long frame) {
+        if(!enabled || !c.timed) return false;
+        const double issueMs=Ms(c.issueBegin,c.issueEnd);
+        const double flushMs=c.flushEnd.QuadPart ? Ms(c.flushBegin,c.flushEnd) : 0.0;
+        const double totalMs=issueMs+flushMs;
+        if(totalMs<producerOutlierMs || InterlockedIncrement(&producerOutliers)>producerOutlierCap) return false;
+        Log("[CPUSync] producer outlier mode=%d capture=%u frame=%llu issueQpc=%lld..%lld issueMs=%.3f issueHr=0x%08lX flushQpc=%lld..%lld flushMs=%.3f flushHr=0x%08lX totalMs=%.3f tid=%lu",
+            mode,capture,frame,c.issueBegin.QuadPart,c.issueEnd.QuadPart,issueMs,c.issueHr,
+            c.flushBegin.QuadPart,c.flushEnd.QuadPart,flushMs,c.flushHr,totalMs,GetCurrentThreadId());
+        return true;
     }
     void Report(unsigned width,unsigned height,unsigned long long frame) {
         if(!enabled) return;

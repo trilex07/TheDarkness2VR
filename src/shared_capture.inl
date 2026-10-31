@@ -190,30 +190,48 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
     // GPU fence: D3D9Ex and D3D11 run on separate queues; flush D3D9 batch before D3D11 reads
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::Scope cpuProducer(d2vr_cpu_sync::D3D9Fence);
-    LARGE_INTEGER producerBegin{},producerIssued{};
-    const bool producerTimed=d2vr_cpu_sync::timing.enabled && QueryPerformanceCounter(&producerBegin);
-#endif
-    if (FAILED(slot.producer->Issue(D3DISSUE_END))) return false;
-#ifdef D2VR_MATCHED_CAPTURE
-    if(producerTimed) QueryPerformanceCounter(&producerIssued);
+    // Exact per-call brackets; see d2vr_cpu_sync::Timing::ProducerCall.
+    d2vr_cpu_sync::Timing::ProducerCall producerCall;
+    producerCall.timed=d2vr_cpu_sync::timing.enabled;
+    const unsigned long long producerFrame=g_trackedFrame.id;
+    if(producerCall.timed) QueryPerformanceCounter(&producerCall.issueBegin);
+    producerCall.issueHr=slot.producer->Issue(D3DISSUE_END);
+    if(producerCall.timed) QueryPerformanceCounter(&producerCall.issueEnd);
+    if (FAILED(producerCall.issueHr)) {
+        d2vr_cpu_sync::timing.ProducerOutlier(producerCall,g_stereoTransferMode,capture,producerFrame);
+        return false;
+    }
     d2vr_replay::d2vr_command_history::Scope command(dev,::d2vr_command_history::ProducerFlush,
         d2vr_replay::g_replayEye,0,capture,D3DGETDATA_FLUSH);
+#define D2VR_PRODUCER_FLUSH(result) do { \
+        if(producerCall.timed) QueryPerformanceCounter(&producerCall.flushBegin); \
+        result=slot.producer->GetData(nullptr,0,D3DGETDATA_FLUSH); \
+        if(producerCall.timed) QueryPerformanceCounter(&producerCall.flushEnd); \
+        producerCall.flushHr=result; } while(0)
+#else
+    if (FAILED(slot.producer->Issue(D3DISSUE_END))) return false;
+#define D2VR_PRODUCER_FLUSH(result) (result=slot.producer->GetData(nullptr,0,D3DGETDATA_FLUSH))
 #endif
     if(deferProducer) {
         // One flush submits this event ahead of later commands on this device.
         // Do not spin. Mode 1 may poll the query on its worker; mode 4 polls
         // it on this thread, without another flush, after overlapping D3D9 work.
-        hr=slot.producer->GetData(nullptr,0,D3DGETDATA_FLUSH);
+        D2VR_PRODUCER_FLUSH(hr);
         slot.producerStatus=hr;
 #ifdef D2VR_MATCHED_CAPTURE
         command.Finish(hr);
-        if(producerTimed) d2vr_cpu_sync::timing.ProducerOutlier(capture,producerBegin,producerIssued,hr);
+        d2vr_cpu_sync::timing.ProducerOutlier(producerCall,g_stereoTransferMode,capture,producerFrame);
 #endif
         g_srcW=slot.width; g_srcH=slot.height;
         return hr==S_OK || hr==S_FALSE;
     }
     const ULONGLONG start = GetTickCount64();
-    hr=slot.producer->GetData(nullptr,0,D3DGETDATA_FLUSH);
+    // Only this first flushing call is timed; later flags-0 polls are not.
+    D2VR_PRODUCER_FLUSH(hr);
+#undef D2VR_PRODUCER_FLUSH
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_cpu_sync::timing.ProducerOutlier(producerCall,g_stereoTransferMode,capture,producerFrame);
+#endif
     while (hr == S_FALSE) {
         if (GetTickCount64() - start > 2000) return false;
         SwitchToThread();
