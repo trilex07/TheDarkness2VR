@@ -56,6 +56,30 @@ class MatchedCaptureTests(unittest.TestCase):
     def test_complete(self):
         self.assertEqual(validate(self.folder)["frame"], 7)
 
+    def test_effective_lighting_constants_are_draw_scoped(self):
+        witness = dict(kind="lighting_ps_constants", frame=7, eye=0, draw=0,
+                       shader_hash=0xC4D1FB10, inverse_register=27, extents_register=-1,
+                       valid=True, values=[0.0]*896)
+        i = next(i for i,r in enumerate(self.records) if r["kind"] == "draw")
+        self.records.insert(i+1, dict(kind="draw_ps", frame=7, eye=0, draw=0, shader_hash=0xC4D1FB10))
+        self.records.insert(i+2, witness)
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"], 7)
+        for key, value in (("valid", False), ("shader_hash", 1), ("draw", 99),
+                           ("inverse_register", 221), ("extents_register", 224),
+                           ("values", [0.0]*895), ("values", [float('inf')]*896)):
+            old = witness[key]
+            witness[key] = value
+            self.save()
+            with self.assertRaisesRegex(ValueError, "invalid lighting PS constant witness"):
+                validate(self.folder)
+            witness[key] = old
+        self.records.remove(witness)
+        self.records.insert(-3, witness)
+        self.save()
+        with self.assertRaisesRegex(ValueError, "invalid lighting PS constant witness"):
+            validate(self.folder)
+
     def test_optional_hand_palette_witness_keeps_frame_identity(self):
         witness = dict(kind="avatar_palette_overlap", frame=7, eye=0, draw=0,
                        status="compared", unique_matches=3, right_pose="survived")

@@ -122,3 +122,30 @@ shadow sampler4. The stage shader budget32 exhausted before these shaders.
 Existing draw banks contain only VS constants, not effective PS matrices.
 Need second same-position head pose for comparison; async readiness requested.
 No further DLL/config render changes made. Capture readbacks are not FPS evidence.
+
+## Request103 and bounded recorder completion
+Second user-ready request: PID35604, serial103, XRframe24450, folder
+C:/Users/Trilex/AppData/Local/Temp/Darkness2VR-matched-35604-103-24450.
+Both eyes and8 stages saved; original Present completed,514 draws/eye. Full
+validator still rejects post-source hand upload identity; do not relabel as PASS.
+Original diagnostic bytes restored; backup:
+C:/Users/Trilex/AppData/Local/Darkness2VR/captures/world-light-20261031T213914823.
+Source image has pause overlay; world behind remains rendered. Eye pose change
+from request102:30.2938 degrees and0.113966m eye displacement. Not a pure yaw
+or pixel-registered controlled lighting acceptance. No additional automatic shots.
+
+Recorder source now excludes hand uploads once source-eye0 was captured (both
+begin/end); the existing validator's rejection remains strict. Lighting draws
+read actual PS c0..223 at consumption into manifest lighting_ps_constants with
+shader/draw/frame identity, reflected inverse/extents register and HRESULT status.
+Validator checks finite896-value bank, valid registers, matching shader, unique
+draw and ordering before source. Eight of32 shader slots reserved for lighting.
+All changes diagnostic-only after Current/capture guards; no rendering mutation.
+Tests: actual-source39 checks PASS; validator32 tests (including finite bank,
+identity/register/failure/ordering cases) PASS; protected x86 build PASS.
+New candidate DLL SHA256:
+C306DA8AA8008514F1672BFC27628A799358A3C4AEE6B002241F2141A98A5C20.
+NOT INSTALLED; current Steam DLL remains469F7B92. Deployment script updated to
+require that exact predecessor and latest nine-target rollback template.
+World-lighting root cause and fix remain OPEN. Required missing evidence is
+effective same-draw PS reconstruction/lighting matrices, not another VS-only shot.

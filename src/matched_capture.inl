@@ -11,6 +11,7 @@ static uint64_t presentSerial, presentEpoch, presentFrame;
 static uintptr_t presentDevice;
 static LONG resetGeneration;
 static unsigned mask, draws[2], blits, inputs;
+static bool LiveSkinCaptureWindow() { return active && !(mask&1u); }
 static unsigned skinUploadsSeen, skinUploadsSaved;
 static uintptr_t sourceIdentities[2];
 static unsigned projectionObserved;
@@ -347,8 +348,9 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
         if(surface)surface->Release();if(base)base->Release();
     }
 }
-template<class Shader> static void SaveStageShader(Shader* shader,unsigned declaredHash,bool pixel) {
-    if(!passStages || !shader || shadersSaved.size()>=32) return;
+template<class Shader> static void SaveStageShader(Shader* shader,unsigned declaredHash,bool pixel,bool lighting=false) {
+    // Reserve eight slots for actual lighting consumers, after material shaders.
+    if(!passStages || !shader || shadersSaved.size()>=32 || (!lighting && shadersSaved.size()>=24)) return;
     const uint64_t key=((uint64_t)pixel<<32)|declaredHash;
     if(!shadersSaved.insert(key).second) return;
     UINT size=0;
@@ -446,7 +448,9 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
     IDirect3DBaseTexture9* texture=nullptr;UINT streamOffset=0,stride=0;
     const bool geometry=SUCCEEDED(dev->GetStreamSource(0,&vb,&streamOffset,&stride)) &&
         SUCCEEDED(dev->GetIndices(&ib)) && SUCCEEDED(dev->GetPixelShader(&ps)) && SUCCEEDED(dev->GetTexture(0,&texture));
-    const unsigned pixelHash=d2vr_replay::g_pixelShaders.Lookup(ps).hash;
+    const auto pixelMetadata=d2vr_replay::g_pixelShaders.Lookup(ps);
+    const unsigned pixelHash=pixelMetadata.hash;
+    const bool lighting=pixelMetadata.inverse>=0 || pixelMetadata.extents>=0 || pixelHash==0xD82658F7u;
     if (d2vr_sampling::IsWorldDiffuseMaterial(hash,pixelHash)) {
         DWORD min=0,mag=0,mip=0,quality=0,bias=0;
         const bool sampler=SUCCEEDED(dev->GetSamplerState(0,D3DSAMP_MINFILTER,&min)) &&
@@ -463,7 +467,7 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
         }
         stageLastDraw=draws[eye]-1; stageVs=hash; stagePs=pixelHash;
         if(!postStagesOnly || IsPostStage(pixelHash) || d2vr_sampling::IsWorldDiffuseMaterial(hash,pixelHash)) {
-            SaveStageShader(vs,hash,false); SaveStageShader(ps,pixelHash,true);
+            SaveStageShader(vs,hash,false,lighting); SaveStageShader(ps,pixelHash,true,lighting);
         }
         CapturePostInputs(dev,draws[eye]-1,hash,pixelHash);
     }
@@ -472,6 +476,16 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
     fprintf(meta,"{\"kind\":\"draw_geometry\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"vb\":\"%p\",\"ib\":\"%p\",\"ps\":\"%p\",\"texture0\":\"%p\",\"stream_offset\":%u,\"stride\":%u,\"cull\":%lu,\"scissor\":%lu,\"clip\":[%ld,%ld,%ld,%ld]}\n",
         frame,eye,draws[eye]-1,geometry?"true":"false",vb,ib,ps,texture,streamOffset,stride,cull,scissor,clip.left,clip.top,clip.right,clip.bottom);
     fprintf(meta,"{\"kind\":\"draw_ps\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"shader_hash\":%u}\n",frame,eye,draws[eye]-1,pixelHash);
+    if(lighting) {
+        // Read the effective device bank at the consuming draw, not the raw
+        // setter input or a reconstruction guessed from the VS bank.
+        float pixelConstants[224*4]{};
+        const bool pixelOk=SUCCEEDED(dev->GetPixelShaderConstantF(0,pixelConstants,224));
+        fprintf(meta,"{\"kind\":\"lighting_ps_constants\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"shader_hash\":%u,\"inverse_register\":%d,\"extents_register\":%d,\"valid\":%s,\"values\":",
+            frame,eye,draws[eye]-1,pixelHash,pixelMetadata.inverse,pixelMetadata.extents,pixelOk?"true":"false");
+        Floats(pixelConstants,224*4);fprintf(meta,"}\n");
+        if(!pixelOk) Reject("lighting PS constant readback failed");
+    }
     if(geometry) MatchedCaptureHandsWitness(vb,ib,stride,vp,hash,constants,eye,draws[eye]-1);
     // One bounded read-only snapshot of the first-person buffers. Private output,
     // never included in a commit; no locks outside an explicit capture request.

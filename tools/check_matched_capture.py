@@ -114,6 +114,24 @@ def validate(folder):
             if r["eye"] not in (0, 1) or r["bank_offset"] != expected_offset:
                 raise ValueError("invalid draw-bank ordering")
             expected_offset += 4096
+    lighting = [r for r in records if r["kind"] == "lighting_ps_constants"]
+    if lighting:
+        draw_positions = {(r["eye"], r["draw"]): position(r) for r in records if r["kind"] == "draw"}
+        sources = {r["eye"]: position(r) for r in records if r["kind"] == "source"}
+        pixels = {(r["eye"], r["draw"]): r for r in records if r["kind"] == "draw_ps"}
+        seen_lighting = set()
+        for r in lighting:
+            key = (r.get("eye"), r.get("draw"))
+            values = r.get("values")
+            if (key in seen_lighting or key not in draw_positions or key not in pixels or
+                    not draw_positions[key] < position(r) < sources.get(key[0], -1) or
+                    r.get("valid") is not True or r.get("shader_hash") != pixels[key].get("shader_hash") or
+                    not isinstance(values, list) or len(values) != 896 or
+                    any(type(v) not in (int, float) or not math.isfinite(v) for v in values) or
+                    type(r.get("inverse_register")) is not int or not -1 <= r["inverse_register"] <= 220 or
+                    type(r.get("extents_register")) is not int or not -1 <= r["extents_register"] < 224):
+                raise ValueError("invalid lighting PS constant witness")
+            seen_lighting.add(key)
     witnesses = [r for r in records if r["kind"] == "avatar_palette_overlap"]
     if witnesses:
         draw_positions = {(r["eye"], r["draw"]): position(r) for r in records if r["kind"] == "draw"}

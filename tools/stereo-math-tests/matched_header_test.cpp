@@ -18,6 +18,8 @@ static uint64_t g_nativeCoveredFrame=7;
 static std::string settings="armed";
 namespace matched_capture {
 static bool active=true,failed=false,headerPending=true;
+static unsigned mask;
+#include "matched_skin_window.inl"
 static uint64_t frame=7,presentSerial=9,presentEpoch=1,presentFrame=7;
 static int resetGeneration=2,headers=0;
 static uintptr_t presentDevice=8;
@@ -56,5 +58,8 @@ int main() {
     Reset();g_trackedFrame.open=false;Check(!Current());Check(headers==0);
     Reset();active=false;NativeCameraCaptureChanged();Check(!failed);Check(!Current());Check(headers==0);
     Reset();failed=true;Check(!Current());Check(headers==0);
+    Reset();mask=0;Check(LiveSkinCaptureWindow());
+    mask=1;Check(!LiveSkinCaptureWindow());mask=3;Check(!LiveSkinCaptureWindow());
+    mask=15;Check(!LiveSkinCaptureWindow());mask=0;active=false;Check(!LiveSkinCaptureWindow());
     std::printf("PASS %d capture header checks (actual source)\n",checks);
 }

@@ -9,6 +9,7 @@ function Extract($path,$start,$end,$name) {
  [IO.File]::WriteAllText((Join-Path $out $name),$text.Substring($first,$last-$first))
 }
 Extract 'src/matched_capture.inl' 'static bool Current()' 'static std::string HashFile(' 'matched_current.inl'
+Extract 'src/matched_capture.inl' 'static bool LiveSkinCaptureWindow()' 'static unsigned skinUploadsSeen' 'matched_skin_window.inl'
 Extract 'src/d3d9.cpp' 'static void NativeCameraCaptureChanged() {' "`n#endif" 'matched_camera_changed.inl'
 $vswhere="${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
 $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

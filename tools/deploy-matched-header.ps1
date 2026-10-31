@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $game='C:/Program Files (x86)/Steam/steamapps/common/Darkness II'
 $local='C:/Users/Trilex/AppData/Local/Darkness2VR'
-$previous=Join-Path $local 'packages/hud-fps-off-20261031T211614129/rollback'
+$previous=Join-Path $local 'packages/matched-header-20261031T213047682/rollback'
 $candidate=Join-Path $root 'build/matched-header'
 $provenance=Get-Content -LiteralPath "$candidate/source.json" -Raw | ConvertFrom-Json
 function Hash($path){(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}
@@ -12,7 +12,7 @@ function Assert-Free {
  if(Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'DarknessII.exe'}){throw 'Close Darkness II before installing'}
 }
 $exeHash='D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1'
-$oldDll='155D6A427E4D53AD5EBEAE206E17C4A7F755ABBD4FEBC2C8D5629FAFF48D1AE1'
+$oldDll='469F7B92F316C34DBE05C4DDBE4707C4122C568D4EE64E99478494B2B90D03A7'
 if((Hash "$game/DarknessII.exe") -ne $exeHash){throw 'EXE identity mismatch'}
 if((Hash "$game/d3d9.dll") -ne $oldDll){throw 'Installed DLL changed; re-evaluate'}
 if((Hash "$candidate/d3d9.dll") -ne $provenance.dll_sha256){throw 'Candidate provenance mismatch'}

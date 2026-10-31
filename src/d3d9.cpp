@@ -3558,7 +3558,7 @@ static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float* data,UINT st
     // 34 matrices consumed by the verified arm VB, on the live eye only.
     const uint64_t end=(uint64_t)start+count;
     if(!data || !count || start>=147 || end<=45 || d2vr_replay::g_replayEye>=0 ||
-       !matched_capture::active || g_capturePresent.thread!=GetCurrentThreadId() ||
+       !matched_capture::LiveSkinCaptureWindow() || g_capturePresent.thread!=GetCurrentThreadId() ||
        !matched_capture::Current()) return w;
     ++matched_capture::skinUploadsSeen;
     if(count>256 || matched_capture::skinUploadsSeen>256) return w;
@@ -3570,7 +3570,7 @@ static MatchedSkinUploadWitness BeginMatchedSkinUpload(const float* data,UINT st
     return w;
 }
 static void EndMatchedSkinUpload(const MatchedSkinUploadWitness& w,const float* forwarded,HRESULT hr) {
-    if(!w.valid || !matched_capture::Current() || !matched_capture::meta) return;
+    if(!w.valid || !matched_capture::LiveSkinCaptureWindow() || !matched_capture::Current() || !matched_capture::meta) return;
     const uint64_t forwardedHash=MatchedSkinHash(forwarded+4*(w.bankFirst-w.start),w.bankCount);
     const uintptr_t base=(uintptr_t)GetModuleHandleA(nullptr),addr=(uintptr_t)w.caller;
     unsigned long rva=0;bool exeCaller=false;
