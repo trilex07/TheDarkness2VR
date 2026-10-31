@@ -54,6 +54,7 @@
 #include "unarmed_trigger_dpad.h"
 #include "dual_weapon_wheel.h"
 #include "weapon_wheel_raster.h"
+#include "ammo_hud.h"
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
 #include "composite_shader_patch.h"
@@ -161,6 +162,7 @@ bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
 bool g_weaponWheelEnabled=true;   // [Input] WeaponWheel: hold R3 -> dual weapon wheels
+bool g_ammoHudEnabled=true;       // [Input] AmmoHud: magazine counter on the back of each armed hand
 bool g_crouchStickDown=true;      // [Input] CrouchStickDown: right stick Y -> jump/crouch flicks, never camera pitch
 bool g_unarmedTriggerDpad=true; // left trigger + empty left hand -> DPAD_DOWN / DPAD_UP alternating
 bool g_nativeHandsEnabled=false;
@@ -802,6 +804,8 @@ void LoadConfig() {
     Log("[UnarmedTriggerDpad] enabled=%d (L trigger + empty left hand -> DPAD_DOWN/DPAD_UP alternating; R trigger always fires)",(int)g_unarmedTriggerDpad);
     g_weaponWheelEnabled = GetPrivateProfileIntA("Input", "WeaponWheel", 1, chosenIni) != 0;
     g_crouchStickDown = GetPrivateProfileIntA("Input", "CrouchStickDown", 1, chosenIni) != 0;
+    g_ammoHudEnabled = GetPrivateProfileIntA("Input", "AmmoHud", 1, chosenIni) != 0;
+    Log("[AmmoHud] enabled=%d (magazine rounds from gun+0xA48 on a grip-space quad; reserve ammo not shown yet)",(int)g_ammoHudEnabled);
     Log("[WeaponWheel] enabled=%d (hold R3: one wheel at the right hand with every owned weapon, move the hand to it, release; closed-loop stock D-pad equip; R3 tap still reaches the game)",(int)g_weaponWheelEnabled);
     Log("[StickFlick] CrouchStickDown=%d (right stick Y never pitches the camera; up -> [Input] JumpButton default A, down -> CrouchButton default R3; physical A -> AButton default X)",(int)g_crouchStickDown);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
@@ -5740,8 +5744,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
         Log("[WorldActivity] active=%d (render heuristic; native gameplay/menu state unverified)",(int)g_in3DGameplayMode);
     }
 
-    const XrCompositionLayerBaseHeader* layers[5] = { nullptr,nullptr,nullptr,nullptr,nullptr };
-    XrCompositionLayerQuad wheelQuads[2]{};
+    const XrCompositionLayerBaseHeader* layers[7] = { nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr };
+    XrCompositionLayerQuad wheelQuads[4]{};
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
     uint32_t layerCount = 0;
@@ -6096,7 +6100,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
         } else if(settingsResult==VrSettingsRender::Pending)g_vrSettings.SuspendSurface();
         else g_vrSettings.Submitted(false);
     }
-    if(!settingsSubmitted)AppendWeaponWheelLayers(layers,layerCount,5,wheelQuads,fs.shouldRender);
+    if(!settingsSubmitted)AppendWeaponWheelLayers(layers,layerCount,7,wheelQuads,fs.shouldRender);
     XrFrameEndInfo fei{ XR_TYPE_FRAME_END_INFO };
     fei.displayTime = fs.predictedDisplayTime;
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;

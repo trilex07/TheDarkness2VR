@@ -13,7 +13,17 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: weapon wheel v2 (2026-10-31 23:18 Europe/Warsaw)
+## Current installed MAIN candidate: weapon wheel v3 (2026-10-31 23:33 Europe/Warsaw)
+
+User ran build + preflight + install (game closed); no agent launch. A second launcher run
+afterwards correctly refused at preflight ("Installed DLL changed") because v3 was already in place.
+- Source: `52bcab50`, branch `main-weapon-wheels`.
+- Installed DLL SHA256: `7F98281E3EB154593EEF927AC6A5E12293EF3B8AE10550548CB2254C14D0B8B2` (protected-native).
+- Items single/dual/two-handed, learned closed-loop D-pad equip; A=reload only in gameplay; tentacle object hold no longer blocks wheel/flicks.
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/weapon-wheels-v3-20261031T233323096`; rollback `rollback/Restore.ps1`.
+- Offline: dual_weapon_wheel MSVC /W4 /WX 129 PASS; protected build PASS. Headset acceptance PENDING.
+
+## Previous installed MAIN candidate: weapon wheel v2 (2026-10-31 23:18 Europe/Warsaw)
 
 User ran build, preflight and install with the game closed; no agent launch.
 - Source: `e0109d8e`, branch `main-weapon-wheels`.

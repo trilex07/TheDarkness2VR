@@ -5,6 +5,7 @@
 #include <vector>
 #include "../src/dual_weapon_wheel.h"
 #include "../src/weapon_wheel_raster.h"
+#include "../src/ammo_hud.h"
 
 static int g_fail=0, g_checks=0;
 #define CHECK(c) do{ ++g_checks; if(!(c)){ ++g_fail; std::printf("FAIL %s:%d %s\n",__FILE__,__LINE__,#c);} }while(0)
@@ -194,9 +195,31 @@ static void RasterTests(const char* ppm) {
     }
 }
 
+static void AmmoTests(const char* ppm) {
+    CHECK(d2vr_ammo_hud::Segments(8)==0x7F && d2vr_ammo_hud::Segments(1)==0x06 && d2vr_ammo_hud::Segments(-1)==0x40);
+    const int S=128; std::vector<uint32_t> px(size_t(S)*S*4,0), sc(d2vr_wheel_raster::ScratchPixels(S));
+    const int values[4]={7,32,999,-1};
+    bool inside=true;
+    for(int i=0;i<4;++i) {
+        d2vr_wheel_raster::Target t{px.data(),S*4,S,S*4,i*S,0,S};
+        unsigned v=d2vr_wheel_raster::DrawShape(t,sc.data(),[&](auto&& emit){
+            d2vr_ammo_hud::Build(values[i],i==0,[&](const auto& a,const auto& b,const auto& c){
+                for(const auto* p:{&a,&b,&c}) if(p->x<-1.0001f||p->x>1.0001f||p->y<-1.0001f||p->y>1.0001f) inside=false;
+                emit(a,b,c); }); });
+        CHECK(v>0);
+    }
+    CHECK(inside);
+    CHECK((px[size_t(64)*S*4+64]>>24)>150);         // plate opaque-ish at centre
+    CHECK(px[0]==0);                                   // corners transparent (plate is a band)
+    if(ppm) if(FILE* f=std::fopen(ppm,"wb")) {
+        std::fprintf(f,"P6\n%d %d\n255\n",S*4,S);
+        for(uint32_t p:px){ const float a=(p>>24)/255.f; unsigned char rgb[3]={(unsigned char)(((p>>16)&255)+90*(1-a)),(unsigned char)(((p>>8)&255)+90*(1-a)),(unsigned char)((p&255)+90*(1-a))}; std::fwrite(rgb,1,3,f);} std::fclose(f); }
+}
+
 int main(int argc,char** argv) {
     HoldGateTests(); FlickTests(); SectorTests(); LoadoutTests();
     RasterTests(argc>1 ? argv[1] : nullptr);
+    AmmoTests(argc>2 ? argv[2] : nullptr);
     std::printf("%s: %d checks, %d failed\n",g_fail?"FAIL":"PASS",g_checks,g_fail);
     return g_fail?1:0;
 }

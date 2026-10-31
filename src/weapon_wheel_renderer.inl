@@ -1,10 +1,10 @@
-// Two compositor quads (one per hand) for the dual weapon wheels. Same
+// Compositor quads for the weapon wheel and the controller ammo counters. Same
 // acquire/wait/release contract as vr_settings_renderer.inl; no native
-// geometry, shader or device-state edits. One swapchain, left half = left
-// wheel, right half = right wheel. The CPU image is rebuilt only when the
-// display revision changes (open / hover / loadout), never per frame.
-struct WeaponWheelRenderer {
-    static constexpr int kHalf=512, kWidth=kHalf*2, kHeight=kHalf;
+// geometry, shader or device-state edits. Each atlas is one swapchain split
+// into square cells; the CPU image is rebuilt only when its content key
+// changes, never per frame.
+struct QuadAtlas {
+    const char* name; int cell, cells;
     XrSession session=XR_NULL_HANDLE;
     XrSwapchain chain=XR_NULL_HANDLE;
     std::vector<XrSwapchainImageD3D11KHR> images;
@@ -12,17 +12,19 @@ struct WeaponWheelRenderer {
     std::vector<uint32_t> pixels, scratch;
     uint32_t index=0, maxLayers=0;
     bool acquired=false, waited=false, publishable=false, failed=false;
-    uint64_t drawnRevision=~0ull;
+    uint64_t revision=0;
+    QuadAtlas(const char* n,int c,int count):name(n),cell(c),cells(count) {}
+    int Width() const { return cell*cells; }
     void Reset() {
         if(chain && XR_FAILED(xrDestroySwapchain(chain))) return;
         chain=XR_NULL_HANDLE; session=XR_NULL_HANDLE; images.clear(); imageRevision.clear();
-        acquired=waited=publishable=failed=false; drawnRevision=~0ull; maxLayers=0;
+        acquired=waited=publishable=failed=false; maxLayers=0;
     }
     bool Ensure() {
         if(session!=g_xrSession) Reset();
         if(chain) return true;
         if(failed) return false;
-        failed=true; // one attempt per session; logged by the caller
+        failed=true; // one attempt per session
         XrSystemProperties system{XR_TYPE_SYSTEM_PROPERTIES};
         if(xrGetSystemProperties(g_xrInstance,g_xrSystem,&system)!=XR_SUCCESS) return false;
         maxLayers=system.graphicsProperties.maxLayerCount;
@@ -36,7 +38,7 @@ struct WeaponWheelRenderer {
         if(!format) return false;
         XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
         ci.usageFlags=XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
-        ci.format=format; ci.width=kWidth; ci.height=kHeight;
+        ci.format=format; ci.width=Width(); ci.height=cell;
         ci.sampleCount=ci.faceCount=ci.arraySize=ci.mipCount=1;
         if(xrCreateSwapchain(g_xrSession,&ci,&chain)!=XR_SUCCESS) { chain=XR_NULL_HANDLE; return false; }
         session=g_xrSession;
@@ -46,26 +48,15 @@ struct WeaponWheelRenderer {
             Reset(); failed=true; return false;
         }
         imageRevision.assign(images.size(),~0ull);
-        pixels.assign(size_t(kWidth)*kHeight,0);
-        scratch.assign(d2vr_wheel_raster::ScratchPixels(kHalf),0);
-        failed=false;
-        Log("[WeaponWheel] quad swapchain %dx%d format=%lld images=%u maxLayers=%u",kWidth,kHeight,(long long)format,count,maxLayers);
+        pixels.assign(size_t(Width())*cell,0);
+        scratch.assign(d2vr_wheel_raster::ScratchPixels(cell),0);
+        failed=false; ++revision;
+        Log("[%s] quad swapchain %dx%d format=%lld images=%u maxLayers=%u",name,Width(),cell,(long long)format,count,maxLayers);
         return true;
     }
-    void Draw(const WheelDisplay& d) {
-        if(drawnRevision==d.revision) return;
-        for(int h=0;h<2;++h) {
-            d2vr_wheel_raster::Target t{pixels.data(),kWidth,kHeight,kWidth,h*kHalf,0,kHalf};
-            if(d.visible[h]) d2vr_wheel_raster::DrawWheel(t,d.wheel[h],h==0,scratch.data());
-            else d2vr_wheel_raster::Clear(t);
-        }
-        drawnRevision=d.revision;
-    }
-    // Appends up to two quads. Returns false if nothing could be submitted.
-    bool Render(const WheelDisplay& d,XrCompositionLayerQuad quads[2],uint32_t& count) {
-        count=0;
-        if(!g_ctx11 || !Ensure()) return false;
-        Draw(d);
+    d2vr_wheel_raster::Target Cell(int i) { return {pixels.data(),Width(),cell,Width(),i*cell,0,cell}; }
+    // Uploads the CPU image if needed and releases the image. False: nothing to submit.
+    bool Publish() {
         if(!acquired) {
             XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
             const auto result=xrAcquireSwapchainImage(chain,&ai,&index);
@@ -80,44 +71,99 @@ struct WeaponWheelRenderer {
             waited=true; publishable=publishable && result==XR_SUCCESS;
         }
         const bool valid=publishable && index<images.size() && images[index].texture;
-        if(valid && imageRevision[index]!=drawnRevision) {
-            g_ctx11->UpdateSubresource(images[index].texture,0,nullptr,pixels.data(),kWidth*4,0);
-            imageRevision[index]=drawnRevision;
+        if(valid && imageRevision[index]!=revision) {
+            g_ctx11->UpdateSubresource(images[index].texture,0,nullptr,pixels.data(),Width()*4,0);
+            imageRevision[index]=revision;
         }
         XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         const auto result=xrReleaseSwapchainImage(chain,&ri);
         if(XR_SUCCEEDED(result)) acquired=waited=publishable=false;
-        if(!valid || result!=XR_SUCCESS) return false;
-        for(int h=0;h<2;++h) {
-            if(!d.visible[h]) continue;
-            auto& q=quads[count++];
-            q={XR_TYPE_COMPOSITION_LAYER_QUAD};
-            // Image is premultiplied: blend with its alpha, no unpremultiply flag.
-            q.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
-            q.space=d.space; q.pose=d.pose[h]; q.eyeVisibility=XR_EYE_VISIBILITY_BOTH;
-            q.size={kWheelSizeM,kWheelSizeM};
-            q.subImage.swapchain=chain;
-            q.subImage.imageRect={{h*kHalf,0},{kHalf,kHalf}};
-        }
-        return count>0;
+        return valid && result==XR_SUCCESS;
+    }
+    void Quad(XrCompositionLayerQuad& q,int i,XrSpace space,const XrPosef& pose,float size) const {
+        q={XR_TYPE_COMPOSITION_LAYER_QUAD};
+        // Image is premultiplied: blend with its alpha, no unpremultiply flag.
+        q.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+        q.space=space; q.pose=pose; q.eyeVisibility=XR_EYE_VISIBILITY_BOTH;
+        q.size={size,size};
+        q.subImage.swapchain=chain;
+        q.subImage.imageRect={{i*cell,0},{cell,cell}};
     }
 };
-static WeaponWheelRenderer g_weaponWheelRenderer;
-static void ReleaseWeaponWheelRenderer() { g_weaponWheelRenderer.Reset(); }
+static QuadAtlas g_wheelAtlas("WeaponWheel",512,2);
+static QuadAtlas g_ammoAtlas("AmmoHud",128,2);
+static uint64_t g_wheelDrawn=~0ull;
+static int g_ammoDrawn[2]{-3,-3};
+static void ReleaseWeaponWheelRenderer() { g_wheelAtlas.Reset(); g_ammoAtlas.Reset(); g_wheelDrawn=~0ull; g_ammoDrawn[0]=g_ammoDrawn[1]=-3; }
+
+static void AppendWheelQuads(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,uint32_t limit,
+                             XrCompositionLayerQuad quads[2]) {
+    WheelDisplay d;
+    AcquireSRWLockShared(&g_wheelDisplayLock); d=g_wheelDisplay; ReleaseSRWLockShared(&g_wheelDisplayLock);
+    if((!d.visible[0] && !d.visible[1]) || d.space!=g_xrSpace || !g_wheelAtlas.Ensure()) return;
+    if(g_wheelDrawn!=d.revision) {
+        for(int h=0;h<2;++h) {
+            auto t=g_wheelAtlas.Cell(h);
+            if(d.visible[h]) d2vr_wheel_raster::DrawWheel(t,d.wheel[h],h==0,g_wheelAtlas.scratch.data());
+            else d2vr_wheel_raster::Clear(t);
+        }
+        g_wheelDrawn=d.revision; ++g_wheelAtlas.revision;
+    }
+    const bool ok=g_wheelAtlas.Publish();
+    static bool lastOk=true;
+    if(ok!=lastOk) { lastOk=ok; Log(ok ? "[WeaponWheel] quads submitted" : "[WeaponWheel] quads unavailable this frame (swapchain/runtime)"); }
+    if(!ok) return;
+    for(int h=0;h<2 && layerCount<limit;++h) if(d.visible[h]) {
+        g_wheelAtlas.Quad(quads[h],h,d.space,d.pose[h],kWheelSizeM);
+        layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quads[h]);
+    }
+}
+
+// Magazine counter on the back of each armed hand, attached to the grip space
+// so the compositor moves it with the controller (no extra latency).
+static void AppendAmmoQuads(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,uint32_t limit,
+                            XrCompositionLayerQuad quads[2]) {
+    if(!g_ammoHudEnabled || !g_inputContext || g_wheelGate.open) return;
+    WeaponLoadoutSample s;
+    if(!CopyWeaponLoadout(s)) return;
+    int ammo[2]{-3,-3}; bool show[2]{};          // XR order: 0 left, 1 right
+    for(int native=0;native<2;++native) {
+        const int slot=s.loadout.hand[native];
+        if(slot!=d2vr_wheel::kSlotTwoHanded && !d2vr_wheel::IsOneHanded(slot)) continue;
+        const int xr=native==0 ? 1 : 0;
+        show[xr]=g_handGripSpace[xr]!=XR_NULL_HANDLE; ammo[xr]=s.handAmmo[native];
+        // Low: a quarter of the largest magazine seen for this weapon type.
+        const int max=s.maxAmmo[slot];
+        if(ammo[xr]>=0 && max>=4 && ammo[xr]*4<=max) ammo[xr]+=10000; // low flag carried in the key
+    }
+    if(!show[0] && !show[1]) return;
+    if(!g_ammoAtlas.Ensure()) return;
+    if(ammo[0]!=g_ammoDrawn[0] || ammo[1]!=g_ammoDrawn[1]) {
+        for(int h=0;h<2;++h) {
+            auto t=g_ammoAtlas.Cell(h);
+            const bool low=ammo[h]>=10000; const int value=low ? ammo[h]-10000 : ammo[h];
+            if(show[h]) d2vr_wheel_raster::DrawShape(t,g_ammoAtlas.scratch.data(),[&](auto&& emit){ d2vr_ammo_hud::Build(value,low,emit); });
+            else d2vr_wheel_raster::Clear(t);
+        }
+        g_ammoDrawn[0]=ammo[0]; g_ammoDrawn[1]=ammo[1]; ++g_ammoAtlas.revision;
+    }
+    if(!g_ammoAtlas.Publish()) return;
+    // Grip space: -Z forward along the barrel, +Y up. Above the back of the
+    // hand, tilted ~35 degrees towards the eyes.
+    XrPosef pose{}; pose.orientation={-.3007f,0,0,.9537f}; pose.position={0,.055f,.045f};
+    for(int h=0;h<2 && layerCount<limit;++h) if(show[h]) {
+        g_ammoAtlas.Quad(quads[h],h,g_handGripSpace[h],pose,.06f);
+        layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quads[h]);
+    }
+}
 
 // Called at frame end with the layers already chosen. Never displaces the
 // world projection layer; skipped when the runtime has no room.
 static void AppendWeaponWheelLayers(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,
-                                    uint32_t capacity,XrCompositionLayerQuad quads[2],bool shouldRender) {
-    WheelDisplay d;
-    AcquireSRWLockShared(&g_wheelDisplayLock); d=g_wheelDisplay; ReleaseSRWLockShared(&g_wheelDisplayLock);
-    if(!d.visible[0] && !d.visible[1]) return;
-    if(!layerCount || !shouldRender || g_xrSessionState!=XR_SESSION_STATE_FOCUSED || d.space!=g_xrSpace) return;
-    uint32_t count=0;
-    const bool ok=g_weaponWheelRenderer.Render(d,quads,count);
-    static bool lastOk=true;
-    if(ok!=lastOk) { lastOk=ok; Log(ok ? "[WeaponWheel] quads submitted" : "[WeaponWheel] quads unavailable this frame (swapchain/runtime)"); }
-    const uint32_t limit=g_weaponWheelRenderer.maxLayers ? std::min(capacity,g_weaponWheelRenderer.maxLayers) : capacity;
-    for(uint32_t i=0;i<count && layerCount<limit;++i)
-        layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quads[i]);
+                                    uint32_t capacity,XrCompositionLayerQuad quads[4],bool shouldRender) {
+    if(!layerCount || !shouldRender || g_xrSessionState!=XR_SESSION_STATE_FOCUSED || !g_ctx11) return;
+    const uint32_t runtimeMax=std::max(g_wheelAtlas.maxLayers,g_ammoAtlas.maxLayers);
+    const uint32_t limit=runtimeMax ? std::min(capacity,runtimeMax) : capacity;
+    AppendWheelQuads(layers,layerCount,limit,quads);
+    AppendAmmoQuads(layers,layerCount,limit,quads+2);
 }

@@ -64,6 +64,43 @@ static int IconForName(const char* s) {
     for(const auto& e:table) if(ContainsNoCase(s,e.key)) return int(e.icon);
     return -1;
 }
+static bool WideString(const wchar_t* p,char* out,size_t cap) {
+    size_t n=0;
+    for(;n+1<cap;++n) { const wchar_t c=p[n]; if(!c) break; if(c<0x20 || c>0x7E) return false; out[n]=(char)c; }
+    out[n]=0;
+    return n>=4 && n+1<cap && !p[n];
+}
+// Bounded walk (depth 3, first 0x40 bytes per object, <=96 objects) logging
+// every ASCII/UTF-16 string that looks like a resource name or matches an icon.
+static int ScanResourceNames(int slot,const char* root,DWORD start,int& logged) {
+    DWORD queue[96]; int depth[96], head=0, tail=0, icon=-1;
+    queue[tail]=start; depth[tail++]=0;
+    char text[96];
+    while(head<tail && logged<40) {
+        const DWORD obj=queue[head]; const int dep=depth[head++];
+        for(int off=0;off<0x40 && logged<40;off+=4) {
+            DWORD p=0;
+            __try { p=*(const DWORD*)(obj+off); } __except(EXCEPTION_EXECUTE_HANDLER) { break; }
+            if(p<0x10000 || p>=0x7FFF0000) continue;
+            bool str=false, wide=false;
+            __try { str=PrintableString((const char*)p,text,sizeof(text)); if(!str) wide=WideString((const wchar_t*)p,text,sizeof(text)); }
+            __except(EXCEPTION_EXECUTE_HANDLER) { str=wide=false; }
+            if(str || wide) {
+                const int match=IconForName(text);
+                if(icon<0 && match>=0) icon=match;
+                if(match>=0 || strchr(text,'/') || strchr(text,'.') || strchr(text,'\\')) {
+                    Log("[WeaponWheelProbe] slot=%d %s depth=%d obj=%08X+%02X %s\"%s\"%s",slot,root,dep,obj,off,wide ? "L":"",text,
+                        match>=0 ? " (icon match)":"");
+                    ++logged;
+                }
+            } else if(dep<3 && tail<96) {
+                bool seen=false; for(int i=0;i<tail;++i) if(queue[i]==p) seen=true;
+                if(!seen) { queue[tail]=p; depth[tail++]=dep+1; }
+            }
+        }
+    }
+    return icon;
+}
 static int ProbeWeaponIdentity(int slot,const BYTE* gun) {
     int icon=-1, logged=0;
     char text[96];
@@ -112,6 +149,13 @@ static int ProbeWeaponIdentity(int slot,const BYTE* gun) {
             ++logged;
         }
     }
+    if(icon<0) {
+        int deep=0; DWORD mesh=0, typeRoot=0;
+        __try { mesh=*(const DWORD*)(gun+0x44); typeRoot=*(const DWORD*)(gun+4); } __except(EXCEPTION_EXECUTE_HANDLER) {}
+        if(mesh) icon=ScanResourceNames(slot,"mesh",mesh,deep);
+        if(icon<0 && typeRoot) icon=ScanResourceNames(slot,"type",typeRoot,deep);
+        logged+=deep;
+    }
     Log("[WeaponWheelProbe] slot=%d strings=%d icon=%s",slot,logged,
         icon>=0 ? d2vr_weapon_icons::Name(d2vr_weapon_icons::Icon(icon)) : "family fallback");
     return icon;
@@ -121,6 +165,9 @@ struct WeaponLoadoutSample {
     d2vr_wheel::Loadout loadout;
     DWORD object[3]{};   // saved weapon objects (identity changes -> re-probe)
     DWORD type[3]{};     // object+4: same value = same weapon model (headset 23:20)
+    int slotAmmo[3]{-1,-1,-1}; // rounds in the magazine (gun+0xA48, native getter 0x6E8020)
+    int handAmmo[2]{-1,-1};    // same for the gun in native hand 0 (right) / 1 (left)
+    int maxAmmo[3]{};          // largest magazine count seen for that weapon type this run
     int icon[3]{-1,-1,-1};
 };
 static SRWLOCK g_weaponLoadoutLock=SRWLOCK_INIT;
@@ -142,11 +189,19 @@ static void CaptureWeaponLoadout(BYTE* inventory) {
             auto ref=*(DWORD**)(inventory+0x12C+28*ids[slot]);
             s.object[slot]=ref ? *ref : 0;
             s.type[slot]=s.object[slot] ? *(DWORD*)(uintptr_t)(s.object[slot]+4) : 0;
+            if(s.object[slot]) {
+                const int ammo=*(int*)(uintptr_t)(s.object[slot]+0xA48);
+                s.slotAmmo[slot]=ammo>=0 && ammo<1000 ? ammo : -1;
+            }
             s.loadout.owned[slot]=s.object[slot]!=0;
         }
         for(int hand=0;hand<2;++hand) {
             auto gun=**(BYTE***)(inventory+0xB0+12*hand);
             const int native=gun ? *(int*)(gun+0xD4) : 8;
+            if(gun && *(DWORD*)gun==0x1010E30) {
+                const int ammo=*(int*)(gun+0xA48);
+                s.handAmmo[hand]=ammo>=0 && ammo<1000 ? ammo : -1;
+            }
             int canonical=native==8 ? d2vr_wheel::kSlotEmpty : d2vr_wheel::kSlotOther;
             for(int slot=0;slot<3;++slot) if(native==ids[slot]) canonical=slot;
             s.loadout.hand[hand]=canonical;
@@ -168,6 +223,28 @@ static void CaptureWeaponLoadout(BYTE* inventory) {
             probedIcon[slot]=ProbeWeaponIdentity(slot,(const BYTE*)(uintptr_t)s.object[slot]);
         }
         s.icon[slot]=s.object[slot] ? probedIcon[slot] : -1;
+    }
+    // Largest magazine count per weapon type: an SMG holds far more rounds than
+    // a pistol, so a one-handed type that ever exceeded 20 is shown as an SMG
+    // when its name is not found (headset 23:42: uzi drawn as a pistol).
+    static DWORD maxType[8]{}; static int maxValue[8]{};
+    for(int slot=0;slot<3 && s.loadout.valid;++slot) {
+        if(!s.type[slot]) continue;
+        int i=0; while(i<8 && maxType[i] && maxType[i]!=s.type[slot]) ++i;
+        if(i==8) i=7;
+        if(maxType[i]!=s.type[slot]) { maxType[i]=s.type[slot]; maxValue[i]=0; }
+        if(s.slotAmmo[slot]>maxValue[i]) maxValue[i]=s.slotAmmo[slot];
+        s.maxAmmo[slot]=maxValue[i];
+    }
+    static int lastAmmo[2]{-2,-2};
+    if(s.loadout.valid && (s.handAmmo[0]!=lastAmmo[0] || s.handAmmo[1]!=lastAmmo[1])) {
+        static ULONGLONG lastLog=0; const ULONGLONG t=GetTickCount64();
+        if(t-lastLog>500 || (lastAmmo[0]>=0 && s.handAmmo[0]>lastAmmo[0])) { // reloads always logged
+            lastLog=t;
+            Log("[AmmoHud] magazine right=%d left=%d (max seen slot0/1/2=%d/%d/%d)",s.handAmmo[0],s.handAmmo[1],
+                s.maxAmmo[0],s.maxAmmo[1],s.maxAmmo[2]);
+        }
+        lastAmmo[0]=s.handAmmo[0]; lastAmmo[1]=s.handAmmo[1];
     }
     static int lastKey=-1;
     const int key=s.loadout.valid ? (int(s.loadout.owned[0])|int(s.loadout.owned[1])<<1|int(s.loadout.owned[2])<<2|
@@ -207,7 +284,9 @@ constexpr float kWheelDeadM=.045f;  // hand travel before a sector highlights
 static d2vr_weapon_icons::Icon IconForSlot(const WeaponLoadoutSample& s,int slot) {
     using I=d2vr_weapon_icons::Icon;
     if(slot>=0 && slot<3 && s.icon[slot]>=0 && s.icon[slot]<int(I::Count)) return I(s.icon[slot]);
-    return slot==d2vr_wheel::kSlotTwoHanded ? I::AssaultRifle : slot==d2vr_wheel::kSlotEmpty ? I::EmptyHand : I::Pistol;
+    if(slot==d2vr_wheel::kSlotTwoHanded) return I::AssaultRifle;
+    if(slot==d2vr_wheel::kSlotEmpty) return I::EmptyHand;
+    return slot>=0 && slot<3 && s.maxAmmo[slot]>20 ? I::Smg : I::Pistol;
 }
 
 static d2vr_weapon_wheel_graphics::Slot SlotForItem(const WeaponLoadoutSample& s,const d2vr_wheel::Item& it) {

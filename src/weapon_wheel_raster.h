@@ -73,19 +73,17 @@ constexpr int kSupersample=2;
 // Scratch pixels DrawWheel needs for a viewport of `size` pixels.
 inline size_t ScratchPixels(int size) { return size_t(size)*size*kSupersample*kSupersample; }
 
-// Draws one wheel into the viewport (cleared first) through a 2x2 supersampled
-// scratch image (premultiplied box filter). Returns emitted vertices.
-inline unsigned DrawWheel(Target& t,const d2vr_weapon_wheel_graphics::Wheel& wheel,bool leftHand,
-                          uint32_t* scratch) {
+// Draws any emit-style builder (build(emit)) into the viewport (cleared first)
+// through a 2x2 supersampled scratch image (premultiplied box filter).
+template<class Build> inline unsigned DrawShape(Target& t,uint32_t* scratch,Build&& build) {
     if(!t.pixels || !scratch || t.size<=0 || t.x0<0 || t.y0<0 ||
        t.x0+t.size>t.width || t.y0+t.size>t.height) return 0;
     const int big=t.size*kSupersample;
     Target hi{scratch,big,big,big,0,0,big};
     std::memset(scratch,0,ScratchPixels(t.size)*sizeof(uint32_t));
     unsigned vertices=0;
-    d2vr_weapon_wheel_graphics::BuildWheel(wheel,leftHand,
-        [&](const d2vr_weapon_wheel_graphics::Vertex& a,const d2vr_weapon_wheel_graphics::Vertex& b,
-            const d2vr_weapon_wheel_graphics::Vertex& c) { Triangle(hi,a,b,c); vertices+=3; });
+    build([&](const d2vr_weapon_wheel_graphics::Vertex& a,const d2vr_weapon_wheel_graphics::Vertex& b,
+              const d2vr_weapon_wheel_graphics::Vertex& c) { Triangle(hi,a,b,c); vertices+=3; });
     for(int y=0;y<t.size;++y) for(int x=0;x<t.size;++x) {
         unsigned sum[4]{};
         for(int j=0;j<kSupersample;++j) for(int i=0;i<kSupersample;++i) {
@@ -97,6 +95,12 @@ inline unsigned DrawWheel(Target& t,const d2vr_weapon_wheel_graphics::Wheel& whe
             ((sum[2]+n/2)/n)<<16 | ((sum[3]+n/2)/n)<<24;
     }
     return vertices;
+}
+
+// Draws one wheel into the viewport (cleared first). Returns emitted vertices.
+inline unsigned DrawWheel(Target& t,const d2vr_weapon_wheel_graphics::Wheel& wheel,bool leftHand,
+                          uint32_t* scratch) {
+    return DrawShape(t,scratch,[&](auto&& emit) { d2vr_weapon_wheel_graphics::BuildWheel(wheel,leftHand,emit); });
 }
 
 } // namespace d2vr_wheel_raster
