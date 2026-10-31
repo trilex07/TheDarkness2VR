@@ -603,6 +603,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 static bool g_deferStereoTransferReader = false; // startup-only; exact reader fence before shared reuse
+static bool g_reuseSharedCaptureColor = false; // startup-only; split eye slots double as pair color backups
 static int g_stereoTransferMode = 0; // 0 baseline,1 D3D9/11 worker,2 serial MT control,3 owner-wait D3D11 worker,4 single-owner overlap
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
@@ -768,6 +769,8 @@ void LoadConfig() {
     g_stereoTransferMode = GetPrivateProfileIntA("Render", "StereoTransferWorker", 0, chosenIni);
     g_deferStereoTransferReader = GetPrivateProfileIntA("Render", "DeferStereoTransferReader", 0, chosenIni)!=0;
     Log("[StereoTransferWorker] deferReader=%d requires worker mode=1, 3 or 4 and LastConsumerReaderFence=1",int(g_deferStereoTransferReader));
+    g_reuseSharedCaptureColor = GetPrivateProfileIntA("Render", "ReuseSharedCaptureColor", 0, chosenIni)!=0;
+    Log("[SharedCaptureColor] reuse=%d; split eye slots replace live-backup and right-history copies only when they mirror RT0 exactly (X8/A8, no MSAA)",int(g_reuseSharedCaptureColor));
     if(g_stereoTransferMode<0 || g_stereoTransferMode>4) g_stereoTransferMode=0;
     Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control; 3=owner waits before handoff; 4=single-owner overlap, native D3D9 flags)",g_stereoTransferMode);
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
@@ -3372,10 +3375,13 @@ struct EyeColorHistory {
     IDirect3DSurface9* target = nullptr;
     IDirect3DSurface9* pixels = nullptr;
     bool rejected = false;
+    // pixels aliases a caller-owned exact copy (the right shared slot). It is
+    // only ever READ here; Save never writes through an adopted alias.
+    bool adopted = false;
     void Release() {
         if (pixels) pixels->Release();
         if (target) target->Release();
-        pixels = nullptr; target = nullptr; rejected = false;
+        pixels = nullptr; target = nullptr; rejected = false; adopted = false;
     }
     void Invalidate() {
         Release(); rejected = true;
@@ -3389,7 +3395,7 @@ struct EyeColorHistory {
     }
     bool Save(IDirect3DDevice9* dev, IDirect3DSurface9* output) {
         if (!output) { Invalidate(); return false; }
-        if (target != output) Release();
+        if (target != output || adopted) Release();
         if (!pixels) {
             D3DSURFACE_DESC d{};
             if (FAILED(output->GetDesc(&d)) || FAILED(dev->CreateRenderTarget(
@@ -3403,8 +3409,19 @@ struct EyeColorHistory {
         rejected = false;
         return true;
     }
+    // Same contract as a successful Save, without the full-surface copy: copy
+    // must already hold exactly output's current pixels (verified by caller).
+    void Adopt(IDirect3DSurface9* output, IDirect3DSurface9* copy) {
+        if (!output || !copy) { Invalidate(); return; }
+        if (target != output) { output->AddRef(); if (target) target->Release(); target = output; }
+        if (pixels != copy) { copy->AddRef(); if (pixels) pixels->Release(); pixels = copy; }
+        adopted = true; rejected = false;
+    }
 };
 static EyeColorHistory g_rightColorHistory;
+// Per pair: the right shared capture supplies the history copy, so publication
+// only validates here and CompleteRightEyeHistory adopts/saves afterwards.
+static bool g_rightHistoryFromCapture = false;
 static bool SeedRightEyeBackground(IDirect3DDevice9* dev, IDirect3DSurface9* output,
                                    bool hasWorldDraw) {
     // Preserve the existing fresh-world recovery after a rejected segment.
@@ -3420,6 +3437,15 @@ static bool FinishRightEyeHistory(IDirect3DDevice9* dev, IDirect3DSurface9* outp
         g_rightColorHistory.Invalidate();
         return false;
     }
+    if (g_rightHistoryFromCapture && output) return true;
+    return g_rightColorHistory.Save(dev, output);
+}
+// Runs after the right capture attempt and BEFORE the live color restore, so
+// output still holds the right eye. An exact capture copy is adopted;
+// otherwise the original full-surface save runs with unchanged semantics.
+static bool CompleteRightEyeHistory(IDirect3DDevice9* dev, IDirect3DSurface9* output,
+                                    IDirect3DSurface9* captureCopy) {
+    if (captureCopy) { g_rightColorHistory.Adopt(output, captureCopy); return true; }
     return g_rightColorHistory.Save(dev, output);
 }
 static IDirect3DSurface9* g_liveColorBackup = nullptr;
@@ -3598,6 +3624,9 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     d2vr_transfer::Pending leftTransfer,rightTransfer;
     std::shared_ptr<d2vr_transfer::Job> leftJob,rightJob;
 
+    // Any slot copy made after this point belongs to this pair.
+    const uint64_t pairCaptureSerial = g_sharedCaptureSerial;
+    g_rightHistoryFromCapture = false;
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Source(dev,0);
 #endif
@@ -3627,14 +3656,36 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         g_blitPass = 0; g_eyePairReady = false; return;
     }
     if(!PumpStereoProducer(leftTransfer,leftJob,0)) eye0Ok=false;
+    // With split slots the left capture is already an exact private copy of
+    // the live RT0, written only by capture 0: restore from it instead of a
+    // second full-surface backup copy queued ahead of the right-eye replay.
+    // The right capture likewise replaces the right-history save copy.
+    D3DSURFACE_DESC liveDesc{};
+    const bool colorReuse = g_reuseSharedCaptureColor && splitCapture && eye0Ok &&
+        SUCCEEDED(liveEnd.targets[0]->GetDesc(&liveDesc)) &&
+        d2vr_color_reuse::Mirrors(g_sharedCapture[0].mirror, liveEnd.targets[0], pairCaptureSerial,
+            liveDesc.Width, liveDesc.Height, unsigned(liveDesc.Format), unsigned(liveDesc.MultiSampleType),
+            g_sharedCapture[0].width, g_sharedCapture[0].height);
+    const uint64_t liveBackupSerial = colorReuse ? g_sharedCapture[0].mirror.serial : 0;
+    {
+        static int reportedReuse = -1;
+        if (g_reuseSharedCaptureColor && reportedReuse != int(colorReuse)) {
+            reportedReuse = int(colorReuse);
+            Log("[SharedCaptureColor] active=%d split=%d eye0=%d format=%u msaa=%u size=%ux%u slot=%ux%u",
+                int(colorReuse), int(splitCapture), int(eye0Ok), unsigned(liveDesc.Format),
+                unsigned(liveDesc.MultiSampleType), liveDesc.Width, liveDesc.Height,
+                g_sharedCapture[0].width, g_sharedCapture[0].height);
+        }
+    }
     // Preserve live pixels for restoration. A complete world render uses current
     // pixels, but UI-only segments must retain the last RIGHT-eye background.
-    if (!BackupLiveColor(dev, liveEnd.targets[0])) {
+    if (!colorReuse && !BackupLiveColor(dev, liveEnd.targets[0])) {
         warnEarly("BackupLiveColor failed");
         liveEnd.Release(); g_blitPass = 0; g_eyePairReady = false; return;
     }
     if(!PumpStereoProducer(leftTransfer,leftJob,0)) eye0Ok=false;
     const bool historyOk = SeedRightEyeBackground(dev, liveEnd.targets[0], g_hadWorldDrawThisFrame);
+    g_rightHistoryFromCapture = colorReuse;
     if(!PumpStereoProducer(leftTransfer,leftJob,0)) eye0Ok=false;
     const bool frameStateOk=d2vr_replay::g_frameStart.Apply(dev);
     if(!frameStateOk)warnEarly("frame-start state restore failed");
@@ -3666,8 +3717,20 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         eye0Ok=FinishStereoTransfer(leftTransfer,leftJob,0) && eye0Ok;
     leftJob.reset();
 
+    const bool deferredHistory = g_rightHistoryFromCapture && eye1Ok;
+    g_rightHistoryFromCapture = false;
     if (eye1Ok) eye1Ok = transferWorker ? StartStereoTransfer(dev,1,rightTransfer,rightJob,rightCapture) :
         (zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev));
+    if (deferredHistory) {
+        // Adopt only the exact RT0 copy made by THIS pair's right capture.
+        IDirect3DSurface9* rightCopy = nullptr;
+        if (eye1Ok && rightCapture == 1 &&
+            d2vr_color_reuse::Mirrors(g_sharedCapture[1].mirror, liveEnd.targets[0], liveBackupSerial,
+                liveDesc.Width, liveDesc.Height, unsigned(liveDesc.Format), unsigned(liveDesc.MultiSampleType),
+                g_sharedCapture[1].width, g_sharedCapture[1].height))
+            rightCopy = g_sharedCapture[1].surface9;
+        if (!CompleteRightEyeHistory(dev, liveEnd.targets[0], rightCopy)) eye1Ok = false;
+    }
     if(!transferWorker) {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
         if (zeroCopy) g_uploadSRV = g_sharedCapture[0].srv11;
@@ -3675,7 +3738,17 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         g_uploadSRV = saved;
     }
     g_blitPass = 0;
-    if (FAILED(dev->StretchRect(g_liveColorBackup, nullptr, liveEnd.targets[0], nullptr, D3DTEXF_NONE)))
+    IDirect3DSurface9* liveBackup = g_liveColorBackup;
+    if (colorReuse) {
+        // Slot 0 must still hold the copy validated above (only capture 0 writes it).
+        liveBackup = d2vr_color_reuse::Unchanged(g_sharedCapture[0].mirror, liveEnd.targets[0], liveBackupSerial) ?
+            g_sharedCapture[0].surface9 : nullptr;
+        if (!liveBackup) {
+            static unsigned lost = 0;
+            if (lost++ < 8) Log("[SharedCaptureColor] live copy replaced before restore; pair rejected");
+        }
+    }
+    if (!liveBackup || FAILED(dev->StretchRect(liveBackup, nullptr, liveEnd.targets[0], nullptr, D3DTEXF_NONE)))
         eye1Ok = false;
     else if(!PumpStereoProducer(rightTransfer,rightJob,rightCapture)) eye1Ok=false;
     if(!liveEnd.Apply(dev)) {

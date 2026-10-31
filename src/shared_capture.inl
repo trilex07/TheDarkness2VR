@@ -1,3 +1,4 @@
+#include "shared_color_reuse.h"
 // Each slot owns its full producer/reader lifetime. Fixed eye slots remove
 // the left-reader -> right-write dependency without reusing a pending input.
 struct SharedCaptureSlot {
@@ -14,8 +15,11 @@ struct SharedCaptureSlot {
     // Last owner-thread GetData for this slot's producer. S_FALSE means the
     // event was issued and flushed, and is not complete yet.
     HRESULT producerStatus=S_OK;
+    // Identity/serial of the RT0 copy this slot currently holds (compared only).
+    d2vr_color_reuse::Mirror mirror;
 };
 static SharedCaptureSlot g_sharedCapture[2];
+static uint64_t g_sharedCaptureSerial=0;
 int g_zeroCopyFailures=0;
 static d2vr_transfer::Queue* g_stereoTransferQueue=nullptr;
 static DWORD g_stereoTransferOwner=0;
@@ -174,6 +178,8 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::Scope cpuCapture(d2vr_cpu_sync::SharedCapture);
 #endif
+    // A failed or partial capture never leaves an older copy certified.
+    slot.mirror={};
     if (g_stereoTransferFault || !slot.surface9 || !slot.producer || !WaitSharedReader(slot)) return false;
     IDirect3DSurface9* src = nullptr;
     // Darkness II renders offscreen; check active RenderTarget0 first
@@ -184,6 +190,7 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
     MatchedCaptureInput(src,false);
 #endif
     HRESULT hr = dev->StretchRect(src, nullptr, slot.surface9, nullptr, D3DTEXF_NONE);
+    if (SUCCEEDED(hr)) slot.mirror={src,++g_sharedCaptureSerial};
     src->Release();
     if (FAILED(hr)) return false;
 
