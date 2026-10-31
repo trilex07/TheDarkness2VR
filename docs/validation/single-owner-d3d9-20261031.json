@@ -1,0 +1,422 @@
+{
+  "dll_source_commit": "f24ced92f01823f070e1a2b9361d72b920ed6b92",
+  "collector_commit": "850f75f7",
+  "dll_sha256": "34641A8981444EA05723E6F5F3D669099F6FECD3ABC1142ED1C686C6E42EC232",
+  "mode_order": [
+    1,
+    4
+  ],
+  "heavy_etw": false,
+  "scope": "one paired gameplay comparison; order/scene variance not eliminated",
+  "headset_feedback_original": "chyba okej wszystko, hmn teraz nie cuzlem by kolektor zabieral 20 fps",
+  "visual": "USER_REPORTED_APPEARS_OK; qualified, no reported defect",
+  "motion_to_photon_latency": "NOT MEASURED; no new latency complaint, GPU latency is not headset latency",
+  "decision": "RETAIN_MODE_4_AS_PROVISIONAL_CANDIDATE; not unconditional acceptance due unresolved producer-fence outlier and unmeasured headset latency",
+  "stable_90_fps": false,
+  "delta_mode4_minus_mode1_ms": {
+    "FrameTime": {
+      "mean": -0.9993013207211181,
+      "p95": -2.5947900000000015,
+      "p99": -2.527413000000003,
+      "worst": 22.264199999999995
+    },
+    "CPUBusy": {
+      "mean": -0.9939258249205132,
+      "p95": -2.50774,
+      "p99": -2.544242999999998,
+      "worst": 22.247500000000002
+    },
+    "GPUBusy": {
+      "mean": -0.2973986424329942,
+      "p95": -0.3993549999999999,
+      "p99": -0.3815470000000012,
+      "worst": 2.7935000000000008
+    },
+    "GPULatency": {
+      "mean": -0.13509983853212204,
+      "p95": -0.09814500000000059,
+      "p99": -0.1837490000000006,
+      "worst": 0.1177000000000028
+    }
+  },
+  "remaining_spike": {
+    "mode1_worst_frame_ms": 36.712,
+    "mode4_worst_frame_ms": 58.9762,
+    "mode4_qpc": 903810779116,
+    "producer_fence_window_max_ms": 42.656,
+    "engine_present_boundary_window_max_ms": 46.429,
+    "bounded_operation": "CaptureBackbufferToShared: D3D9 Issue(END) plus GetData(D3DGETDATA_FLUSH), not later Pending::Poll/DrainOwnerProducer",
+    "attribution": "window-level CPU counters only; individual call/driver dependency not proven; do not equate to retained 15.7ms NVIDIA stall"
+  },
+  "modes": {
+    "1": {
+      "valid": true,
+      "presentmon_lost_events": 0,
+      "stacks_captured": false,
+      "combat": {
+        "rows": 1697,
+        "metrics_ms": {
+          "FrameTime": {
+            "n": 1697,
+            "mean": 14.731678078962876,
+            "p50": 14.3805,
+            "p95": 18.09456,
+            "p99": 19.486296,
+            "worst": 36.712
+          },
+          "CPUBusy": {
+            "n": 1697,
+            "mean": 14.403996758986446,
+            "p50": 14.0573,
+            "p95": 17.7062,
+            "p99": 19.118935999999994,
+            "worst": 36.4362
+          },
+          "CPUWait": {
+            "n": 1697,
+            "mean": 0.32768131997642896,
+            "p50": 0.3,
+            "p95": 0.49504000000000015,
+            "p99": 0.7872679999999999,
+            "worst": 1.2657
+          },
+          "GPUBusy": {
+            "n": 1697,
+            "mean": 5.947608367707719,
+            "p50": 5.8938,
+            "p95": 6.9105,
+            "p99": 7.4032919999999995,
+            "worst": 7.7315
+          },
+          "GPUWait": {
+            "n": 1697,
+            "mean": 7.349013553329405,
+            "p50": 7.7807,
+            "p95": 11.66924,
+            "p99": 13.477336,
+            "worst": 26.0543
+          },
+          "GPUTime": {
+            "n": 1697,
+            "mean": 13.296621921037124,
+            "p50": 13.6623,
+            "p95": 17.577260000000003,
+            "p99": 19.421312,
+            "worst": 31.8974
+          },
+          "GPULatency": {
+            "n": 1697,
+            "mean": 1.5862114319387153,
+            "p50": 0.0973,
+            "p95": 5.18402,
+            "p99": 5.9309199999999995,
+            "worst": 18.1728
+          }
+        },
+        "displayed_time_available": 1478,
+        "frames_over_ms": {
+          "11.11": 1697,
+          "22.22": 7,
+          "33.33": 1
+        }
+      },
+      "baseline": {
+        "rows": 346,
+        "metrics_ms": {
+          "FrameTime": {
+            "n": 346,
+            "mean": 14.541860115606935,
+            "p50": 14.066199999999998,
+            "p95": 17.400325,
+            "p99": 23.803170000000073,
+            "worst": 31.3662
+          },
+          "CPUBusy": {
+            "n": 346,
+            "mean": 14.197474277456648,
+            "p50": 13.7265,
+            "p95": 16.975025000000002,
+            "p99": 23.443605000000076,
+            "worst": 31.0967
+          },
+          "CPUWait": {
+            "n": 346,
+            "mean": 0.344385838150289,
+            "p50": 0.30575,
+            "p95": 0.62665,
+            "p99": 0.7938900000000001,
+            "worst": 0.8814
+          },
+          "GPUBusy": {
+            "n": 346,
+            "mean": 5.826915028901734,
+            "p50": 5.8125,
+            "p95": 6.6376,
+            "p99": 7.1308050000000005,
+            "worst": 7.6986
+          },
+          "GPUWait": {
+            "n": 346,
+            "mean": 7.724071387283237,
+            "p50": 7.81325,
+            "p95": 11.560625,
+            "p99": 14.081355000000013,
+            "worst": 24.7432
+          },
+          "GPUTime": {
+            "n": 346,
+            "mean": 13.550986416184971,
+            "p50": 13.705300000000001,
+            "p95": 17.40005,
+            "p99": 20.20888,
+            "worst": 31.3624
+          },
+          "GPULatency": {
+            "n": 346,
+            "mean": 1.1383872832369943,
+            "p50": 0.1065,
+            "p95": 4.812975,
+            "p99": 5.516265000000001,
+            "worst": 9.3928
+          }
+        },
+        "displayed_time_available": 298,
+        "frames_over_ms": {
+          "11.11": 346,
+          "22.22": 4,
+          "33.33": 0
+        }
+      },
+      "device_receipt": [
+        "[StereoTransferWorker] admitted mode=1 ownerTid=22256 flags=0x54; same-frame interop only"
+      ],
+      "warmup": [
+        "[PipelineWarmup] records=1377 warmed=1377 draws=5065 missingObjects=0 unsupported=0 substitutedTextures=0 timedOut=0 failed=0 driverComplete=1 restored=1 elapsedMs=656; pooled objects only"
+      ],
+      "transfer_summary": {
+        "qpc_clock_bracket_first": [
+          894418844351,
+          8160
+        ],
+        "qpc_clock_bracket_last": [
+          894648219957,
+          9720
+        ],
+        "rows": 13,
+        "jobs": 3120,
+        "main_join_mean_ms": 0.6454615384615384,
+        "worker_mean_ms": 0.8506923076923076,
+        "all_ok": true,
+        "scope": "log rows between first and last in-combat PerfClock; aggregate windows may cross edges, overlapping timings are not additive; owner residual wait included"
+      },
+      "native_filter_status": "enabled=0 denied=0x12; zero skipped constants/bindings in both modes",
+      "capture": "mode-1\\20261031T080156Z-0b37187e"
+    },
+    "4": {
+      "valid": true,
+      "presentmon_lost_events": 0,
+      "stacks_captured": false,
+      "combat": {
+        "rows": 1820,
+        "metrics_ms": {
+          "FrameTime": {
+            "n": 1820,
+            "mean": 13.732376758241758,
+            "p50": 13.60815,
+            "p95": 15.49977,
+            "p99": 16.958882999999997,
+            "worst": 58.9762
+          },
+          "CPUBusy": {
+            "n": 1820,
+            "mean": 13.410070934065933,
+            "p50": 13.288599999999999,
+            "p95": 15.198459999999999,
+            "p99": 16.574692999999996,
+            "worst": 58.6837
+          },
+          "CPUWait": {
+            "n": 1820,
+            "mean": 0.32230582417582415,
+            "p50": 0.29625,
+            "p95": 0.47764,
+            "p99": 0.7654599999999991,
+            "worst": 1.4567
+          },
+          "GPUBusy": {
+            "n": 1820,
+            "mean": 5.650209725274725,
+            "p50": 5.6029,
+            "p95": 6.511145,
+            "p99": 7.021744999999998,
+            "worst": 10.525
+          },
+          "GPUWait": {
+            "n": 1820,
+            "mean": 6.785876373626373,
+            "p50": 7.470750000000001,
+            "p95": 9.33562,
+            "p99": 10.422785999999999,
+            "worst": 34.8907
+          },
+          "GPUTime": {
+            "n": 1820,
+            "mean": 12.436086098901098,
+            "p50": 13.0785,
+            "p95": 15.227535,
+            "p99": 16.51562699999999,
+            "worst": 40.7057
+          },
+          "GPULatency": {
+            "n": 1820,
+            "mean": 1.4511115934065932,
+            "p50": 0.10930000000000001,
+            "p95": 5.085875,
+            "p99": 5.747170999999999,
+            "worst": 18.2905
+          }
+        },
+        "displayed_time_available": 1496,
+        "frames_over_ms": {
+          "11.11": 1820,
+          "22.22": 4,
+          "33.33": 1
+        }
+      },
+      "baseline": {
+        "rows": 370,
+        "metrics_ms": {
+          "FrameTime": {
+            "n": 370,
+            "mean": 13.474511351351351,
+            "p50": 13.4576,
+            "p95": 15.05929,
+            "p99": 15.890798,
+            "worst": 16.5775
+          },
+          "CPUBusy": {
+            "n": 370,
+            "mean": 13.155225135135135,
+            "p50": 13.11585,
+            "p95": 14.702639999999999,
+            "p99": 15.604956,
+            "worst": 16.2359
+          },
+          "CPUWait": {
+            "n": 370,
+            "mean": 0.3192862162162162,
+            "p50": 0.29395,
+            "p95": 0.45551500000000006,
+            "p99": 0.7217180000000003,
+            "worst": 1.0244
+          },
+          "GPUBusy": {
+            "n": 370,
+            "mean": 5.6257454054054055,
+            "p50": 5.5817499999999995,
+            "p95": 6.545165000000001,
+            "p99": 7.036772000000001,
+            "worst": 7.5149
+          },
+          "GPUWait": {
+            "n": 370,
+            "mean": 6.349845945945947,
+            "p50": 7.15685,
+            "p95": 9.233515,
+            "p99": 9.782154,
+            "worst": 10.4939
+          },
+          "GPUTime": {
+            "n": 370,
+            "mean": 11.975591351351351,
+            "p50": 12.7362,
+            "p95": 14.87548,
+            "p99": 15.61262,
+            "worst": 16.0419
+          },
+          "GPULatency": {
+            "n": 370,
+            "mean": 1.6397762162162164,
+            "p50": 0.10075,
+            "p95": 4.8600650000000005,
+            "p99": 5.525772000000001,
+            "worst": 7.3919
+          }
+        },
+        "displayed_time_available": 300,
+        "frames_over_ms": {
+          "11.11": 369,
+          "22.22": 0,
+          "33.33": 0
+        }
+      },
+      "device_receipt": [
+        "[StereoTransferWorker] admitted mode=4 ownerTid=20652 flags=0x50; same-frame interop only"
+      ],
+      "warmup": [
+        "[PipelineWarmup] records=1377 warmed=1377 draws=5065 missingObjects=0 unsupported=0 substitutedTextures=0 timedOut=0 failed=0 driverComplete=1 restored=1 elapsedMs=641; pooled objects only"
+      ],
+      "transfer_summary": {
+        "qpc_clock_bracket_first": [
+          903707535238,
+          54600
+        ],
+        "qpc_clock_bracket_last": [
+          903938240954,
+          56280
+        ],
+        "rows": 14,
+        "jobs": 3360,
+        "main_join_mean_ms": 0.7361428571428571,
+        "worker_mean_ms": 0.08407142857142857,
+        "all_ok": true,
+        "scope": "log rows between first and last in-combat PerfClock; aggregate windows may cross edges, overlapping timings are not additive; owner residual wait included"
+      },
+      "native_filter_status": "enabled=0 denied=0x12; zero skipped constants/bindings in both modes",
+      "capture": "mode-4\\20261031T081725Z-150225fb"
+    }
+  },
+  "evidence": [
+    {
+      "file": "mode-1\\20261031T080156Z-0b37187e\\manifest.json",
+      "sha256": "7C56C45FD2AC90DBBF5EFA80D8629D95A5DFA81753CAEDF124317CD8555FBF4B",
+      "size": 61725
+    },
+    {
+      "file": "mode-1\\20261031T080156Z-0b37187e\\presentmon.csv",
+      "sha256": "8115A4A6251049E2BA67525441DE4772AD721CAF9FAB57449FD7BA290C74F0B4",
+      "size": 393994
+    },
+    {
+      "file": "mode-1\\20261031T080156Z-0b37187e\\presentmon-summary.json",
+      "sha256": "EF393D1ADC0CE17D47A5C084EF4BF196DAAF91F931474EBF31AFFDB1371EBDA6",
+      "size": 11096
+    },
+    {
+      "file": "mode-1\\20261031T080156Z-0b37187e\\d3d9.log",
+      "sha256": "4C0E85794395DCB4D08895A89A9C611D05ECF6CC5DD7606A052BE68A172F8C0E",
+      "size": 323442
+    },
+    {
+      "file": "mode-4\\20261031T081725Z-150225fb\\manifest.json",
+      "sha256": "7FDFAB8C28AB61340239932086746FDA370B8C4A0E44C5CB8A65E37E552627D1",
+      "size": 61391
+    },
+    {
+      "file": "mode-4\\20261031T081725Z-150225fb\\presentmon.csv",
+      "sha256": "0D046959EA6ED6DA8C9398D6C72D7361DA5E0744F05F041628C6885C52E6334A",
+      "size": 417466
+    },
+    {
+      "file": "mode-4\\20261031T081725Z-150225fb\\presentmon-summary.json",
+      "sha256": "CDD4E3484A4C5B7D015E171F3DE89CD05632EAFE0EB88E3B6BB7970460ECD637",
+      "size": 11204
+    },
+    {
+      "file": "mode-4\\20261031T081725Z-150225fb\\d3d9.log",
+      "sha256": "ACC74767417928B45BFA2ECF8689288235500BDA6105219F0858150B68023ABC",
+      "size": 1106711
+    }
+  ],
+  "evidence_root": "%LOCALAPPDATA%/Darkness2VR/perf/prepared-single-owner-20261031"
+}

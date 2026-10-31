@@ -95,3 +95,62 @@ The elevated helper passed a two-second PresentMon access preflight and waits
 for the user scene-ready signal. No game was launched by this preparation;
 no gameplay capture has started. One helper serves both modes, avoiding UAC
 between the two launches. Runtime comparison and acceptance remain pending.
+
+## Completed single paired Steam/PSVR2 comparison
+
+Evidence: `docs/validation/single-owner-d3d9-20261031.json`; raw captures and
+SHA-256 identities remain under the local private comparison root. One launch
+per mode, 5 s stationary + 25 s combat, no WPR stacks. Both captures valid with
+zero PresentMon events/buffers lost; ETW stack loss remains NOT APPLICABLE/null.
+2209 / 2341 captured rows have unique QPC-start/swapchain identities. Combat
+selection contains 1697 / 1820 complete application intervals respectively.
+
+Same protected DLL f24ced92 / SHA 34641A89...E42EC232, otherwise byte-identical
+INIs. Mode 1 actual device flags 0x54; mode 4 actual flags 0x50. Original four
+startup caches restored byte-for-byte before mode 4; learned mode-1 caches
+retained separately. Both launches warmed 1377/1377, draws=5065, failed=0,
+driverComplete=1, restored=1. Real source is 2676x2728. Both native submission
+filters failed closed equally (enabled=0, denied=0x12, skipped=0); do not claim
+these filters contributed to this comparison. Other accepted copy/replay
+optimizations remain configured identically.
+
+Combat mode 1 -> mode 4, milliseconds:
+
+- Application interval mean: 14.73168 -> 13.73238 (1.00 ms lower in this pair).
+- PresentMon CPU Busy mean: 14.40400 -> 13.41007 (0.99 ms lower). This metric
+  includes dependencies and is not sampled CPU execution or CPU-Precise RUN.
+- Application p95: 18.09456 -> 15.49977; p99: 19.48630 -> 16.95888.
+- GPU Busy mean: 5.94761 -> 5.65021. GPU latency mean: 1.58621 -> 1.45111;
+  GPU latency is not headset motion-to-photon latency.
+- Worst application interval: 36.7120 -> 58.9762. Retain this unfavorable
+  outlier; improved percentiles do not establish hitch elimination.
+
+Existing transfer summaries between first/last in-combat PerfClock markers:
+mode 1 3120 jobs, mainJoinMean 0.64546, workerMean 0.85069; mode 4 3360 jobs,
+mainJoinMean 0.73614, workerMean 0.08407. Every receipt ok=1. Mode-4 join includes
+residual producer waiting. Windows overlap and may cross phase edges; these
+values are not additive or a separate measured 0.77 ms total-CPU saving.
+The worker did not simply become free: owner completion moved off it.
+
+The worst mode-4 interval starts QPC 903810779116. Nearby PerfClock brackets
+frame 55320 / QPC 903805675784 and frame 55440 / QPC 903823218613. In the enclosing
+five-second CPUSync window ending frame 55527, D3D9 producer fence max=42.656 ms,
+shared capture max=42.666 ms, engine Present boundary max=46.429 ms. The producer
+scope covers Issue(END) and GetData(FLUSH) before staged owner polling. This
+bounds an expensive earlier producer operation; aggregated counters do not
+prove exact same-call identity or compiler/driver-stack causality. It must not
+be identified with the previously retained 15.7 ms NVIDIA event or blamed on
+the transfer worker without additional evidence. No extra capture was made.
+
+User feedback: "chyba okej wszystko, hmn teraz nie cuzlem by kolektor zabieral
+20 fps". Record qualified visual acceptance/no reported new defect, and no
+observed previous ~20 FPS collector penalty. No explicit extra latency complaint;
+objective HMD latency not measured. No crash, failed transfer or invalid eye
+receipt observed during either capture. This is one sequential gameplay pair;
+route/workload variation and persistent driver-cache/order effects remain.
+
+Decision: keep mode 4 installed as the provisionally better candidate, with
+full original rollback and separate mode-1 profile preserved. Do not label it
+unconditionally accepted or claim stable 90 FPS: the producer-fence outlier
+and objective headset latency remain unresolved. The game is left running
+for the user, with no further capture or automatic rollback scheduled.
