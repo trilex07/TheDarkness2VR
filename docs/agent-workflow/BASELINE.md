@@ -13,7 +13,18 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current profile correction (2026-10-31 21:16 Europe/Warsaw)
+## Current installed diagnostic recorder correction (2026-10-31 21:30 Europe/Warsaw)
+
+Authorized MAIN installation, game closed; no agent launch.
+- Source: `2f027f05`, branch `codex/hud-head-tentacles`.
+- Installed DLL SHA256: `469F7B92F316C34DBE05C4DDBE4707C4122C568D4EE64E99478494B2B90D03A7` (protected-native).
+- Same-frame native camera header timing corrected; includes prior HUD/tentacle and AdaptiveFPS default changes.
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/matched-header-20261031T213047682`.
+- Full nine-target rollback: package `rollback/Restore.ps1`.
+- EXE and installed DLL identities verified; all four INIs/four caches preserved byte-for-byte. Existing AdaptiveFPS=OFF retained.
+- Offline gate34/validator31/build PASS. Runtime capture acceptance and world-lighting fix OPEN; user launches manually.
+
+## Previous profile correction (2026-10-31 21:16 Europe/Warsaw)
 
 Both primary INIs now explicitly set Render/AdaptiveFPS=OFF. DLL unchanged:
 155D6A427E4D53AD5EBEAE206E17C4A7F755ABBD4FEBC2C8D5629FAFF48D1AE1.
@@ -25,7 +36,7 @@ Previous INI hashes below are historical; current hashes:
 - `C:\Program Files (x86)\Steam\steamapps\common\Darkness II\Darkness2VR.ini`: 047601C0B062449398E089E06275E71A87E534695EE9D6CBEEA2E4EDF9D4601F
 - `C:\Users\Trilex\AppData\Local\Darkness2VR\Darkness2VR.ini`: 13274A3D5AA4549F03FD6B3D6E8D532B3720BF7D01831450B83ED68AC6475A07
 
-## Current installed MAIN candidate: native HUD / head-attached tentacles
+## Previous installed MAIN candidate: native HUD / head-attached tentacles
 
 Authorized MAIN deployment: 2026-10-31 21:03 Europe/Warsaw. User launches manually.
 - **DLL SHA256**: 155D6A427E4D53AD5EBEAE206E17C4A7F755ABBD4FEBC2C8D5629FAFF48D1AE1 (protected-native)

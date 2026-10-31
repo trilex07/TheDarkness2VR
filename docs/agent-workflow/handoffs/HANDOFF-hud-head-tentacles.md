@@ -84,3 +84,11 @@ protected diagnostic DLL build PASS. New binary SHA256:
 tools/deploy-matched-header.ps1 stages only this DLL and backs up all nine
 targets; preserves existing INIs/caches exactly. Deployment requires game closed.
 Runtime capture acceptance and world-lighting fix remain OPEN.
+
+Deployment completed 2026-10-31 21:30 Europe/Warsaw after explicit user go-ahead.
+Installed source2f027f05, DLL469F7B92 (full SHA above). Package:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/matched-header-20261031T213047682
+Full rollback in rollback/Restore.ps1. Game closed; exact EXE/DLL checks PASS;
+all four profiles and four caches preserved byte-for-byte. No game launch.
+Next: user launches and loads the affected corridor, then authorizes/readies
+one matched capture with the corrected recorder. No lighting fix claimed.
