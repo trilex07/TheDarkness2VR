@@ -7,6 +7,7 @@
     [switch]$OutdoorTransition,
     [switch]$AudioCues,
     [switch]$CommandHistory,
+    [switch]$PresentMonOnly,
     [string]$SymbolSource = '',
     [string]$LocalVrDir = (Join-Path $env:LOCALAPPDATA 'Darkness2VR'),
     [switch]$Preflight
@@ -32,7 +33,11 @@ function Get-D2vrPhasePlan([bool]$Outdoor, [int]$Duration, [int]$Baseline) {
         )
     }
 }
-function Write-D2vrPhaseMarker([string]$Command, [string]$Instance, [string]$Label) {
+function Write-D2vrPhaseMarker([string]$Command, [string]$Instance, [string]$Label, [bool]$QpcOnly=$false) {
+    if($QpcOnly) {
+        $qpc=[System.Diagnostics.Stopwatch]::GetTimestamp()
+        return [pscustomobject]@{markerBeforeQpc=$qpc; markerAfterQpc=$qpc}
+    }
     # An external WPR invocation has nonzero latency. Retain BOTH QPC bounds;
     # never pretend its process-return time is the exact ETW marker timestamp.
     $before = [System.Diagnostics.Stopwatch]::GetTimestamp()
@@ -90,6 +95,10 @@ function Get-D2vrPresentQpcMs($Row) {
         [double]::IsNaN($value) -or [double]::IsInfinity($value) -or $value -lt 0) { return $null }
     return $value
 }
+function Test-D2vrCaptureLoss([bool]$QpcOnly, $EtwLoss, $PresentmonLoss) {
+    return ($null -ne $PresentmonLoss -and $PresentmonLoss -eq 0 -and
+        ($QpcOnly -or ($null -ne $EtwLoss -and $EtwLoss -eq 0)))
+}
 function Invoke-D2vrCue([int]$Count) {
     # Only the phase boundaries make sound, on this helper process. No focus,
     # game input, controller mapping or VR configuration is changed.
@@ -133,7 +142,7 @@ if ($OutdoorTransition -or $CommandHistory -or $SymbolSource) {
 }
 if ($Preflight) {
     Write-Host ("Phases: " + (($phasePlan | ForEach-Object { "$($_.id)=$($_.seconds)s" }) -join ', '))
-    Write-Host "PASS: EXE SHA=$actualExeHash; WPR=$wpr; PresentMon=$presentmon; xperf=$xperf; no recorder active."
+    Write-Host "PASS: PresentMonOnly=$PresentMonOnly; EXE SHA=$actualExeHash; WPR=$wpr; PresentMon=$presentmon; xperf=$xperf; no recorder active."
     return
 }
 if ($ArmDelaySec) { Start-Sleep -Seconds $ArmDelaySec }
@@ -192,11 +201,13 @@ $manifest = [ordered]@{
     startUtc = [DateTime]::UtcNow.ToString('o')
     startQpc = [System.Diagnostics.Stopwatch]::GetTimestamp()
     baselineQpc = $null; combatQpc = $null; endQpc = $null
+    collector = $(if ($PresentMonOnly) {'PresentMonOnly'} else {'WPRAndPresentMon'})
+    stacksCaptured = (-not [bool]$PresentMonOnly)
     mode = $(if ($OutdoorTransition) {'indoor_to_outdoor'} else {'stationary_combat'})
     phases = @(); presentmonScope = $(if ($OutdoorTransition) {'all_processes'} else {'game_pid'})
     phaseMeaning = 'Instructions, not proof of scene or action; inspect focus/world/frame receipts.'
     symbolArtifacts = @()
-    etl = $etl; presentmonCsv = $csv; etwLostEvents = $null
+    etl = $(if($PresentMonOnly){$null}else{$etl}); presentmonCsv = $csv; etwLostEvents = $null
     presentmonLostEvents = $null; valid = $false; errors = @()
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
@@ -227,9 +238,11 @@ try {
     }
     # CPU.Verbose includes CSwitch/ReadyThread/SampledProfile stacks. GPU.Light
     # adds DxgKrnl without the much larger GPU.Verbose provider set.
+    if(-not $PresentMonOnly) {
     & $wpr -start CPU.Verbose -start GPU.Light -filemode -instancename $instance | Out-File (Join-Path $out 'wpr-start.txt')
     if ($LASTEXITCODE -ne 0) { throw "WPR start failed: $LASTEXITCODE" }
     $wprStarted = $true
+    }
     $pmArgs = @('--output_file',('"'+$csv+'"'),
         '--qpc_time_ms','--v2_metrics','--no_console_stats','--timed',"$($DurationSec+30)",
         '--terminate_after_timed','--session_name',$pmSession)
@@ -247,7 +260,7 @@ try {
         $null=$historyArm.Set()
     }
     foreach ($phase in $phasePlan) {
-        $mark = Write-D2vrPhaseMarker $wpr $instance $phase.label
+        $mark = Write-D2vrPhaseMarker $wpr $instance $phase.label ([bool]$PresentMonOnly)
         if ($AudioCues) { Invoke-D2vrCue $phase.cue }
         $phaseReceipt=[ordered]@{
             id=$phase.id; label=$phase.label; seconds=$phase.seconds
@@ -453,16 +466,16 @@ try {
         $manifest.combatRows = ($manifest.phases | Where-Object id -eq 'combat').rows
         if ($manifest.phases.Count -ne $phasePlan.Count) { $manifest.errors += 'Not all scheduled phases were recorded' }
     }
-    if ($null -eq $manifest.etwLostEvents) { $manifest.errors += 'ETW lost-event count UNKNOWN; inspect etw-stats.txt' }
+    if (-not $PresentMonOnly -and $null -eq $manifest.etwLostEvents) { $manifest.errors += 'ETW lost-event count UNKNOWN; inspect etw-stats.txt' }
     if ($null -eq $manifest.presentmonLostEvents) {
         $manifest.errors += 'PresentMon lost-event count UNKNOWN; inspect PresentMon output'
     }
-    if ($manifest.etwLostEvents -gt 0) { $manifest.errors += "ETW lost events: $($manifest.etwLostEvents)" }
+    if (-not $PresentMonOnly -and $manifest.etwLostEvents -gt 0) { $manifest.errors += "ETW lost events: $($manifest.etwLostEvents)" }
     if ($manifest.presentmonLostEvents -gt 0) {
         $manifest.errors += "PresentMon lost events: $($manifest.presentmonLostEvents)"
     }
     $manifest.valid = $manifest.errors.Count -eq 0 -and
-        $manifest.etwLostEvents -eq 0 -and $manifest.presentmonLostEvents -eq 0
+        (Test-D2vrCaptureLoss ([bool]$PresentMonOnly) $manifest.etwLostEvents $manifest.presentmonLostEvents)
     $manifest.status = if ($manifest.valid) { 'complete' } else { 'invalid_or_incomplete' }
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
     Write-Host "Capture $($manifest.status): $out"

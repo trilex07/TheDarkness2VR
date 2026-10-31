@@ -81,3 +81,17 @@ Mode 1 vs 4 CPU/frame: NOT RUN. p95/p99: NOT RUN. Visual: NOT RUN.
 Decision: candidate only, not accepted. No claimed frame-time saving.
 The separate 15.7 ms NVIDIA producer-flush dependency is not attributed to this
 worker and is not claimed fixed. Restore the saved working DLL/INIs on regression.
+
+## Authorized comparison preparation (2026-10-31)
+
+After the user selected immediate paired validation, deployed the protected
+DLL above with StereoTransferWorker=1. All four INIs and all four caches
+remained byte-identical; EXE and installed DLL hashes verified. Steam was free.
+Source/build identity is still f24ced92; subsequent collector-only changes do
+not alter the DLL. The existing collector now supports PresentMonOnly, retaining
+identity/QPC/loss validation without starting WPR or claiming CPU-Precise stacks.
+38 actual collector-helper checks PASS, including UNKNOWN/lost-event rejection.
+The elevated helper passed a two-second PresentMon access preflight and waits
+for the user scene-ready signal. No game was launched by this preparation;
+no gameplay capture has started. One helper serves both modes, avoiding UAC
+between the two launches. Runtime comparison and acceptance remain pending.

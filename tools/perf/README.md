@@ -81,3 +81,14 @@ PresentMon 2.6 uses `CPUStartQPCTimeInMs`; the collector accepts that explicit
 millisecond column and canonical `CPUStartQPCTime`. It rejects tick-only,
 relative, missing and nonfinite values when assigning phase rows. This matches
 the retained Python analyzer and does not alter capture providers or game state.
+
+### Lightweight transfer-worker comparisons
+
+Use the existing collector with `-PresentMonOnly` for mode comparisons that do
+not require stack attribution. It retains the same audited PID/start time,
+QPC phase schedule, DLL/INI/symbol identities, PresentMon loss query and log
+snapshots. It starts no WPR session and sends no WPR markers.
+`collector=PresentMonOnly`, `stacksCaptured=false`, `etl=null` and
+`etwLostEvents=null` explicitly distinguish this evidence from CPU-Precise
+traces. Validity still requires known zero PresentMon event/buffer loss and
+complete phase rows. Do not infer RUN/READY/WAIT or headset display FPS from it.

@@ -48,6 +48,15 @@ Check ($m.markerBeforeQpc -le $m.markerAfterQpc) 'QPC brackets contain external 
 $script:wprCode=5; $threw=$false
 try { Write-D2vrPhaseMarker Mock-Wpr own-session fail | Out-Null } catch { $threw=$true }
 Check $threw 'Failed ETW mark stops phase rather than fabricating time'
+$script:wprArgs=@()
+$qpcOnly=Write-D2vrPhaseMarker Mock-Wpr unused 'PresentMon only' $true
+Check ($script:wprArgs.Count -eq 0 -and $qpcOnly.markerBeforeQpc -eq $qpcOnly.markerAfterQpc) 'Light capture uses QPC only, no WPR process or marker'
+Check (Test-D2vrCaptureLoss $true $null 0) 'Light capture admits verified loss-free PresentMon without inventing ETW stacks'
+Check (-not (Test-D2vrCaptureLoss $true $null $null)) 'Light capture rejects UNKNOWN PresentMon loss'
+Check (-not (Test-D2vrCaptureLoss $true $null 7)) 'Light capture rejects PresentMon loss'
+Check (-not (Test-D2vrCaptureLoss $false $null 0)) 'Full capture still requires verified ETW loss'
+Check (-not (Test-D2vrCaptureLoss $false 1 0)) 'Full capture still rejects lost ETW events'
+Check (Test-D2vrCaptureLoss $false 0 0) 'Full capture admits both verified zero counters'
 $deadPm=[pscustomobject]@{HasExited=$true}
 $deadPm | Add-Member ScriptMethod Refresh {}
 $own=[System.Diagnostics.Process]::GetCurrentProcess()
