@@ -13,7 +13,16 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: X double tap weapon toggle
+## Current installed MAIN candidate: X double tap weapon toggle (automatic = alternate)
+
+Authorized MAIN deployment completed 2026-10-31 20:32 Europe/Warsaw (DLL only; INI already DoubleTapX=TOGGLE).
+- **Current DLL SHA256**: 98827196A74243B28CA06EA39C942322977A373AFD3FDAB927BBD779F8C26342 (protected-native)
+- **Source**: side/unarmed-trigger-dpad-on-installed 0b91c281
+- **Change vs F5046F99**: raw Automatic firearm (uzi and automatic rifles) is Unknown -> alternate RIGHT/LEFT; log shows raw firearm codes.
+- **Package**: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/unarmed-toggle2-20261031T203205049
+- **Validation**: MSVC x86 build PASS, host tests PASS, profile gate PASS; headset NOT RUN.
+
+## Previous MAIN candidate: X double tap weapon toggle (superseded)
 
 Authorized MAIN deployment completed 2026-10-31 20:25 Europe/Warsaw.
 - **Current DLL SHA256**: F5046F99AFBC266E68404FA743603522964EDF47DE9E0D1E5C44116EBF25D367 (protected-native)
