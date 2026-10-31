@@ -149,11 +149,24 @@ static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     s.time=GetTickCount64(); s.space=quad.space;
     AcquireSRWLockExclusive(&g_menuSurfaceLock); g_menuSurface=s; ReleaseSRWLockExclusive(&g_menuSurfaceLock);
 }
+static bool g_menuClampSaved=false;
+static uint32_t g_menuClampMouse=0;
+static int g_menuClampW=0,g_menuClampH=0;
+static void RestoreMenuClamp() {
+    if(!g_menuClampSaved) return;
+    __try {
+        if(*(DWORD*)g_menuClampMouse==0xFC00C8 && g_menuClampW>0 && g_menuClampH>0) {
+            *(int*)(g_menuClampMouse+0x224)=g_menuClampW; *(int*)(g_menuClampMouse+0x228)=g_menuClampH;
+            Log("[GazeMenu] cursor clamp restored %dx%d",g_menuClampW,g_menuClampH);
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    g_menuClampSaved=false; g_menuClampMouse=0;
+}
 static void ApplyGazeMenuCursor() {
 #ifdef D2VR_MATCHED_CAPTURE
     static d2vr_gaze_menu::CursorFilter filter;
     static ULONGLONG nextObserve=0; static uint32_t mouse=0; static bool contractOk=false, contractChecked=false;
-    if(!g_gazeMenu || !g_eyeTrackingEnabled) { filter.Reset(); g_gazeMenuActive=false; return; }
+    if(!g_gazeMenu || !g_eyeTrackingEnabled) { filter.Reset(); g_gazeMenuActive=false; RestoreMenuClamp(); return; }
     const HWND window=g_renderSizeHwnd;
     DWORD pid=0;
     if(!window || GetWindowThreadProcessId(window,&pid)!=GetCurrentThreadId() || pid!=GetCurrentProcessId()) return;
@@ -223,7 +236,7 @@ static void ApplyGazeMenuCursor() {
             int(paused),int(cursorWanted),int(g_in3DGameplayMode),unsigned(g_nativeRegionManager));
     }
     g_gazeMenuActive=gate;
-    if(!gate) { filter.Reset(); return; }
+    if(!gate) { filter.Reset(); RestoreMenuClamp(); return; }
     if(!contractChecked) {
         contractChecked=true;
         static const BYTE setter[]={0x83,0xEC,0x18,0x55,0x8B,0x6C,0x24,0x24,0x56,0x57,0x8B,0x7C,0x24,0x28,0x8B,0xF1,0x8B,0x8E,0xE8,0x01,0,0};
@@ -256,7 +269,14 @@ static void ApplyGazeMenuCursor() {
     }
     RECT client{};
     if(!GetClientRect(window,&client) || client.right<=0 || client.bottom<=0) return;
-    const int x=int(u*float(client.right-1)+.5f), y=int(v*float(client.bottom-1)+.5f);
+    // The menu draws the cursor in backbuffer pixels (2676x2728 per eye) while
+    // the window client is only 2676x1228 and 787DF0 clamps the native cursor
+    // to [mouse+224]x[mouse+228] (headset 00:57: cursor stuck in the top band).
+    // Target the backbuffer and widen the clamp while the gaze menu is active.
+    const int surfW=g_eyeCacheW ? int(g_eyeCacheW) : int(client.right);
+    const int surfH=g_eyeCacheH ? int(g_eyeCacheH) : int(client.bottom);
+    client.right=surfW; client.bottom=surfH; // logged size = cursor space
+    const int x=int(u*float(surfW-1)+.5f), y=int(v*float(surfH-1)+.5f);
     if(!filter.Changed(x,y,3)) return;
     // Resolve the mouse device through the verified receiver graph (cached 2 s).
     if(!mouse || now>=nextObserve) {
@@ -281,6 +301,19 @@ static void ApplyGazeMenuCursor() {
     // Send real relative mouse input and let the game's own DirectInput
     // decoder (8A1470) move its cursor; closed loop on the native position.
     // Mode 1: direct native setter (position only, no events).
+    // Clamp bounds: widen to the backbuffer (restored when the menu closes).
+    __try {
+        if(*(DWORD*)mouse==0xFC00C8) {
+            int& bw=*(int*)(mouse+0x224); int& bh=*(int*)(mouse+0x228);
+            if(bw!=surfW || bh!=surfH) {
+                if(!g_menuClampSaved || g_menuClampMouse!=mouse) {
+                    g_menuClampMouse=mouse; g_menuClampW=bw; g_menuClampH=bh; g_menuClampSaved=true;
+                    Log("[GazeMenu] cursor clamp %dx%d -> backbuffer %dx%d (restored on exit)",bw,bh,surfW,surfH);
+                }
+                bw=surfW; bh=surfH;
+            }
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) { mouse=0; return; }
     int nativeX=0,nativeY=0; BYTE acquiredNow=0;
     __try {
         if(*(DWORD*)mouse!=0xFC00C8) { mouse=0; return; }
