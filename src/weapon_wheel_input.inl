@@ -458,6 +458,7 @@ static uint16_t PhysicalAButton() {
     return ReadPadSetting("AButton","X",XINPUT_GAMEPAD_X);
 }
 
+static void ApplyMenuTriggerConfirm(XINPUT_GAMEPAD& gp);
 // After the recenter chord, before trigger/gesture rewriting.
 static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
     const ULONGLONG now=GetTickCount64();
@@ -497,6 +498,7 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
                 loadout.loadout.hand[0],loadout.loadout.hand[1],(int)fresh);
         gp.wButtons|=g_wheelEquip.Bits(now);
     }
+    ApplyMenuTriggerConfirm(gp);
     if(g_crouchStickDown) {
         // Head owns pitch: right stick Y never reaches the game in gameplay.
         const float x=gp.sThumbRX/32767.f, y=gp.sThumbRY/32767.f;
@@ -511,6 +513,12 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
         if(active==d2vr_wheel::StickFlick::Dir::Up) gp.wButtons|=ReadPadSetting("JumpButton","A",XINPUT_GAMEPAD_A);
         else if(active==d2vr_wheel::StickFlick::Dir::Down) gp.wButtons|=ReadPadSetting("CrouchButton","R3",XINPUT_GAMEPAD_RIGHT_THUMB);
     }
+}
+
+// Menus with gaze: the right trigger confirms like A (look + pull).
+static void ApplyMenuTriggerConfirm(XINPUT_GAMEPAD& gp) {
+    if(!g_gazeMenu || !g_eyeTrackingEnabled || g_in3DGameplayMode) return;
+    if(gp.bRightTrigger>150) { gp.wButtons|=XINPUT_GAMEPAD_A; gp.bRightTrigger=0; }
 }
 
 static void ResetWeaponWheelInput() {

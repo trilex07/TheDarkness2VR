@@ -354,6 +354,45 @@ static bool NisDispatchEye(NisRuntime* nis, ID3D11DeviceContext* ctx,
     return true;
 }
 
+// Foveated pass: NVSharpen over one rectangle of a same-size eye image,
+// reading the ORIGINAL source (neighbours outside the rectangle included,
+// absolute texture coordinates) and overwriting that rectangle of the output.
+// Requires the NIS_VIEWPORT_SUPPORT=1 shader. Same bindings as NisDispatchEye.
+static bool NisDispatchEyeRect(NisRuntime* nis, ID3D11DeviceContext* ctx,
+                               ID3D11ShaderResourceView* srcSrv,
+                               uint32_t width, uint32_t height, int eye,
+                               uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                               float sharpness) {
+    if (!nis->ready || !srcSrv || eye < 0 || eye > 1 || !w || !h ||
+        x + w > width || y + h > height || nis->outW != width || nis->outH != height) return false;
+    NISConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    if (!NVSharpenUpdateConfig(cfg, nis_upscale::ClampSharpness(sharpness),
+            x, y, w, h, width, height, x, y)) return false;
+    nis->configUploaded = false; // the full-frame config is restored by the next NisDispatchEye
+    D3D11_MAPPED_SUBRESOURCE ms = {};
+    if (FAILED(ctx->Map(nis->cb, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) return false;
+    memcpy(ms.pData, &cfg, sizeof(cfg));
+    ctx->Unmap(nis->cb, 0);
+    ++nis->numConfigUploads;
+    ID3D11Buffer* cbs[1] = { nis->cb };
+    ID3D11SamplerState* samps[1] = { nis->sampler };
+    ctx->CSSetShader(nis->csSharpen, nullptr, 0);
+    ctx->CSSetConstantBuffers(0, 1, cbs);
+    ctx->CSSetSamplers(0, 1, samps);
+    ID3D11ShaderResourceView* s1[1] = { srcSrv };
+    ctx->CSSetShaderResources(0, 1, s1);
+    ID3D11UnorderedAccessView* uavs[1] = { nis->outUav[eye] };
+    ctx->CSSetUnorderedAccessViews(0, 1, uavs, nullptr);
+    ctx->Dispatch((w + 31) / 32, (h + 31) / 32, 1);
+    ID3D11UnorderedAccessView* nullUav[1] = { nullptr };
+    ctx->CSSetUnorderedAccessViews(0, 1, nullUav, nullptr);
+    ID3D11ShaderResourceView* nullSrv[1] = { nullptr };
+    ctx->CSSetShaderResources(0, 1, nullSrv);
+    ctx->CSSetShader(nullptr, nullptr, 0);
+    return true;
+}
+
 // GPU timing: call NisTimingBegin before the two eye dispatches and
 // NisTimingEnd after; call NisTimingPoll once per frame (after submit) to
 // harvest the result without stalling. MEASURED GPU time, not CPU Dispatch.

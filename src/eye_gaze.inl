@@ -101,3 +101,112 @@ static bool LatestGaze(XrVector3f& dir) {
     dir={v[0]/n,v[1]/n,v[2]/n};
     return true;
 }
+
+// Gaze pixel on one submitted eye image (foveated NIS). The image was rendered
+// with this frame's submit FOV (+ the shared horizontal offset) at the eye pose.
+static bool FoveaGazePixel(int eye,uint32_t width,uint32_t height,float& px,float& py) {
+    if(eye<0 || eye>1 || !g_haveViews) return false;
+    XrVector3f d{};
+    if(!LatestGaze(d)) return false;
+    const XrPosef head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
+    const XrVector3f world=RotVec(head.orientation,d.x,d.y,d.z);
+    const auto& q=g_eyePose[eye].orientation;
+    const XrQuaternionf inv{-q.x,-q.y,-q.z,q.w};
+    const XrVector3f e=RotVec(inv,world.x,world.y,world.z);
+    XrFovf fov=g_pairSubmitMetaValid ? g_pairSubmitFov[eye] : g_eyeFov[eye];
+    fov.angleLeft+=g_trackedFrame.offsetX; fov.angleRight+=g_trackedFrame.offsetX;
+    return d2vr_fovea::GazePixel(e.x,e.y,e.z,fov.angleLeft,fov.angleRight,fov.angleUp,fov.angleDown,width,height,px,py);
+}
+
+// Gaze in tracking space (g_xrSpace): head centre + rotated gaze direction.
+static bool GazeWorldDirection(XrVector3f& direction) {
+    if(!g_haveViews) return false;
+    XrVector3f d{};
+    if(!LatestGaze(d)) return false;
+    const XrPosef head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
+    direction=RotVec(head.orientation,d.x,d.y,d.z);
+    return true;
+}
+static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction) {
+    if(!GazeWorldDirection(direction)) return false;
+    origin=HeadCenterPose(g_eyePose[0],g_eyePose[1]).position;
+    return true;
+}
+
+// ---------------------------------------------------------------- menu gaze
+// [EyeTracking] GazeMenu: in menus (cinema quad shown) the native menu cursor
+// follows the gaze; A/trigger then confirms the hovered item through the
+// game's own pad handling. Cursor setter MouseDeviceWin vtable FC00C8 +0x70 ->
+// C4B690 (thiscall x,y client pixels: ClientToScreen, SetCursorPos when
+// acquired, stores +21C/+220). Runs only on the native window thread.
+struct MenuSurface { bool valid=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; };
+static SRWLOCK g_menuSurfaceLock=SRWLOCK_INIT;
+static MenuSurface g_menuSurface;
+static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
+    MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
+    s.time=GetTickCount64(); s.space=quad.space;
+    AcquireSRWLockExclusive(&g_menuSurfaceLock); g_menuSurface=s; ReleaseSRWLockExclusive(&g_menuSurfaceLock);
+}
+static void ApplyGazeMenuCursor() {
+#ifdef D2VR_MATCHED_CAPTURE
+    static d2vr_gaze_menu::CursorFilter filter;
+    static ULONGLONG nextObserve=0; static uint32_t mouse=0; static bool contractOk=false, contractChecked=false;
+    if(!g_gazeMenu || !g_eyeTrackingEnabled || g_in3DGameplayMode) { filter.Reset(); return; }
+    const HWND window=g_renderSizeHwnd;
+    DWORD pid=0;
+    if(!window || GetWindowThreadProcessId(window,&pid)!=GetCurrentThreadId() || pid!=GetCurrentProcessId()) return;
+    if(!contractChecked) {
+        contractChecked=true;
+        static const BYTE setter[]={0x83,0xEC,0x18,0x55,0x8B,0x6C,0x24,0x24,0x56,0x57,0x8B,0x7C,0x24,0x28,0x8B,0xF1,0x8B,0x8E,0xE8,0x01,0,0};
+        __try {
+            contractOk=*(DWORD*)(0xFC00C8+0x70)==0xC4B690 && !memcmp((void*)0xC4B690,setter,sizeof(setter));
+        } __except(EXCEPTION_EXECUTE_HANDLER) { contractOk=false; }
+        Log("[GazeMenu] native cursor setter %s",contractOk ? "verified (FC00C8+70 -> C4B690)" : "REFUSED: unexpected EXE bytes; menu gaze off");
+    }
+    if(!contractOk) return;
+    MenuSurface surface;
+    AcquireSRWLockShared(&g_menuSurfaceLock); surface=g_menuSurface; ReleaseSRWLockShared(&g_menuSurfaceLock);
+    const ULONGLONG now=GetTickCount64();
+    if(!surface.valid || now-surface.time>250 || surface.space!=g_xrSpace) { filter.Reset(); return; }
+    XrVector3f o{},d{};
+    if(!GazeWorldRay(o,d)) return;
+    float u=0,v=0;
+    const auto& q=surface.pose.orientation; const auto& c=surface.pose.position;
+    if(!d2vr_gaze_menu::HitQuad({o.x,o.y,o.z},{d.x,d.y,d.z},{c.x,c.y,c.z},{q.x,q.y,q.z,q.w},surface.width,surface.height,u,v)) return;
+    RECT client{};
+    if(!GetClientRect(window,&client) || client.right<=0 || client.bottom<=0) return;
+    const int x=int(u*float(client.right-1)+.5f), y=int(v*float(client.bottom-1)+.5f);
+    if(!filter.Changed(x,y,3)) return;
+    // Resolve the mouse device through the verified receiver graph (cached 2 s).
+    if(!mouse || now>=nextObserve) {
+        nextObserve=now+2000; mouse=0;
+        const auto read=[](uint32_t address,uint32_t& value) {
+            MEMORY_BASIC_INFORMATION region{};
+            if(VirtualQuery(reinterpret_cast<const void*>(address),&region,sizeof(region))!=sizeof(region) ||
+               region.State!=MEM_COMMIT || (region.Protect&(PAGE_NOACCESS|PAGE_GUARD)))return false;
+            SIZE_T copied=0;
+            return ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(address),&value,4,&copied) && copied==4;
+        };
+        d2vr_menu_native::Snapshot snap;
+        const auto framework=uint32_t(GetWindowLongPtrW(window,GWLP_USERDATA));
+        const auto owned=uint32_t(reinterpret_cast<uintptr_t>(g_nativeViewTables[0].Table()));
+        if(d2vr_menu_native::Observe(uint32_t(reinterpret_cast<uintptr_t>(window)),framework,read,snap,owned)) mouse=snap.mouse;
+        static uint32_t loggedMouse=1;
+        if(mouse!=loggedMouse) { loggedMouse=mouse; Log("[GazeMenu] mouse device %08X%s",mouse,mouse ? "" : " unavailable; cursor not moved"); }
+    }
+    if(!mouse) return;
+    using SetPos=void(__thiscall*)(void*,int,int);
+    __try {
+        if(*(DWORD*)mouse!=0xFC00C8) { mouse=0; return; }
+        reinterpret_cast<SetPos>(0xC4B690)(reinterpret_cast<void*>(mouse),x,y);
+    } __except(EXCEPTION_EXECUTE_HANDLER) { mouse=0; Log("[GazeMenu] cursor setter faulted; device dropped"); return; }
+    static ULONGLONG lastLog=0;
+    if(now-lastLog>1000) {
+        lastLog=now;
+        int nx=-1,ny=-1,acquired=-1;
+        __try { nx=*(int*)(mouse+0x21C); ny=*(int*)(mouse+0x220); acquired=*(BYTE*)(mouse+7); } __except(EXCEPTION_EXECUTE_HANDLER) {}
+        Log("[GazeMenu] gaze uv=(%.3f,%.3f) -> client (%d,%d) of %ldx%ld; native cursor now (%d,%d) acquired=%d",
+            u,v,x,y,client.right,client.bottom,nx,ny,acquired);
+    }
+#endif
+}

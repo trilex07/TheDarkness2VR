@@ -12,6 +12,9 @@ static bool g_nisEyeFailed=false;
 static bool g_nisEyeReported=false;
 
 static void NisEyeLog(const char* message) { Log("[NIS] %s",message); }
+// Foveated sharpening ([Render] FoveatedSharpen): gaze pixel of this eye's
+// image, defined in eye_gaze.inl (needs eye poses/FOV declared later).
+static bool FoveaGazePixel(int eye,uint32_t width,uint32_t height,float& px,float& py);
 
 static void NisEyeReleaseSources() {
     for(int eye=0;eye<2;++eye) {
@@ -69,14 +72,41 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
         Log("[NIS] GPU pair dispatch sample=%.3fms peak=%.3fms samples=%d; excludes final copies/XR, asynchronous DONOTFLUSH",
             g_nisEye.msGpu,g_nisEye.msGpuPeak,g_nisEye.timingFrames);
     NisTimingBegin(&g_nisEye,g_ctx11);
-    for(int eye=0;eye<2;++eye)
+    // Foveated: whole image at the periphery level, then a transition square
+    // and the fovea square around the gaze, each overwriting its rectangle.
+    // Same-size sharpen mode only; any missing gaze -> uniform NisSharpness.
+    const bool foveaMode=g_foveatedSharpen && g_nisMode==2 && outW==desc[0].Width && outH==desc[0].Height;
+    float gx[2]{}, gy[2]{}; bool gaze[2]{};
+    if(foveaMode) for(int eye=0;eye<2;++eye) gaze[eye]=FoveaGazePixel(eye,outW,outH,gx[eye],gy[eye]);
+    const auto levels=d2vr_fovea::Grade(g_foveaPeriphery,g_foveaSharpness);
+    for(int eye=0;eye<2;++eye) {
+        const float base=gaze[eye] ? levels.periphery : g_nisSharpness;
         if(!NisDispatchEye(&g_nisEye,g_ctx11,g_nisEyeSource[eye],
                            desc[eye].Width,desc[eye].Height,eye,
-                           outW,outH,g_nisSharpness,g_nisMode==2)) {
+                           outW,outH,base,g_nisMode==2)) {
             NisTimingEnd(&g_nisEye,g_ctx11);
             return NisEyeFailure("eye dispatch");
         }
+        if(gaze[eye]) {
+            const auto outer=d2vr_fovea::Around(gx[eye],gy[eye],outW,outH,g_foveaSize*1.7f);
+            const auto inner=d2vr_fovea::Around(gx[eye],gy[eye],outW,outH,g_foveaSize);
+            if(!NisDispatchEyeRect(&g_nisEye,g_ctx11,g_nisEyeSource[eye],outW,outH,eye,
+                                   outer.x,outer.y,outer.w,outer.h,levels.transition) ||
+               !NisDispatchEyeRect(&g_nisEye,g_ctx11,g_nisEyeSource[eye],outW,outH,eye,
+                                   inner.x,inner.y,inner.w,inner.h,levels.fovea)) {
+                NisTimingEnd(&g_nisEye,g_ctx11);
+                return NisEyeFailure("foveated dispatch");
+            }
+        }
+    }
     NisTimingEnd(&g_nisEye,g_ctx11);
+    static int lastFovea=-1;
+    const int foveaState=int(gaze[0])+int(gaze[1]);
+    if(foveaMode && foveaState!=lastFovea) {
+        lastFovea=foveaState;
+        Log("[NIS] foveated sharpening %s (periphery=%.2f transition=%.2f fovea=%.2f size=%.2f); gaze eyes=%d",
+            foveaState ? "active" : "waiting for gaze (uniform NisSharpness)",levels.periphery,levels.transition,levels.fovea,g_foveaSize,foveaState);
+    }
     if(!g_nisEyeReported) {
         Log("[NIS] pair dispatched mode=%d strength=%.2f source=%ux%u output=%ux%u; independent eyes, native projections retained",
             g_nisMode,g_nisSharpness,desc[0].Width,desc[0].Height,outW,outH);

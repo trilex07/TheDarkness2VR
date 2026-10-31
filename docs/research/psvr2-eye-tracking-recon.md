@@ -55,7 +55,13 @@ INI: [Render] FoveatedSharpen=0 default (live A/B), FoveaSharpness, FoveaSize.
 ## (1) Gaze interaction - candidates
 
 User choice 2026-11-01 00:12: **tentacle grab target** and **throw target**.
-Weapon wheel and menu stay controller-driven.
+Weapon wheel stays controller-driven. 00:29: user also wants **menu by gaze**
+(item under the gaze is active). Dependency: the native menu pointer is only
+partly built (`native_menu_pointer_bridge.h`, contract in
+`native-menu-input-contract-20261029.md`): menu visibility/surface acquisition,
+the admitted native mouse hook and cursor setter (MouseDeviceWin +70 -> C4B690)
+are still unconnected. Gaze only replaces the aim ray of that bridge, so the
+menu work is finishing that pointer with gaze as the aim source (largest item).
 
 - Tentacle grab target: when the grab gesture starts, prefer the object/enemy
   nearest the gaze ray instead of the controller ray (native throw/grab aim
@@ -79,3 +85,20 @@ Rule: gaze only *selects*; the action still needs the existing button/gesture.
   X mirrored (look left -> ring right). Fix: `GazeAxes=-x,y,-z` (now the code
   default; also written to the game-folder Darkness2VR.ini, backup
   `%LOCALAPPDATA%/Darkness2VR/Darkness2VR.ini.before-gazeaxes-20261101`).
+
+## v6 implementation (2026-11-01 ~01:00, offline only, headset PENDING)
+
+- Foveated NIS (`foveated_sharpen.h`, `NisDispatchEyeRect`): full image at
+  FoveaPeriphery (0.35), transition square (1.7 x FoveaSize) at the midpoint,
+  fovea square (FoveaSize 0.22 of the shorter edge) at FoveaSharpness (1.0).
+  Gaze -> eye pixel through head->eye rotation and this frame's submit FOV.
+  NisMode=2 only; no gaze -> uniform NisSharpness. [Render] FoveatedSharpen=1.
+- GazeGrab: PublishProtectedLeftAim uses head centre + gaze as the tentacle
+  acquisition ray. GazeThrow: PublishNativeThrow aims at the gaze with
+  GazeThrowAssist 0.85 of the direction (swing keeps 0.15).
+- GazeMenu: menu/cinema quad pose+size recorded at submit; gaze ray hits it ->
+  client pixel -> native setter C4B690 on MouseDeviceWin (vtable FC00C8, found
+  through the verified receiver graph) on the window thread, 3 px hysteresis.
+  Right trigger = A in menus. Unknown: whether the Flash menu highlights on a
+  native cursor move without a decoded mouse event (log `[GazeMenu] ... native
+  cursor now`). GazeDot now defaults OFF.

@@ -68,8 +68,15 @@ static void PublishProtectedLeftAim(const XINPUT_GAMEPAD& gp) {
         const auto& ref=g_headGeometryReference;
         const auto& aim=g_hands[0].aim;
         const XrQuaternionf inverse={-ref.orientation.x,-ref.orientation.y,-ref.orientation.z,ref.orientation.w};
-        const auto origin=RotVec(inverse,aim.position.x-ref.position.x,aim.position.y-ref.position.y,aim.position.z-ref.position.z);
-        const auto forward=RotVec(aim.orientation,0,0,-1);
+        // [EyeTracking] GazeGrab: the tentacle acquires what you look at (head
+        // origin + gaze); controller ray when the gaze is unavailable.
+        XrVector3f gazeOrigin{},gazeDir{};
+        const bool gaze=g_gazeGrab && GazeWorldRay(gazeOrigin,gazeDir);
+        const XrVector3f from=gaze ? gazeOrigin : aim.position;
+        const auto origin=RotVec(inverse,from.x-ref.position.x,from.y-ref.position.y,from.z-ref.position.z);
+        const auto forward=gaze ? gazeDir : RotVec(aim.orientation,0,0,-1);
+        static int lastGaze=-1;
+        if(int(gaze)!=lastGaze) { lastGaze=int(gaze); Log("[GazeGrab] tentacle grab ray from %s",gaze ? "gaze" : "left controller"); }
         const auto direction=RotVec(inverse,forward.x,forward.y,forward.z);
         sample.ray.valid=true;sample.ray.time=GetTickCount64();sample.camera=owner.camera;
         sample.ray.origin[0]=origin.x;sample.ray.origin[1]=origin.y;sample.ray.origin[2]=-origin.z;

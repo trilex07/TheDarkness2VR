@@ -164,7 +164,11 @@ bool g_nativeWeaponPose=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
 bool g_weaponWheelEnabled=true;   // [Input] WeaponWheel: hold R3 -> dual weapon wheels
 bool g_eyeTrackingEnabled=true;   // [EyeTracking] Enabled: read PSVR2 Toolkit gaze from the bridge
-bool g_gazeDotEnabled=true;       // [EyeTracking] GazeDot: debug ring at the gaze (axis check)
+bool g_gazeDotEnabled=false;      // [EyeTracking] GazeDot: debug ring at the gaze (axes verified 2026-11-01)
+bool g_gazeGrab=true;             // [EyeTracking] GazeGrab: tentacle grab acquires the gazed target
+bool g_gazeThrow=true;            // [EyeTracking] GazeThrow: thrown objects fly towards the gaze
+float g_gazeThrowAssist=.85f;     // [EyeTracking] GazeThrowAssist (percent): gaze share of the throw direction
+bool g_gazeMenu=true;             // [EyeTracking] GazeMenu: native menu cursor follows the gaze
 bool g_ammoHudEnabled=true;       // [Input] AmmoHud: magazine counter on the back of each armed hand
 bool g_crouchStickDown=true;      // [Input] CrouchStickDown: right stick Y -> jump/crouch flicks, never camera pitch
 bool g_unarmedTriggerDpad=true; // left trigger + empty left hand -> DPAD_DOWN / DPAD_UP alternating
@@ -600,6 +604,9 @@ static volatile LONG g_cameraUploadWitnessBudget=0;
 #endif
 static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
+// [Render] FoveatedSharpen: gaze-centred NIS (periphery/transition/fovea), mode 2 only.
+static bool g_foveatedSharpen = true;
+static float g_foveaPeriphery = .35f, g_foveaSharpness = 1.f, g_foveaSize = .22f;
 static bool g_headAttachedTentacles = false;
 static bool g_hideNativeHud = false;
 static bool g_gpuSplitTiming = false;
@@ -721,6 +728,19 @@ void LoadConfig() {
     char nisSharpness[32]{};
     GetPrivateProfileStringA("Render", "NisSharpness", "0.20", nisSharpness, sizeof(nisSharpness), chosenIni);
     g_nisSharpness = nis_upscale::ClampSharpness((float)atof(nisSharpness));
+    {
+        char value[32]{};
+        g_foveatedSharpen = GetPrivateProfileIntA("Render", "FoveatedSharpen", 1, chosenIni) != 0;
+        GetPrivateProfileStringA("Render", "FoveaPeriphery", "0.35", value, sizeof(value), chosenIni);
+        g_foveaPeriphery = nis_upscale::ClampSharpness((float)atof(value));
+        GetPrivateProfileStringA("Render", "FoveaSharpness", "1.0", value, sizeof(value), chosenIni);
+        g_foveaSharpness = nis_upscale::ClampSharpness((float)atof(value));
+        GetPrivateProfileStringA("Render", "FoveaSize", "0.22", value, sizeof(value), chosenIni);
+        const float size=(float)atof(value);
+        g_foveaSize = size>=.05f && size<=.8f ? size : .22f;
+        Log("[NIS] FoveatedSharpen=%d periphery=%.2f fovea=%.2f size=%.2f (needs NisMode=2 and eye tracking; else uniform NisSharpness)",
+            (int)g_foveatedSharpen,g_foveaPeriphery,g_foveaSharpness,g_foveaSize);
+    }
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
     g_hideNativeHud = GetPrivateProfileIntA("Render", "HideNativeHUD", 0, chosenIni)!=0;
     Log("[NativeHUD] requested=%d; protected owner callback required",int(g_hideNativeHud));
@@ -809,7 +829,12 @@ void LoadConfig() {
     g_crouchStickDown = GetPrivateProfileIntA("Input", "CrouchStickDown", 1, chosenIni) != 0;
     g_ammoHudEnabled = GetPrivateProfileIntA("Input", "AmmoHud", 1, chosenIni) != 0;
     g_eyeTrackingEnabled = GetPrivateProfileIntA("EyeTracking", "Enabled", 1, chosenIni) != 0;
-    g_gazeDotEnabled = GetPrivateProfileIntA("EyeTracking", "GazeDot", 1, chosenIni) != 0;
+    g_gazeDotEnabled = GetPrivateProfileIntA("EyeTracking", "GazeDot", 0, chosenIni) != 0;
+    g_gazeGrab = GetPrivateProfileIntA("EyeTracking", "GazeGrab", 1, chosenIni) != 0;
+    g_gazeThrow = GetPrivateProfileIntA("EyeTracking", "GazeThrow", 1, chosenIni) != 0;
+    g_gazeThrowAssist = std::min(100u,GetPrivateProfileIntA("EyeTracking", "GazeThrowAssist", 85, chosenIni))*.01f;
+    g_gazeMenu = GetPrivateProfileIntA("EyeTracking", "GazeMenu", 1, chosenIni) != 0;
+    Log("[EyeTracking] GazeGrab=%d GazeThrow=%d GazeThrowAssist=%.2f GazeMenu=%d",(int)g_gazeGrab,(int)g_gazeThrow,g_gazeThrowAssist,(int)g_gazeMenu);
     Log("[EyeTracking] enabled=%d gazeDot=%d (needs AdaptiveTriggers bridge + Toolkit gaze calibration)",(int)g_eyeTrackingEnabled,(int)g_gazeDotEnabled);
     Log("[AmmoHud] enabled=%d (magazine rounds from gun+0xA48 on a grip-space quad; reserve ammo not shown yet)",(int)g_ammoHudEnabled);
     Log("[WeaponWheel] enabled=%d (hold R3: one wheel at the right hand with every owned weapon, move the hand to it, release; closed-loop stock D-pad equip; R3 tap still reaches the game)",(int)g_weaponWheelEnabled);
@@ -1544,6 +1569,8 @@ static SwapchainWriteState g_scWrite[2];
 ID3D11Texture2D* g_eyeCache[2] = { nullptr, nullptr };
 ID3D11RenderTargetView* g_eyeRTV[2] = { nullptr, nullptr };
 static UINT g_eyeCacheW=0,g_eyeCacheH=0;
+#include "foveated_sharpen.h"
+#include "gaze_menu.h"
 #include "nis_eye.inl"
 
 IDirect3DSurface9* g_sysmem = nullptr;
@@ -4097,6 +4124,9 @@ static void ResetPoseInput() {
     for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.flags=0; hand.squeeze=0; hand.motion={}; }
 }
 #include "native_aim.inl"
+// Gaze rays for grab/throw (defined in eye_gaze.inl, tracking space).
+static bool GazeWorldDirection(XrVector3f& direction);
+static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction);
 #include "protected_left_aim.inl"
 #include "native_throw.inl"
 #include "protected_left_throw.inl"
@@ -5365,6 +5395,7 @@ void PumpXR() {
         ev = { XR_TYPE_EVENT_DATA_BUFFER };
     }
     ObserveNativeMenuReceiver();
+    ApplyGazeMenuCursor(); // same native window thread as the receiver observation
     if(g_xrRunning && g_displayRefresh.FallbackActive() && GetTickCount64()>=g_steamRefreshNext) {
         g_steamRefreshNext=GetTickCount64()+2000;
         const float previous=g_displayRefresh.Hz();
@@ -6074,6 +6105,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
                 quad.subImage.imageRect.offset = { 0, 0 };
                 quad.subImage.imageRect.extent = { (int32_t)g_scW, (int32_t)g_scH };
                 quad.size = { g_cinemaWidthM, g_cinemaWidthM / aspect };
+                RecordMenuSurface(quad); // gaze menu cursor (eye_gaze.inl)
                 layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
                 layerCount = 1;
             }

@@ -54,6 +54,15 @@ static bool ReadNativeThrowTarget(void* self,DWORD entity,bool protectedPath,DWO
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_input::Vec3 velocity,d2vr_input::Vec3 aim={},bool protectedPath=false) {
+    // [EyeTracking] GazeThrow: aim the release at the gaze; the swing keeps
+    // (1-GazeThrowAssist) of the direction. Controller aim without gaze.
+    float assist=g_throwAimAssist;
+    if(requested && g_gazeThrow) {
+        XrVector3f gaze{};
+        const bool usedGaze=GazeWorldDirection(gaze);
+        if(usedGaze) { aim={gaze.x,gaze.y,gaze.z}; assist=g_gazeThrowAssist; }
+        Log("[GazeThrow] release aim from %s assist=%.2f",usedGaze ? "gaze" : "controller",assist);
+    }
     if(!context || newGrab || !g_hands[0].valid || !g_headGeometry || !g_headGeometryReferenceValid) {
         ResetNativeThrow(); return;
     }
@@ -63,7 +72,7 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
     DWORD character=0;
     d2vr_input::Vec3 direction{};
     const bool enabled=protectedPath ? ProtectedThrowAvailable() : (g_nativeLeftAim && g_nativeThrowInstalled);
-    if(enabled && d2vr_input::ThrowDirection(velocity,aim,g_throwAimAssist,direction) &&
+    if(enabled && d2vr_input::ThrowDirection(velocity,aim,assist,direction) &&
        CopyNativeGameplay(sample) && sample.grabFire && sample.grabEntity &&
        NativeThrowFireOwnerMatches((void*)sample.camera,sample.inventory,(void*)sample.grabFire,0xFFC7C0,protectedPath) &&
        ReadNativeThrowTarget((void*)sample.grabFire,sample.grabEntity,protectedPath,character) &&
