@@ -51,6 +51,7 @@
 #include "native_menu_input_snapshot.h"
 #include "native_menu_pointer_bridge.h"
 #include "vr_input.h"
+#include "unarmed_trigger_dpad.h"
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
 #include "composite_shader_patch.h"
@@ -156,6 +157,7 @@ bool g_tentacleBridge = false; // separate, opt-in stock-game action bridge
 bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
 bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
+bool g_unarmedTriggerDpad=true; // VR has no D-pad: empty-hand trigger -> stock D-pad weapon actions
 bool g_nativeHandsEnabled=false;
 bool g_nativeHandsDirtyBoth=false;
 static bool g_nativeHandsPackInstalled=false;
@@ -787,6 +789,8 @@ void LoadConfig() {
     g_tentacleAimMarker = GetPrivateProfileIntA("Input", "TentacleAimMarker", 1, chosenIni) != 0;
     g_nativeLeftAim = GetPrivateProfileIntA("Input", "NativeLeftAim", 0, chosenIni) != 0;
     g_nativeWeaponPose = GetPrivateProfileIntA("Input", "NativeWeaponPose", 0, chosenIni) != 0;
+    g_unarmedTriggerDpad = GetPrivateProfileIntA("Input", "UnarmedTriggerDpad", 1, chosenIni) != 0;
+    Log("[UnarmedTriggerDpad] enabled=%d (L trigger + empty off hand -> DPAD_RIGHT dual wield; R trigger + empty main hand -> DPAD_DOWN draw weapon)",(int)g_unarmedTriggerDpad);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
     g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
@@ -4492,6 +4496,33 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
     }
 }
 
+static d2vr_input::UnarmedTriggerDpad g_unarmedTriggerDpadState;
+// Uses only the existing native gameplay sample (no new hook). Without a fresh
+// sample the hand state is Unknown and triggers pass through unchanged.
+static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
+    if(!g_unarmedTriggerDpad) return;
+    using d2vr_input::HandSlot;
+    HandSlot offHand=HandSlot::Unknown,mainHand=HandSlot::Unknown;
+    NativeGameplaySample sample;
+    const bool context=g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START) && CopyNativeGameplay(sample);
+    if(context) {
+        offHand=sample.offHandEquipped ? HandSlot::Armed:HandSlot::Empty;
+        mainHand=sample.mainHandEquipped ? HandSlot::Armed:HandSlot::Empty;
+    }
+    static const char* const kSlot[]={"unknown","empty","armed"};
+    static int lastSlots=-1;
+    const int slots=int(offHand) | (int(mainHand)<<2);
+    if(slots!=lastSlots) {
+        lastSlots=slots;
+        Log("[UnarmedTriggerDpad] native hands main/right(+B0)=%s off/left(+BC)=%s",kSlot[int(mainHand)],kSlot[int(offHand)]);
+    }
+    int fired=0;
+    gp.wButtons|=g_unarmedTriggerDpadState.Update(gp.bLeftTrigger,gp.bRightTrigger,offHand,mainHand,
+        context,GetTickCount64(),&fired);
+    if(fired&1) Log("[UnarmedTriggerDpad] left trigger, off hand empty -> DPAD_RIGHT (dual wield)");
+    if(fired&2) Log("[UnarmedTriggerDpad] right trigger, main hand empty -> DPAD_DOWN (draw weapon)");
+}
+
 bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if (!out || !g_padActionsReady || !g_xrRunning) {
         if (!g_xrRunning) PublishAdaptiveTriggers(nullptr, false);
@@ -4602,6 +4633,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         else RequestRecenter("VR PAD L3+R3 click");
     }
     if (g_recenterChord.suppress) gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
+    ApplyUnarmedTriggerDpad(gp); // before gestures/throw/haptics so they see the rewritten triggers
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
         g_hands[0].gripValid,g_hands[1].gripValid);

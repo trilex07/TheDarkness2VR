@@ -46,6 +46,7 @@ struct NativeGameplaySample {
     unsigned char firearm[2]{}; // same slots: [0] right, [1] left
     unsigned char shotOwnedMask=0; // native final-consumer reports available
     bool offHandEquipped=false;
+    bool mainHandEquipped=false; // inventory+0xB0, slot [0] of the same 12-byte hand stride
     DWORD grabFire=0,grabEntity=0;
 #ifdef D2VR_MATCHED_CAPTURE
     DWORD avatarSkinResource=0; // fast hint only; full ownership checked at the packer
@@ -176,6 +177,7 @@ static bool CaptureNativeGameplay(void* self) {
         auto inventory=**(BYTE***)(avatar+0x630);
         s.camera=(DWORD)(uintptr_t)self; s.inventory=(DWORD)(uintptr_t)inventory;
         s.offHandEquipped=**(DWORD**)(inventory+0xBC)!=0;
+        s.mainHandEquipped=**(DWORD**)(inventory+0xB0)!=0;
         // Slot 6 is the left demon arm, confirmed by native BA66E0 and live RTTI.
         auto weapon=**(BYTE***)(inventory+0x20C+6*4);
         if(weapon && *(DWORD*)weapon==0xFD6E00 && **(BYTE***)(weapon+0x980)==avatar) {
