@@ -1691,6 +1691,7 @@ static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
 void* PatchVTable(void* obj, int index, void* repl);
 namespace d2vr_replay { struct StereoParams; }
 static d2vr_replay::StereoParams MakeEyeParams(int eye);
+static const d2vr_replay::StereoParams& EyeParamsRef(int eye);
 #ifdef D2VR_MATCHED_CAPTURE
 extern volatile LONG g_frameId;
 static void MatchedCaptureDraw(IDirect3DDevice9*,int,bool);
@@ -1877,6 +1878,17 @@ static d2vr_replay::StereoParams g_frameEyeParams[2];
 static bool g_frameEyeParamsValid = false;
 static d2vr_replay::StereoParams MakeEyeParams(int eye) {
     return g_frameEyeParamsValid ? g_frameEyeParams[eye ? 1:0] : BuildEyeParams(eye);
+}
+// Hot per-upload paths (VS/PS constant hooks run thousands of times per frame
+// outdoors) only read the ~400-byte params: hand out the per-frame cache by
+// reference instead of copying it on every call. Outside a tracked frame the
+// params are rebuilt exactly as MakeEyeParams does, into this thread's slot.
+static const d2vr_replay::StereoParams& EyeParamsRef(int eye) {
+    const int e=eye ? 1:0;
+    if(g_frameEyeParamsValid) return g_frameEyeParams[e];
+    static thread_local d2vr_replay::StereoParams built[2];
+    built[e]=BuildEyeParams(e);
+    return built[e];
 }
 
 // Updates the OpenXR per-view frustum from the projection measured in the matrix uploads:
@@ -2123,8 +2135,15 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
         d2vr_replay::g_replayEye < 0 && pConstantData && Vector4fCount <= 68 &&
         !d2vr_replay::IsShadowAtlasPass(dev)) {
         static thread_local float s_tmpConst[d2vr_replay::kVertexStereoUploadRows * 4];
-        d2vr_replay::StereoParams sp = MakeEyeParams(0);
-        if (g_stereoMode == 2) sp.separation = 0.0f;
+        const d2vr_replay::StereoParams& eyeParams = EyeParamsRef(0);
+        // Mode 2 forces mono; copy only in the rare frame where the cached
+        // params still carry a separation (mode toggled mid-frame).
+        static thread_local d2vr_replay::StereoParams monoParams;
+        const d2vr_replay::StereoParams* spp = &eyeParams;
+        if (g_stereoMode == 2 && eyeParams.separation != 0.0f) {
+            monoParams = eyeParams; monoParams.separation = 0.0f; spp = &monoParams;
+        }
+        const d2vr_replay::StereoParams& sp = *spp;
         bool perspectiveUpload=false;
         UINT uploadStart=StartRegister,uploadCount=Vector4fCount;
         if (d2vr_replay::ApplyVertexStereoUpload(s_tmpConst, pConstantData, uploadStart,

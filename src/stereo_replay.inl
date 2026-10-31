@@ -1973,7 +1973,7 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect
     float adjusted[224*4];
     if (g_submitMode == 4 && g_replayEye < 0 && d &&
         CompensatePsConstants(adjusted, d, s, n, g_activePsInverse, g_activePsViewExtents,
-                              MakeEyeParams(0))) {
+                              EyeParamsRef(0))) {
         d = adjusted;
         if(submission.ticket)d2vr_submission::constants.Capture(d2vr_submission::gate,submission,adjusted,size_t(n)*16,s,n);
     }
