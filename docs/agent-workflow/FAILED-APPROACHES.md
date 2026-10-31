@@ -99,3 +99,10 @@ source, BASELINE.md and the task handoff before applying them.
 - **Evidence**: User rejection
 - **Lesson**: Experimental fixes must be behind flags, easy to disable
 - **Status**: Rejected
+
+
+### Adaptive half-rate application limiter: user rejected (2026-10-31)
+- **Approach**: AUTO application pacing to half physical headset refresh, with uncapped recovery probes.
+- **Evidence**: source 346fac93; log selected HALF at 120 Hz (~58 app FPS), but user reported it does not work and requested OFF.
+- **Boundary**: app limiting does not establish or force runtime frame synthesis. Do not describe cap transitions as reprojection proof.
+- **Status**: Disabled in Steam/local primary profiles; repo default OFF. See HANDOFF-adaptive-half-rate.md and BASELINE.md for rollback/identities.

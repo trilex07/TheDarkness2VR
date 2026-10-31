@@ -686,7 +686,7 @@ void LoadConfig() {
 
     g_asyncLogRequested = GetPrivateProfileIntA("Render", "AsyncLog", 0, chosenIni) != 0;
     char adaptive[32]{};
-    GetPrivateProfileStringA("Render","AdaptiveFPS","AUTO",adaptive,sizeof(adaptive),chosenIni);
+    GetPrivateProfileStringA("Render","AdaptiveFPS","OFF",adaptive,sizeof(adaptive),chosenIni);
     g_adaptiveFPSMode=(!_stricmp(adaptive,"AUTO") || !strcmp(adaptive,"1")) ? d2vr_adaptive::Mode::Auto:
         (!_stricmp(adaptive,"HALF") || !strcmp(adaptive,"2")) ? d2vr_adaptive::Mode::Half:d2vr_adaptive::Mode::Off;
     if(g_adaptiveFPSMode!=d2vr_adaptive::Mode::Off)

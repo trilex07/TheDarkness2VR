@@ -12,7 +12,7 @@
 User explicitly requested implementation: sustained FPS below headset refresh should select half-refresh application rendering, allowing runtime reprojection.
 
 ## Status
-Deployment complete with independently verified installed/rollback hashes. Runtime/PSVR2 acceptance pending.
+User rejected runtime behavior; AdaptiveFPS disabled in both installed profiles. HUD removal requested but remains incomplete (see latest follow-up).
 
 ## Context Loaded
 BASELINE.md, WORKFLOW.md, FAILED-APPROACHES.md, superseded zero-latency handoff, existing adaptive policy/refresh and VR settings implementation.
@@ -59,3 +59,13 @@ deployment.json records full code-source SHA, EXE/DLL identities and all nine in
 The Steam Render profile has FrameBoundaryPolicy=0, SubmitMode=4, StereoMode=1, DisableOpenXR=0. Historical trace keys in the local file are under Input and are not effective Render settings; current LoadConfig prefers the Steam working-directory profile. No historical orphan keys were rewritten.
 
 Next action is manual headset validation, not another deployment: sustained AUTO entry at 90/120Hz, OFF/HALF panel, AUTO uncapped probe, full stereo and runtime reprojection. Current candidate is not headset-accepted. Remote push remains separately unapproved; user authorized MAIN deployment, not remote publication.
+
+
+## MAIN follow-up: disable limiter / native HUD (2026-10-31)
+User reported half-rate does not work and explicitly requested disabling it plus native HUD. Both installed primary profiles now contain Render/AdaptiveFPS=OFF; independent final hashes are recorded in BASELINE.md. Repo INI and missing-key source default now OFF. No rebuilt DLL was needed for the installed profile change.
+
+Backups/evidence: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/disable-adaptive-20261031T165924794 (profiles, reported-runtime.log, receipt.json, native-settings-before). Reported log selected HALF at 120 Hz and about 58 app FPS; this is not reprojection acceptance. No FPS improvement claim.
+
+HUD status: INCOMPLETE. Native menu was investigated; modded capture failed, so the exact installed DLL was temporarily moved aside while game was closed. Vanilla session PID 40388 was launched through Steam, but keyboard/mouse automation did not navigate the menu reliably. Last observed gameplay still had crosshair, health and ammo HUD. Session stopped by exact PID; original proxy restored after closed-process check and SHA256 verified as 4B50EAF295135D8BBB06B039D91FA739D114266A189C3572D95D0890DF1693C3. No other game/SteamVR binaries were changed. Native encoded settings were backed up, not edited by guessed keys.
+
+Do not suppress shader 7070C5BC globally: it also serves menus/UI. Existing g_in3DGameplayMode is only a rendering heuristic, not a verified native menu-state witness. Next HUD work requires native Options toggle confirmation or a captured, gameplay-only HUD producer path. No HUD code suppression was deployed. Preserve OFF until user explicitly asks to retest limiter.

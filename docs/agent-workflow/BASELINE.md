@@ -18,14 +18,14 @@ stereo/hands/tracking. This does not certify newer experimental switches.
 Authorized MAIN deployment completed 2026-10-31 16:20 Europe/Warsaw.
 - **Current DLL SHA256**: 4B50EAF295135D8BBB06B039D91FA739D114266A189C3572D95D0890DF1693C3
 - **Current source commit**: 346fac9327493ac6fffc2ebd2bdade07ad52e824
-- **Current Steam INI SHA256**: 20058DB66390C92694C639B8EE34DA5A91B5A6F557F635BC0EFF84D34E2EE019
-- **Current local INI SHA256**: 6EF3D89176050155E8AEDA563D1A91D6B35E87278C510C7C5F936F63DDC5F307
+- **Current Steam INI SHA256**: 2DF452F069FFCF4D2A52BF6EE6F040436991F4FAC87A71E9B5EC136D926F1F86
+- **Current local INI SHA256**: 574657E14011831565CBE8C3C2F8B4C36F403F854FB45E47891B01D88E9E408A
 - **Deployment package**: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/adaptive-half-rate-20261031T162023837
 - **Rollback**: package rollback/Restore.ps1; all nine predeployment DLL/INI/cache files independently hash-verified.
 - **Receipt/symbols**: package deployment.json and candidate/ (DLL/PDB/MAP).
-- **Changes**: protected-native DLL plus Render/AdaptiveFPS=AUTO in Steam/local profiles only. All other profile contracts and four caches preserved. Quarantined OverlapNativePresent=0 and ReuseSharedCaptureColor=0 retained.
+- **Changes**: protected-native DLL plus Render/AdaptiveFPS=OFF in Steam/local profiles after user rejection (2026-10-31). All other profile contracts and four caches preserved. Quarantined OverlapNativePresent=0 and ReuseSharedCaptureColor=0 retained.
 - **Validation**: both x86 builds and affected offline policy/deadline/VR settings/StateBlock lifetime checks passed. One adaptive host test compiled but execution blocked by Windows sharing error. EXE SHA256 remains D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1.
-- **Runtime status**: game not launched; half-rate cadence, recovery probes, latency and headset reprojection NOT validated. Application limiter does not force runtime motion smoothing. Accepted rollback baseline above remains unchanged.
+- **Runtime status**: user reported the feature does not work and requested disabling it. Runtime log showed HALF at 120 Hz with approximately 58 app FPS, which does not establish compositor synthesis. AdaptiveFPS is now OFF in both primary profiles. DLL restored and hash-verified after temporary native-menu investigation. HUD remains visible; menu input automation did not respond, so HUD OFF is NOT completed. Disable receipt/backups: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/disable-adaptive-20261031T165924794. Accepted rollback baseline above remains unchanged.
 - **Handoff**: handoffs/HANDOFF-adaptive-half-rate.md. Task branch codex/adaptive-half-rate; previous integration branch remains codex/main-single-owner-d3d9-validation.
 
 ## Previous MAIN candidate: four-branch performance (retained by current rollback)
