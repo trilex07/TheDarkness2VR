@@ -160,7 +160,8 @@ static void ApplyGazeMenuCursor() {
     // Menu gate (headset 00:43: pause menus keep the 3D world rendering, so
     // "no world" alone never fired). Native pause predicate A4D340 or the top
     // Flash movie asking for a cursor (movie+F4), re-read every 100 ms.
-    static ULONGLONG nextGate=0; static bool paused=false, cursorWanted=false, gateLogged=false; static int lastGate=-1;
+    static ULONGLONG nextGate=0; static bool paused=false, cursorWanted=false, gateLogged=false, topWantsCursor=false; static int lastGate=-1;
+    static uint32_t topMovie=0, forcedMovie=0;
     const ULONGLONG nowGate=GetTickCount64();
     if(nowGate>=nextGate) {
         nextGate=nowGate+100;
@@ -182,10 +183,40 @@ static void ApplyGazeMenuCursor() {
             return ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(address),&value,4,&copied) && copied==4;
         };
         d2vr_menu_native::TopMovieSnapshot movie;
-        cursorWanted=d2vr_menu_native::ObserveTopMovie(readMovie,movie) && movie.hasMovie && movie.movie.visible && movie.cursorRequested;
+        const bool observed=d2vr_menu_native::ObserveTopMovie(readMovie,movie) && movie.hasMovie && movie.movie.visible;
+        if(forcedMovie && (!observed || movie.topMovie!=forcedMovie)) forcedMovie=0; // replaced: never touch it again
+        // Our own forced flag must not hold the gate open.
+        cursorWanted=observed && movie.cursorRequested && movie.topMovie!=forcedMovie;
+        topMovie=observed ? movie.topMovie : 0; topWantsCursor=observed && movie.cursorRequested;
         (void)gateLogged;
     }
     const bool gate=paused || cursorWanted || !g_in3DGameplayMode;
+    // Headset 00:53: relative mouse moves reached the native cursor exactly,
+    // yet nothing highlighted: the top movie had cursorRequested=0 (pad mode,
+    // mouse ignored). Request the cursor the way the game's own setter B072E0
+    // does (movie+F4 = 1) while the gaze menu is active; restore on exit.
+    if(g_gazeMenuForceCursor) {
+        static int setterOk=-1;
+        if(setterOk<0) {
+            static const BYTE setterBytes[]={0x8A,0x44,0x24,0x04,0x88,0x81,0xF4,0x00,0x00,0x00,0xC2,0x04,0x00};
+            __try { setterOk=!memcmp((void*)0xB072E0,setterBytes,sizeof(setterBytes)); } __except(EXCEPTION_EXECUTE_HANDLER) { setterOk=0; }
+            Log("[GazeMenu] cursor-request flag movie+F4 %s",setterOk==1 ? "verified (setter B072E0)" : "REFUSED: unexpected EXE bytes");
+        }
+        if(setterOk==1 && gate && topMovie && !topWantsCursor && (!forcedMovie || forcedMovie==topMovie)) {
+            // Re-request if the game switched back to pad mode (logged, rate-limited).
+            static unsigned reapplied=0; static ULONGLONG lastReapply=0;
+            const bool again=forcedMovie==topMovie;
+            __try { *(BYTE*)(topMovie+0xF4)=1; forcedMovie=topMovie; topWantsCursor=true; } __except(EXCEPTION_EXECUTE_HANDLER) { forcedMovie=0; }
+            if(forcedMovie && !again) Log("[GazeMenu] cursor requested on top movie %08X (was pad mode)",forcedMovie);
+            else if(forcedMovie && (++reapplied, nowGate-lastReapply>2000)) {
+                lastReapply=nowGate; Log("[GazeMenu] game cleared the cursor request again (%u times); re-requested",reapplied);
+            }
+        } else if(!gate && forcedMovie) {
+            if(topMovie==forcedMovie) { __try { *(BYTE*)(forcedMovie+0xF4)=0; } __except(EXCEPTION_EXECUTE_HANDLER) {} }
+            Log("[GazeMenu] cursor request released on movie %08X",forcedMovie);
+            forcedMovie=0;
+        }
+    }
     if(int(gate)!=lastGate) {
         lastGate=int(gate);
         Log("[GazeMenu] menu cursor %s (pause=%d flashCursor=%d world=%d manager=%08X)",gate ? "ON" : "off",
