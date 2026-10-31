@@ -27,3 +27,13 @@
 
 ## Runtime gate
 No FPS gain, hitch elimination or headset correctness claimed. User authorized deployment and will test manually; no game launch or dedicated profiling session. Compare both eyes/menu/pause, peripheral geometry, hands/tentacles, responsiveness and combat pacing. Restore package rollback/Restore.ps1 if rendering, latency or stability regresses. Retain the accepted backup and all caches.
+
+## Deployment complete
+Integration/source commit: 7159787160cf1702836ebd08de4594805421d460 (pushed).
+Both final MSVC x86 builds PASS. Protected candidate DLL SHA256:
+BFF8B0A9F5BE83C511762E66C78C5903BD9FB3A48FD3D2F81BF15C035FBD1CFA.
+Deployed 2026-10-31; EXE unchanged, all nine rollback files verified, only DLL
+and three intended Render settings in Steam/local INIs changed. Unmodified
+profiles and caches retain their previous SHA. Full deployment.json, matching
+DLL/PDB/MAP, 9-file rollback and four-*.log copies are in the named package.
+Manual PSVR2 test READY; game not launched. New combined runtime results pending.

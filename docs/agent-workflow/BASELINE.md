@@ -14,6 +14,21 @@ incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
 ## Current installed MAIN candidate (provisional)
+
+Updated 2026-10-31 after authorized four-branch deployment. Both x86 builds and
+affected offline regressions PASS; this new combined candidate is NOT headset-accepted.
+- **Current DLL SHA256**: BFF8B0A9F5BE83C511762E66C78C5903BD9FB3A48FD3D2F81BF15C035FBD1CFA
+- **Current source commit**: 7159787160cf1702836ebd08de4594805421d460
+- **Current Steam INI SHA256**: 3662AF9290B4D75DCCF694EBDB88280FC70F17E7F0AEEEDBA701746985C55638
+- **Current local INI SHA256**: A43FFB95A4BC5C8F5DDDDC8D7AF32E30644329FCF2D913D5A5854E3BB12734BD
+- **Current rollback**: %LOCALAPPDATA%/Darkness2VR/packages/four-branch-performance-20261031/rollback
+- **Receipt and matching symbols**: same package, deployment.json and candidate/
+- **New switches ON for manual trial**: OverlapNativePresent, ReuseSharedCaptureColor, PipelineVariantLearning (bounded actual-state sampler, not rejected setter tracker)
+- **Preserved**: Mode4, ConsumedRecordCopy=1, PipelineWarmup=1, DirectRecordCopy=0, ReplayBufferVersions=0, diagnostic NativeCameraCover=0. Game not launched.
+- **Task handoff**: handoffs/HANDOFF-four-branch-performance.md
+
+### Previous installed candidate (retained by current rollback)
+
 - **Installed DLL SHA256**: 34641A8981444EA05723E6F5F3D669099F6FECD3ABC1142ED1C686C6E42EC232
 - **Installed INI SHA256**: 764EEADF2E5FB21E4F1A95B3884F39B8E75D3E94765CC10F74C9BCE5D5B8DF0B
 - **Installed local INI SHA256**: FE242875007DA0BFDCE05B99A15256A22256550609A934CB4BA2BE18E0D17020
@@ -22,7 +37,7 @@ stereo/hands/tracking. This does not certify newer experimental switches.
 - **Integration branch**: codex/main-single-owner-d3d9-validation
 - **Latest MAIN runtime evidence commit**: eab97b35
 - **Acceptance status**: StereoTransferWorker=4 retained provisionally; not unconditional acceptance or stable 90 FPS
-- **Current rollback**: %LOCALAPPDATA%/Darkness2VR/packages/single-owner-d3d9-20261031/rollback
+- **Previous rollback**: %LOCALAPPDATA%/Darkness2VR/packages/single-owner-d3d9-20261031/rollback
 
 Current settings include ConsumedRecordCopy=1, StartupShaderPool=1,
 PipelineWarmup=1, StereoTransferWorker=4, NativeViewBoundary=3,
