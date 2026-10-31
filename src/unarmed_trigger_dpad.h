@@ -47,4 +47,35 @@ struct UnarmedTriggerDpad {
         return buttons;
     }
 };
+// Double tap of the X button (PSVR2 left Square) -> stock D-pad weapon action.
+// Hold X stays untouched (Darkness II: devour hearts); the first tap reaches the
+// game (reload). The SECOND press within kWindowMs is hidden from the game until
+// release and replaced by a D-pad pulse: empty main hand -> DPAD_DOWN (draw),
+// otherwise (armed or unknown) -> DPAD_RIGHT (dual wield).
+struct DoubleTapDpad {
+    static constexpr uint64_t kWindowMs=350, kPulseMs=150;
+    static constexpr uint16_t kX=0x4000, kDpadDown=0x0002, kDpadRight=0x0008;
+    bool down=false, swallow=false;
+    uint64_t lastPress=0, pulseUntil=0;
+    uint16_t pulse=0;
+    void Reset() { *this=DoubleTapDpad{}; }
+    // Rewrites buttons in place. firedBits receives the D-pad bit on a new action.
+    void Update(uint16_t& buttons,HandSlot mainHand,bool context,uint64_t nowMs,uint16_t* firedBits=nullptr) {
+        if(firedBits) *firedBits=0;
+        if(!context) { Reset(); return; }
+        const bool x=(buttons&kX)!=0;
+        if(x && !down) {
+            if(lastPress && nowMs-lastPress<=kWindowMs) {
+                swallow=true; lastPress=0;
+                pulse=mainHand==HandSlot::Empty ? kDpadDown:kDpadRight;
+                pulseUntil=nowMs+kPulseMs;
+                if(firedBits) *firedBits=pulse;
+            } else lastPress=nowMs ? nowMs:1;
+        }
+        down=x;
+        if(!x) swallow=false;
+        if(swallow) buttons&=uint16_t(~kX);
+        if(nowMs<pulseUntil) buttons|=pulse;
+    }
+};
 }

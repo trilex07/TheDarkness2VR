@@ -47,6 +47,32 @@ int main() {
         UnarmedTriggerDpad m; uint8_t l=255,r=255; int f=0;
         CHECK(m.Update(l,r,E,E,true,0,&f)==(UnarmedTriggerDpad::kDpadDown|UnarmedTriggerDpad::kDpadRight)); CHECK(f==3);
     }
+    { // double tap X: first tap passes, second within window -> D-pad, X hidden until release
+        using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
+        b=D::kX; d.Update(b,A,true,1000,&f); CHECK(b==D::kX); CHECK(f==0);
+        b=0; d.Update(b,A,true,1080,&f); CHECK(b==0);
+        b=D::kX; d.Update(b,A,true,1200,&f); CHECK(f==D::kDpadRight); CHECK(b==D::kDpadRight);
+        b=D::kX; d.Update(b,A,true,1300,&f); CHECK(f==0); CHECK(b==D::kDpadRight); // still hidden, pulse
+        b=D::kX; d.Update(b,A,true,1400,&f); CHECK(b==0);                          // hidden, pulse over
+        b=0; d.Update(b,A,true,1500,&f); CHECK(b==0);
+        b=D::kX; d.Update(b,A,true,1600,&f); CHECK(b==D::kX); CHECK(f==0);        // third press = new first tap
+    }
+    { // empty main hand -> draw
+        using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
+        b=D::kX; d.Update(b,E,true,0); b=0; d.Update(b,E,true,50);
+        b=D::kX; d.Update(b,E,true,200,&f); CHECK(f==D::kDpadDown); CHECK(b==D::kDpadDown);
+    }
+    { // slow taps and holds never fire; hold X stays X (eat hearts)
+        using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
+        b=D::kX; d.Update(b,A,true,0); b=0; d.Update(b,A,true,100);
+        b=D::kX; d.Update(b,A,true,600,&f); CHECK(f==0); CHECK(b==D::kX);
+        for(uint64_t t=650;t<2000;t+=50){ b=D::kX; d.Update(b,A,true,t,&f); CHECK(f==0); CHECK(b==D::kX); }
+    }
+    { // outside gameplay context nothing changes
+        using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
+        b=D::kX; d.Update(b,A,false,0); b=0; d.Update(b,A,false,50);
+        b=D::kX; d.Update(b,A,false,100,&f); CHECK(f==0); CHECK(b==D::kX);
+    }
     if(failures) { std::printf("%d failure(s)\n",failures); return 1; }
     std::printf("unarmed_trigger_dpad: all tests passed\n"); return 0;
 }
