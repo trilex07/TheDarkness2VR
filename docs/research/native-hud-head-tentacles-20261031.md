@@ -122,3 +122,26 @@ images, shaders, draw banks and light/depth inputs, plus completion receipts.
 Do not activate legacy EnginePresentCallsite from outdated capture instructions:
 current protected native Present ownership is already installed. Capture readbacks
 are diagnostic and must not be used as normal performance measurements.
+
+## Recorder follow-up: same-frame native camera
+
+After user scene readiness, one serial101 capture of PID35892/XRframe6108
+was requested. It was rejected: `selected native camera changed after capture
+header; request a stable frame`, followed by missing same-frame projection
+witnesses. Only three files exist; no COMPLETE receipt or images. The validator
+correctly rejects it. Output remains private under the process temp directory.
+Diagnostic INI was restored to its original bytes after the one request.
+
+The recorder armed at the preceding Present and wrote eye parameters before
+the selected native camera callback refreshed this frame's matrices. This
+legitimate refresh was then rejected as a post-header camera change. Defer
+header/config serialization until the first capture consumption, requiring the
+current native camera frame. Existing device/Present/reset/XR/config guards run
+first; any later camera change still rejects. A failed request cannot recover.
+This changes opt-in diagnostic recording only, without a lighting workaround.
+
+Validation: 34 actual-source capture gate checks (x86), 31 existing validator
+tests and protected diagnostic build PASS. Restricted-temp Python execution
+failed on ACL access; identical tests outside that restriction passed. Candidate
+DLL SHA256 469F7B92F316C34DBE05C4DDBE4707C4122C568D4EE64E99478494B2B90D03A7.
+World-lighting and actual runtime capture acceptance are still unverified.

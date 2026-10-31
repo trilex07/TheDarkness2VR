@@ -9,3 +9,6 @@
 tests/psvr2/out/
 test_vt.cpp
 TheDarkness2VR/
+/build/matched-header/
+/build/matched-header-test/
+__pycache__/

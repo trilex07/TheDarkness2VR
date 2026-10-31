@@ -3594,7 +3594,8 @@ static void EndMatchedSkinUpload(const MatchedSkinUploadWitness& w,const float* 
     ++matched_capture::skinUploadsSaved;
 }
 static void NativeCameraCaptureChanged() {
-    if(matched_capture::active) matched_capture::Reject("selected native camera changed after capture header; request a stable frame");
+    if(matched_capture::active && !matched_capture::headerPending)
+        matched_capture::Reject("selected native camera changed after capture header; request a stable frame");
 }
 #endif
 // Explicit Reset cleanup; avoid COM destruction from static teardown/DllMain.

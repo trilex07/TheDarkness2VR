@@ -4,6 +4,8 @@
 namespace matched_capture {
 static uint64_t frame;
 static bool active, failed;
+static bool headerPending;
+static void WriteHeader();
 static bool pendingPresent;
 static uint64_t presentSerial, presentEpoch, presentFrame;
 static uintptr_t presentDevice;
@@ -38,7 +40,7 @@ static void Reject(const char* why) {
     if (meta) fprintf(meta, "{\"kind\":\"rejection\",\"reason\":\"%s\"}\n", why);
 }
 static bool Current() {
-    if (!active) return false;
+    if (!active || failed) return false;
     if (!g_capturePresent.InCaptureWindow(presentSerial,presentEpoch,presentFrame,GetCurrentThreadId(),g_frameId) ||
         g_captureResetting || resetGeneration!=g_captureResetGeneration || presentDevice!=g_capturePresent.device) {
         Reject("capture lost its current Present witness or reset generation"); return false;
@@ -47,6 +49,15 @@ static bool Current() {
         Reject("mixed or closed XR frame"); return false;
     }
     if (ConfigToken()!=configToken) { Reject("effective render settings changed during capture"); return false; }
+    // The native selected-camera callback finalizes this frame's eye transforms
+    // after Begin arms the next frame. Freeze the header at first consumption,
+    // never from the previous camera. No draw/upload is accepted beforehand.
+    if(headerPending) {
+        if(g_nativeCameraCoverInstalled && (!g_nativeCameraCoverConfirmed || g_nativeCoveredFrame!=frame)) {
+            Reject("native camera not ready before first capture consumption");return false;
+        }
+        WriteHeader();
+    }
     return !failed;
 }
 static std::string HashFile(const char* path) {
@@ -191,16 +202,22 @@ static void Begin() {
     passStages=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)!=0;
     postStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==2;
     postInputsSaved=false;
-    frame=g_trackedFrame.id; active=true; failed=false; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
+    frame=g_trackedFrame.id; active=true; failed=false; headerPending=true; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     skinUploadsSeen=skinUploadsSaved=0;
     pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;
     presentFrame=g_capturePresent.frame+1; resetGeneration=g_captureResetGeneration;
     presentDevice=g_capturePresent.device;
     if (!meta || !banks) { Reject("file creation failed"); Finish(false); return; }
+}
+static void WriteHeader() {
+    // Called only by Current, inside the same-frame/device/epoch witness.
+    // Further camera changes are still fatal once any capture is consumed.
+    headerPending=false;
+    const char* request=".\\Darkness2VR-diagnostic.ini";
     char dll[MAX_PATH]{}, exe[MAX_PATH]{}; HMODULE module=nullptr;
     if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-        reinterpret_cast<LPCSTR>(&Begin),&module) || !GetModuleFileNameA(module,dll,MAX_PATH) || !GetModuleFileNameA(nullptr,exe,MAX_PATH)) {
-        Reject("module identity unavailable"); Finish(false); return;
+        reinterpret_cast<LPCSTR>(&WriteHeader),&module) || !GetModuleFileNameA(module,dll,MAX_PATH) || !GetModuleFileNameA(nullptr,exe,MAX_PATH)) {
+        Reject("module identity unavailable"); return;
     }
     const std::string dh=HashFile(dll), eh=HashFile(exe), ih=HashFile(iniPath.c_str()), rh=HashFile(request);
     fprintf(meta,"{\"kind\":\"header\",\"schema\":2,\"frame\":%llu,\"display_time\":%lld,\"dll_sha256\":\"%s\",\"exe_sha256\":\"%s\",\"ini_sha256\":\"%s\",\"request_sha256\":\"%s\",\"native_hooks_suppressed\":%s,\"world_state\":\"render heuristic\",\"submit_mode\":%d,\"stereo_mode\":%d,\"shift_mode\":%d,\"layer_pose\":%d,\"stereo_baseline_game_units\":%.9g}\n",

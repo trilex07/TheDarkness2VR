@@ -65,3 +65,22 @@ execution blocked by sharing lock after bounded retry (not PASS).
 See research note follow-up for exact frame/wait evidence and next capture.
 User launches the game; wait for loaded-scene readiness before any capture.
 No remote push attempted; prior destination approval remains pending.
+
+## Matched-capture recorder correction (offline)
+One user-authorized request serial101, PID35892, XRframe6108 failed at
+C:/Users/Trilex/AppData/Local/Temp/Darkness2VR-matched-35892-101-6108.
+Manifest rejects selected-camera changes after its header; no COMPLETE/images.
+This is invalid evidence for lighting. Do not retry this binary automatically.
+The temporary diagnostic request was restored byte-for-byte. Game kept running.
+
+Root cause: Begin writes the eye configuration before the same-frame native
+selected-camera callback refreshes it. Header now freezes at first consumption
+after same-frame native confirmation. Present/frame/reset/device/config checks
+remain mandatory; later camera updates still reject. Previously failed capture
+cannot write a header or consume data. No render or shadow behavior changed.
+Offline: actual-source x86 gate34 checks PASS; capture validator31 tests PASS;
+protected diagnostic DLL build PASS. New binary SHA256:
+469F7B92F316C34DBE05C4DDBE4707C4122C568D4EE64E99478494B2B90D03A7.
+tools/deploy-matched-header.ps1 stages only this DLL and backs up all nine
+targets; preserves existing INIs/caches exactly. Deployment requires game closed.
+Runtime capture acceptance and world-lighting fix remain OPEN.
