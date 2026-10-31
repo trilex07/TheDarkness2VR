@@ -99,3 +99,13 @@ source, BASELINE.md and the task handoff before applying them.
 - **Evidence**: User rejection
 - **Lesson**: Experimental fixes must be behind flags, easy to disable
 - **Status**: Rejected
+
+### `git worktree prune` from the Linux cowork VM
+- **Date**: 2026-10-31
+- **Branch/Commit**: side/cpu-hotpath-opt (workflow incident, not renderer code)
+- **Goal**: Clean up one misplaced SIDE worktree from the Linux VM shell
+- **Approach**: `git worktree prune` in the mounted Windows repo
+- **Why Failed**: The VM cannot resolve `C:/...` gitdir paths, so git judged every Windows worktree "missing" and deleted all `.git/worktrees/<id>` admin folders (HEAD/index/reflog). Commits, branches and working files were untouched.
+- **Evidence**: only `-side-cpu-hotpath` left in `.git/worktrees`; recovery script `repair-worktrees-20261031.ps1` (repo root, untracked)
+- **Lesson**: Never run `git worktree prune/remove/add` on the Windows repo from the VM. Create SIDE worktrees inside the connected repo folder and use `GIT_DIR`/`GIT_WORK_TREE`, or let Windows git manage worktrees.
+- **Status**: Failed (recovery script provided)
