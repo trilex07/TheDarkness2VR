@@ -7,17 +7,21 @@ namespace d2vr_input {
 //   D-pad right -> dual wield (weapon into the off (left) hand)
 // When the native inventory confirms a hand slot is EMPTY, that hand's
 // trigger is translated into the matching D-pad pulse:
-//   left trigger  + empty off-hand slot  -> DPAD_RIGHT
-//   right trigger + empty main-hand slot -> DPAD_DOWN
+//   left trigger + empty off-hand slot -> DPAD_DOWN, then DPAD_UP, alternating
+//   right trigger: target[1]==0 by default -> always passes through (fires)
 // Unknown native state never translates; the trigger passes through unchanged.
 enum class HandSlot : uint8_t { Unknown=0, Empty=1, Armed=2 };
 
 struct UnarmedTriggerDpad {
     static constexpr uint8_t kPress=128, kRelease=40;
     static constexpr uint64_t kPulseMs=120;
-    static constexpr uint16_t kDpadDown=0x0002, kDpadRight=0x0008; // XINPUT_GAMEPAD_DPAD_*
+    static constexpr uint16_t kDpadUp=0x0001, kDpadDown=0x0002, kDpadRight=0x0008; // XINPUT_GAMEPAD_DPAD_*
     bool down[2]{}, consumed[2]{};
     uint64_t pulseUntil[2]{};
+    // Per-hand D-pad bits. 0 disables that hand (trigger always passes through).
+    // Left (off hand) alternates DOWN/UP on each translation (user request 20:40).
+    uint16_t target[2]{kDpadDown,0}, pulse[2]{};
+    bool alternateLeft=true;
 
     void Reset() { *this=UnarmedTriggerDpad{}; }
 
@@ -32,16 +36,18 @@ struct UnarmedTriggerDpad {
             const HandSlot slot=h ? mainHand:offHand;
             const bool wasDown=down[h];
             down[h]=wasDown ? trigger>kRelease : trigger>=kPress;
-            const bool empty=context && slot==HandSlot::Empty;
+            const bool empty=context && target[h] && slot==HandSlot::Empty;
             if(!context) pulseUntil[h]=0;
             if(empty && down[h] && !wasDown) {
                 consumed[h]=true; pulseUntil[h]=nowMs+kPulseMs; fired|=1<<h;
+                pulse[h]=target[h];
+                if(!h && alternateLeft) target[0]=target[0]==kDpadDown ? kDpadUp:kDpadDown;
             }
             if(!down[h] && trigger<=kRelease && !empty) consumed[h]=false;
             // An empty hand has no trigger use; a translated press stays hidden
             // until release even after the weapon appears, so it never fires.
             if(empty || consumed[h]) trigger=0;
-            if(nowMs<pulseUntil[h]) buttons|=h ? kDpadDown:kDpadRight;
+            if(nowMs<pulseUntil[h]) buttons|=pulse[h];
         }
         if(firedMask) *firedMask=fired;
         return buttons;

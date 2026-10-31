@@ -158,7 +158,7 @@ bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
 bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
-bool g_unarmedTriggerDpad=false; // opt-in: empty-hand trigger -> stock D-pad (superseded by X double tap)
+bool g_unarmedTriggerDpad=true; // left trigger + empty left hand -> DPAD_DOWN / DPAD_UP alternating
 bool g_nativeHandsEnabled=false;
 bool g_nativeHandsDirtyBoth=false;
 static bool g_nativeHandsPackInstalled=false;
@@ -790,9 +790,9 @@ void LoadConfig() {
     g_tentacleAimMarker = GetPrivateProfileIntA("Input", "TentacleAimMarker", 1, chosenIni) != 0;
     g_nativeLeftAim = GetPrivateProfileIntA("Input", "NativeLeftAim", 0, chosenIni) != 0;
     g_nativeWeaponPose = GetPrivateProfileIntA("Input", "NativeWeaponPose", 0, chosenIni) != 0;
-    g_unarmedTriggerDpad = GetPrivateProfileIntA("Input", "UnarmedTriggerDpad", 0, chosenIni) != 0;
+    g_unarmedTriggerDpad = GetPrivateProfileIntA("Input", "UnarmedTriggerDpad", 1, chosenIni) != 0;
     if(!GetFullPathNameA(chosenIni,MAX_PATH,g_activeIni,nullptr)) strcpy_s(g_activeIni,chosenIni);
-    Log("[UnarmedTriggerDpad] enabled=%d (L trigger + empty off hand -> DPAD_RIGHT dual wield; R trigger + empty main hand -> DPAD_DOWN draw weapon)",(int)g_unarmedTriggerDpad);
+    Log("[UnarmedTriggerDpad] enabled=%d (L trigger + empty left hand -> DPAD_DOWN/DPAD_UP alternating; R trigger always fires)",(int)g_unarmedTriggerDpad);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
     g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
@@ -4571,8 +4571,8 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
             mainHand==HandSlot::Empty ? "empty":mainHand==HandSlot::Armed ? "armed":"unknown",
             held==d2vr_input::WeaponClass::TwoHanded ? "two-handed":held==d2vr_input::WeaponClass::OneHanded ? "one-handed":"unknown",tapped);
     }
-    if(fired&1) Log("[UnarmedTriggerDpad] left trigger, off hand empty -> DPAD_RIGHT (dual wield)");
-    if(fired&2) Log("[UnarmedTriggerDpad] right trigger, main hand empty -> DPAD_DOWN (draw weapon)");
+    if(fired&1) Log("[UnarmedTriggerDpad] left trigger, left hand empty -> %s",
+        g_unarmedTriggerDpadState.pulse[0]==d2vr_input::UnarmedTriggerDpad::kDpadUp ? "DPAD_UP":"DPAD_DOWN");
 }
 
 bool SyncOpenXRGamepad(XINPUT_STATE* out) {

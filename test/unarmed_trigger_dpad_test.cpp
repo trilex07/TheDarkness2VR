@@ -5,47 +5,34 @@ static int failures=0;
 #define CHECK(c) do{ if(!(c)){ std::printf("FAIL line %d: %s\n",__LINE__,#c); ++failures; } }while(0)
 int main() {
     const auto E=HandSlot::Empty, A=HandSlot::Armed, U=HandSlot::Unknown;
-    { // right trigger, empty main hand -> DPAD_DOWN pulse, trigger hidden
-        UnarmedTriggerDpad m; uint8_t l=0,r=255; int f=0;
-        auto b=m.Update(l,r,A,E,true,1000,&f);
-        CHECK(b==UnarmedTriggerDpad::kDpadDown); CHECK(f==2); CHECK(r==0);
-        r=255; b=m.Update(l,r,A,A,true,1050,&f); // weapon now drawn, still held
-        CHECK(b==UnarmedTriggerDpad::kDpadDown); CHECK(f==0); CHECK(r==0);
-        r=255; b=m.Update(l,r,A,A,true,1200,&f);
-        CHECK(b==0); CHECK(r==0); // held press never becomes a shot
-        r=0; m.Update(l,r,A,A,true,1300); r=255; b=m.Update(l,r,A,A,true,1400);
-        CHECK(b==0); CHECK(r==255); // new press with weapon fires normally
+    using T=UnarmedTriggerDpad;
+    { // left trigger + empty left hand alternates DOWN, UP; trigger hidden until release
+        T m; uint8_t l=255,r=0; int f=0;
+        CHECK(m.Update(l,r,E,A,true,1000,&f)==T::kDpadDown); CHECK(f==1); CHECK(l==0);
+        l=255; CHECK(m.Update(l,r,A,A,true,1050,&f)==T::kDpadDown); CHECK(f==0); CHECK(l==0); // weapon arrived, still held
+        l=0; m.Update(l,r,A,A,true,1300);
+        l=0; m.Update(l,r,E,A,true,1400);
+        l=255; CHECK(m.Update(l,r,E,A,true,1500,&f)==T::kDpadUp); CHECK(f==1);
+        l=0; m.Update(l,r,E,A,true,1700);
+        l=255; CHECK(m.Update(l,r,E,A,true,1800,&f)==T::kDpadDown); CHECK(f==1);
     }
-    { // left trigger, empty off hand -> DPAD_RIGHT
-        UnarmedTriggerDpad m; uint8_t l=200,r=0; int f=0;
-        auto b=m.Update(l,r,E,A,true,0,&f);
-        CHECK(b==UnarmedTriggerDpad::kDpadRight); CHECK(f==1); CHECK(l==0); CHECK(r==0);
+    { // armed left hand fires normally
+        T m; uint8_t l=255,r=0;
+        CHECK(m.Update(l,r,A,A,true,0)==0); CHECK(l==255);
     }
-    { // armed hands pass through, no D-pad
-        UnarmedTriggerDpad m; uint8_t l=255,r=255;
-        CHECK(m.Update(l,r,A,A,true,0)==0); CHECK(l==255); CHECK(r==255);
+    { // right trigger always passes through, even with an empty main hand
+        T m; uint8_t l=0,r=255; int f=0;
+        CHECK(m.Update(l,r,A,E,true,0,&f)==0); CHECK(f==0); CHECK(r==255);
     }
-    { // unknown native state or no gameplay context -> pass through
-        UnarmedTriggerDpad m; uint8_t l=255,r=255;
-        CHECK(m.Update(l,r,U,U,true,0)==0); CHECK(l==255); CHECK(r==255);
-        UnarmedTriggerDpad n; l=255; r=255;
-        CHECK(n.Update(l,r,E,E,false,0)==0); CHECK(l==255); CHECK(r==255);
+    { // unknown state / no context pass through
+        T m; uint8_t l=255,r=255;
+        CHECK(m.Update(l,r,U,U,true,0)==0); CHECK(l==255);
+        T n; l=255; CHECK(n.Update(l,r,E,E,false,0)==0); CHECK(l==255);
     }
-    { // partial pull on empty hand is hidden but does not fire until threshold
-        UnarmedTriggerDpad m; uint8_t l=0,r=90; int f=0;
-        CHECK(m.Update(l,r,A,E,true,0,&f)==0); CHECK(f==0); CHECK(r==0);
-        r=200; CHECK(m.Update(l,r,A,E,true,10,&f)==UnarmedTriggerDpad::kDpadDown); CHECK(f==2);
-    }
-    { // holding trigger does not re-fire; release + press fires again
-        UnarmedTriggerDpad m; uint8_t l=0,r=255; int f=0;
-        m.Update(l,r,A,E,true,0,&f); CHECK(f==2);
-        r=255; m.Update(l,r,A,E,true,500,&f); CHECK(f==0);
-        r=0; m.Update(l,r,A,E,true,600,&f);
-        r=255; CHECK(m.Update(l,r,A,E,true,700,&f)==UnarmedTriggerDpad::kDpadDown); CHECK(f==2);
-    }
-    { // both at once
-        UnarmedTriggerDpad m; uint8_t l=255,r=255; int f=0;
-        CHECK(m.Update(l,r,E,E,true,0,&f)==(UnarmedTriggerDpad::kDpadDown|UnarmedTriggerDpad::kDpadRight)); CHECK(f==3);
+    { // partial pull on empty left hand hidden, fires at threshold
+        T m; uint8_t l=90,r=0; int f=0;
+        CHECK(m.Update(l,r,E,A,true,0,&f)==0); CHECK(f==0); CHECK(l==0);
+        l=200; CHECK(m.Update(l,r,E,A,true,10,&f)==T::kDpadDown); CHECK(f==1);
     }
     { // double tap X: first tap passes, second within window -> D-pad, X hidden until release
         using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
