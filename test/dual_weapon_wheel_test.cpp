@@ -46,22 +46,22 @@ static void HoldGateTests() {
     CHECK(g.Update(true,false,true,500,fwd)==HoldGate::Event::None); CHECK(fwd && !g.open);
 }
 
-static void CrouchTests() {
-    StickDownToggle t; bool pulse=false, sup=false;
-    CHECK(!t.Update(0,-.5f,true,0,pulse,sup)); CHECK(!pulse && !sup);
-    CHECK(t.Update(0,-.8f,true,10,pulse,sup)); CHECK(pulse && sup);
-    CHECK(!t.Update(0,-1.f,true,50,pulse,sup)); CHECK(pulse && sup);
-    CHECK(!t.Update(0,-1.f,true,200,pulse,sup)); CHECK(!pulse && sup); // held: one toggle only
-    CHECK(!t.Update(0,-.5f,true,300,pulse,sup)); CHECK(sup);            // not rearmed yet
-    CHECK(!t.Update(0,-.8f,true,310,pulse,sup));
-    CHECK(!t.Update(0,0,true,400,pulse,sup)); CHECK(!sup);               // rearm
-    CHECK(t.Update(0,-.9f,true,500,pulse,sup));                          // second toggle (stand up)
-    t.Reset();
-    CHECK(!t.Update(.9f,-.8f,true,0,pulse,sup));                         // diagonal: snap-turn territory
-    CHECK(!t.Update(0,-.9f,false,0,pulse,sup)); CHECK(!pulse && !sup);   // no context
-    CHECK(!t.Update(0,-.9f,true,10,pulse,sup));                          // must rearm after context returns
-    t.Update(0,0,true,20,pulse,sup); CHECK(t.Update(0,-.9f,true,30,pulse,sup));
-    CHECK(!t.Update(NAN,NAN,true,40,pulse,sup));
+static void FlickTests() {
+    using D=StickFlick::Dir;
+    StickFlick t; D act=D::None;
+    CHECK(t.Update(0,-.5f,true,0,act)==D::None && act==D::None);
+    CHECK(t.Update(.3f,-.8f,true,10,act)==D::Down && act==D::Down);   // slightly sideways still counts
+    CHECK(t.Update(0,-1.f,true,50,act)==D::None && act==D::Down);
+    CHECK(t.Update(0,-1.f,true,200,act)==D::None && act==D::None);    // held: one pulse only
+    CHECK(t.Update(0,.9f,true,210,act)==D::None);                     // not rearmed via centre
+    t.Update(0,0,true,300,act);
+    CHECK(t.Update(0,.9f,true,310,act)==D::Up && act==D::Up);         // jump
+    t.Update(0,.1f,true,500,act);
+    CHECK(t.Update(-.9f,-.8f,true,600,act)==D::None);                 // diagonal beyond 45 deg: turning
+    CHECK(t.Update(0,-.9f,false,700,act)==D::None && act==D::None);   // no context
+    CHECK(t.Update(0,-.9f,true,710,act)==D::None);                    // must rearm after context returns
+    t.Update(0,0,true,720,act); CHECK(t.Update(0,-.9f,true,730,act)==D::Down);
+    t.Reset(); CHECK(t.Update(NAN,NAN,true,0,act)==D::None);
 }
 
 static void SectorTests() {
@@ -89,47 +89,44 @@ static Loadout L(bool o0,bool o1,bool o2,int h0,int h1,bool swapped=false) {
 }
 
 static void LoadoutTests() {
-    auto full=L(true,true,true,1,2);
-    auto r=RightMenu(full), l=LeftMenu(full);
-    CHECK(r.count==2 && r.slot[0]==1 && r.slot[1]==0 && r.equipped==0);
-    CHECK(l.count==1 && l.slot[0]==2 && l.equipped==0);
-    auto sw=L(true,true,true,0,8,true);
-    r=RightMenu(sw); l=LeftMenu(sw);
-    CHECK(r.slot[0]==2 && r.equipped==1); CHECK(l.slot[0]==1 && l.equipped==-1);
-    CHECK(RightMenu(Loadout{}).count==0);
-    CHECK(RightMenu(L(false,true,false,1,8)).count==1);
-    CHECK(LeftMenu(L(true,true,false,0,8)).count==0);
+    // Headset 23:08: two one-handed weapons, right hand alternating 1/2.
+    auto two=L(false,true,true,2,8);
+    auto m=WeaponMenu(two);
+    CHECK(m.count==2 && m.slot[0]==1 && m.slot[1]==2 && m.equipped==1);
+    m=WeaponMenu(L(true,true,true,0,8));
+    CHECK(m.count==3 && m.slot[2]==0 && m.equipped==2);
+    m=WeaponMenu(L(true,true,true,1,2,true));               // swapped: right one-handed is slot 2
+    CHECK(m.slot[0]==2 && m.slot[1]==1 && m.equipped==1);
+    CHECK(WeaponMenu(Loadout{}).count==0);
+    CHECK(WeaponMenu(L(true,true,true,kSlotOther,8)).equipped==-1);
 
-    // Resolve: dual -> two-handed and back.
-    CHECK(Resolve(full,0,-1)==Action::TwoHanded);
-    CHECK(Resolve(L(true,true,true,0,8),1,-1)==Action::OneHanded);
-    CHECK(Resolve(L(true,true,true,0,8),-1,2)==Action::OneHanded);   // left pick ends two-handed
-    CHECK(Resolve(full,1,2)==Action::None);                         // already there
-    CHECK(Resolve(full,-1,-1)==Action::None);
-    CHECK(Resolve(L(true,true,true,1,8),-1,2)==Action::OneHanded);   // single -> dual
-    CHECK(Resolve(L(true,true,true,1,8),1,-1)==Action::None);
-    CHECK(Resolve(L(false,true,true,1,2),0,-1)==Action::None);       // two-handed not owned
-    CHECK(Resolve(L(true,true,true,0,8),0,2)==Action::None);         // right wins, already two-handed
-    CHECK(Resolve(L(true,true,true,8,8),1,-1)==Action::OneHanded);   // empty hands
-    CHECK(Resolve(Loadout{},0,-1)==Action::None);
-    CHECK(Resolve(L(true,true,true,kSlotOther,8),1,-1)==Action::OneHanded); // unknown item in hand
-    CHECK(!Satisfied(Action::OneHanded,L(true,true,true,kSlotOther,8)));
-    CHECK(RightMenu(L(true,true,true,kSlotOther,8)).equipped==-1);
-    CHECK(PadBits(Action::TwoHanded)==kDpadRight && PadBits(Action::OneHanded)==kDpadLeft && !PadBits(Action::None));
-
-    Request q; q.Start(Action::TwoHanded,1000);
-    CHECK(q.Bits(1000)==kDpadRight && q.Bits(1149)==kDpadRight && q.Bits(1150)==0);
-    CHECK(q.Check(L(true,true,true,0,8),1100)==Request::Result::Pending); // not before pulse end
-    CHECK(q.Check(full,1200)==Request::Result::Pending);
-    CHECK(q.Check(L(true,true,true,0,8),1200)==Request::Result::Done);
-    q.Start(Action::OneHanded,0);
-    CHECK(q.Check(L(true,true,true,0,8),1499)==Request::Result::Pending);
-    CHECK(q.Check(L(true,true,true,0,8),1500)==Request::Result::TimedOut);
-    CHECK(q.Check(full,1600)==Request::Result::None);
+    using R=Equip::Result;
+    Equip e; CHECK(e.Step(two,0)==R::Idle && !e.Bits(0));
+    // 2 -> 1: DPAD_LEFT, native hand changes, done.
+    e.Start(1); CHECK(e.Step(two,1000)==R::Pending && e.Bits(1000)==kDpadLeft && e.presses==1);
+    CHECK(e.Step(L(false,true,true,1,8),1100)==R::Pending);       // still inside the pulse
+    CHECK(e.Bits(1149)==kDpadLeft && e.Bits(1150)==0);
+    CHECK(e.Step(L(false,true,true,1,8),1200)==R::Done && !e.Active());
+    // Lands on the wrong weapon first: second press.
+    auto three=L(true,true,true,0,8);
+    e.Start(2); e.Step(three,0); CHECK(e.bits==kDpadLeft);
+    CHECK(e.Step(L(true,true,true,1,8),200)==R::Pending && e.presses==2 && e.Bits(200)==kDpadLeft);
+    CHECK(e.Step(L(true,true,true,2,8),400)==R::Done);
+    // Two-handed uses DPAD_RIGHT; empty hand draws with DPAD_DOWN.
+    e.Start(0); e.Step(L(true,true,true,1,2),0); CHECK(e.bits==kDpadRight);
+    e.Start(1); e.Step(L(true,true,true,8,8),0); CHECK(e.bits==kDpadDown);
+    // No change -> retry after settle, give up after kMaxPresses.
+    e.Start(1); uint64_t t=0;
+    for(int i=0;i<10 && e.Active();++i) { e.Step(two,t); t+=Equip::kPulseMs+Equip::kSettleMs; }
+    CHECK(!e.Active() && e.presses==Equip::kMaxPresses);
+    // Unowned target fails without pressing; unknown loadout fails after settle.
+    e.Start(0); CHECK(e.Step(two,0)==R::Failed && e.presses==0);
+    Loadout unknown; e.Start(1); CHECK(e.Step(unknown,10)==R::Pending); CHECK(e.Step(unknown,700)==R::Failed);
 
     uint16_t bits=1;
     CHECK(ParseCrouchButton("r3",bits) && bits==kR3);
     CHECK(ParseCrouchButton("B",bits) && bits==0x2000);
+    CHECK(ParseCrouchButton("X",bits) && bits==0x4000);
     CHECK(ParseCrouchButton("off",bits) && bits==0);
     CHECK(!ParseCrouchButton("R",bits) && !ParseCrouchButton("R33",bits) && !ParseCrouchButton(nullptr,bits));
 }
@@ -186,7 +183,7 @@ static void RasterTests(const char* ppm) {
 }
 
 int main(int argc,char** argv) {
-    HoldGateTests(); CrouchTests(); SectorTests(); LoadoutTests();
+    HoldGateTests(); FlickTests(); SectorTests(); LoadoutTests();
     RasterTests(argc>1 ? argv[1] : nullptr);
     std::printf("%s: %d checks, %d failed\n",g_fail?"FAIL":"PASS",g_checks,g_fail);
     return g_fail?1:0;

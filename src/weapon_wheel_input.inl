@@ -147,8 +147,8 @@ static void CaptureWeaponLoadout(BYTE* inventory) {
         s.icon[slot]=s.object[slot] ? probedIcon[slot] : -1;
     }
     static int lastKey=-1;
-    const int key=s.loadout.valid ? (s.loadout.owned[0]|s.loadout.owned[1]<<1|s.loadout.owned[2]<<2|
-        s.loadout.hand[0]<<3|s.loadout.hand[1]<<7|s.loadout.swapped<<11) : -2;
+    const int key=s.loadout.valid ? (int(s.loadout.owned[0])|int(s.loadout.owned[1])<<1|int(s.loadout.owned[2])<<2|
+        s.loadout.hand[0]<<3|s.loadout.hand[1]<<7|int(s.loadout.swapped)<<11) : -2;
     if(key!=lastKey) {
         lastKey=key;
         Log("[WeaponWheel] native loadout valid=%d owned two-handed=%d one-handed1=%d one-handed2=%d hands right=%d left=%d swapped=%d",
@@ -207,9 +207,9 @@ struct WheelHand {
     XrPosef pose{};
 };
 static d2vr_wheel::HoldGate g_wheelGate;
-static d2vr_wheel::StickDownToggle g_crouchToggle;
-static d2vr_wheel::Request g_wheelRequest;
-static WheelHand g_wheelHand[2]; // XR order: 0 left, 1 right
+static d2vr_wheel::StickFlick g_stickFlick;
+static d2vr_wheel::Equip g_wheelEquip;
+static WheelHand g_wheelHand[2]; // XR order: 0 left, 1 right; only one is shown
 static WeaponLoadoutSample g_wheelOpenLoadout;
 static bool g_wheelAllowed=false;   // wheels may open / stay open
 static bool g_inputContext=false;   // gameplay context for the crouch flick
@@ -240,14 +240,17 @@ static void PublishWheelDisplay(bool open) {
     ReleaseSRWLockExclusive(&g_wheelDisplayLock);
 }
 
+// One wheel at the right hand (left hand if the right is not tracked) with
+// every owned weapon (user request 2026-10-31 23:11).
 static void OpenWheels() {
     g_wheelSpace=g_xrSpace;
     const auto head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
     const auto& l=g_wheelOpenLoadout.loadout;
-    for(int h=0;h<2;++h) {
-        auto& w=g_wheelHand[h]; w=WheelHand{};
-        w.menu=h ? d2vr_wheel::RightMenu(l) : d2vr_wheel::LeftMenu(l);
-        if(!g_hands[h].gripValid || !w.menu.count) continue;
+    for(auto& w:g_wheelHand) w=WheelHand{};
+    const int h=g_hands[1].gripValid ? 1 : 0;
+    auto& w=g_wheelHand[h];
+    w.menu=d2vr_wheel::WeaponMenu(l);
+    if(g_hands[h].gripValid && w.menu.count) {
         w.anchor=g_hands[h].grip.position;
         // Plane faces the head, upright in the tracking space.
         XrVector3f z{head.position.x-w.anchor.x,0,head.position.z-w.anchor.z};
@@ -260,26 +263,21 @@ static void OpenWheels() {
         w.pose.orientation=QuatFromBasis(x,y,z);
         w.shown=true;
     }
-    Log("[WeaponWheel] open: left wheel %d item(s)%s, right wheel %d item(s)%s; hands right=%d left=%d",
-        g_wheelHand[0].menu.count,g_wheelHand[0].shown ? "":" (hidden)",
-        g_wheelHand[1].menu.count,g_wheelHand[1].shown ? "":" (hidden)",l.hand[0],l.hand[1]);
+    Log("[WeaponWheel] open at %s hand: %d weapon(s) [%d %d %d]%s; hands right=%d left=%d",h ? "right":"left",
+        w.menu.count,w.menu.slot[0],w.menu.slot[1],w.menu.slot[2],w.shown ? "" : " (hidden)",l.hand[0],l.hand[1]);
 }
 
 static void CloseWheels(bool commit) {
-    int pick[2]{-1,-1}; // XR order
-    for(int h=0;h<2;++h) {
-        const auto& w=g_wheelHand[h];
+    int pick=-1;
+    for(const auto& w:g_wheelHand)
         if(commit && w.shown && w.pick.touched && w.pick.hover>=0 && w.pick.hover<w.menu.count)
-            pick[h]=w.menu.slot[w.pick.hover];
-    }
+            pick=w.menu.slot[w.pick.hover];
     if(commit) {
         WeaponLoadoutSample now;
         const bool fresh=CopyWeaponLoadout(now);
-        const auto action=fresh ? d2vr_wheel::Resolve(now.loadout,pick[1],pick[0]) : d2vr_wheel::Action::None;
-        g_wheelRequest.Start(action,GetTickCount64());
-        Log("[WeaponWheel] release: pick right=%d left=%d fresh=%d -> %s",pick[1],pick[0],(int)fresh,
-            action==d2vr_wheel::Action::TwoHanded ? "DPAD_RIGHT (two-handed)" :
-            action==d2vr_wheel::Action::OneHanded ? "DPAD_LEFT (one-handed/dual)" : "no change");
+        if(pick>=0 && fresh && now.loadout.hand[0]!=pick) g_wheelEquip.Start(pick);
+        Log("[WeaponWheel] release: pick=%d fresh=%d main hand=%d -> %s",pick,(int)fresh,
+            fresh ? now.loadout.hand[0] : -1,g_wheelEquip.Active() ? "equip (closed-loop D-pad)" : "no change");
     } else Log("[WeaponWheel] cancelled");
     for(auto& w:g_wheelHand) w=WheelHand{};
     PublishWheelDisplay(false);
@@ -313,19 +311,30 @@ static bool WeaponWheelR3(const XINPUT_GAMEPAD& gp,bool r3,bool l3,bool focused)
     return forward;
 }
 
-static uint16_t ReadCrouchButton() {
-    static char last[32]="";
-    static uint16_t bits=d2vr_wheel::kR3;
+// [Input] CrouchButton / JumpButton / AButton, re-read live when used.
+static uint16_t ReadPadSetting(const char* key,const char* fallback,uint16_t fallbackBits) {
+    struct Cache { const char* key; char last[32]; uint16_t bits; };
+    static Cache cache[3]={{"CrouchButton","",0},{"JumpButton","",0},{"AButton","",0}};
+    Cache* c=nullptr;
+    for(auto& e:cache) if(!strcmp(e.key,key)) c=&e;
+    if(!c) return fallbackBits;
     char value[32]{};
-    GetPrivateProfileStringA("Input","CrouchButton","R3",value,sizeof(value),g_activeIni[0] ? g_activeIni:".\\Darkness2VR.ini");
-    if(strcmp(last,value)) {
-        strcpy_s(last,value);
+    GetPrivateProfileStringA("Input",key,fallback,value,sizeof(value),g_activeIni[0] ? g_activeIni:".\\Darkness2VR.ini");
+    if(strcmp(c->last,value) || (!c->bits && strcmp(value,"OFF") && strcmp(value,"off"))) {
+        strcpy_s(c->last,value);
         uint16_t parsed=0;
-        if(d2vr_wheel::ParseCrouchButton(value,parsed)) bits=parsed;
-        else { bits=d2vr_wheel::kR3; Log("[Crouch] unknown CrouchButton=%s; using R3",value); }
-        Log("[Crouch] right stick down toggles crouch via %s (buttons=0x%04X)",value,bits);
+        if(d2vr_wheel::ParseCrouchButton(value,parsed)) c->bits=parsed;
+        else { c->bits=fallbackBits; Log("[PadMap] unknown %s=%s; using %s",key,value,fallback); }
+        Log("[PadMap] %s=%s (buttons=0x%04X)",key,value,c->bits);
     }
-    return bits;
+    return c->bits;
+}
+// Physical A (PSVR2 Cross): reload by default (stock X, user request 23:11).
+// While an enemy is held for an execution the stock A choice passes through.
+static uint16_t PhysicalAButton() {
+    NativeGameplaySample sample;
+    if(CopyNativeGameplay(sample) && sample.demonHold==2) return XINPUT_GAMEPAD_A;
+    return ReadPadSetting("AButton","X",XINPUT_GAMEPAD_X);
 }
 
 // After the recenter chord, before trigger/gesture rewriting.
@@ -350,30 +359,38 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
             }
             PublishWheelDisplay(true);
         }
-        gp.wButtons|=g_wheelRequest.Bits(now);
         WeaponLoadoutSample loadout;
-        if(CopyWeaponLoadout(loadout)) {
-            const auto action=g_wheelRequest.action;
-            const auto result=g_wheelRequest.Check(loadout.loadout,now);
-            if(result==d2vr_wheel::Request::Result::Done)
-                Log("[WeaponWheel] equip confirmed by native hands right=%d left=%d",loadout.loadout.hand[0],loadout.loadout.hand[1]);
-            else if(result==d2vr_wheel::Request::Result::TimedOut)
-                Log("[WeaponWheel] equip NOT confirmed within 1.5 s (requested %s; hands right=%d left=%d)",
-                    action==d2vr_wheel::Action::TwoHanded ? "two-handed":"one-handed",loadout.loadout.hand[0],loadout.loadout.hand[1]);
-        }
+        const bool fresh=CopyWeaponLoadout(loadout);
+        if(!fresh) loadout.loadout.valid=false;
+        const int target=g_wheelEquip.target, presses=g_wheelEquip.presses;
+        const auto result=g_wheelEquip.Step(loadout.loadout,now);
+        if(g_wheelEquip.presses!=presses)
+            Log("[WeaponWheel] equip slot %d: press %d buttons=0x%04X (main hand=%d)",target,g_wheelEquip.presses,
+                g_wheelEquip.bits,loadout.loadout.hand[0]);
+        if(result==d2vr_wheel::Equip::Result::Done)
+            Log("[WeaponWheel] equip slot %d confirmed (hands right=%d left=%d)",target,loadout.loadout.hand[0],loadout.loadout.hand[1]);
+        else if(result==d2vr_wheel::Equip::Result::Failed)
+            Log("[WeaponWheel] equip slot %d FAILED after %d press(es) (hands right=%d left=%d fresh=%d)",target,presses,
+                loadout.loadout.hand[0],loadout.loadout.hand[1],(int)fresh);
+        gp.wButtons|=g_wheelEquip.Bits(now);
     }
     if(g_crouchStickDown) {
+        // Head owns pitch: right stick Y never reaches the game in gameplay.
         const float x=gp.sThumbRX/32767.f, y=gp.sThumbRY/32767.f;
-        bool pulse=false, suppressY=false;
         const bool allowed=!g_wheelGate.open && g_inputContext;
-        if(g_crouchToggle.Update(x,y,allowed,now,pulse,suppressY))
-            Log("[Crouch] right stick down -> toggle (buttons=0x%04X)",ReadCrouchButton());
-        if(suppressY) gp.sThumbRY=0;
-        if(pulse) gp.wButtons|=ReadCrouchButton();
+        d2vr_wheel::StickFlick::Dir active=d2vr_wheel::StickFlick::Dir::None;
+        const auto fired=g_stickFlick.Update(x,y,allowed,now,active);
+        if(fired==d2vr_wheel::StickFlick::Dir::Up)
+            Log("[StickFlick] right stick up -> jump (buttons=0x%04X)",ReadPadSetting("JumpButton","A",XINPUT_GAMEPAD_A));
+        else if(fired==d2vr_wheel::StickFlick::Dir::Down)
+            Log("[StickFlick] right stick down -> crouch toggle (buttons=0x%04X)",ReadPadSetting("CrouchButton","R3",XINPUT_GAMEPAD_RIGHT_THUMB));
+        if(g_inputContext) gp.sThumbRY=0;
+        if(active==d2vr_wheel::StickFlick::Dir::Up) gp.wButtons|=ReadPadSetting("JumpButton","A",XINPUT_GAMEPAD_A);
+        else if(active==d2vr_wheel::StickFlick::Dir::Down) gp.wButtons|=ReadPadSetting("CrouchButton","R3",XINPUT_GAMEPAD_RIGHT_THUMB);
     }
 }
 
 static void ResetWeaponWheelInput() {
     if(g_wheelGate.open) CloseWheels(false);
-    g_wheelGate.Reset(); g_crouchToggle.Reset(); g_wheelAllowed=g_inputContext=false;
+    g_wheelGate.Reset(); g_stickFlick.Reset(); g_wheelAllowed=g_inputContext=false;
 }

@@ -1,5 +1,5 @@
 #pragma once
-// Dual physical weapon wheels (hold R3) and right-stick-down crouch toggle.
+// Physical weapon wheel (hold R3), right stick flicks (up jump / down crouch).
 // Pure logic: no Windows, D3D, OpenXR or engine access, host-testable.
 //
 // Native evidence (DarknessII.exe d46bb6cb...4ec1, see
@@ -9,9 +9,9 @@
 //    0x10CC24C = 2); 8 = empty hand.
 //  - native hand index 0 = right/main, 1 = left/off. inventory+0x7B9 swaps
 //    which one-handed slot belongs to which hand (native 0x8BE7E0, 0x6FDC2C).
-//  - stock pad: DPAD_RIGHT -> two-handed, DPAD_LEFT -> one-handed (dual when
-//    the second one-handed weapon is owned, native 0x4458A0).
-// The wheels only REQUEST a stock pad action; the game keeps every equip rule.
+//  - stock pad: DPAD_RIGHT -> two-handed, DPAD_LEFT -> alternates the main
+//    hand between the one-handed weapons (headset log 2026-10-31 23:08).
+// The wheel only presses stock pad buttons; the game keeps every equip rule.
 #include <cmath>
 #include <cstdint>
 
@@ -55,26 +55,31 @@ struct HoldGate {
     }
 };
 
-// ------------------------------------------------------- stick-down toggle
-// One stock button pulse per downward right-stick flick. Rearms only after
-// the stick returns above kRearm. While engaged the stick Y is hidden.
-struct StickDownToggle {
-    static constexpr float kEngage=-.75f, kRearm=-.30f;
+// ------------------------------------------------------ right stick Y
+// Head owns pitch, so the right stick Y never reaches the game in gameplay.
+// A flick up fires `up` (jump), a flick down fires `down` (crouch toggle);
+// one pulse per flick, rearmed only after the stick returns near centre.
+// Within 45 degrees of vertical; more sideways deflection stays a turn.
+struct StickFlick {
+    static constexpr float kEngage=.75f, kRearm=.30f;
     static constexpr uint64_t kPulseMs=120;
-    bool engaged=false, armed=true;
+    enum class Dir : uint8_t { None, Up, Down };
+    bool armed=true;
+    Dir pulse=Dir::None;
     uint64_t pulseUntil=0;
-    void Reset() { *this=StickDownToggle{}; }
-    // Returns true when a new toggle fired this poll. pulse/suppressY outputs.
-    bool Update(float x,float y,bool allowed,uint64_t now,bool& pulse,bool& suppressY) {
-        bool fired=false;
+    void Reset() { *this=StickFlick{}; }
+    // Returns the direction fired this poll (None otherwise). active receives
+    // the direction whose pulse is held this poll.
+    Dir Update(float x,float y,bool allowed,uint64_t now,Dir& active) {
+        Dir fired=Dir::None;
         if(!(std::isfinite(x) && std::isfinite(y))) x=y=0;
-        if(!allowed) { engaged=false; armed=y>kRearm; pulseUntil=0; }
-        else if(!engaged && armed && y<=kEngage && std::fabs(x)<=.6f*std::fabs(y)) {
-            engaged=true; armed=false; pulseUntil=now+kPulseMs; fired=true;
+        const float ay=std::fabs(y);
+        if(!allowed) { armed=ay<kRearm; pulseUntil=0; }
+        else if(armed && ay>=kEngage && std::fabs(x)<=ay) {
+            armed=false; fired=pulse=y>0 ? Dir::Up : Dir::Down; pulseUntil=now+kPulseMs;
         }
-        if(y>kRearm) { engaged=false; armed=true; }
-        pulse=allowed && now<pulseUntil;
-        suppressY=engaged;
+        if(ay<kRearm) armed=true;
+        active=allowed && now<pulseUntil ? pulse : Dir::None;
         return fired;
     }
 };
@@ -120,74 +125,56 @@ struct Menu {
     int slot[4]{8,8,8,8};  // native slot shown in each sector
     int equipped=-1;       // sector currently in that hand
 };
-// Right hand: its one-handed weapon and the two-handed weapon.
-inline Menu RightMenu(const Loadout& l) {
+// One wheel: every owned weapon, one-handed first, then two-handed.
+// equipped = the weapon in the main (right) hand.
+inline Menu WeaponMenu(const Loadout& l) {
     Menu m;
     if(!l.valid) return m;
-    const int one=l.RightOneHanded();
-    if(l.owned[one]) m.slot[m.count++]=one;
-    if(l.owned[kSlotTwoHanded]) m.slot[m.count++]=kSlotTwoHanded;
+    for(int slot:{l.RightOneHanded(),l.LeftOneHanded(),kSlotTwoHanded})
+        if(l.owned[slot]) m.slot[m.count++]=slot;
     for(int i=0;i<m.count;++i) if(m.slot[i]==l.hand[0]) m.equipped=i;
     return m;
 }
-// Left hand: its one-handed weapon (dual wield). No stock "empty left hand"
-// action is proven yet, so the left wheel offers only owned weapons.
-inline Menu LeftMenu(const Loadout& l) {
-    Menu m;
-    if(!l.valid) return m;
-    const int one=l.LeftOneHanded();
-    if(l.owned[one]) m.slot[m.count++]=one;
-    for(int i=0;i<m.count;++i) if(m.slot[i]==l.hand[1]) m.equipped=i;
-    return m;
-}
 
-enum class Action : uint8_t { None, TwoHanded, OneHanded };
-inline uint16_t PadBits(Action a) {
-    return a==Action::TwoHanded ? kDpadRight : a==Action::OneHanded ? kDpadLeft : 0;
-}
-inline bool IsOneHanded(int slot) { return slot==kSlotOneA || slot==kSlotOneB; }
-// Picks are native slots (or -1 = wheel not touched). The right (main) hand
-// wins a conflict: a two-handed weapon occupies both hands.
-inline Action Resolve(const Loadout& l,int rightPick,int leftPick) {
-    if(!l.valid) return Action::None;
-    if(rightPick==kSlotTwoHanded)
-        return l.owned[kSlotTwoHanded] && l.hand[0]!=kSlotTwoHanded ? Action::TwoHanded : Action::None;
-    const bool wantOne=(IsOneHanded(rightPick) && l.owned[rightPick]) ||
-                       (IsOneHanded(leftPick) && l.owned[leftPick]);
-    if(!wantOne) return Action::None;
-    const bool rightOk=!IsOneHanded(rightPick) || l.hand[0]==rightPick ||
-                       (rightPick<0 && IsOneHanded(l.hand[0]));
-    const bool leftOk=!IsOneHanded(leftPick) || l.hand[1]==leftPick;
-    return rightOk && leftOk ? Action::None : Action::OneHanded;
-}
-// Closed-loop check of a requested action against a later native sample.
-inline bool Satisfied(Action a,const Loadout& l) {
-    if(!l.valid) return false;
-    if(a==Action::TwoHanded) return l.hand[0]==kSlotTwoHanded;
-    if(a==Action::OneHanded) return IsOneHanded(l.hand[0]);
-    return true;
-}
-
-// One requested action: pulse, then verify within kVerifyMs.
-struct Request {
-    static constexpr uint64_t kPulseMs=150, kVerifyMs=1500;
-    Action action=Action::None;
-    uint64_t pulseUntil=0, deadline=0;
-    enum class Result { Pending, None, Done, TimedOut };
-    void Start(Action a,uint64_t now) {
-        action=a; pulseUntil=a==Action::None ? 0 : now+kPulseMs;
-        deadline=a==Action::None ? 0 : now+kVerifyMs;
+// Closed-loop equip of one weapon into the main hand with stock D-pad presses
+// (headset log 2026-10-31 23:08: DPAD_LEFT alternates the main hand between the
+// two one-handed weapons; DPAD_RIGHT selects the two-handed weapon; DPAD_DOWN
+// draws from an empty hand). Press, wait for the native hand to change (or
+// kSettleMs), re-evaluate; give up after kMaxPresses.
+struct Equip {
+    static constexpr uint64_t kPulseMs=150, kSettleMs=700;
+    static constexpr int kMaxPresses=4;
+    enum class Result { Idle, Pending, Done, Failed };
+    int target=-1, presses=0, lastHand=-1;
+    uint16_t bits=0;
+    uint64_t pulseUntil=0, settleUntil=0;
+    void Start(int slot) { *this=Equip{}; target=slot; }
+    bool Active() const { return target>=0; }
+    static uint16_t Press(int hand0,int target) {
+        if(target==kSlotTwoHanded) return kDpadRight;
+        if(hand0==kSlotEmpty) return kDpadDown;
+        return kDpadLeft; // from the two-handed or the other one-handed weapon
     }
-    uint16_t Bits(uint64_t now) const { return now<pulseUntil ? PadBits(action) : 0; }
-    Result Check(const Loadout& l,uint64_t now) {
-        if(action==Action::None) return Result::None;
-        if(now>=pulseUntil && Satisfied(action,l)) { action=Action::None; return Result::Done; }
-        if(now>=deadline) { action=Action::None; return Result::TimedOut; }
+    // Call every poll with a fresh loadout (valid=false when unknown).
+    Result Step(const Loadout& l,uint64_t now) {
+        if(target<0) return Result::Idle;
+        if(now<pulseUntil) return Result::Pending;
+        if(!l.valid) {
+            if(now>=settleUntil+kSettleMs) { target=-1; return Result::Failed; }
+            return Result::Pending;
+        }
+        if(l.hand[0]==target) { target=-1; return Result::Done; }
+        const bool changed=presses && l.hand[0]!=lastHand;
+        if(presses && !changed && now<settleUntil) return Result::Pending;
+        if(presses>=kMaxPresses || !l.owned[target]) { target=-1; return Result::Failed; }
+        bits=Press(l.hand[0],target); lastHand=l.hand[0]; ++presses;
+        pulseUntil=now+kPulseMs; settleUntil=pulseUntil+kSettleMs;
         return Result::Pending;
     }
+    uint16_t Bits(uint64_t now) const { return target>=0 && now<pulseUntil ? bits : 0; }
 };
 
-// Pad button for the crouch toggle ([Input] CrouchButton). 0 = OFF.
+// Pad button names for [Input] CrouchButton / JumpButton / AButton. 0 = OFF.
 inline bool ParseCrouchButton(const char* v,uint16_t& bits) {
     struct E { const char* n; uint16_t b; };
     static const E table[]={{"R3",kR3},{"L3",kL3},{"B",0x2000},{"A",0x1000},{"X",0x4000},{"Y",0x8000},

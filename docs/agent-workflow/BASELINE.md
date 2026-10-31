@@ -13,7 +13,16 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed lighting diagnostic completion (2026-10-31 21:43 Europe/Warsaw)
+## Current installed MAIN candidate: dual weapon wheels + crouch toggle (2026-10-31 23:05 Europe/Warsaw)
+
+User ran preflight + install with the game closed; no agent launch.
+- Source: `c80df956`, branch `main-weapon-wheels` (on `codex/hud-head-tentacles` e901b6ab).
+- Installed DLL SHA256: `AA7E2EE863B19C52175425168C8964071CBAD6C8A16B2101DD07CB8106F4F510` (protected-native).
+- Hold R3 -> dual hand wheels, stock DPAD equip with native verification; right stick down -> crouch ([Input] CrouchButton, default R3).
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/weapon-wheels-20261031T230525324`; full nine-target rollback `rollback/Restore.ps1`.
+- Offline: dual_weapon_wheel MSVC /W4 /WX 139 PASS; protected build PASS. Headset acceptance PENDING.
+
+## Previous installed lighting diagnostic completion (2026-10-31 21:43 Europe/Warsaw)
 
 User confirmed game closed; authorized MAIN deployment completed without launch.
 - Source: `e901b6ab`, branch `codex/hud-head-tentacles`.

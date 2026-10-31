@@ -161,7 +161,7 @@ bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
 bool g_weaponWheelEnabled=true;   // [Input] WeaponWheel: hold R3 -> dual weapon wheels
-bool g_crouchStickDown=true;      // [Input] CrouchStickDown: right stick down toggles crouch
+bool g_crouchStickDown=true;      // [Input] CrouchStickDown: right stick Y -> jump/crouch flicks, never camera pitch
 bool g_unarmedTriggerDpad=true; // left trigger + empty left hand -> DPAD_DOWN / DPAD_UP alternating
 bool g_nativeHandsEnabled=false;
 bool g_nativeHandsDirtyBoth=false;
@@ -802,8 +802,8 @@ void LoadConfig() {
     Log("[UnarmedTriggerDpad] enabled=%d (L trigger + empty left hand -> DPAD_DOWN/DPAD_UP alternating; R trigger always fires)",(int)g_unarmedTriggerDpad);
     g_weaponWheelEnabled = GetPrivateProfileIntA("Input", "WeaponWheel", 1, chosenIni) != 0;
     g_crouchStickDown = GetPrivateProfileIntA("Input", "CrouchStickDown", 1, chosenIni) != 0;
-    Log("[WeaponWheel] enabled=%d (hold R3: one wheel per hand, move the hand to a weapon, release to equip via stock D-pad; R3 tap still reaches the game)",(int)g_weaponWheelEnabled);
-    Log("[Crouch] CrouchStickDown=%d (right stick down toggles crouch; [Input] CrouchButton, default R3, re-read live)",(int)g_crouchStickDown);
+    Log("[WeaponWheel] enabled=%d (hold R3: one wheel at the right hand with every owned weapon, move the hand to it, release; closed-loop stock D-pad equip; R3 tap still reaches the game)",(int)g_weaponWheelEnabled);
+    Log("[StickFlick] CrouchStickDown=%d (right stick Y never pitches the camera; up -> [Input] JumpButton default A, down -> CrouchButton default R3; physical A -> AButton default X)",(int)g_crouchStickDown);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
     g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
@@ -4645,7 +4645,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     gp.bLeftTrigger = static_cast<BYTE>(lt * 255.f);
     gp.bRightTrigger = static_cast<BYTE>(rt * 255.f);
     LocateTrackedHands(); // current grip sample also owns the triangle modifier
-    if (ReadBool(g_actA, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_A;
+    if (ReadBool(g_actA, g_pathHandRight)) gp.wButtons |= PhysicalAButton(); // [Input] AButton, default X (reload)
     if (ReadBool(g_actB, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_B;
     if (ReadBool(g_actX, g_pathHandLeft))  gp.wButtons |= XINPUT_GAMEPAD_X;
     bool triangleActive=false;
