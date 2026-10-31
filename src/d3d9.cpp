@@ -4512,6 +4512,7 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
     static HandSlot lastOff=HandSlot::Unknown,lastMain=HandSlot::Unknown;
     static d2vr_input::WeaponClass lastClass=d2vr_input::WeaponClass::Unknown;
     d2vr_input::WeaponClass held=d2vr_input::WeaponClass::Unknown;
+    static unsigned lastKinds=0;
     static ULONGLONG lastSeen=0;
     const ULONGLONG nowMs=GetTickCount64();
     const bool fresh=context;
@@ -4519,6 +4520,7 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
         offHand=sample.offHandEquipped ? HandSlot::Armed:HandSlot::Empty;
         mainHand=sample.mainHandEquipped ? HandSlot::Armed:HandSlot::Empty;
         held=d2vr_input::ClassifyFirearm(sample.firearm[0],sample.firearm[1]);
+        lastKinds=sample.firearm[0] | (unsigned(sample.firearm[1])<<8);
         lastOff=offHand;lastMain=mainHand;lastClass=held;lastSeen=nowMs;
     } else if(g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START) && lastSeen && nowMs-lastSeen<1000) {
         offHand=lastOff;mainHand=lastMain;held=lastClass;context=true;
@@ -4562,7 +4564,8 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
     g_doubleTapDpadState.Update(gp.wButtons,target,g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START),nowMs,&tapped);
     if(tapped) {
         lastToggle=tapped;
-        Log("[DoubleTapDpad] X double tap (DoubleTapX=%s, main hand %s, held %s) -> buttons=0x%04X",targetName,
+        Log("[DoubleTapDpad] X double tap (DoubleTapX=%s, firearm right=%u left=%u, main hand %s, held %s) -> buttons=0x%04X",targetName,
+            lastKinds&0xFF,lastKinds>>8,
             mainHand==HandSlot::Empty ? "empty":mainHand==HandSlot::Armed ? "armed":"unknown",
             held==d2vr_input::WeaponClass::TwoHanded ? "two-handed":held==d2vr_input::WeaponClass::OneHanded ? "one-handed":"unknown",tapped);
     }

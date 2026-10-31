@@ -91,8 +91,8 @@ int main() {
         CHECK(ClassifyFirearm(6,1)==WeaponClass::OneHanded);
         CHECK(ClassifyFirearm(4,0)==WeaponClass::TwoHanded);
         CHECK(ClassifyFirearm(7,0)==WeaponClass::TwoHanded);
-        CHECK(ClassifyFirearm(2,0)==WeaponClass::TwoHanded);
-        CHECK(ClassifyFirearm(2,1)==WeaponClass::OneHanded);
+        CHECK(ClassifyFirearm(2,0)==WeaponClass::Unknown);
+        CHECK(ClassifyFirearm(2,1)==WeaponClass::Unknown);
         CHECK(ClassifyFirearm(0,0)==WeaponClass::Unknown);
         CHECK(ToggleTarget(WeaponClass::TwoHanded,A,0)==0x0004);
         CHECK(ToggleTarget(WeaponClass::OneHanded,A,0)==0x0008);

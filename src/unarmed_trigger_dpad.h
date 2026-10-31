@@ -94,12 +94,13 @@ inline bool ParsePadButton(const char* v,uint16_t& bits,bool& autoByHand) {
 // (pistols/uzi), D-pad down draws a weapon. Two-handed in the right hand -> LEFT,
 // one-handed -> RIGHT, empty main hand -> DOWN, unknown kind -> alternate.
 enum class WeaponClass : uint8_t { Unknown=0, OneHanded, TwoHanded };
+// Raw Automatic (2) is shared by the uzi and automatic rifles (headset 20:29: a held
+// uzi classified as lone automatic -> two-handed), so it stays Unknown -> alternate.
 inline WeaponClass ClassifyFirearm(uint8_t right,uint8_t left) {
-    auto smallArm=[](uint8_t k){ return k==1 || k==2 || k==6; };
+    (void)left;
     switch(right) {
     case 1: case 6: return WeaponClass::OneHanded;
     case 3: case 4: case 5: case 7: return WeaponClass::TwoHanded;
-    case 2: return smallArm(left) ? WeaponClass::OneHanded:WeaponClass::TwoHanded; // lone automatic = rifle
     default: return WeaponClass::Unknown;
     }
 }
