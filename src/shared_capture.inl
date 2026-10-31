@@ -11,6 +11,9 @@ struct SharedCaptureSlot {
     UINT width=0,height=0;
     d2vr_shared_reader::Fence fence;
     std::shared_ptr<d2vr_transfer::Job> deferred;
+    // Last owner-thread GetData for this slot's producer. S_FALSE means the
+    // event was issued and flushed, and is not complete yet.
+    HRESULT producerStatus=S_OK;
 };
 static SharedCaptureSlot g_sharedCapture[2];
 int g_zeroCopyFailures=0;
@@ -194,8 +197,11 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
         d2vr_replay::g_replayEye,0,capture,D3DGETDATA_FLUSH);
 #endif
     if(deferProducer) {
-        // Submit on the original thread; worker only polls this issued query.
+        // One flush submits this event ahead of later commands on this device.
+        // Do not spin. Mode 1 may poll the query on its worker; mode 4 polls
+        // it on this thread, without another flush, after overlapping D3D9 work.
         hr=slot.producer->GetData(nullptr,0,D3DGETDATA_FLUSH);
+        slot.producerStatus=hr;
 #ifdef D2VR_MATCHED_CAPTURE
         command.Finish(hr);
 #endif
@@ -209,6 +215,7 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
         SwitchToThread();
         hr=slot.producer->GetData(nullptr,0,0);
     }
+    slot.producerStatus=hr;
 #ifdef D2VR_MATCHED_CAPTURE
     command.Finish(hr);
 #endif

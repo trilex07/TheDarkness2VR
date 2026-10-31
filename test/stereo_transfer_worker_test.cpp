@@ -37,7 +37,8 @@ static Ref<ID3DBlob> Compile(const char* source,const char* target) {
     HR(hr);return Adopt(code);
 }
 static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceContext* ctx,
-                     bool deferred=false,UINT width=64,UINT height=64,bool ownerProducer=false,bool split=false) {
+                     bool deferred=false,UINT width=64,UINT height=64,bool ownerProducer=false,bool split=false,
+                     bool overlapOwner=false,unsigned frames=100) {
     IDirect3DSurface9* rtRaw=nullptr;
     HR(dev9->CreateRenderTarget(width,height,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rtRaw,nullptr));
     auto rt=Adopt(rtRaw); HR(dev9->SetRenderTarget(0,rt.Get()));
@@ -78,6 +79,12 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     ID3D11SamplerState* samplerRaw=nullptr;HR(dev11->CreateSamplerState(&sd,&samplerRaw));auto sampler=Adopt(samplerRaw);
     D3D11_RASTERIZER_DESC rd{};rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.DepthClipEnable=TRUE;
     ID3D11RasterizerState* rasterRaw=nullptr;HR(dev11->CreateRasterizerState(&rd,&rasterRaw));auto raster=Adopt(rasterRaw);
+    if(overlapOwner) {
+        CHECK(ownerProducer);
+        D3DDEVICE_CREATION_PARAMETERS created{};
+        HR(dev9->GetCreationParameters(&created));
+        CHECK((created.BehaviorFlags & D3DCREATE_MULTITHREADED)==0);
+    }
     d2vr_transfer::Queue queue;bool fault=false;
     auto inputFor=[&](const std::shared_ptr<d2vr_transfer::Job>& job)->Input& {
         for(auto& in:inputs)if(in.srv.Get()==job->source.Get())return in;
@@ -115,7 +122,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         HR(q9->Issue(D3DISSUE_END));
         HRESULT flushed=q9->GetData(nullptr,0,D3DGETDATA_FLUSH);
         CHECK(flushed==S_OK || flushed==S_FALSE);
-        if(ownerProducer) {
+        if(ownerProducer && !overlapOwner) {
             const auto start=GetTickCount64();
             while(flushed==S_FALSE) {
                 CHECK(GetTickCount64()-start<2000);SwitchToThread();
@@ -123,6 +130,21 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             }
             CHECK(flushed==S_OK);
         }
+    };
+    auto waitOwner=[&](int eye) {
+        if(!overlapOwner) return;
+        auto& in=inputs[split?eye:0];
+        // The source RT changes while the flushed copy is still in flight.
+        // Sampling before S_OK would observe this later color.
+        const DWORD distract=eye?0xff001122:0xff221100;
+        for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,distract));
+        const auto start=GetTickCount64();
+        HRESULT hr=S_FALSE;
+        while((hr=in.producer->GetData(nullptr,0,0))==S_FALSE) {
+            CHECK(GetTickCount64()-start<2000);
+            SwitchToThread();
+        }
+        CHECK(hr==S_OK);
     };
     auto verify=[&](int eye,DWORD expected) {
         ctx->CopyResource(stage.Get(),eyes[eye].Get());D3D11_MAPPED_SUBRESOURCE map{};
@@ -132,13 +154,37 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         if(actual!=expected) std::printf("eye=%d expected=%08lx actual=%08lx\n",eye,expected,actual);
         CHECK(actual==expected);
     };
-    for(unsigned frame=0;frame<100;++frame) {
+    if(overlapOwner) {
+        // Dropping the lease before publish must retire the issued query.
+        // The following frames reissue it and still sample the stretched color.
+        HR(dev9->ColorFill(rt.Get(),nullptr,0xff112233));
+        issue(0);
+        auto abandoned=packet(0);
+        abandoned->producerComplete=false;
+        {
+            d2vr_transfer::Pending pending;
+            CHECK(pending.Stage(queue,abandoned,inputs[0].producer.Get(),fault));
+            CHECK(pending.Staged() && abandoned->thread==0 && !abandoned->readerSubmitted);
+        }
+        CHECK(!fault && !inputs[0].fence.pending);
+    }
+    for(unsigned frame=0;frame<frames;++frame) {
         const DWORD left=0xff000000|(frame+1)<<16|0x002233;
         const DWORD right=0xff000000|0x00bb0000|(frame+1)<<8|0x000055;
         HR(dev9->ColorFill(rt.Get(),nullptr,left));issue(0);
         auto l=packet(0);
+        if(overlapOwner) CHECK(!l->producer.Get() && l->producerComplete);
         {
-            d2vr_transfer::Pending pending;CHECK(pending.Start(queue,l,fault));track(l);
+            d2vr_transfer::Pending pending;
+            if(overlapOwner) {
+                l->producerComplete=false;
+                CHECK(pending.Stage(queue,l,inputs[0].producer.Get(),fault));
+                CHECK(!pending.Start(queue,l,fault) && l->thread==0);
+                waitOwner(0);CHECK(pending.Poll()==S_OK);
+                CHECK(pending.Promote() && !pending.Staged());
+                CHECK(!pending.Promote());
+            } else CHECK(pending.Start(queue,l,fault));
+            track(l);
             // Model main-thread right replay while the worker consumes LEFT.
             for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,right));
             if(frame%2) CHECK(pending.Finish()); // other half tests destructor join
@@ -156,7 +202,14 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         if(split)CHECK(inputs[0].retained==l && inputs[0].fence.pending);
         issue(1);auto r=packet(1);
         {
-            d2vr_transfer::Pending pending;CHECK(pending.Start(queue,r,fault));track(r);
+            d2vr_transfer::Pending pending;
+            if(overlapOwner) {
+                r->producerComplete=false;
+                CHECK(pending.Stage(queue,r,inputs[split?1:0].producer.Get(),fault));
+                waitOwner(1);CHECK(pending.Poll()==S_OK);
+                CHECK(pending.Promote() && !pending.Staged());
+            } else CHECK(pending.Start(queue,r,fault));
+            track(r);
             HR(dev9->ColorFill(rt.Get(),nullptr,left)); // restore live image in parallel
             CHECK(pending.Finish());
         }
@@ -185,7 +238,8 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     queue.Stop();ctx->ClearState();ctx->Flush();
     IDirect3DSurface9* bb=nullptr;HR(dev9->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&bb));
     HR(dev9->SetRenderTarget(0,bb));bb->Release();
-    printf("PASS interop scenario deferred=%d split=%d size=%ux%u: 200 eye transfers, pixels and explicit reader retirement\n",int(deferred),int(split),width,height);
+    printf("PASS interop scenario deferred=%d split=%d overlap=%d size=%ux%u: %u eye transfers, pixels and explicit reader retirement\n",
+        int(deferred),int(split),int(overlapOwner),width,height,frames*2);
 }
 int main() {
     static_assert(sizeof(void*)==4,"x86 required");
@@ -225,7 +279,14 @@ int main() {
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true);
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true);
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,true);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),false,64,64,true,false,true);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,false,true);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,false,true,10);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,true,true);
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true,true,10);
+    HR(d9->ResetEx(&pp,nullptr));
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,false,true,10);
     ctx={};d11={};d9={};api={};DestroyWindow(window);FreeLibrary(module);
-    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 2000 eye transfers (1000 at 2676x2728), including two independent shared inputs, native0x50+D3D11-only and MT0x54 workers, sampled pixel equality, concurrent D3D9 work, RAII join, failure latch, Reset/recreate");
+    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 2660 eye transfers (1040 at 2676x2728), including single-owner overlap on native 0x50, two independent shared inputs, MT 0x54 workers, sampled pixel equality, concurrent D3D9 work, query retirement, RAII join, failure latch, Reset/recreate");
     std::puts("No game/OpenXR/Steam calls; this does not prove frame-time improvement or headset acceptance.");
 }
