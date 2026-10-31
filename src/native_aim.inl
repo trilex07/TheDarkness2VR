@@ -57,6 +57,7 @@ struct NativeGameplaySample {
 };
 static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
 static void CaptureWeaponLoadout(BYTE* inventory); // weapon_wheel_input.inl
+static volatile LONG g_nativeRegionManager=0;      // last RegionMgr seen by the view owner (render thread)
 static NativeGameplaySample g_nativeGameplay;
 static bool CopyNativeGameplay(NativeGameplaySample& out) {
     if(!TryAcquireSRWLockShared(&g_nativeGameplayLock)) return false;
@@ -287,6 +288,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
 #ifdef D2VR_MATCHED_CAPTURE
     if(GetCurrentThreadId()!=g_renderThreadId)return;
     UpdateNativeHudForView(renderer,reference,manager);
+    InterlockedExchange(&g_nativeRegionManager,LONG(reinterpret_cast<uintptr_t>(manager))); // gaze menu pause gate
     g_nativeCinematicFrame=0;
     if(g_nativePlayerOwnerAdmitted && g_nativeImageGuard.enabled && g_imagePreservingPresent)
         ObserveNativePauseState(manager);

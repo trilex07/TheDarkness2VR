@@ -100,9 +100,12 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
         }
     }
     NisTimingEnd(&g_nisEye,g_ctx11);
-    static int lastFovea=-1;
+    // Log a state only after it held for 1 s (blinks drop the gaze briefly).
+    static int lastFovea=-1, pendingFovea=-1; static ULONGLONG pendingSince=0;
     const int foveaState=int(gaze[0])+int(gaze[1]);
-    if(foveaMode && foveaState!=lastFovea) {
+    const ULONGLONG foveaNow=GetTickCount64();
+    if(foveaState!=pendingFovea) { pendingFovea=foveaState; pendingSince=foveaNow; }
+    if(foveaMode && foveaState!=lastFovea && foveaNow-pendingSince>=1000) {
         lastFovea=foveaState;
         Log("[NIS] foveated sharpening %s (periphery=%.2f transition=%.2f fovea=%.2f size=%.2f); gaze eyes=%d",
             foveaState ? "active" : "waiting for gaze (uniform NisSharpness)",levels.periphery,levels.transition,levels.fovea,g_foveaSize,foveaState);

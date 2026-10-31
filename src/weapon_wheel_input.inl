@@ -451,8 +451,9 @@ static uint16_t ReadPadSetting(const char* key,const char* fallback,uint16_t fal
 }
 // Physical A (PSVR2 Cross): reload by default (stock X, user request 23:11).
 // While an enemy is held for an execution the stock A choice passes through.
+static bool GazeMenuActive(); // eye_gaze.inl: pause/cursor menu gate
 static uint16_t PhysicalAButton() {
-    if(!g_inputContext) return XINPUT_GAMEPAD_A; // menus: A confirms (user 23:26)
+    if(!g_inputContext || GazeMenuActive()) return XINPUT_GAMEPAD_A; // menus incl. pause: A confirms (user 23:26, 00:43)
     NativeGameplaySample sample;
     if(CopyNativeGameplay(sample) && sample.demonHold==2) return XINPUT_GAMEPAD_A;
     return ReadPadSetting("AButton","X",XINPUT_GAMEPAD_X);
@@ -517,7 +518,7 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
 
 // Menus with gaze: the right trigger confirms like A (look + pull).
 static void ApplyMenuTriggerConfirm(XINPUT_GAMEPAD& gp) {
-    if(!g_gazeMenu || !g_eyeTrackingEnabled || g_in3DGameplayMode) return;
+    if(!g_gazeMenu || !g_eyeTrackingEnabled || !GazeMenuActive()) return;
     if(gp.bRightTrigger>150) { gp.wButtons|=XINPUT_GAMEPAD_A; gp.bRightTrigger=0; }
 }
 

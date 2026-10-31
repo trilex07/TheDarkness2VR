@@ -139,9 +139,11 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction) {
 // game's own pad handling. Cursor setter MouseDeviceWin vtable FC00C8 +0x70 ->
 // C4B690 (thiscall x,y client pixels: ClientToScreen, SetCursorPos when
 // acquired, stores +21C/+220). Runs only on the native window thread.
+static volatile bool g_gazeMenuActive=false; // window thread writes, input thread reads
 struct MenuSurface { bool valid=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; };
 static SRWLOCK g_menuSurfaceLock=SRWLOCK_INIT;
 static MenuSurface g_menuSurface;
+static bool GazeMenuActive() { return g_gazeMenuActive; }
 static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
     s.time=GetTickCount64(); s.space=quad.space;
@@ -151,10 +153,46 @@ static void ApplyGazeMenuCursor() {
 #ifdef D2VR_MATCHED_CAPTURE
     static d2vr_gaze_menu::CursorFilter filter;
     static ULONGLONG nextObserve=0; static uint32_t mouse=0; static bool contractOk=false, contractChecked=false;
-    if(!g_gazeMenu || !g_eyeTrackingEnabled || g_in3DGameplayMode) { filter.Reset(); return; }
+    if(!g_gazeMenu || !g_eyeTrackingEnabled) { filter.Reset(); g_gazeMenuActive=false; return; }
     const HWND window=g_renderSizeHwnd;
     DWORD pid=0;
     if(!window || GetWindowThreadProcessId(window,&pid)!=GetCurrentThreadId() || pid!=GetCurrentProcessId()) return;
+    // Menu gate (headset 00:43: pause menus keep the 3D world rendering, so
+    // "no world" alone never fired). Native pause predicate A4D340 or the top
+    // Flash movie asking for a cursor (movie+F4), re-read every 100 ms.
+    static ULONGLONG nextGate=0; static bool paused=false, cursorWanted=false, gateLogged=false; static int lastGate=-1;
+    const ULONGLONG nowGate=GetTickCount64();
+    if(nowGate>=nextGate) {
+        nextGate=nowGate+100;
+        static int predicateOk=-1;
+        if(predicateOk<0) {
+            static const BYTE predicate[]={0x80,0xb9,0x98,0x01,0x00,0x00,0x00,0x75,0x11,0x8b,0x81,0xec,0x00,0x00,0x00,0x83,0x38,0x00,0x74,0x06};
+            __try { predicateOk=!memcmp((void*)0xA4D340,predicate,sizeof(predicate)); } __except(EXCEPTION_EXECUTE_HANDLER) { predicateOk=0; }
+        }
+        paused=false;
+        const auto manager=uint32_t(g_nativeRegionManager);
+        if(predicateOk==1 && manager) {
+            __try { paused=*(BYTE*)(manager+0x198)==0 && **(DWORD**)(manager+0xEC)!=0; } __except(EXCEPTION_EXECUTE_HANDLER) { paused=false; }
+        }
+        const auto readMovie=[](uint32_t address,uint32_t& value) {
+            MEMORY_BASIC_INFORMATION region{};
+            if(VirtualQuery(reinterpret_cast<const void*>(address),&region,sizeof(region))!=sizeof(region) ||
+               region.State!=MEM_COMMIT || (region.Protect&(PAGE_NOACCESS|PAGE_GUARD)))return false;
+            SIZE_T copied=0;
+            return ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(address),&value,4,&copied) && copied==4;
+        };
+        d2vr_menu_native::TopMovieSnapshot movie;
+        cursorWanted=d2vr_menu_native::ObserveTopMovie(readMovie,movie) && movie.hasMovie && movie.visible && movie.cursorRequested;
+        (void)gateLogged;
+    }
+    const bool gate=paused || cursorWanted || !g_in3DGameplayMode;
+    if(int(gate)!=lastGate) {
+        lastGate=int(gate);
+        Log("[GazeMenu] menu cursor %s (pause=%d flashCursor=%d world=%d manager=%08X)",gate ? "ON" : "off",
+            int(paused),int(cursorWanted),int(g_in3DGameplayMode),unsigned(g_nativeRegionManager));
+    }
+    g_gazeMenuActive=gate;
+    if(!gate) { filter.Reset(); return; }
     if(!contractChecked) {
         contractChecked=true;
         static const BYTE setter[]={0x83,0xEC,0x18,0x55,0x8B,0x6C,0x24,0x24,0x56,0x57,0x8B,0x7C,0x24,0x28,0x8B,0xF1,0x8B,0x8E,0xE8,0x01,0,0};
@@ -167,12 +205,24 @@ static void ApplyGazeMenuCursor() {
     MenuSurface surface;
     AcquireSRWLockShared(&g_menuSurfaceLock); surface=g_menuSurface; ReleaseSRWLockShared(&g_menuSurfaceLock);
     const ULONGLONG now=GetTickCount64();
-    if(!surface.valid || now-surface.time>250 || surface.space!=g_xrSpace) { filter.Reset(); return; }
-    XrVector3f o{},d{};
-    if(!GazeWorldRay(o,d)) return;
     float u=0,v=0;
-    const auto& q=surface.pose.orientation; const auto& c=surface.pose.position;
-    if(!d2vr_gaze_menu::HitQuad({o.x,o.y,o.z},{d.x,d.y,d.z},{c.x,c.y,c.z},{q.x,q.y,q.z,q.w},surface.width,surface.height,u,v)) return;
+    if(surface.valid && now-surface.time<=250 && surface.space==g_xrSpace) {
+        // Menu on the cinema quad (no 3D world): gaze ray against the quad.
+        XrVector3f o{},d{};
+        if(!GazeWorldRay(o,d)) return;
+        const auto& q=surface.pose.orientation; const auto& c=surface.pose.position;
+        if(!d2vr_gaze_menu::HitQuad({o.x,o.y,o.z},{d.x,d.y,d.z},{c.x,c.y,c.z},{q.x,q.y,q.z,q.w},surface.width,surface.height,u,v)) return;
+    } else {
+        // Menu drawn into the stereo eye images (pause over the world): the 2D
+        // UI spans each eye image, so the gaze pixel (mean of both eyes) is
+        // the client position.
+        if(!g_eyeCacheW || !g_eyeCacheH) return;
+        float px[2]{},py[2]{}; int n=0;
+        for(int eye=0;eye<2;++eye) if(FoveaGazePixel(eye,g_eyeCacheW,g_eyeCacheH,px[n],py[n])) ++n;
+        if(!n) return;
+        u=(n==2 ? (px[0]+px[1])*.5f : px[0])/float(g_eyeCacheW);
+        v=(n==2 ? (py[0]+py[1])*.5f : py[0])/float(g_eyeCacheH);
+    }
     RECT client{};
     if(!GetClientRect(window,&client) || client.right<=0 || client.bottom<=0) return;
     const int x=int(u*float(client.right-1)+.5f), y=int(v*float(client.bottom-1)+.5f);
