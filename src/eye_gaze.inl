@@ -55,12 +55,12 @@ static bool ParseGazeAxes(const char* text,GazeAxes& out) {
     out=a; return true;
 }
 static GazeAxes CurrentGazeAxes() {
-    static GazeAxes axes; static ULONGLONG next=0; static char last[32]="";
+    static GazeAxes axes{{0,1,2},{-1,1,-1}}; static ULONGLONG next=0; static char last[32]="";
     const ULONGLONG now=GetTickCount64();
     if(now>=next) {
         next=now+2000;
         char value[32]{};
-        GetPrivateProfileStringA("EyeTracking","GazeAxes","x,y,-z",value,sizeof(value),g_activeIni[0] ? g_activeIni:".\\Darkness2VR.ini");
+        GetPrivateProfileStringA("EyeTracking","GazeAxes","-x,y,-z",value,sizeof(value),g_activeIni[0] ? g_activeIni:".\\Darkness2VR.ini");
         if(strcmp(value,last)) {
             strcpy_s(last,value);
             GazeAxes parsed;

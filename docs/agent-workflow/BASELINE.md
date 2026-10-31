@@ -13,7 +13,17 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: weapon wheel v3 (2026-10-31 23:33 Europe/Warsaw)
+## Current installed MAIN candidate: eye tracking v5 + weapon wheel v4 (2026-11-01 00:22 Europe/Warsaw)
+
+User ran the launcher (build + host test + bridge build + preflight + install), game closed; no agent launch.
+- Source: `989c727d`, branch `main-weapon-wheels` (includes v4 ammo counters `1f6ff105`).
+- Installed DLL SHA256: `E5DEFFDF9C45977F2BD10BEAFCA2D4465863E13E0B1911C9675451DC3F6A2D1A` (protected-native).
+- Installed bridge `%LOCALAPPDATA%/Darkness2VR/runtime/psvr2/Darkness2Psvr2Bridge.exe` SHA256 `639F14605BC1FD3D17625E1DE0920464DD11BFAFAAE3E66E7F159A4EEF14401F`
+  (publishes Toolkit gaze); previous helper saved as `rollback/Darkness2Psvr2Bridge.exe.previous` (not restored by Restore.ps1).
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/eye-tracking-v5-20261101T002252644`; DLL rollback `rollback/Restore.ps1`.
+- v4 headset: ammo counters confirmed counting shots/reloads (log). v5 gaze axes/rate PENDING headset check.
+
+## Previous installed MAIN candidate: weapon wheel v3 (2026-10-31 23:33 Europe/Warsaw)
 
 User ran build + preflight + install (game closed); no agent launch. A second launcher run
 afterwards correctly refused at preflight ("Installed DLL changed") because v3 was already in place.

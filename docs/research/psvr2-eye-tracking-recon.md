@@ -70,3 +70,12 @@ Rule: gaze only *selects*; the action still needs the existing button/gesture.
 1. Bridge gaze publisher + DLL reader + `[EyeTracking]` log (rate, validity) + debug dot. Headset check of axes.
 2. Foveated NIS sharpening behind INI (default off) with GPU timing.
 3. Chosen interaction(s), each behind its own INI key.
+
+## Headset results 2026-11-01 00:26 (v5, DLL E5DEFFDF, bridge 639F1460)
+
+- Bridge publishes ~60 samples/s, 100 % combined-valid, age 0-15 ms; foveated
+  `tracking_state` stays 0 (use the wearable block, not `foveated`).
+- Raw axes: looking ahead raw=(0.0,-0.07,1.0) -> +Z forward; Y correct;
+  X mirrored (look left -> ring right). Fix: `GazeAxes=-x,y,-z` (now the code
+  default; also written to the game-folder Darkness2VR.ini, backup
+  `%LOCALAPPDATA%/Darkness2VR/Darkness2VR.ini.before-gazeaxes-20261101`).
