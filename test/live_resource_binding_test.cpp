@@ -58,7 +58,6 @@ static HRESULT STDMETHODCALLTYPE SetDepth(Device* d,Surface* s){++nativeCalls;if
 static auto g_origSetTexture=&SetTexture;
 static auto g_origSetDepthStencilSurface=&SetDepth;
 static Texture* g_intzTex9=nullptr;
-namespace d2vr_pipeline_warmup {template<class... A> static void TrackTexture(A...){} template<class... A> static void TrackDepth(A...){}}
 #include "actual_hooks.inl"
 static struct Original {
     HRESULT SetTexture(Device* d,DWORD slot,Texture* t){++replayCalls;CHECK(!t||t->refs);d->textures[slot]=t;return S_OK;}
