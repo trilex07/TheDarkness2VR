@@ -1,6 +1,6 @@
 # VR Settings compositor panel
 
-2026-10-31 update: `codex/adaptive-half-rate` adds application-side limiting for AUTO/HALF and labels it accordingly. The older UNSUPPORTED description below records the pre-limiter implementation; see `docs/agent-workflow/handoffs/HANDOFF-adaptive-half-rate-codex-adaptive-half-rate.md`. Runtime motion smoothing remains independently controlled.
+2026-10-31 update: `codex/adaptive-half-rate` adds application-side limiting for AUTO/HALF and labels it accordingly. The older UNSUPPORTED description below records the pre-limiter implementation; see `docs/agent-workflow/handoffs/HANDOFF-adaptive-half-rate.md`. Runtime motion smoothing remains independently controlled.
 
 This branch inherits `99cefa4` (VS and PS eye carry, DirectRecordCopy diagnostic
 switch, and wrist palette correction). It does not replace the installed Steam

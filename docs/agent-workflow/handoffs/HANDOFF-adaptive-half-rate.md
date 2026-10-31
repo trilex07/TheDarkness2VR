@@ -1,16 +1,18 @@
 # Handoff: Adaptive application half-rate pacing
 
 **Date**: 2026-10-31
-**Agent**: Codex (SIDE)
+**Agent**: Codex
+**Task ID**: adaptive-half-rate
+**Role**: MAIN (explicit user assignment and deployment authorization)
 **Branch**: codex/adaptive-half-rate
 **Worktree**: C:/Users/Trilex/.codex/worktrees/adaptive-half-rate/Darkness2VR
-**Baseline**: source 7adcacbd (MAIN integration); deployed provenance remains unknown per BASELINE.md.
+**Baseline**: source 7adcacbd; installed candidate 71597871, DLL BFF8B0A9F5BE83C511762E66C78C5903BD9FB3A48FD3D2F81BF15C035FBD1CFA. Accepted rollback remains 4a26aabd per BASELINE.md.
 
 ## Goal
 User explicitly requested implementation: sustained FPS below headset refresh should select half-refresh application rendering, allowing runtime reprojection.
 
 ## Status
-Offline candidate; MAIN runtime/PSVR2 acceptance pending.
+Deployment preflight PASS; authorized MAIN deployment in progress. Runtime/PSVR2 acceptance pending.
 
 ## Context Loaded
 BASELINE.md, WORKFLOW.md, FAILED-APPROACHES.md, superseded zero-latency handoff, existing adaptive policy/refresh and VR settings implementation.
@@ -44,3 +46,6 @@ This is an application frame limiter, not motion estimation/frame synthesis. No 
 
 Remote push was rejected by automatic approval review: repository destination/payload not explicitly authorized. Local commit is complete; push requires user approval.
 
+
+## MAIN deployment preparation
+Current installed DLL, EXE, Steam/local INIs match the frozen deployment gate. No game is running. Current quarantined image switches remain OFF. The protected-native DLL is required by the preserved profile; verified candidate SHA256 4B50EAF295135D8BBB06B039D91FA739D114266A189C3572D95D0890DF1693C3. Source: 346fac9327493ac6fffc2ebd2bdade07ad52e824. StateBlock lifetime model and actual x86 HAL/Ex regression PASS. Deployment script saves all nine current DLL/INI/cache files with SHA256 verification and Restore.ps1, changes only DLL and Render/AdaptiveFPS, and verifies all preserved contracts. No game launch is part of this deployment.
