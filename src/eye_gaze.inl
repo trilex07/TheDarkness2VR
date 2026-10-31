@@ -182,7 +182,7 @@ static void ApplyGazeMenuCursor() {
             return ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(address),&value,4,&copied) && copied==4;
         };
         d2vr_menu_native::TopMovieSnapshot movie;
-        cursorWanted=d2vr_menu_native::ObserveTopMovie(readMovie,movie) && movie.hasMovie && movie.visible && movie.cursorRequested;
+        cursorWanted=d2vr_menu_native::ObserveTopMovie(readMovie,movie) && movie.hasMovie && movie.movie.visible && movie.cursorRequested;
         (void)gateLogged;
     }
     const bool gate=paused || cursorWanted || !g_in3DGameplayMode;
