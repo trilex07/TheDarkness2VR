@@ -13,7 +13,17 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: X double tap + unarmed trigger D-pad
+## Current installed MAIN candidate: configurable X double tap (DoubleTapX)
+
+Authorized MAIN deployment completed 2026-10-31 20:12 Europe/Warsaw.
+- **Current DLL SHA256**: E7B6572AF8AF28BD7FBA4448E00BDE2C6A5F66C3079DFBB40796306791369B72 (protected-native)
+- **Source**: side/unarmed-trigger-dpad-on-installed b45c82b4
+- **Change**: [Input] DoubleTapX (read live on each X press) selects the double-tap button; default DPAD_RIGHT.
+- **INI change**: Steam Darkness2VR.ini gained the DoubleTapX=DPAD_RIGHT key plus two comment lines under [Input]; nothing else edited. Local AppData INI untouched.
+- **Package**: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/unarmed-doubletapx-20261031T201250148 (rollback restores 3DDC8B49 set, including the pre-edit INI).
+- **Validation**: MSVC x86 build PASS, host tests PASS, profile gate PASS; headset NOT RUN.
+
+## Previous MAIN candidate: X double tap + unarmed trigger D-pad (superseded)
 
 Authorized MAIN deployment completed 2026-10-31 19:54 Europe/Warsaw (DLL only, INIs untouched).
 - **Current DLL SHA256**: 3DDC8B499AA180D167CC20F22710293D96BA47C6A8F40A971CAAE420C5141FED (protected-native)
