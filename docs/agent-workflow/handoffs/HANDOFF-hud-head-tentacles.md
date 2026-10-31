@@ -149,3 +149,10 @@ NOT INSTALLED; current Steam DLL remains469F7B92. Deployment script updated to
 require that exact predecessor and latest nine-target rollback template.
 World-lighting root cause and fix remain OPEN. Required missing evidence is
 effective same-draw PS reconstruction/lighting matrices, not another VS-only shot.
+
+Installed sourcee901b6ab/DLLC306DA8A at2026-10-31 21:43 Europe/Warsaw after
+user confirmed game closed. Package:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/matched-header-20261031T214350385
+Full rollback in rollback/Restore.ps1. EXE/DLL identities PASS; four profiles
+and four caches preserved byte-for-byte. No game launch. Next user loads
+affected corridor and signals readiness for one capture with effective PS banks.

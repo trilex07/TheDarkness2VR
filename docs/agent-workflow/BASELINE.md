@@ -13,7 +13,16 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed diagnostic recorder correction (2026-10-31 21:30 Europe/Warsaw)
+## Current installed lighting diagnostic completion (2026-10-31 21:43 Europe/Warsaw)
+
+User confirmed game closed; authorized MAIN deployment completed without launch.
+- Source: `e901b6ab`, branch `codex/hud-head-tentacles`.
+- Installed DLL SHA256: `C306DA8AA8008514F1672BFC27628A799358A3C4AEE6B002241F2141A98A5C20` (protected-native).
+- Adds effective lighting PS constants, reserves lighting shader slots, excludes post-source restoration from hand upload witnesses. No lighting fix claimed.
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/matched-header-20261031T214350385`; full nine-target rollback in `rollback/Restore.ps1`.
+- Exact EXE/DLL verification PASS; four profiles and four caches preserved byte-for-byte. Gate39/validator32/build PASS offline. New capture acceptance pending.
+
+## Previous diagnostic recorder correction (2026-10-31 21:30 Europe/Warsaw)
 
 Authorized MAIN installation, game closed; no agent launch.
 - Source: `2f027f05`, branch `codex/hud-head-tentacles`.
