@@ -13,7 +13,18 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: configurable X double tap (DoubleTapX)
+## Current installed MAIN candidate: X double tap weapon toggle
+
+Authorized MAIN deployment completed 2026-10-31 20:25 Europe/Warsaw.
+- **Current DLL SHA256**: F5046F99AFBC266E68404FA743603522964EDF47DE9E0D1E5C44116EBF25D367 (protected-native)
+- **Source**: side/unarmed-trigger-dpad-on-installed 5b7b424f
+- **Behaviour**: DoubleTapX=TOGGLE: right-hand firearm two-handed -> DPAD_LEFT (back to one-handed), one-handed -> DPAD_RIGHT (two-handed), empty main hand -> DPAD_DOWN, unknown -> alternate. Empty-hand trigger mapping OFF (UnarmedTriggerDpad default 0).
+- **Evidence**: headset 20:21 confirmed DPAD_RIGHT selects the two-handed weapon and DPAD_LEFT returns to the uzi.
+- **INI change**: Steam Darkness2VR.ini DoubleTapX DPAD_RIGHT -> TOGGLE (+ comment). No other key edited.
+- **Package**: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/unarmed-toggle-20261031T202547062 (rollback restores E7B6572A set).
+- **Validation**: MSVC x86 build PASS (after renaming a lambda that collided with the Windows `small` macro), host tests PASS, profile gate PASS; headset NOT RUN.
+
+## Previous MAIN candidate: configurable X double tap (DoubleTapX) (superseded)
 
 Authorized MAIN deployment completed 2026-10-31 20:12 Europe/Warsaw.
 - **Current DLL SHA256**: E7B6572AF8AF28BD7FBA4448E00BDE2C6A5F66C3079DFBB40796306791369B72 (protected-native)
