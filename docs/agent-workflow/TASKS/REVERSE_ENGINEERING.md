@@ -1,5 +1,9 @@
 # Task Template: Reverse Engineering
 
+Start with root `AGENTS.md`; run read-only bootstrap with your actual MAIN/SIDE role.
+Use `handoffs/HANDOFF-<task-id>.md`; record the actual Git branch inside it.
+SIDE performs offline work only and never modifies or launches installed games.
+
 ## Goal
 [Find address/function/structure]
 

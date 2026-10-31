@@ -1,5 +1,9 @@
 # Task Template: Performance Optimization
 
+Start with root `AGENTS.md`; run read-only bootstrap with your actual MAIN/SIDE role.
+Use `handoffs/HANDOFF-<task-id>.md`; record the actual Git branch inside it.
+SIDE performs offline work only and never modifies or launches installed games.
+
 ## Goal
 [Optimize without breaking functionality]
 
@@ -15,8 +19,8 @@
 - Preserve rollback
 
 ## Checklist
-- [ ] Baseline measurements
+- [ ] Applicable retained baseline evidence identified; avoid unnecessary repeated baseline runs
 - [ ] No functional regressions
-- [ ] Tested in-game
+- [ ] Runtime result recorded by authorized MAIN, or explicitly NOT RUN at the SIDE gate
 - [ ] Evidence documented
 - [ ] Committed

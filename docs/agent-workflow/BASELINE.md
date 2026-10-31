@@ -1,60 +1,59 @@
-# Baseline
+# Baseline and current MAIN candidate
 
-**Accepted baseline** - update only when change is tested and accepted by MAIN.  
-**Do NOT assume Git `main` is the deployed baseline.**
+Recorded by MAIN on 2026-10-31. This file is a provenance snapshot, not a live
+Steam check or permission to deploy. Do not assume Git main is installed.
 
-## Accepted Steam Binary
-- **Installed DLL (Steam)**: `C:\Program Files (x86)\Steam\steamapps\common\Darkness II\d3d9.dll`
-- **Installed DLL SHA256**: 416F710996324C7572863F122E1A1F842A3DFEBE5D3316D055A5A857AA5F8F14
-- **Installed INI SHA256**: CFBBE0A850866E369535B79BF1F4D3A730B006278D39CA6050181E8DBCB36822
-- **Deployed DLL source commit**: unknown (exact build provenance not available)
-- **Last known good backup**: Check `d3d9.dll.off-*` in game dir (e.g. probe/lightfix/historyfix entries)
-- **Deployment**: MAIN only via `powershell -ExecutionPolicy Bypass -File .\build.ps1 -Install` (creates timestamped backups)
+## Accepted rollback baseline (retained, not currently installed)
+- **Accepted DLL SHA256**: 3FDEB05CD94D6FC4E14C6C446A2859DA5F9A9E832AF5348D4602E4A7EF03C3EA
+- **Accepted source commit**: 4a26aabdce15903eb5efe48bd707d47e200175e5
+- **Accepted rollback**: %LOCALAPPDATA%/Darkness2VR/packages/nvidia-warmup-73a461b0-20261030/rollback
 
-## Verified Source & Integration
-- **Verified source commit (for accepted build)**: unknown (documentation commit 1051c5c6 is not proven to be the deployed binary source)
-- **Integration branch (accepted)**: origin/main (1051c5c6). **Not guaranteed to match deployed DLL** - verify hashes.
-- **Repo DLL SHA256**: 9C96DC85F8F0B32C97411D71871A0E2FBBFA27C2818569F986AE78551A72334C
-- **Repo INI SHA256**: 76EF2369F50ACC7E94ECF7503A0C8BF4199221CDE49FAAB7F1D4652DB2C0E8C5
-- **Current workflow branch**: agent/workflow-optimization
-- **Workflow base**: Workflow-only changes; no unrelated runtime history pulled
+The retained rollback manifest verifies the DLL, all four INIs and four shader/
+warmup caches. Restore the complete matching package, not only a DLL with an
+incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
+stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Environment
-- **Game**: The Darkness II (Steam AppID 67370), x86 D3D9Ex, Evolution Engine
-- **Branch (current)**: agent/workflow-optimization
-- **Config (repo)**: SubmitMode=4, StereoMode=1, HeadGeometry=1, NativeTrackedHands=0
-- **Logs**: %LOCALAPPDATA%\Darkness2VR\d3d9.log
-- **Build**: `powershell -ExecutionPolicy Bypass -File .\build.ps1 -Install` (MAIN only)
+## Current installed MAIN candidate (provisional)
+- **Installed DLL SHA256**: 34641A8981444EA05723E6F5F3D669099F6FECD3ABC1142ED1C686C6E42EC232
+- **Installed INI SHA256**: 764EEADF2E5FB21E4F1A95B3884F39B8E75D3E94765CC10F74C9BCE5D5B8DF0B
+- **Installed local INI SHA256**: FE242875007DA0BFDCE05B99A15256A22256550609A934CB4BA2BE18E0D17020
+- **Deployed DLL source commit**: f24ced92f01823f070e1a2b9361d72b920ed6b92
+- **Verified source commit**: f24ced92f01823f070e1a2b9361d72b920ed6b92 (exact frozen diagnostic DLL/PDB/MAP build)
+- **Integration branch**: codex/main-single-owner-d3d9-validation
+- **Latest MAIN runtime evidence commit**: eab97b35
+- **Acceptance status**: StereoTransferWorker=4 retained provisionally; not unconditional acceptance or stable 90 FPS
+- **Current rollback**: %LOCALAPPDATA%/Darkness2VR/packages/single-owner-d3d9-20261031/rollback
 
-## Working Features (from latest accepted evidence)
-- [ ] D3D9Ex proxy, vtable hooks, OpenXR session/swapchains *(unverified)*
-- [ ] SubmitMode 2/3 cinema modes *(unverified)*
-- [ ] VR gamepad emulation *(unverified)*
-- [ ] SubmitMode 4 same-frame stereo (record+replay) *(unverified)*
-- [ ] Hotkeys: F6 StereoSep, F11 StereoConv, F10 cycle SubmitMode *(unverified)*
-- [ ] Native aim/weapon hooks (RC6/RC7 family) *(experimental/unverified - may be quarantined)*
+Current settings include ConsumedRecordCopy=1, StartupShaderPool=1,
+PipelineWarmup=1, StereoTransferWorker=4, NativeViewBoundary=3,
+NativeCameraCover=0, DirectRecordCopy=0, ReplayBufferVersions=0. Source defaults
+are not deployed settings. Read the current handoff/evidence before changing any.
 
-**Mark features as verified only after MAIN in-game testing with evidence.**
+One paired authorized mode-1/mode-4 test is already complete. Same diagnostic
+DLL, identical settings apart from mode, restored identical startup caches,
+warmup 1377/1377, zero PresentMon losses, real device flags 0x54 vs 0x50.
+Application interval mean 14.73 -> 13.73 ms; p95 18.09 -> 15.50 ms;
+p99 19.49 -> 16.96 ms. Qualified user feedback: visuals appear correct and the
+light collector no longer noticeably costs ~20 FPS. Both x86 builds and 19
+regression suites passed. No objective headset latency measurement.
 
-## Known Issues
-- True stereoscopic depth/6DoF not fully working in all cases
-- FOV override not active (RE incomplete) - missing top/bottom coverage
-- AFR rejected due to temporal mismatch
-- Bone matrix corruption if scanning beyond c0..c3
-- Some native hand patches quarantined/rejected (e.g. 66B3CA)
-- Lighting/shadow parity issues reported
-- Performance varies by scene
+## Current unresolved performance work
 
-## Experimental/Unverified Branches
-Many `codex/*`, `feature/*`, `research/*` branches exist - treat as experimental unless merged and accepted by MAIN with evidence.
+A 58.98 ms worst interval remains; the enclosing D3D9 producer-fence window
+reached 42.656 ms. Its exact driver dependency is unproven; do not identify it
+with the earlier 15.7 ms NVIDIA event or blame transfer ownership without proof.
+NativeSubmissionFilter/NativeBindingFilter fail closed equally in both runs
+(enabled=0, denied=0x12, skipped=0). No speculative cache/admission bypass.
 
-## Update Instructions
-When accepting a new baseline (MAIN only):
-1. Verify installed DLL hash in Steam game dir
-2. Record deployed DLL source commit if exact build provenance available
-3. Record integration branch
-4. Snapshot relevant INI settings/hashes
-5. Document tested features with evidence (logs/screens)
-6. Commit baseline update with evidence
-7. Never auto-assume Git `main` matches deployed binary
-8. Do not claim documentation commits as verified binary source
+Evidence: [MAIN comparison](../main-single-owner-d3d9-validation.md),
+[retained measurements](../validation/single-owner-d3d9-20261031.json).
+Continue [the performance handoff](handoffs/HANDOFF-single-owner-d3d9.md).
+Do not redo integration or repeat the completed paired capture by default.
+
+## Update rule
+
+MAIN updates this snapshot only from verified build/deployment identities and
+explicitly qualified runtime evidence. Documentation commits are not DLL source
+commits. SIDE may cite this file but never update accepted/deployed status,
+install files, launch Steam or perform in-game tests. No build/install/runtime
+smoke test is needed for documentation-only changes.

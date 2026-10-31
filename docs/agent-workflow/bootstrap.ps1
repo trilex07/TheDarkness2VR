@@ -1,103 +1,69 @@
-# Bootstrap script for Darkness2VR agent sessions
-# Reports baseline, branch, and active handoffs. Supports -Role and -Task.
-
+# Read-only session summary. No mkdir, fetch, build, install or Steam access.
 param(
-    [string]$RepoPath = "",
-    [ValidateSet("MAIN","SIDE")]
-    [string]$Role = "",
-    [string]$Task = ""
+    [string]$RepoPath = '',
+    [ValidateSet('MAIN','SIDE')][string]$Role = 'SIDE',
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')][string]$Task
 )
-
-# Resolve repo location dynamically
-if (-not $RepoPath) {
-    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-    $RepoPath = Resolve-Path (Join-Path $scriptDir "..\..") | Select-Object -ExpandProperty Path
+$ErrorActionPreference='Stop'
+if(-not $RepoPath){$RepoPath=Join-Path $PSScriptRoot '../..'}
+$RepoPath=(Resolve-Path -LiteralPath $RepoPath).Path
+function Read-Git([string[]]$Arguments,[switch]$Optional) {
+    $value=& git --no-optional-locks -C $RepoPath @Arguments
+    if($LASTEXITCODE -ne 0){
+        if($Optional){return '<unavailable>'}
+        throw ('Git read failed: '+($Arguments -join ' '))
+    }
+    return ($value -join "`n").Trim()
 }
-
-Write-Host "=== Darkness2VR Agent Bootstrap ===" -ForegroundColor Cyan
-Write-Host ""
-
-Push-Location $RepoPath
-try {
-    $branch = git branch --show-current 2>&1
-    $head = git rev-parse --short HEAD 2>&1
-    $originHead = git rev-parse --short origin/HEAD 2>&1
-    $mainHead = git rev-parse --short origin/main 2>&1
-    
-    Write-Host "Repo: $RepoPath" -ForegroundColor White
-    Write-Host "Branch: $branch" -ForegroundColor Green
-    Write-Host "HEAD: $head" -ForegroundColor Green
-    Write-Host "origin/HEAD: $originHead" -ForegroundColor Gray
-    Write-Host "origin/main: $mainHead" -ForegroundColor Gray
-    if ($Role) { Write-Host "Role: $Role" -ForegroundColor $(if($Role -eq "MAIN"){"Yellow"}else{"Cyan"}) }
-    if ($Task) { 
-        # Sanitize task for filename
-        $safeTask = $Task -replace '[^a-zA-Z0-9_-]', '_'
-        Write-Host "Task: $Task (safe: $safeTask)" -ForegroundColor Magenta 
-    }
-    Write-Host ""
-    
-    # Baseline - parse Markdown bullet fields
-    Write-Host "=== Baseline ===" -ForegroundColor Cyan
-    if (Test-Path "docs\agent-workflow\BASELINE.md") {
-        $baseline = Get-Content "docs\agent-workflow\BASELINE.md"
-        $patterns = @(
-            'Installed DLL SHA256',
-            'Installed INI SHA256',
-            'Deployed DLL source commit',
-            'Verified source commit',
-            'Integration branch',
-            'Latest MAIN',
-            'Repo DLL SHA256',
-            'Repo INI SHA256',
-            'Current workflow branch'
-        )
-        foreach ($p in $patterns) {
-            $line = $baseline | Where-Object { $_ -match "- \*\*$p\*\*:" -or $_ -match "- $p" } | Select-Object -First 1
-            if ($line) { Write-Host "  $($line.Trim())" }
-        }
-    } else {
-        Write-Host "  BASELINE.md not found" -ForegroundColor Red
-    }
-    Write-Host ""
-    
-    # Active handoffs - read only, no directory creation
-    Write-Host "=== Active Task Handoffs ===" -ForegroundColor Cyan
-    if (Test-Path "docs\agent-workflow\handoffs") {
-        $handoffs = Get-ChildItem "docs\agent-workflow\handoffs\*.md" -ErrorAction SilentlyContinue
-        if ($handoffs) {
-            foreach ($h in $handoffs) {
-                Write-Host "  $($h.Name)" -ForegroundColor Yellow
-                Get-Content $h.FullName -First 8 | Where-Object { $_ -match "^#|Date|Agent|Branch|Status|Goal|Role" } | ForEach-Object { Write-Host "    $_" }
-            }
-        } else {
-            Write-Host "  None (create HANDOFF-<task-id>-<branch>.md from HANDOFF-TEMPLATE.md)" -ForegroundColor Gray
-        }
-    } else {
-        Write-Host "  handoffs/ directory does not exist (read-only mode - not created)" -ForegroundColor Gray
-    }
-    Write-Host ""
-    
-    # Failed approaches
-    Write-Host "=== Failed Approaches (check before trying) ===" -ForegroundColor Cyan
-    if (Test-Path "docs\agent-workflow\FAILED-APPROACHES.md") {
-        Get-Content "docs\agent-workflow\FAILED-APPROACHES.md" | Select-String -Pattern "^###" | ForEach-Object { Write-Host "  $($_.Line)" }
-    }
-    Write-Host ""
-    
-    # Restrictions
-    Write-Host "=== Access Restrictions ===" -ForegroundColor Cyan
-    Write-Host "  MAIN ONLY: Steam launch, deployment, runtime testing, game install" -ForegroundColor Yellow
-    Write-Host "  SIDE ONLY: Offline (build, analyze, test locally). NEVER touch Steam/game files" -ForegroundColor Cyan
-    Write-Host ""
-    
-    Write-Host "=== Quick Start ===" -ForegroundColor Cyan
-    Write-Host "1. Read AGENTS.md" -ForegroundColor White
-    Write-Host "2. Read BASELINE.md (check accepted Steam binary + deployed DLL source commit)" -ForegroundColor White
-    Write-Host "3. Read/create your per-task handoff in handoffs/ (use Windows-safe filename)" -ForegroundColor White
-    Write-Host "4. Check FAILED-APPROACHES.md" -ForegroundColor White
-    Write-Host "5. Follow WORKFLOW.md" -ForegroundColor White
-    
-} finally {
-    Pop-Location
+$top=Read-Git -Arguments @('rev-parse','--show-toplevel')
+if([IO.Path]::GetFullPath($top) -ne [IO.Path]::GetFullPath($RepoPath)){
+    throw 'RepoPath must be the assigned worktree root'
 }
+$branch=Read-Git -Arguments @('branch','--show-current')
+if(-not $branch){$branch='(detached HEAD)'}
+$head=Read-Git -Arguments @('rev-parse','--short','HEAD')
+$originHead=Read-Git -Arguments @('for-each-ref','--format=%(objectname:short)','refs/remotes/origin/HEAD')
+if(-not $originHead){$originHead='<unavailable>'}
+$mainHead=Read-Git -Arguments @('for-each-ref','--format=%(objectname:short)','refs/remotes/origin/main')
+if(-not $mainHead){$mainHead='<unavailable>'}
+Write-Host '=== Darkness2VR Agent Bootstrap (READ ONLY) ==='
+Write-Host "Repo: $RepoPath"
+Write-Host "Branch: $branch"
+Write-Host "HEAD: $head"
+Write-Host "origin/HEAD: $originHead (informational, not deployment proof)"
+Write-Host "origin/main: $mainHead (informational, not deployment proof)"
+Write-Host "Role: $Role"
+if($Task){Write-Host "Task: $Task"}
+Write-Host '=== Baseline (recorded snapshot; no live Steam access) ==='
+$baseline=Join-Path $RepoPath 'docs/agent-workflow/BASELINE.md'
+$fields=@('Accepted DLL SHA256','Accepted source commit','Installed DLL SHA256',
+ 'Installed INI SHA256','Installed local INI SHA256','Deployed DLL source commit',
+ 'Verified source commit','Integration branch','Latest MAIN runtime evidence commit','Acceptance status')
+if(Test-Path -LiteralPath $baseline -PathType Leaf){
+    foreach($line in (Get-Content -LiteralPath $baseline -Encoding UTF8)){
+        if($line -match '^-\s+\*\*(?<key>[^*]+)\*\*:\s*(?<value>.+)$' -and $fields -contains $Matches.key){
+            Write-Host ("  {0}: {1}" -f $Matches.key,$Matches.value)
+        }
+    }
+}else{Write-Host '  BASELINE.md not found; do not assume a deployed source'}
+Write-Host '=== Per-task handoffs ==='
+$handoffDir=Join-Path $RepoPath 'docs/agent-workflow/handoffs'
+if($Task){
+    $handoff=Join-Path $handoffDir "HANDOFF-$Task.md"
+    Write-Host "Task handoff: $handoff"
+    if(Test-Path -LiteralPath $handoff -PathType Leaf){
+        Get-Content -LiteralPath $handoff -Encoding UTF8 -First 14 |
+            Where-Object {$_ -match '^#|^\*\*(Task ID|Date|Role|Branch|Status|Integration commit)\*\*:'} |
+            ForEach-Object {Write-Host "  $_"}
+    }else{Write-Host '  Not found; create manually from HANDOFF-TEMPLATE.md in this task worktree only'}
+}elseif(Test-Path -LiteralPath $handoffDir -PathType Container){
+    Get-ChildItem -LiteralPath $handoffDir -File -Filter 'HANDOFF-*.md' |
+        Sort-Object Name | ForEach-Object {Write-Host "  $($_.Name)"}
+}else{Write-Host '  No handoff directory; not created (read-only mode)'}
+Write-Host '=== Access rules ==='
+Write-Host 'MAIN: deployment/Steam/runtime testing only when explicitly authorized, with verified rollback.'
+Write-Host 'SIDE: offline only; NEVER modify installed game/Steam files, launch Steam or run in-game tests.'
+Write-Host 'Role selection grants no OS permissions; session restrictions and user instructions still apply.'
+Write-Host '=== Next ==='
+Write-Host 'Read AGENTS.md first, BASELINE.md, your HANDOFF-<task-id>.md and relevant FAILED-APPROACHES entries.'
+Write-Host 'Keep actual Git branch inside the handoff; never append it to the filename.'

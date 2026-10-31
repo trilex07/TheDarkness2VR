@@ -1,6 +1,9 @@
 # Failed Approaches Index
 
-Searchable index of approaches that failed. Add entries when trying something that doesn't work.
+Searchable historical evidence index. Add entries when an approach fails.
+Legacy lessons describe their original experiments, not current renderer
+contracts or permission to modify native registers. Revalidate against current
+source, BASELINE.md and the task handoff before applying them.
 
 ## Format
 ```
