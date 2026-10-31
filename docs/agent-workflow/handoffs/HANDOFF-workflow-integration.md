@@ -4,8 +4,8 @@
 **Date**: 2026-10-31
 **Role**: MAIN
 **Branch**: codex/main-single-owner-d3d9-validation
-**Status**: Validated; integration commit pending
-**Integration commit**: pending
+**Status**: Done; workflow infrastructure work stopped
+**Integration commit**: 7460e56579e1979d213e763693ec0b0dfbec41fb
 **Worktree**: C:/Users/Trilex/.codex/worktrees/main-render-cpu-next/Darkness2VR
 **Baseline**: accepted rollback 4a26aabd; installed provisional DLL source f24ced92; runtime evidence eab97b35
 
@@ -32,6 +32,7 @@ INI, deployment artifacts or other worktree writes. No Steam launch/deployment
 or VR tests performed. Existing untracked Python caches left untouched.
 
 ## Next
-Record integration commit and push. Then stop workflow infrastructure work and
-resume HANDOFF-single-owner-d3d9.md. 25c63092 is already integrated and the paired
-runtime comparison already completed; do not duplicate that work.
+Integration commit pushed; this handoff records its hash in a follow-up docs commit.
+Resume HANDOFF-single-owner-d3d9.md. 25c63092 is already integrated and the paired
+runtime comparison already completed; do not duplicate that work. No further
+workflow infrastructure changes are pending.

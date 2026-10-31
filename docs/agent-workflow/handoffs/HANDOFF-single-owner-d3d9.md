@@ -7,6 +7,7 @@
 **Status**: Integration and paired test complete; candidate provisional
 **Integration commit**: f24ced92f01823f070e1a2b9361d72b920ed6b92
 **Runtime evidence commit**: eab97b35
+**Workflow integration commit**: 7460e56579e1979d213e763693ec0b0dfbec41fb
 **Worktree**: C:/Users/Trilex/.codex/worktrees/main-render-cpu-next/Darkness2VR
 **Baseline**: accepted rollback 4a26aabd; current candidate f24ced92
 
