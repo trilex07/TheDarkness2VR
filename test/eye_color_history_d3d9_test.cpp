@@ -69,6 +69,38 @@ int main(int argc,char**) {
             ++checked;
         }
         g_rightColorHistory.Release();
+        // Exercise the new adopted-history implementation on a real driver.
+        // This validates D3D9 pixels/order, not D3D9Ex/D3D11 interop fences.
+        auto capture=Target(dev,w,h);
+        for(unsigned i=0;i<4;++i) {
+            const D3DCOLOR right=0xff123400+i,left=0xff560000+i;
+            Fill(dev,target,right);
+            g_rightHistoryFromCapture=true;
+            CHECK(FinishRightEyeHistory(dev,target,true,true));
+            g_rightHistoryFromCapture=false;
+            CHECK(SUCCEEDED(dev->StretchRect(target,nullptr,capture,nullptr,D3DTEXF_NONE)));
+            CHECK(CompleteRightEyeHistory(dev,target,capture));
+            CHECK(g_rightColorHistory.adopted && g_rightColorHistory.pixels==capture);
+            Fill(dev,target,left);
+            CHECK(SeedRightEyeBackground(dev,target,false));
+            // No readback/fence between seed and overwrite: test queued ordering.
+            // Seed is queued before the next overwrite of the aliased slot.
+            Fill(dev,capture,left);Pixels(dev,target,right);
+            RECT partial{0,0,8,8};CHECK(SUCCEEDED(dev->ColorFill(target,&partial,0xffabcdef)));
+            // Failed/non-mirroring capture must detach and save RT0 instead.
+            CHECK(CompleteRightEyeHistory(dev,target,nullptr));
+            CHECK(!g_rightColorHistory.adopted && g_rightColorHistory.pixels!=capture);
+            Fill(dev,capture,0xff998877);Fill(dev,target,left);
+            CHECK(SeedRightEyeBackground(dev,target,false));Pixels(dev,target,right,true);
+            CHECK(CompleteRightEyeHistory(dev,target,capture));
+            CHECK(!FinishRightEyeHistory(dev,target,false,true));
+            CHECK(g_rightColorHistory.rejected && !g_rightColorHistory.pixels);
+            CHECK(!SeedRightEyeBackground(dev,target,false));
+            CHECK(SeedRightEyeBackground(dev,target,true));
+        }
+        // Reset must release the adopted COM reference before its slot owner.
+        CHECK(CompleteRightEyeHistory(dev,target,capture));
+        g_rightColorHistory.Release();capture->Release();
         // System-memory sources cannot be StretchRect sources: verify actual
         // driver rejection invalidates history and fresh world replay recovers.
         IDirect3DSurface9* invalid=nullptr;
@@ -83,5 +115,5 @@ int main(int argc,char**) {
         CHECK(!g_rightColorHistory.rejected);
     }
     dev->Release();api->Release();DestroyWindow(window);FreeLibrary(dll);
-    std::printf("PASS actual-source x86 D3D9 %s history: %u cycles; full pixel readback, UI overlay, failed segment rejection/recovery, native2676x2728, real invalid-copy rejection and three Reset cycles; no game/XR/FPS evidence\n",argc>1?"HAL":"REF",checked);
+    std::printf("PASS actual-source x86 D3D9 %s history: %u cycles; full pixel readback, UI overlay, failed segment rejection/recovery, native2676x2728, real invalid-copy rejection, adopted-history/overwrite/fallback/rejection and three Reset cycles; no game/XR/FPS evidence\n",argc>1?"HAL":"REF",checked);
 }
