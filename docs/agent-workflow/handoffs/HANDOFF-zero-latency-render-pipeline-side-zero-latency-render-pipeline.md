@@ -1,3 +1,7 @@
+# STATUS: SUPERSEDED (2026-10-31)
+
+Superseded by MAIN single-owner D3D9 mode 4 (f24ced92/eab97b35) and SIDE task side/nvidia-producer-fence-hitch. Do not reimplement split capture or merge this outdated renderer.
+
 # Handoff: Zero-Latency Render Pipeline Optimization (SIDE)
 
 **Date**: 2026-10-31
