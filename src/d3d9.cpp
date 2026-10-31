@@ -4558,7 +4558,7 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
         // Native firearm kind does not follow the selected weapon (headset 20:35: right=5
         // for both the uzi and the two-handed weapon), so TOGGLE alternates RIGHT/LEFT.
         if(toggle) bits=d2vr_input::ToggleTarget(d2vr_input::WeaponClass::Unknown,mainHand,lastToggle);
-        if(strcmp(targetName,value) || bits!=target) Log("[DoubleTapDpad] DoubleTapX=%s -> buttons=0x%04X",value,bits);
+        if(strcmp(targetName,value) || bits!=target) Log("[DoubleTapDpad] DoubleTapX=%s -> buttons=0x%04X (TOGGLE alternates RIGHT/LEFT)",value,bits);
         target=bits; strcpy_s(targetName,value);
     }
     prevX=xNow;
