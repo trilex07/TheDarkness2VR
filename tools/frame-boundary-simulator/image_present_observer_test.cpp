@@ -20,6 +20,7 @@ static const FixtureStats* stats=nullptr;
 static bool timingEnabled=true,forwardActive=false,expectedQualified=true;
 static bool createCallerQualified=true,presentCallerQualified=true;
 static bool createOnlyMainCaller=false;
+static bool earlyForward=false;static unsigned earlyForwards=0;
 static std::vector<std::string> receipts;
 static unsigned expectedReceiptNative=0,expectedReceiptCreates=0;
 static void receiptLog(const char* format,...) {
@@ -60,7 +61,8 @@ static bool qualifies(d2vr_image_present::Method method,uintptr_t caller) {
 }
 static void before(IDirect3DSwapChain9* sc,uintptr_t caller,bool native,bool ready) {
     assert(native==expectedQualified && phase==0 && !forwardActive);phase=1;
-    if(!ready) return;
+    if(!ready) {assert(!d2vr_image_present::Observer::ForwardEarly());return;} // unready/unqualified: never
+
     assert(observer.InPresentation() && observer.Ready());
     assert(sc->GetDevice(&borrowed)==S_OK && borrowed);
     d2vr_frame::Event event{};event.type=d2vr_frame::EventType::SwapChainPresent;
@@ -68,6 +70,17 @@ static void before(IDirect3DSwapChain9* sc,uintptr_t caller,bool native,bool rea
     auto decision=boundary.OnEvent(event);assert(decision.requestVrFrame);++frame;
     assert(witness.Enter("SwapChainPresent",reinterpret_cast<uintptr_t>(borrowed),caller,event.threadId,frame));
     ++rendered;
+    if(earlyForward) {
+        // Forward inside before(): the native leaf runs exactly once, now, with
+        // the original arguments; a second request and the post-before() path
+        // must not forward again (fixture argument/count checks enforce it).
+        const auto prior=stats->native;const auto priorSamples=observer.forwardSamples.load();
+        assert(d2vr_image_present::Observer::ForwardEarly());
+        assert(stats->native==prior+1 && observer.forwarded.load()==observer.returned.load());
+        assert(observer.forwardSamples.load()==priorSamples+1);
+        assert(!d2vr_image_present::Observer::ForwardEarly() && stats->native==prior+1);
+        ++earlyForwards;
+    }
 }
 static void after(IDirect3DSwapChain9*,uintptr_t,bool native,bool ready,HRESULT hr) {
     assert(native==expectedQualified && !forwardActive && phase==((timingEnabled && native)?3u:1u));
@@ -96,6 +109,7 @@ int main(int argc,char** argv) {
     auto expect=reinterpret_cast<void(__cdecl*)(const RECT*,const RECT*,HWND,const RGNDATA*,DWORD,HRESULT)>(GetProcAddress(dll,"FixtureExpect"));
     assert(deviceFn && counters && expect);auto device=deviceFn();stats=counters();
     timingEnabled=!(argc>2 && !std::strcmp(argv[2],"timing-disabled"));
+    earlyForward=argc>2 && !std::strcmp(argv[2],"early-forward");
     const bool receiptTest=argc>2 && !std::strcmp(argv[2],"unqualified-create");
     d2vr_image_present::Callbacks callbacks{qualifies,before,after,receiptTest?receiptLog:nullptr};
     if(timingEnabled) {callbacks.forwardBegin=forwardBegin;callbacks.forwardEnd=forwardEnd;}
@@ -267,5 +281,10 @@ int main(int argc,char** argv) {
     last->Release();assert(TextSnapshot()==text);
     assert(!forwardActive && phase==0 && forwardStarts==forwardEnds);
     assert(forwardStarts==(timingEnabled?observer.nativePresents.load():0));
+    assert(!d2vr_image_present::Observer::ForwardEarly()); // outside any Present
+    if(earlyForward) {
+        assert(earlyForwards==rendered && earlyForwards>0);
+        std::printf("PASS early forward inside before(): %u frames, one native leaf each, HRESULT/args/timing/receipt order unchanged\n",earlyForwards);
+    }
     std::printf("PASS x86 native DLL entry/trampoline ABI: native=%u frames=%u accepted=%u; base/Ex/private slots, 1000 release/recreate cycles, Reset, statuses, recursive overlay rejection; EXE text unchanged\n",counters()->native,rendered,accepted);
 }

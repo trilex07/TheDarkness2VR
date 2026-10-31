@@ -8,6 +8,7 @@
 #include <utility>
 #include <intrin.h>
 #include "native_image_guard.h"
+#include "present_overlap.h"
 #include "../third_party/minhook/include/MinHook.h"
 
 namespace d2vr_image_present {
@@ -57,6 +58,26 @@ class Observer {
         }
     };
     inline static thread_local Path path_{};
+    // The qualified, ready OUTER Present on this thread may be forwarded once
+    // from inside before() (right-eye GPU wait overlap). Null everywhere else.
+    struct Forward {
+        Observer* self; Present next; IDirect3DSwapChain9* sc; const RECT* a; const RECT* b;
+        HWND w; const RGNDATA* r; DWORD flags; bool measure;
+        HRESULT operator()() const {
+            ++self->forwarded;
+            if(measure) self->cb_.forwardBegin();
+            LARGE_INTEGER begin{},end{};QueryPerformanceCounter(&begin);
+            const HRESULT hr=next(sc,a,b,w,r,flags);
+            QueryPerformanceCounter(&end);
+            if(measure) self->cb_.forwardEnd();
+            self->lastForwardTicks.store(uint64_t(end.QuadPart-begin.QuadPart),std::memory_order_relaxed);
+            self->forwardSamples.fetch_add(1,std::memory_order_release);
+            ++self->returned;
+            return hr;
+        }
+    };
+    struct Early { d2vr_present_overlap::Slot slot; const Forward* forward=nullptr; };
+    inline static thread_local Early* early_=nullptr;
     template<unsigned I> static __declspec(noinline) HRESULT STDMETHODCALLTYPE CreateThunk(
         IDirect3DDevice9* d,D3DPRESENT_PARAMETERS* p,IDirect3DSwapChain9** s) {
         return instance_.load(std::memory_order_acquire)->OnCreate(I,d,p,s,reinterpret_cast<uintptr_t>(_ReturnAddress()));
@@ -158,14 +179,17 @@ class Observer {
             if(thread_.load()!=current) Fail("native presentation changed thread without Reset");
         }
         const bool ready=qualified && Ready();
-        if(outer && cb_.before) cb_.before(sc,caller,qualified,ready);
         auto next=reinterpret_cast<Present>(entries_[index].next.load(std::memory_order_acquire));
         const bool measureForward=qualified && cb_.forwardBegin && cb_.forwardEnd;
-        ++forwarded;
-        if(measureForward) cb_.forwardBegin();
-        const HRESULT hr=next(sc,a,b,w,r,flags);
-        if(measureForward) cb_.forwardEnd();
-        ++returned;
+        const Forward forward{this,next,sc,a,b,w,r,flags,measureForward};
+        Early early{};early.forward=&forward;early.slot.armed=outer && qualified && ready;
+        Early* const previousEarly=early_;early_=&early;
+        struct Restore {Early* previous;~Restore(){early_=previous;}} restoreEarly{previousEarly};
+        if(outer && cb_.before) cb_.before(sc,caller,qualified,ready);
+        early_=previousEarly; // no forward-early after before() returns
+        // Exactly one original forward per outer call: early inside before(),
+        // or here, with identical counters, timing brackets and HRESULT.
+        const HRESULT hr=d2vr_present_overlap::Finish(early.slot,forward);
         if(hr==D3D_OK) ++ok;else if(FAILED(hr)) ++errors;else ++statuses;
         if(qualified) {
             ++nativePresents;
@@ -184,6 +208,14 @@ class Observer {
     }
 public:
     std::atomic<uint64_t> entries{0},forwarded{0},returned{0},recursive{0},ok{0},statuses{0},errors{0},nativePresents{0};
+    // QPC ticks of the last original forward (any outer path) and its sequence.
+    std::atomic<uint64_t> lastForwardTicks{0},forwardSamples{0};
+    // Called only from inside before() of the qualified, ready outer native
+    // Present on this thread. Returns false (nothing done) anywhere else.
+    static bool ForwardEarly() {
+        Early* early=early_;
+        return early && early->forward && d2vr_present_overlap::Early(early->slot,*early->forward);
+    }
     bool Start(IDirect3DDevice9* device,d2vr_native_image::Guard guard,Callbacks callbacks) {
         if(!device || !guard.enabled || instance_.load(std::memory_order_acquire)) return false;
         guard_=guard;cb_=callbacks;

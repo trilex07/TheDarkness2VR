@@ -19,6 +19,8 @@ try {
     if($LASTEXITCODE -ne 0){throw 'observer tests failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll') timing-disabled
     if($LASTEXITCODE -ne 0){throw 'disabled forwarding timing failed'}
+    & .\observer-test.exe (Join-Path $outDir 'fixture.dll') early-forward
+    if($LASTEXITCODE -ne 0){throw 'early forward inside before() failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll') unqualified-create
     if($LASTEXITCODE -ne 0){throw 'bounded acquisition/admission receipts failed'}
     & .\observer-test.exe (Join-Path $outDir 'fixture.dll') late-create-wrapper

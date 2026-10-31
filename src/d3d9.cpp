@@ -603,6 +603,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 static bool g_deferStereoTransferReader = false; // startup-only; exact reader fence before shared reuse
+static bool g_overlapNativePresent = false; // startup-only; protected mode 4: mirror Present inside right-eye GPU wait
 static int g_stereoTransferMode = 0; // 0 baseline,1 D3D9/11 worker,2 serial MT control,3 owner-wait D3D11 worker,4 single-owner overlap
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
@@ -768,6 +769,8 @@ void LoadConfig() {
     g_stereoTransferMode = GetPrivateProfileIntA("Render", "StereoTransferWorker", 0, chosenIni);
     g_deferStereoTransferReader = GetPrivateProfileIntA("Render", "DeferStereoTransferReader", 0, chosenIni)!=0;
     Log("[StereoTransferWorker] deferReader=%d requires worker mode=1, 3 or 4 and LastConsumerReaderFence=1",int(g_deferStereoTransferReader));
+    g_overlapNativePresent = GetPrivateProfileIntA("Render", "OverlapNativePresent", 0, chosenIni)!=0;
+    Log("[PresentOverlap] requested=%d; protected mode 4 only: native mirror Present forwarded inside the measured right-eye GPU wait, OpenXR order unchanged",int(g_overlapNativePresent));
     if(g_stereoTransferMode<0 || g_stereoTransferMode>4) g_stereoTransferMode=0;
     Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control; 3=owner waits before handoff; 4=single-owner overlap, native D3D9 flags)",g_stereoTransferMode);
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
@@ -3518,6 +3521,51 @@ static void NativeCameraCaptureChanged() {
 #endif
 // Explicit Reset cleanup; avoid COM destruction from static teardown/DllMain.
 static d2vr_replay::DeviceSnapshot* g_liveEndSnapshot=nullptr;
+#ifdef D2VR_MATCHED_CAPTURE
+// Right-eye GPU wait overlap (see present_overlap.h). Every pair command,
+// including the live-colour restore and live-end state, is queued before this
+// point; OpenXR submission still follows the unchanged producer drain.
+static d2vr_present_overlap::Policy g_presentOverlap;
+static uint64_t g_presentOverlapSeenSample = 0;
+struct PresentOverlapSample { bool eligible=false, forwarded=false, completedDuringPresent=false; double presentMs=0; };
+static double PresentOverlapMs(LONGLONG ticks) {
+    static LARGE_INTEGER frequency{};
+    if(!frequency.QuadPart) QueryPerformanceFrequency(&frequency);
+    return frequency.QuadPart ? ticks*1000.0/frequency.QuadPart : -1.0;
+}
+static PresentOverlapSample OverlapNativePresent(d2vr_transfer::Pending& right) {
+    PresentOverlapSample sample{};
+    // An armed matched frame capture keeps its exact original Present ordering.
+    if(!g_overlapNativePresent || !g_imagePreservingPresent || g_stereoTransferMode!=4 || !right.Staged() ||
+       matched_capture::active)
+        return sample;
+    sample.eligible=true;
+    // Plain-frame Present durations arrive one frame later from the observer.
+    const uint64_t seen=g_imagePresent.forwardSamples.load(std::memory_order_acquire);
+    if(seen!=g_presentOverlapSeenSample) {
+        g_presentOverlapSeenSample=seen;
+        g_presentOverlap.ObservePresent(PresentOverlapMs(LONGLONG(g_imagePresent.lastForwardTicks.load(std::memory_order_relaxed))));
+    }
+    if(!g_presentOverlap.Allow() || right.Poll()!=S_FALSE) return sample; // nothing to hide, or Finish owns the error
+    if(!d2vr_image_present::Observer::ForwardEarly()) return sample;        // not inside the qualified outer Present
+    sample.forwarded=true;
+    g_presentOverlapSeenSample=g_imagePresent.forwardSamples.load(std::memory_order_acquire);
+    sample.presentMs=PresentOverlapMs(LONGLONG(g_imagePresent.lastForwardTicks.load(std::memory_order_relaxed)));
+    sample.completedDuringPresent=right.Poll()!=S_FALSE;
+    return sample;
+}
+static void ObservePresentOverlap(const PresentOverlapSample& sample,LONGLONG waitTicks) {
+    if(!sample.eligible) return;
+    const double waitMs=PresentOverlapMs(waitTicks);
+    if(sample.forwarded) g_presentOverlap.ObserveOverlapped(sample.presentMs,waitMs,sample.completedDuringPresent);
+    else g_presentOverlap.ObserveWait(waitMs);
+    static unsigned pairs=0;
+    if(++pairs%600==0)
+        Log("[PresentOverlap] allowed=%d overlapped=%llu plain=%llu overruns=%llu waitEma=%.3fms presentEma=%.3fms cooldown=%u",
+            int(g_presentOverlap.Allow()),g_presentOverlap.overlapped,g_presentOverlap.plain,g_presentOverlap.overruns,
+            g_presentOverlap.WaitEma(),g_presentOverlap.PresentEma(),g_presentOverlap.Cooldown());
+}
+#endif
 static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     if(g_stereoTransferFault) { d2vr_replay::g_recActive=false; g_eyePairReady=false; return; }
 #ifdef D2VR_MATCHED_CAPTURE
@@ -3708,7 +3756,14 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     liveEnd.Release(g_reuseStateSnapshots);
     // Return the worker's context lease before XR/NIS or capture readback.
     // A deferred GPU reader remains retained until shared reuse/Reset fences it.
+#ifdef D2VR_MATCHED_CAPTURE
+    const PresentOverlapSample presentOverlap=OverlapNativePresent(rightTransfer);
+    const LONGLONG rightWaitBegin=d2vr_transfer::Job::Clock();
+#endif
     if(rightTransfer.Active()) eye1Ok=FinishStereoTransfer(rightTransfer,rightJob,rightCapture) && eye1Ok;
+#ifdef D2VR_MATCHED_CAPTURE
+    ObservePresentOverlap(presentOverlap,d2vr_transfer::Job::Clock()-rightWaitBegin);
+#endif
     rightJob.reset();
     QueryPerformanceCounter(&perf[3]);
 
