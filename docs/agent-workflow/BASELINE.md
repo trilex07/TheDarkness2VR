@@ -13,7 +13,20 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: X double tap toggle + left trigger DOWN/UP
+## Current installed MAIN candidate: native HUD / head-attached tentacles
+
+Authorized MAIN deployment: 2026-10-31 21:03 Europe/Warsaw. User launches manually.
+- **DLL SHA256**: 155D6A427E4D53AD5EBEAE206E17C4A7F755ABBD4FEBC2C8D5629FAFF48D1AE1 (protected-native)
+- **Source**: codex/hud-head-tentacles, implementation 5e70b9db on main cb795d58.
+- **Changes**: native owned HudStatus visibility override; existing mesh-scoped HeadAttachedTentacles enabled, preserving its acquisition/hold exclusion. Both primary INIs set HideNativeHUD=1 and HeadAttachedTentacles=1. All other settings retained.
+- **Package/rollback**: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/hud-head-tentacles-20261031T210354632; rollback/Restore.ps1 restores nine SHA-verified predeployment targets.
+- **Validation**: standard/protected x86 builds, HUD467, actual tentacle26629, six production EXE pins, profile gate and installed hashes/INI read-back PASS. No game launch or HMD acceptance; this is a candidate, not an accepted baseline.
+- **Handoff**: docs/agent-workflow/handoffs/HANDOFF-hud-head-tentacles.md.
+
+- **Current INI SHA256** (`C:\Program Files (x86)\Steam\steamapps\common\Darkness II\Darkness2VR.ini`): 12E6E973384074DADF6C5D31A7A4EFB19541643471A0DEEFCA32C5F0493ED635
+- **Current INI SHA256** (`C:\Users\Trilex\AppData\Local\Darkness2VR\Darkness2VR.ini`): 9501909EE3820B181D3C4184FEC388C19B27E9A2190C082860C5CB64F30B6C01
+
+## Previous MAIN candidate: X double tap toggle + left trigger DOWN/UP
 
 Authorized MAIN deployment completed 2026-10-31 20:41 Europe/Warsaw (DLL only).
 - **Current DLL SHA256**: 6CA7A1F5A40E29FBD7451CD7051D72C170D9FF33C16CE589ED968A882541AF80 (protected-native)
