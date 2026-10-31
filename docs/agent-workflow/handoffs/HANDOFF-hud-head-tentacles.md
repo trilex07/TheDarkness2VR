@@ -92,3 +92,33 @@ Full rollback in rollback/Restore.ps1. Game closed; exact EXE/DLL checks PASS;
 all four profiles and four caches preserved byte-for-byte. No game launch.
 Next: user launches and loads the affected corridor, then authorizes/readies
 one matched capture with the corrected recorder. No lighting fix claimed.
+
+## Runtime request102: camera timing fixed, full validator still rejects
+User loaded affected corridor; one request on PID35604/renderTID21232 captured
+XRframe5396 at C:/Users/Trilex/AppData/Local/Temp/Darkness2VR-matched-35604-102-5396.
+Exact installed DLL469F7B92/stock EXE verified. Original diagnostic bytes restored;
+backup C:/Users/Trilex/AppData/Local/Darkness2VR/captures/world-light-20261031T213541736.
+Both source/final eyes, 508 draws/eye, 8 stages/255504480 budgeted bytes and
+original Present success receipt exist. Header now matches camera_frame5396;
+no previous native-camera timing rejection. Source-eye0 inspected: correct
+station corridor, contextual hint remains visible. No lighting acceptance.
+
+Full check_matched_capture.py rejects `invalid hand skin upload identity`.
+Four hand_skin_upload rows occur AFTER source-eye0 (manifest rows2711/2712,
+5288/5289, zero-based), caller6449DD1E, null EXE RVA, before_draw508; these are
+128-vector renderer restoration uploads misclassified as live-eye skin data.
+BeginMatchedSkinUpload only excludes replayEye>=0; after replay/restore it can
+be -1 again. Keep validator strict; do not modify raw records or call full
+package valid. No automatic repeat of this request. Source correction should
+exclude post-source/internal restore uploads with actual-source regression.
+
+Stage01 ends draw191, VS68EEE79C, PS C4D1FB10 (shadow reconstruction).
+Private shader-preload archive contains bytecode with matching FNV32;
+shader C4D1FB10 SHA256=7fb0cc4d119b3f93336344f4d44bb3907d79465371fa3ef5d67c4062734bb751.
+This is archive provenance, not a direct same-draw shader bytecode witness.
+Offline D3DDisassemble confirms VS c0 WVP/c4 ScreenTextureProjection and
+PS c27 InverseProjection/c16 ShadowMapTextureProjection, depth sampler0,
+shadow sampler4. The stage shader budget32 exhausted before these shaders.
+Existing draw banks contain only VS constants, not effective PS matrices.
+Need second same-position head pose for comparison; async readiness requested.
+No further DLL/config render changes made. Capture readbacks are not FPS evidence.
