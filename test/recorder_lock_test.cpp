@@ -47,5 +47,15 @@ int main(){
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         CHECK(!got);l.unlock();w.join();CHECK(got);CHECK(!l.Held());
     }
+#if defined(_WIN32)
+    { // Semaphore creation failure uses one consistent blocking backend.
+        Lock fallback(true);long long value=0;std::vector<std::thread> workers;
+        for(unsigned t=0;t<8;++t)workers.emplace_back([&]{
+            for(unsigned i=0;i<20000;++i){fallback.lock();++value;fallback.unlock();}
+        });
+        for(auto& worker:workers)worker.join();
+        CHECK(value==160000);CHECK(fallback.try_lock());fallback.unlock();
+    }
+#endif
     printf("recorder_lock_test: %llu checks passed\n",checks);
 }

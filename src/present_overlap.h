@@ -10,7 +10,8 @@
 // and every pair command is already queued ahead of it. Forwarding it inside
 // the wait hides its CPU wall time without moving any OpenXR call.
 //
-// Zero added latency is enforced by measurement, not assumed: overlap is only
+// Admission uses previous measurements; it cannot guarantee zero added latency.
+// Overlap is only
 // admitted while the measured wait exceeds the measured Present by a margin,
 // and any frame where the GPU finished before the early Present returned
 // (possible delay of xrEndFrame) backs off and re-measures plain frames.
@@ -58,6 +59,7 @@ public:
 struct Slot { bool armed=false,done=false; long result=0; };
 template<class Forward> bool Early(Slot& slot,Forward&& forward) {
     if(!slot.armed || slot.done) return false;
+    slot.armed=false; // disarm BEFORE entering native code: it may reenter
     slot.result=forward(); slot.done=true; return true;
 }
 template<class Forward> long Finish(Slot& slot,Forward&& forward) {

@@ -9,6 +9,17 @@ using d2vr_present_overlap::Policy;
 static unsigned checks=0;
 #define C(x) do{CHECK(x);++checks;}while(0)
 int main() {
+    { // A callback inside the native forward must never forward this slot twice.
+        d2vr_present_overlap::Slot slot;slot.armed=true;unsigned forwards=0;
+        CHECK(d2vr_present_overlap::Early(slot,[&]()->long {
+            ++forwards;
+            CHECK(!d2vr_present_overlap::Early(slot,[&]()->long{++forwards;return 7;}));
+            return -9;
+        }));
+        CHECK(d2vr_present_overlap::Finish(slot,[&]()->long{++forwards;return 0;})==-9);
+        CHECK(forwards==1);
+    }
+
     // Warm-up: no overlap before both EMAs have kWarmup plain samples.
     {
         Policy p;
@@ -60,8 +71,9 @@ int main() {
             auto fwd=[&]{++calls;return hr;};
             Slot s;s.armed=(trial&1)!=0;
             const bool early=(trial&2)!=0;
+            const bool armedAtEntry=s.armed;
             const bool did=early && Early(s,fwd);
-            C(did==(early && s.armed));
+            C(did==(early && armedAtEntry));
             if(did) C(!Early(s,fwd));                 // never a second early forward
             const unsigned beforeFinish=calls;
             C(Finish(s,fwd)==hr);

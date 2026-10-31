@@ -13,7 +13,7 @@ need("inline Lock mutex;" in sync, "recorder mutex must be d2vr_record_sync::Loc
 need("SRWLock" not in sync and "SRWLOCK" not in sync.split("//")[0], "no SRW calls left on the recorder mutex")
 need(sync.count("mutex.lock()") == 2 and sync.count("mutex.unlock()") == 3,
      "Acquire/Resume lock; Release/RecoverReplayException/DriverScope unlock")
-need("WaitForSingleObject(h,INFINITE)" in lock and "CreateSemaphoreW" in lock,
+need("WaitForSingleObject(semaphore_,INFINITE)" in lock and "CreateSemaphoreW" in lock,
      "contended waiters must block in the kernel, not spin unbounded")
 need(re.search(r"for\(unsigned spin=0;spin<\d+;", lock) is not None, "spin phase must be bounded")
 need("exchange(0,std::memory_order_release)==2" in lock, "unlock must wake when waiters are announced")
