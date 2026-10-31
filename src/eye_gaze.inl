@@ -245,18 +245,44 @@ static void ApplyGazeMenuCursor() {
         if(mouse!=loggedMouse) { loggedMouse=mouse; Log("[GazeMenu] mouse device %08X%s",mouse,mouse ? "" : " unavailable; cursor not moved"); }
     }
     if(!mouse) return;
-    using SetPos=void(__thiscall*)(void*,int,int);
+    // Mode 2 (default): Flash highlights only on decoded mouse MOVE events
+    // (headset 00:49: native position matched the gaze, nothing highlighted).
+    // Send real relative mouse input and let the game's own DirectInput
+    // decoder (8A1470) move its cursor; closed loop on the native position.
+    // Mode 1: direct native setter (position only, no events).
+    int nativeX=0,nativeY=0; BYTE acquiredNow=0;
     __try {
         if(*(DWORD*)mouse!=0xFC00C8) { mouse=0; return; }
-        reinterpret_cast<SetPos>(0xC4B690)(reinterpret_cast<void*>(mouse),x,y);
-    } __except(EXCEPTION_EXECUTE_HANDLER) { mouse=0; Log("[GazeMenu] cursor setter faulted; device dropped"); return; }
+        nativeX=*(int*)(mouse+0x21C); nativeY=*(int*)(mouse+0x220); acquiredNow=*(BYTE*)(mouse+7);
+    } __except(EXCEPTION_EXECUTE_HANDLER) { mouse=0; return; }
+    if(g_gazeMenuMode==1) {
+        using SetPos=void(__thiscall*)(void*,int,int);
+        __try { reinterpret_cast<SetPos>(0xC4B690)(reinterpret_cast<void*>(mouse),x,y); }
+        __except(EXCEPTION_EXECUTE_HANDLER) { mouse=0; Log("[GazeMenu] cursor setter faulted; device dropped"); return; }
+    } else {
+        // Only while the game owns the foreground and its mouse is acquired, so
+        // the desktop cursor of another application is never moved.
+        DWORD fgPid=0; GetWindowThreadProcessId(GetForegroundWindow(),&fgPid);
+        if(fgPid!=GetCurrentProcessId() || !acquiredNow) {
+            static ULONGLONG warned=0;
+            if(now-warned>5000) { warned=now; Log("[GazeMenu] relative input skipped: foreground pid=%lu acquired=%d",fgPid,int(acquiredNow)); }
+            filter.Reset(); return;
+        }
+        int dx=x-nativeX, dy=y-nativeY;
+        if(std::abs(dx)<3 && std::abs(dy)<3) return;
+        // Half the error per tick: converges even if the game scales deltas.
+        dx=std::clamp(dx/2+(dx>0)-(dx<0),-150,150); dy=std::clamp(dy/2+(dy>0)-(dy<0),-150,150);
+        INPUT in{}; in.type=INPUT_MOUSE; in.mi.dx=dx; in.mi.dy=dy; in.mi.dwFlags=MOUSEEVENTF_MOVE;
+        SendInput(1,&in,sizeof(in));
+        filter.Reset(); // keep correcting every tick until the native cursor arrives
+    }
     static ULONGLONG lastLog=0;
     if(now-lastLog>1000) {
         lastLog=now;
         int nx=-1,ny=-1,acquired=-1;
         __try { nx=*(int*)(mouse+0x21C); ny=*(int*)(mouse+0x220); acquired=*(BYTE*)(mouse+7); } __except(EXCEPTION_EXECUTE_HANDLER) {}
-        Log("[GazeMenu] gaze uv=(%.3f,%.3f) -> client (%d,%d) of %ldx%ld; native cursor now (%d,%d) acquired=%d",
-            u,v,x,y,client.right,client.bottom,nx,ny,acquired);
+        Log("[GazeMenu] mode=%d gaze uv=(%.3f,%.3f) -> client (%d,%d) of %ldx%ld; native cursor now (%d,%d) acquired=%d",
+            g_gazeMenuMode,u,v,x,y,client.right,client.bottom,nx,ny,acquired);
     }
 #endif
 }
