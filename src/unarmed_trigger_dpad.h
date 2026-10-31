@@ -47,11 +47,11 @@ struct UnarmedTriggerDpad {
         return buttons;
     }
 };
-// Double tap of the X button (PSVR2 left Square) -> stock D-pad weapon action.
+// Double tap of the X button (PSVR2 left Square) -> a configurable pad button.
 // Hold X stays untouched (Darkness II: devour hearts); the first tap reaches the
 // game (reload). The SECOND press within kWindowMs is hidden from the game until
-// release and replaced by a D-pad pulse: empty main hand -> DPAD_DOWN (draw),
-// otherwise (armed or unknown) -> DPAD_RIGHT (dual wield).
+// release and replaced by a pulse of `target` (resolved by the caller at the press
+// edge). target==0 disables the action (X passes through unchanged).
 struct DoubleTapDpad {
     static constexpr uint64_t kWindowMs=350, kPulseMs=150;
     static constexpr uint16_t kX=0x4000, kDpadDown=0x0002, kDpadRight=0x0008;
@@ -59,16 +59,13 @@ struct DoubleTapDpad {
     uint64_t lastPress=0, pulseUntil=0;
     uint16_t pulse=0;
     void Reset() { *this=DoubleTapDpad{}; }
-    // Rewrites buttons in place. firedBits receives the D-pad bit on a new action.
-    void Update(uint16_t& buttons,HandSlot mainHand,bool context,uint64_t nowMs,uint16_t* firedBits=nullptr) {
+    void Update(uint16_t& buttons,uint16_t target,bool context,uint64_t nowMs,uint16_t* firedBits=nullptr) {
         if(firedBits) *firedBits=0;
         if(!context) { Reset(); return; }
         const bool x=(buttons&kX)!=0;
         if(x && !down) {
-            if(lastPress && nowMs-lastPress<=kWindowMs) {
-                swallow=true; lastPress=0;
-                pulse=mainHand==HandSlot::Empty ? kDpadDown:kDpadRight;
-                pulseUntil=nowMs+kPulseMs;
+            if(target && lastPress && nowMs-lastPress<=kWindowMs) {
+                swallow=true; lastPress=0; pulse=target; pulseUntil=nowMs+kPulseMs;
                 if(firedBits) *firedBits=pulse;
             } else lastPress=nowMs ? nowMs:1;
         }
@@ -78,4 +75,17 @@ struct DoubleTapDpad {
         if(nowMs<pulseUntil) buttons|=pulse;
     }
 };
+
+// Name -> XInput button bits for the [Input] DoubleTapX setting.
+inline bool ParsePadButton(const char* v,uint16_t& bits,bool& autoByHand) {
+    struct E { const char* n; uint16_t b; };
+    static const E table[]={{"DPAD_UP",0x0001},{"DPAD_DOWN",0x0002},{"DPAD_LEFT",0x0004},{"DPAD_RIGHT",0x0008},
+        {"START",0x0010},{"BACK",0x0020},{"L3",0x0040},{"R3",0x0080},{"LB",0x0100},{"RB",0x0200},
+        {"A",0x1000},{"B",0x2000},{"X",0x4000},{"Y",0x8000},{"OFF",0}};
+    autoByHand=false;
+    auto eq=[](const char* a,const char* b){ for(;*a&&*b;++a,++b){ char x=*a,y=*b; if(x>='a'&&x<='z')x-=32; if(y>='a'&&y<='z')y-=32; if(x!=y) return false;} return *a==*b; };
+    if(eq(v,"AUTO")) { autoByHand=true; bits=0; return true; }
+    for(const auto& e:table) if(eq(v,e.n)) { bits=e.b; return true; }
+    return false;
+}
 }

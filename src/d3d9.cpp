@@ -157,6 +157,7 @@ bool g_tentacleBridge = false; // separate, opt-in stock-game action bridge
 bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
 bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
+char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
 bool g_unarmedTriggerDpad=true; // VR has no D-pad: empty-hand trigger -> stock D-pad weapon actions
 bool g_nativeHandsEnabled=false;
 bool g_nativeHandsDirtyBoth=false;
@@ -790,6 +791,7 @@ void LoadConfig() {
     g_nativeLeftAim = GetPrivateProfileIntA("Input", "NativeLeftAim", 0, chosenIni) != 0;
     g_nativeWeaponPose = GetPrivateProfileIntA("Input", "NativeWeaponPose", 0, chosenIni) != 0;
     g_unarmedTriggerDpad = GetPrivateProfileIntA("Input", "UnarmedTriggerDpad", 1, chosenIni) != 0;
+    if(!GetFullPathNameA(chosenIni,MAX_PATH,g_activeIni,nullptr)) strcpy_s(g_activeIni,chosenIni);
     Log("[UnarmedTriggerDpad] enabled=%d (L trigger + empty off hand -> DPAD_RIGHT dual wield; R trigger + empty main hand -> DPAD_DOWN draw weapon)",(int)g_unarmedTriggerDpad);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
@@ -4529,11 +4531,31 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
     int fired=0;
     gp.wButtons|=g_unarmedTriggerDpadState.Update(gp.bLeftTrigger,gp.bRightTrigger,offHand,mainHand,
         context,nowMs,&fired);
+    // [Input] DoubleTapX is re-read on every X press so it can be changed while the
+    // game runs. Values: DPAD_RIGHT (default), DPAD_DOWN, DPAD_LEFT, DPAD_UP, Y, B, A,
+    // LB, RB, L3, R3, BACK, AUTO (empty main hand -> DPAD_DOWN else DPAD_RIGHT), OFF.
+    static bool prevX=false;
+    static uint16_t target=0x0008;
+    static char targetName[32]="DPAD_RIGHT";
+    const bool xNow=(gp.wButtons & XINPUT_GAMEPAD_X)!=0;
+    if(xNow && !prevX) {
+        char value[32]{};
+        GetPrivateProfileStringA("Input","DoubleTapX","DPAD_RIGHT",value,sizeof(value),g_activeIni[0] ? g_activeIni:".\\Darkness2VR.ini");
+        uint16_t bits=0; bool byHand=false;
+        if(!d2vr_input::ParsePadButton(value,bits,byHand)) {
+            static char lastBad[32]{};
+            if(strcmp(lastBad,value)) { strcpy_s(lastBad,value); Log("[DoubleTapDpad] unknown DoubleTapX=%s; using DPAD_RIGHT",value); }
+            bits=0x0008; strcpy_s(value,"DPAD_RIGHT");
+        }
+        if(byHand) bits=mainHand==HandSlot::Empty ? 0x0002:0x0008;
+        if(strcmp(targetName,value) || bits!=target) Log("[DoubleTapDpad] DoubleTapX=%s -> buttons=0x%04X",value,bits);
+        target=bits; strcpy_s(targetName,value);
+    }
+    prevX=xNow;
     uint16_t tapped=0;
-    g_doubleTapDpadState.Update(gp.wButtons,mainHand,g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START),nowMs,&tapped);
-    if(tapped) Log("[DoubleTapDpad] X double tap, main hand %s -> %s",
-        mainHand==HandSlot::Empty ? "empty":mainHand==HandSlot::Armed ? "armed":"unknown",
-        tapped==d2vr_input::DoubleTapDpad::kDpadDown ? "DPAD_DOWN (draw)":"DPAD_RIGHT (dual wield)");
+    g_doubleTapDpadState.Update(gp.wButtons,target,g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START),nowMs,&tapped);
+    if(tapped) Log("[DoubleTapDpad] X double tap (DoubleTapX=%s, main hand %s) -> buttons=0x%04X",targetName,
+        mainHand==HandSlot::Empty ? "empty":mainHand==HandSlot::Armed ? "armed":"unknown",tapped);
     if(fired&1) Log("[UnarmedTriggerDpad] left trigger, off hand empty -> DPAD_RIGHT (dual wield)");
     if(fired&2) Log("[UnarmedTriggerDpad] right trigger, main hand empty -> DPAD_DOWN (draw weapon)");
 }

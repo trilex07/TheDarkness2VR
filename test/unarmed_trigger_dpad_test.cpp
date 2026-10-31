@@ -49,29 +49,42 @@ int main() {
     }
     { // double tap X: first tap passes, second within window -> D-pad, X hidden until release
         using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
-        b=D::kX; d.Update(b,A,true,1000,&f); CHECK(b==D::kX); CHECK(f==0);
-        b=0; d.Update(b,A,true,1080,&f); CHECK(b==0);
-        b=D::kX; d.Update(b,A,true,1200,&f); CHECK(f==D::kDpadRight); CHECK(b==D::kDpadRight);
-        b=D::kX; d.Update(b,A,true,1300,&f); CHECK(f==0); CHECK(b==D::kDpadRight); // still hidden, pulse
-        b=D::kX; d.Update(b,A,true,1400,&f); CHECK(b==0);                          // hidden, pulse over
-        b=0; d.Update(b,A,true,1500,&f); CHECK(b==0);
-        b=D::kX; d.Update(b,A,true,1600,&f); CHECK(b==D::kX); CHECK(f==0);        // third press = new first tap
+        b=D::kX; d.Update(b,D::kDpadRight,true,1000,&f); CHECK(b==D::kX); CHECK(f==0);
+        b=0; d.Update(b,D::kDpadRight,true,1080,&f); CHECK(b==0);
+        b=D::kX; d.Update(b,D::kDpadRight,true,1200,&f); CHECK(f==D::kDpadRight); CHECK(b==D::kDpadRight);
+        b=D::kX; d.Update(b,D::kDpadRight,true,1300,&f); CHECK(f==0); CHECK(b==D::kDpadRight); // still hidden, pulse
+        b=D::kX; d.Update(b,D::kDpadRight,true,1400,&f); CHECK(b==0);                          // hidden, pulse over
+        b=0; d.Update(b,D::kDpadRight,true,1500,&f); CHECK(b==0);
+        b=D::kX; d.Update(b,D::kDpadRight,true,1600,&f); CHECK(b==D::kX); CHECK(f==0);        // third press = new first tap
     }
     { // empty main hand -> draw
         using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
-        b=D::kX; d.Update(b,E,true,0); b=0; d.Update(b,E,true,50);
-        b=D::kX; d.Update(b,E,true,200,&f); CHECK(f==D::kDpadDown); CHECK(b==D::kDpadDown);
+        b=D::kX; d.Update(b,D::kDpadDown,true,0); b=0; d.Update(b,D::kDpadDown,true,50);
+        b=D::kX; d.Update(b,D::kDpadDown,true,200,&f); CHECK(f==D::kDpadDown); CHECK(b==D::kDpadDown);
     }
     { // slow taps and holds never fire; hold X stays X (eat hearts)
         using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
-        b=D::kX; d.Update(b,A,true,0); b=0; d.Update(b,A,true,100);
-        b=D::kX; d.Update(b,A,true,600,&f); CHECK(f==0); CHECK(b==D::kX);
-        for(uint64_t t=650;t<2000;t+=50){ b=D::kX; d.Update(b,A,true,t,&f); CHECK(f==0); CHECK(b==D::kX); }
+        b=D::kX; d.Update(b,D::kDpadRight,true,0); b=0; d.Update(b,D::kDpadRight,true,100);
+        b=D::kX; d.Update(b,D::kDpadRight,true,600,&f); CHECK(f==0); CHECK(b==D::kX);
+        for(uint64_t t=650;t<2000;t+=50){ b=D::kX; d.Update(b,D::kDpadRight,true,t,&f); CHECK(f==0); CHECK(b==D::kX); }
     }
     { // outside gameplay context nothing changes
         using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
-        b=D::kX; d.Update(b,A,false,0); b=0; d.Update(b,A,false,50);
-        b=D::kX; d.Update(b,A,false,100,&f); CHECK(f==0); CHECK(b==D::kX);
+        b=D::kX; d.Update(b,D::kDpadRight,false,0); b=0; d.Update(b,D::kDpadRight,false,50);
+        b=D::kX; d.Update(b,D::kDpadRight,false,100,&f); CHECK(f==0); CHECK(b==D::kX);
+    }
+    { // configurable target, OFF passes X through, parser
+        using D=DoubleTapDpad; D d; uint16_t b; uint16_t f=0;
+        b=D::kX; d.Update(b,0x8000,true,10); b=0; d.Update(b,0x8000,true,50);
+        b=D::kX; d.Update(b,0x8000,true,100,&f); CHECK(f==0x8000); CHECK(b==0x8000);
+        D o; b=D::kX; o.Update(b,0,true,10); b=0; o.Update(b,0,true,50);
+        b=D::kX; o.Update(b,0,true,100,&f); CHECK(f==0); CHECK(b==D::kX);
+        uint16_t bits=0; bool byHand=false;
+        CHECK(ParsePadButton("dpad_right",bits,byHand) && bits==0x0008 && !byHand);
+        CHECK(ParsePadButton("Y",bits,byHand) && bits==0x8000);
+        CHECK(ParsePadButton("AUTO",bits,byHand) && byHand);
+        CHECK(ParsePadButton("OFF",bits,byHand) && bits==0);
+        CHECK(!ParsePadButton("bogus",bits,byHand));
     }
     if(failures) { std::printf("%d failure(s)\n",failures); return 1; }
     std::printf("unarmed_trigger_dpad: all tests passed\n"); return 0;
