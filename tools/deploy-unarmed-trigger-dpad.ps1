@@ -6,8 +6,8 @@ $root=Split-Path -Parent $PSScriptRoot
 $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
 $local='C:\Users\Trilex\AppData\Local\Darkness2VR'
 $exeHash='D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1'
-$installedHash='5743F3F471B6713CE4055FF207EB17EE6AC7B96AC4845C579B17F15CFA44CF6E'
-$prevPackage="$local\packages\adaptive-half-rate-20261031T162023837"
+$installedHash='1D24CC777D4F9001A0437E71696BC84E77A96351BEEFB0D40D14FB253967E442'
+$prevPackage="$local\packages\unarmed-trigger-dpad-20261031T193931147"
 function Hash($p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}
 function Assert-Free {
     $busy=@(Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'DarknessII.exe' -or
@@ -17,7 +17,7 @@ function Assert-Free {
 Assert-Free
 if((Hash "$game\DarknessII.exe") -ne $exeHash){throw 'EXE identity mismatch'}
 $cur=Hash "$game\d3d9.dll"
-if($cur -ne $installedHash){throw "Installed DLL is $cur, expected installed shouldrender-fix build $installedHash; re-evaluate"}
+if($cur -ne $installedHash){throw "Installed DLL is $cur, expected previous unarmed-trigger build $installedHash; re-evaluate"}
 $cand="$root\d3d9.dll"
 if(!(Test-Path -LiteralPath $cand)){throw 'Candidate not built; run build.ps1 -DiagnosticCapture first'}
 $gate=& "$root\tools\assert-candidate-profile.ps1" -CandidateDll $cand -RenderIni @("$game\Darkness2VR.ini","$local\Darkness2VR.ini") -DiagnosticIni "$game\Darkness2VR-diagnostic.ini"
@@ -25,10 +25,10 @@ $gate | Out-Host
 if($gate.Flavor -ne 'protected-native'){throw 'Candidate must be protected-native (build.ps1 -DiagnosticCapture)'}
 $candHash=Hash $cand
 $text=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($cand))
-if(!$text.Contains('[UnarmedTriggerDpad]')){throw 'Candidate does not contain the UnarmedTriggerDpad feature'}
+if(!$text.Contains("[DoubleTapDpad]")){throw 'Candidate does not contain the UnarmedTriggerDpad feature'}
 if(!$Install){Write-Output "PREFLIGHT PASS candidate=$candHash; no installed files changed";return}
 
-$package=Join-Path $local ('packages\unarmed-trigger-dpad-'+(Get-Date -Format 'yyyyMMddTHHmmssfff'))
+$package=Join-Path $local ('packages\unarmed-doubletap-'+(Get-Date -Format 'yyyyMMddTHHmmssfff'))
 $rollback=Join-Path $package 'rollback';$candidate=Join-Path $package 'candidate'
 New-Item -ItemType Directory -Path $rollback,$candidate | Out-Null
 $old=Get-Content -LiteralPath "$prevPackage\rollback\manifest.json" -Raw | ConvertFrom-Json
@@ -41,7 +41,7 @@ foreach($entry in $old.before){
     $before+=@{target=$target;backup=$saved;sha256=$sha}
 }
 if(!($before | Where-Object {$_.target -eq "$game\d3d9.dll"})){throw 'Previous manifest does not cover the DLL'}
-@{game_dir=$game;exe_sha256=$exeHash;source='side/unarmed-trigger-dpad-on-installed 0fd55383';before=$before} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath "$rollback\manifest.json" -Encoding UTF8
+@{game_dir=$game;exe_sha256=$exeHash;source='side/unarmed-trigger-dpad-on-installed d3d77785';before=$before} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath "$rollback\manifest.json" -Encoding UTF8
 Copy-Item -LiteralPath "$prevPackage\rollback\Restore.ps1" -Destination "$rollback\Restore.ps1"
 foreach($name in 'd3d9.dll','d3d9.pdb','d3d9.map'){Copy-Item -LiteralPath "$root\$name" -Destination "$candidate\$name"}
 Assert-Free
@@ -55,5 +55,5 @@ try {
     throw
 }
 $after=@();foreach($entry in $before){$after+=@{target=$entry.target;sha256=(Hash $entry.target)}}
-@{source='side/unarmed-trigger-dpad-on-installed 0fd55383';base='side/shouldrender-fix-snapshot 2ae798d3';dll_sha256=$candHash;exe_sha256=$exeHash;deployed_utc=[DateTime]::UtcNow.ToString('o');after=$after;rollback=$rollback;game_launched=$false;headset_validation='NOT RUN';ini_changed=$false} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath "$package\deployment.json" -Encoding UTF8
+@{source='side/unarmed-trigger-dpad-on-installed d3d77785';base='side/shouldrender-fix-snapshot 2ae798d3';dll_sha256=$candHash;exe_sha256=$exeHash;deployed_utc=[DateTime]::UtcNow.ToString('o');after=$after;rollback=$rollback;game_launched=$false;headset_validation='NOT RUN';ini_changed=$false} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath "$package\deployment.json" -Encoding UTF8
 Write-Output "DEPLOYED $candHash (DLL only, INIs untouched); rollback: $rollback\Restore.ps1"

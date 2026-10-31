@@ -13,7 +13,17 @@ warmup caches. Restore the complete matching package, not only a DLL with an
 incompatible newer manifest. Prior ConsumedRecordCopy validation preserved
 stereo/hands/tracking. This does not certify newer experimental switches.
 
-## Current installed MAIN candidate: unarmed trigger D-pad on installed shouldrender-fix build
+## Current installed MAIN candidate: X double tap + unarmed trigger D-pad
+
+Authorized MAIN deployment completed 2026-10-31 19:54 Europe/Warsaw (DLL only, INIs untouched).
+- **Current DLL SHA256**: 3DDC8B499AA180D167CC20F22710293D96BA47C6A8F40A971CAAE420C5141FED (protected-native)
+- **Source**: side/unarmed-trigger-dpad-on-installed d3d77785
+- **Change vs 1D24CC77**: double tap X (PSVR2 left Square) within 350 ms -> empty main hand DPAD_DOWN, otherwise DPAD_RIGHT; hold X untouched (heart devour); native hand state held 1 s across stale samples. Empty-hand trigger mapping retained.
+- **Reason**: runtime log 19:46 showed DPAD_RIGHT reaching XInput (Btns=0x0008) with main=armed off=empty, but no in-game dual wield; user requested an explicit button. Whether stock D-pad right dual-wields with the current inventory is unverified.
+- **Package**: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/unarmed-doubletap-20261031T195455452 (rollback/Restore.ps1 restores 1D24CC77 set).
+- **Validation**: MSVC x86 build PASS, host tests PASS, profile gate PASS; headset NOT RUN. Log tags: `[DoubleTapDpad]`, `[UnarmedTriggerDpad]`.
+
+## Previous MAIN candidate: unarmed trigger D-pad on installed shouldrender-fix build (superseded)
 
 Authorized MAIN deployment completed 2026-10-31 19:39 Europe/Warsaw (DLL only, INIs untouched).
 - **Current DLL SHA256**: 1D24CC777D4F9001A0437E71696BC84E77A96351BEEFB0D40D14FB253967E442 (protected-native)
