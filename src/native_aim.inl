@@ -56,6 +56,7 @@ struct NativeGameplaySample {
     unsigned char demonHold=0; // 1 object, 2 character held for an execution
 };
 static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
+static void CaptureWeaponLoadout(BYTE* inventory); // weapon_wheel_input.inl
 static NativeGameplaySample g_nativeGameplay;
 static bool CopyNativeGameplay(NativeGameplaySample& out) {
     if(!TryAcquireSRWLockShared(&g_nativeGameplayLock)) return false;
@@ -178,6 +179,7 @@ static bool CaptureNativeGameplay(void* self) {
         s.camera=(DWORD)(uintptr_t)self; s.inventory=(DWORD)(uintptr_t)inventory;
         s.offHandEquipped=**(DWORD**)(inventory+0xBC)!=0;
         s.mainHandEquipped=**(DWORD**)(inventory+0xB0)!=0;
+        CaptureWeaponLoadout(inventory); // own SEH; read-only slot/hand state for the weapon wheels
         // Slot 6 is the left demon arm, confirmed by native BA66E0 and live RTTI.
         auto weapon=**(BYTE***)(inventory+0x20C+6*4);
         if(weapon && *(DWORD*)weapon==0xFD6E00 && **(BYTE***)(weapon+0x980)==avatar) {

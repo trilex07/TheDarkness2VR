@@ -52,6 +52,8 @@
 #include "native_menu_pointer_bridge.h"
 #include "vr_input.h"
 #include "unarmed_trigger_dpad.h"
+#include "dual_weapon_wheel.h"
+#include "weapon_wheel_raster.h"
 #include "native_aim_math.h"
 #include "stereo_geometry.h"
 #include "composite_shader_patch.h"
@@ -158,6 +160,8 @@ bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
 bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
+bool g_weaponWheelEnabled=true;   // [Input] WeaponWheel: hold R3 -> dual weapon wheels
+bool g_crouchStickDown=true;      // [Input] CrouchStickDown: right stick down toggles crouch
 bool g_unarmedTriggerDpad=true; // left trigger + empty left hand -> DPAD_DOWN / DPAD_UP alternating
 bool g_nativeHandsEnabled=false;
 bool g_nativeHandsDirtyBoth=false;
@@ -796,6 +800,10 @@ void LoadConfig() {
     g_unarmedTriggerDpad = GetPrivateProfileIntA("Input", "UnarmedTriggerDpad", 1, chosenIni) != 0;
     if(!GetFullPathNameA(chosenIni,MAX_PATH,g_activeIni,nullptr)) strcpy_s(g_activeIni,chosenIni);
     Log("[UnarmedTriggerDpad] enabled=%d (L trigger + empty left hand -> DPAD_DOWN/DPAD_UP alternating; R trigger always fires)",(int)g_unarmedTriggerDpad);
+    g_weaponWheelEnabled = GetPrivateProfileIntA("Input", "WeaponWheel", 1, chosenIni) != 0;
+    g_crouchStickDown = GetPrivateProfileIntA("Input", "CrouchStickDown", 1, chosenIni) != 0;
+    Log("[WeaponWheel] enabled=%d (hold R3: one wheel per hand, move the hand to a weapon, release to equip via stock D-pad; R3 tap still reaches the game)",(int)g_weaponWheelEnabled);
+    Log("[Crouch] CrouchStickDown=%d (right stick down toggles crouch; [Input] CrouchButton, default R3, re-read live)",(int)g_crouchStickDown);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
     g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
@@ -4502,6 +4510,8 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
     }
 }
 
+#include "weapon_wheel_input.inl"
+
 static d2vr_input::UnarmedTriggerDpad g_unarmedTriggerDpadState;
 static d2vr_input::DoubleTapDpad g_doubleTapDpadState;
 // Uses only the existing native gameplay sample (no new hook). Without a fresh
@@ -4615,6 +4625,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     // XR_SESSION_NOT_FOCUSED is positive but actions must not be forwarded.
     if (syncResult != XR_SUCCESS) {
         g_vrSettings.Close();g_vrSettingsToggle.Update(false,false);
+        ResetWeaponWheelInput();
         PublishAdaptiveTriggers(nullptr, false);
         ResetPoseInput();
         return false;
@@ -4661,7 +4672,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     const bool rawButtons=gp.wButtons || triangleDown || menuDown || viewDown || l3 || r3;
     if(g_vrSettings.OwnInput(d2vr_settings::Neutral(g_hands[1].aimValid,
         rawButtons?1u:0u,lt,rt,lx,ly,rx,ry,g_hands[0].squeeze,g_hands[1].squeeze))) {
-        ResetPoseInput();out->Gamepad={};return true;
+        ResetWeaponWheelInput();ResetPoseInput();out->Gamepad={};return true;
     }
     // A native-confirmed character/retained-target hold already supplies the
     // action context. Do not require a second grip press (stock LB) just to Y.
@@ -4675,7 +4686,8 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     if (menuDown) gp.wButtons |= XINPUT_GAMEPAD_START;
     if (viewDown) gp.wButtons |= XINPUT_GAMEPAD_BACK;
     if(l3) gp.wButtons |= XINPUT_GAMEPAD_LEFT_THUMB;
-    if(r3) gp.wButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
+    // Hold R3 -> weapon wheels; a tap still reaches the game (and the recenter chord).
+    if(WeaponWheelR3(gp,r3,l3,focused)) gp.wButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
     static int lastStickState=-1;
     const int stickState=int(l3) | (int(r3)<<1) | (int(leftActive)<<2) | (int(rightActive)<<3);
     if(stickState!=lastStickState) {
@@ -4689,6 +4701,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         else RequestRecenter("VR PAD L3+R3 click");
     }
     if (g_recenterChord.suppress) gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
+    ApplyWeaponWheel(gp); // wheel owns triggers/right stick while open; crouch flick; equip pulses
     ApplyUnarmedTriggerDpad(gp); // before gestures/throw/haptics so they see the rewritten triggers
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
@@ -5260,6 +5273,7 @@ bool InitXR() {
 }
 
 static void ReleaseVrSettingsRenderer();
+static void ReleaseWeaponWheelRenderer();
 #include "native_menu_input_snapshot.inl"
 
 void PumpXR() {
@@ -5309,6 +5323,7 @@ void PumpXR() {
                 }
             } else if (s->state == XR_SESSION_STATE_STOPPING) {
                 ReleaseVrSettingsRenderer();
+                ReleaseWeaponWheelRenderer();
                 d2vr::psvr2::SubmitBothOff(d2vr::psvr2::TriggerOffReason::SessionEnd);
                 if (g_gameHwnd) ShowWindow(g_gameHwnd, SW_SHOWNA);
                 if(xrEndSession(g_xrSession)==XR_SUCCESS){g_adaptiveFPS.SessionEnded();g_appPacingBound=false;g_appHalfRate.Reset();}
@@ -5706,6 +5721,7 @@ static bool WriteTextureToSwapchain(XrSwapchain sc, ID3D11Texture2D** scImages, 
 }
 
 #include "vr_settings_renderer.inl"
+#include "weapon_wheel_renderer.inl"
 
 void SubmitXR(IDirect3DDevice9* dev) {
     if (g_disableOpenXR) return;
@@ -5724,7 +5740,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
         Log("[WorldActivity] active=%d (render heuristic; native gameplay/menu state unverified)",(int)g_in3DGameplayMode);
     }
 
-    const XrCompositionLayerBaseHeader* layers[3] = { nullptr,nullptr,nullptr };
+    const XrCompositionLayerBaseHeader* layers[5] = { nullptr,nullptr,nullptr,nullptr,nullptr };
+    XrCompositionLayerQuad wheelQuads[2]{};
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
     uint32_t layerCount = 0;
@@ -6079,6 +6096,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
         } else if(settingsResult==VrSettingsRender::Pending)g_vrSettings.SuspendSurface();
         else g_vrSettings.Submitted(false);
     }
+    if(!settingsSubmitted)AppendWeaponWheelLayers(layers,layerCount,5,wheelQuads,fs.shouldRender);
     XrFrameEndInfo fei{ XR_TYPE_FRAME_END_INFO };
     fei.displayTime = fs.predictedDisplayTime;
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
