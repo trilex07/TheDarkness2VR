@@ -12,6 +12,12 @@
 #include "../third_party/minhook/include/MinHook.h"
 
 namespace d2vr_image_present {
+// D3D9Ex S_PRESENT_MODE_CHANGED (0x08760877): the frame WAS presented; the desktop
+// mode differs from the swap chain (e.g. window moved to another monitor). Evidence
+// 2026-10-31 18:43: every Present returned it after a window move, warm_ never set,
+// 0 of 12000+ frames reached XR. Occluded/failed results still close admission.
+constexpr HRESULT kPresentModeChanged=0x08760877L;
+inline bool Delivered(HRESULT hr) {return hr==D3D_OK || hr==kPresentModeChanged;}
 enum class Method { Create, Query, Present };
 using Present = HRESULT(STDMETHODCALLTYPE*)(IDirect3DSwapChain9*,const RECT*,const RECT*,HWND,const RGNDATA*,DWORD);
 using Create = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*,D3DPRESENT_PARAMETERS*,IDirect3DSwapChain9**);
@@ -197,7 +203,7 @@ class Observer {
         if(hr==D3D_OK) ++ok;else if(FAILED(hr)) ++errors;else ++statuses;
         if(qualified) {
             ++nativePresents;
-            if(hr!=D3D_OK) warm_=false;
+            if(!Delivered(hr)) warm_=false;
             else if(!fault_ && !resetting_) warm_=true;
             if(FAILED(hr) && hr!=D3DERR_DEVICELOST && hr!=D3DERR_DEVICENOTRESET) Fail("native Present error");
         }

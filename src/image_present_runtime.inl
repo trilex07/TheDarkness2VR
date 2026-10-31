@@ -53,7 +53,7 @@ static void ImagePresentForwardEnd() {
 static void ImagePresentAfter(IDirect3DSwapChain9* sc,uintptr_t caller,bool qualified,bool ready,HRESULT hr) {
     auto& state=g_imagePresentScope;
     if(state.adaptiveSerial)
-        EndAdaptivePresentation(state.adaptiveSerial,hr,state.opened && qualified && ready && !g_imagePresent.Failed());
+        EndAdaptivePresentation(state.adaptiveSerial,d2vr_image_present::Delivered(hr)?D3D_OK:hr,state.opened && qualified && ready && !g_imagePresent.Failed());
     if(state.opened) {
         if(g_imagePresent.Failed()) matched_capture::Reject("external Present observer fault");
         matched_capture::PresentReturned(hr,true);
@@ -68,16 +68,18 @@ static void ImagePresentAfter(IDirect3DSwapChain9* sc,uintptr_t caller,bool qual
         InterlockedIncrement(&g_swapChainPresentCount);InterlockedExchange(&g_presentSeen,1);
         // First real successful forwarding opens admission for the NEXT game
         // frame. Never replay commands accumulated across that warm-up frame.
-        if(!ready || hr!=D3D_OK || g_imagePresent.Failed()) {
+        if(!ready || !d2vr_image_present::Delivered(hr) || g_imagePresent.Failed()) {
             d2vr_replay::ReleaseRecording();g_gpuTiming.Release();
             InterlockedExchange(&g_needRecBegin,1);
         }
         const auto n=g_imagePresent.nativePresents.load();
-        if(n<=3 || n%1000==0 || FAILED(hr))
+        static HRESULT s_lastLoggedHr=D3D_OK;
+        if(n<=3 || n%1000==0 || FAILED(hr) || hr!=s_lastLoggedHr) {s_lastLoggedHr=hr;
             Log("[ImagePresent] native=%llu entries=%llu forwarded=%llu returned=%llu recursive=%llu hr=%08lX ready=%d ok=%llu errors=%llu statuses=%llu sc=%p caller=%p tid=%lu fault=%d EXE_WRITES=FORBIDDEN",
                 n,g_imagePresent.entries.load(),g_imagePresent.forwarded.load(),g_imagePresent.returned.load(),
                 g_imagePresent.recursive.load(),hr,g_imagePresent.Ready(),g_imagePresent.ok.load(),g_imagePresent.errors.load(),
                 g_imagePresent.statuses.load(),sc,reinterpret_cast<void*>(caller),GetCurrentThreadId(),g_imagePresent.Failed());
+        }
     }
     g_insidePresentation=state.previousInside;
 }

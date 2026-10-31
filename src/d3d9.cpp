@@ -686,7 +686,7 @@ void LoadConfig() {
 
     g_asyncLogRequested = GetPrivateProfileIntA("Render", "AsyncLog", 0, chosenIni) != 0;
     char adaptive[32]{};
-    GetPrivateProfileStringA("Render","AdaptiveFPS","OFF",adaptive,sizeof(adaptive),chosenIni);
+    GetPrivateProfileStringA("Render","AdaptiveFPS","AUTO",adaptive,sizeof(adaptive),chosenIni);
     g_adaptiveFPSMode=(!_stricmp(adaptive,"AUTO") || !strcmp(adaptive,"1")) ? d2vr_adaptive::Mode::Auto:
         (!_stricmp(adaptive,"HALF") || !strcmp(adaptive,"2")) ? d2vr_adaptive::Mode::Half:d2vr_adaptive::Mode::Off;
     if(g_adaptiveFPSMode!=d2vr_adaptive::Mode::Off)
@@ -5645,7 +5645,18 @@ void SubmitXR(IDirect3DDevice9* dev) {
     XrCompositionLayerProjectionView projViews[2]{};
 
     bool havePixels = false;
-    if (fs.shouldRender && g_haveViews && g_trackedFrame.renderTrackingValid) {
+    // SubmitMode 4: also submit the completed same-frame pair while the runtime reports
+    // shouldRender=false (SYNCHRONIZED). Evidence 2026-10-31 18:11: SteamVR kept the session
+    // SYNCHRONIZED with the HMD worn while we submitted 0 layers at ~63/s ("Oczekiwanie").
+    // Layers in that state are legal OpenXR; the runtime may ignore them.
+    const bool submitWhileHidden = !fs.shouldRender && g_submitMode == 4;
+    if (submitWhileHidden) {
+        static int s_hiddenSubmitLog = 0;
+        if (s_hiddenSubmitLog++ < 4)
+            Log("[HiddenSubmit] shouldRender=0 session=%d views=%d tracking=%d; submitting completed pair anyway",
+                (int)g_xrSessionState, (int)g_haveViews, (int)g_trackedFrame.renderTrackingValid);
+    }
+    if ((fs.shouldRender || submitWhileHidden) && g_haveViews && g_trackedFrame.renderTrackingValid) {
         UINT targetW = g_steamVrRecW ? g_steamVrRecW : (g_srcW ? g_srcW : 1920);
         UINT targetH = g_steamVrRecH ? g_steamVrRecH : (g_srcH ? g_srcH : 1080);
         if (g_submitMode == 4) {
@@ -7238,6 +7249,28 @@ static void TweakPresentParams(D3DPRESENT_PARAMETERS* pp) {
     if (pp->BackBufferHeight < (UINT)g_renderH) pp->BackBufferHeight = g_renderH;
 }
 
+// Keep the game window on the monitor of the adapter the device is created on.
+// Evidence 2026-10-31: the window reopened on a switched-off/secondary monitor
+// (invisible, menu presents stalled or returned S_PRESENT_MODE_CHANGED -> no XR
+// frames). Position only (SWP_NOSIZE); no style, size or present-parameter change.
+static void PlaceGameWindowOnAdapterMonitor(IDirect3D9* d3d, UINT adapter, HWND window) {
+    if (!d3d || !window || !IsWindow(window)) return;
+    const HMONITOR target = d3d->GetAdapterMonitor(adapter);
+    const HMONITOR current = MonitorFromWindow(window, MONITOR_DEFAULTTONULL);
+    RECT before{}; GetWindowRect(window, &before);
+    if (!target || current == target) {
+        Log("[WindowPlacement] adapter=%u window=(%ld,%ld)-(%ld,%ld) onAdapterMonitor=%d; unchanged",
+            adapter, before.left, before.top, before.right, before.bottom, (int)(target && current == target));
+        return;
+    }
+    MONITORINFO mi{ sizeof(mi) };
+    if (!GetMonitorInfoW(target, &mi)) return;
+    const BOOL ok = SetWindowPos(window, nullptr, mi.rcWork.left, mi.rcWork.top, 0, 0,
+                                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    Log("[WindowPlacement] adapter=%u moved window (%ld,%ld) -> (%ld,%ld) monitorKnown=%d ok=%d",
+        adapter, before.left, before.top, mi.rcWork.left, mi.rcWork.top, (int)(current != nullptr), (int)ok);
+}
+
 HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT ad, D3DDEVTYPE type, HWND hwnd,
                                             DWORD flags, D3DPRESENT_PARAMETERS* pp,
                                             IDirect3DDevice9** out) {
@@ -7245,6 +7278,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT ad, D3DDEVTYP
     const DWORD requestedFlags=flags;
     if(g_stereoTransferMode==1 || g_stereoTransferMode==2) flags|=D3DCREATE_MULTITHREADED;
     Log("Hook_CreateDevice adapter=%u requestedFlags=0x%lX flags=0x%lX", ad, requestedFlags, flags);
+    PlaceGameWindowOnAdapterMonitor(self, ad, g_renderSizeHwnd);
     TweakPresentParams(pp);
     HRESULT hr = g_origCreateDevice(self, ad, type, hwnd, flags, pp, out);
     if (SUCCEEDED(hr) && out && *out) HookDevice(*out);
@@ -7261,6 +7295,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDeviceEx(IDirect3D9Ex* self, UINT ad, D3DDE
     if(g_stereoTransferMode==1 || g_stereoTransferMode==2) flags|=D3DCREATE_MULTITHREADED;
     Log("Hook_CreateDeviceEx adapter=%u requestedFlags=0x%lX flags=0x%lX windowed=%d hwnd=%p",
         ad, requestedFlags, flags, pp ? (int)pp->Windowed : -1, hwnd);
+    PlaceGameWindowOnAdapterMonitor(self, ad, g_renderSizeHwnd);
     TweakPresentParams(pp);
     HRESULT hr = g_origCreateDeviceEx(self, ad, type, hwnd, flags, pp, nullptr, out);
     if (SUCCEEDED(hr) && out && *out) HookDevice(*out);
