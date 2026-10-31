@@ -54,7 +54,12 @@ struct WorldDiffuseScope {explicit WorldDiffuseScope(IDirect3DDevice9*){}};
 static int g_replayEye=-1;
 static const void* g_boundVs=nullptr;
 static const void* g_boundPs=nullptr;
-namespace d2vr_pipeline_warmup {static void ObserveDraw(IDirect3DDevice9*,const void*,const void*){}}
+namespace d2vr_pipeline_warmup {static void ObserveDraw(IDirect3DDevice9*,const void*,const void*){}
+// Compile-state tracking is exercised by pipeline_warmup_test; inert here.
+template<class... A> static void TrackTarget(A...){} template<class... A> static void TrackDepth(A...){}
+template<class... A> static void TrackRenderState(A...){} template<class... A> static void TrackSamplerSrgb(A...){}
+template<class... A> static void TrackDeclaration(A...){} template<class... A> static void TrackFvf(A...){}
+template<class... A> static void TrackFrequency(A...){} template<class... A> static void TrackTexture(A...){}}
 struct TentacleHeadScope {explicit TentacleHeadScope(IDirect3DDevice9*){}};
 static unsigned clipBegins=0,clipEnds=0;
 struct UiClipState{};

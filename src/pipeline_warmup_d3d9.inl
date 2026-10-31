@@ -1,5 +1,6 @@
 // Requires <windows.h>, <d3d9.h> and Log(). No native EXE writes, no hooks.
 #include "pipeline_warmup.h"
+#include "pipeline_signature.h"
 #include <atomic>
 #include <memory>
 #include <process.h>
@@ -27,39 +28,41 @@ template<class Shader> static bool ShaderCode(Shader* shader,uint32_t version,st
 
 // Public device state only. Fixed-function, FVF and >4-stream pipelines are
 // not recorded; any failed query rejects the record instead of guessing.
+static const char* g_captureFailure="none"; // owner thread only; diagnostic text
+#define D2VR_CAPTURE_FAIL(why) do{g_captureFailure=(why);return false;}while(0)
 static bool Capture(IDirect3DDevice9* dev,Record& out) {
     out=Record{};out.state=EmptyState();
     State& s=out.state;
     Com<IDirect3DVertexShader9> vs;Com<IDirect3DPixelShader9> ps;
-    if(FAILED(dev->GetVertexShader(&vs.p)) || !vs.p || !ShaderCode(vs.p,VertexVersion,out.vs)) return false;
-    if(FAILED(dev->GetPixelShader(&ps.p))) return false;
-    if(ps.p && !ShaderCode(ps.p,PixelVersion,out.ps)) return false;
+    if(FAILED(dev->GetVertexShader(&vs.p)) || !vs.p || !ShaderCode(vs.p,VertexVersion,out.vs)) D2VR_CAPTURE_FAIL("vertex shader (fixed-function or non-vs_3_0)");
+    if(FAILED(dev->GetPixelShader(&ps.p))) D2VR_CAPTURE_FAIL("GetPixelShader");
+    if(ps.p && !ShaderCode(ps.p,PixelVersion,out.ps)) D2VR_CAPTURE_FAIL("pixel shader not ps_3_0");
     Com<IDirect3DVertexDeclaration9> declaration;
-    if(FAILED(dev->GetVertexDeclaration(&declaration.p)) || !declaration.p) return false;
+    if(FAILED(dev->GetVertexDeclaration(&declaration.p)) || !declaration.p) D2VR_CAPTURE_FAIL("no vertex declaration (FVF)");
     D3DVERTEXELEMENT9 elements[MAXD3DDECLLENGTH+1];UINT count=0;
     if(FAILED(declaration.p->GetDeclaration(nullptr,&count)) || count<2 || count>MaxElements+1 ||
        FAILED(declaration.p->GetDeclaration(elements,&count)) || count<2 || count>MaxElements+1 ||
-       elements[count-1].Stream!=0xff) return false;
+       elements[count-1].Stream!=0xff) D2VR_CAPTURE_FAIL("declaration size");
     s.elementCount=count-1;
     static_assert(sizeof(D3DVERTEXELEMENT9)==sizeof(Element),"element layout");
     std::memcpy(s.elements,elements,sizeof(Element)*s.elementCount);
     D3DCAPS9 caps{};
-    if(FAILED(dev->GetDeviceCaps(&caps)) || !caps.NumSimultaneousRTs)return false;
+    if(FAILED(dev->GetDeviceCaps(&caps)) || !caps.NumSimultaneousRTs)D2VR_CAPTURE_FAIL("caps");
     for(uint32_t i=0;i<std::min<uint32_t>(Targets,caps.NumSimultaneousRTs);++i) {
         Com<IDirect3DSurface9> target;D3DSURFACE_DESC desc{};
         const HRESULT hr=dev->GetRenderTarget(i,&target.p);
-        if(FAILED(hr) && hr!=D3DERR_NOTFOUND)return false;
+        if(FAILED(hr) && hr!=D3DERR_NOTFOUND)D2VR_CAPTURE_FAIL("descriptor query");
         if(SUCCEEDED(hr) && target.p) {
-            if(FAILED(target.p->GetDesc(&desc))) return false;
+            if(FAILED(target.p->GetDesc(&desc))) D2VR_CAPTURE_FAIL("descriptor query");
             s.targets[i]=uint32_t(desc.Format);
         }
     }
     {
         Com<IDirect3DSurface9> depth;D3DSURFACE_DESC desc{};
         const HRESULT hr=dev->GetDepthStencilSurface(&depth.p);
-        if(FAILED(hr) && hr!=D3DERR_NOTFOUND)return false;
+        if(FAILED(hr) && hr!=D3DERR_NOTFOUND)D2VR_CAPTURE_FAIL("descriptor query");
         if(SUCCEEDED(hr) && depth.p) {
-            if(FAILED(depth.p->GetDesc(&desc))) return false;
+            if(FAILED(depth.p->GetDesc(&desc))) D2VR_CAPTURE_FAIL("descriptor query");
             s.depth=uint32_t(desc.Format);
         }
     }
@@ -68,17 +71,17 @@ static bool Capture(IDirect3DDevice9* dev,Record& out) {
         {D3DRS_SRGBWRITEENABLE,&s.srgbWrite},{D3DRS_ALPHATESTENABLE,&s.alphaTest},{D3DRS_ALPHAFUNC,&s.alphaFunc},
         {D3DRS_FOGENABLE,&s.fog},{D3DRS_CLIPPLANEENABLE,&s.clipPlanes}};
     for(const auto& entry:states) {
-        if(FAILED(dev->GetRenderState(entry.state,&value))) return false;
+        if(FAILED(dev->GetRenderState(entry.state,&value))) D2VR_CAPTURE_FAIL("GetRenderState");
         *entry.out=entry.state==D3DRS_ALPHAFUNC||entry.state==D3DRS_CLIPPLANEENABLE?uint32_t(value):uint32_t(value!=0);
     }
     for(uint32_t i=0;i<Streams;++i) {
         UINT frequency=1;
-        if(FAILED(dev->GetStreamSourceFreq(i,&frequency))) return false;
+        if(FAILED(dev->GetStreamSourceFreq(i,&frequency))) D2VR_CAPTURE_FAIL("GetStreamSourceFreq");
         s.frequency[i]=frequency;
     }
     for(uint32_t i=0;i<Samplers;++i) {
         Com<IDirect3DBaseTexture9> texture;
-        if(FAILED(dev->GetTexture(i,&texture.p))) return false;
+        if(FAILED(dev->GetTexture(i,&texture.p))) D2VR_CAPTURE_FAIL("descriptor query");
         if(!texture.p) continue;
         auto& t=s.textures[i];
         const auto type=texture.p->GetType();
@@ -86,19 +89,21 @@ static bool Capture(IDirect3DDevice9* dev,Record& out) {
             D3DSURFACE_DESC desc{};
             const HRESULT hr=type==D3DRTYPE_TEXTURE?static_cast<IDirect3DTexture9*>(texture.p)->GetLevelDesc(0,&desc):
                 static_cast<IDirect3DCubeTexture9*>(texture.p)->GetLevelDesc(0,&desc);
-            if(FAILED(hr)) return false;
+            if(FAILED(hr)) D2VR_CAPTURE_FAIL("descriptor query");
             t.format=uint32_t(desc.Format);t.usage=desc.Usage&(D3DUSAGE_RENDERTARGET|D3DUSAGE_DEPTHSTENCIL);
         } else if(type==D3DRTYPE_VOLUMETEXTURE) {
             D3DVOLUME_DESC desc{};
-            if(FAILED(static_cast<IDirect3DVolumeTexture9*>(texture.p)->GetLevelDesc(0,&desc))) return false;
+            if(FAILED(static_cast<IDirect3DVolumeTexture9*>(texture.p)->GetLevelDesc(0,&desc))) D2VR_CAPTURE_FAIL("descriptor query");
             t.format=uint32_t(desc.Format);
-        } else return false;
+        } else D2VR_CAPTURE_FAIL("sampler resource type");
         t.type=uint32_t(type);
-        if(FAILED(dev->GetSamplerState(i,D3DSAMP_SRGBTEXTURE,&value))) return false;
+        if(FAILED(dev->GetSamplerState(i,D3DSAMP_SRGBTEXTURE,&value))) D2VR_CAPTURE_FAIL("descriptor query");
         t.srgb=value!=0;
     }
-    return ValidRecord(out);
+    if(!ValidRecord(out)) D2VR_CAPTURE_FAIL("state outside recorded limits (e.g. >4 streams, vertex texture)");
+    return true;
 }
+#undef D2VR_CAPTURE_FAIL
 
 // Executes on a device the engine does not own yet. Private 16x16 resources
 // and one covering triangle. Recorded formats, declaration, alpha, fog, clip
@@ -364,7 +369,12 @@ struct Learner {
     Manifest manifest;
     std::unordered_set<uint64_t> seen;
     std::unordered_map<uint64_t,uint8_t> captureAttempts;
-    uintptr_t lastVs=~uintptr_t(0), lastPs=~uintptr_t(0);
+    uintptr_t lastVs=~uintptr_t(0), lastPs=~uintptr_t(0); // retained for diagnostics/tests
+    Signature live;                     // compile-relevant live state (setter hooks)
+    uint64_t lastKey=0;                 // consecutive-draw filter; 0 = none
+    unsigned capturesThisFrame=0;       // reset by Tick()
+    std::atomic<uint64_t> deferred{0};  // keys postponed by the per-frame budget
+    std::unordered_map<const void*,uint64_t> classes; // resource identity -> compile class
     std::atomic<uint64_t> saved{0}, learned{0}, captureFailures{0}, writeFailures{0};
     std::atomic<bool> saturated{false};
     std::atomic<bool> writing{false};
@@ -375,14 +385,87 @@ static std::atomic<Learner*> learner{nullptr}; // process lifetime
 constexpr size_t MaxSeenPairs=65536;
 
 inline void NoteCaptureFailure(Learner* l,uint64_t key) {
-    ++l->captureFailures;
-    l->lastVs=l->lastPs=~uintptr_t(0); // the next draw of this pair must retry
+    const auto failures=++l->captureFailures;
+    if(failures<=24) Log("[PipelineWarmup] capture rejected #%llu: %s; this variant compiles in gameplay",failures,g_captureFailure);
+    l->lastVs=l->lastPs=~uintptr_t(0);l->lastKey=0; // the next draw must retry
     auto& attempts=l->captureAttempts[key];
     if(++attempts>=2 || l->captureAttempts.size()>MaxSeenPairs) {
         l->seen.insert(key);
         l->captureAttempts.erase(key);
     }
 }
+// ---- live compile-state tracking (owner thread, learning only) ----
+static Learner* Tracking() {
+    Learner* l=learner.load(std::memory_order_acquire);
+    return l && !l->saturated.load(std::memory_order_relaxed) &&
+        GetCurrentThreadId()==l->thread.load(std::memory_order_relaxed) ? l : nullptr;
+}
+// One public descriptor query per resource identity; the cache is bounded.
+template<class Compute> static uint64_t ResourceClass(Learner* l,const void* object,Compute compute) {
+    if(!object) return 0;
+    auto found=l->classes.find(object);
+    if(found!=l->classes.end()) return found->second;
+    if(l->classes.size()>=32768) l->classes.clear();
+    const uint64_t value=compute();
+    try {l->classes.emplace(object,value);} catch(...) {}
+    return value;
+}
+static uint64_t SurfaceClass(IDirect3DSurface9* surface) {
+    D3DSURFACE_DESC d{};
+    return surface && SUCCEEDED(surface->GetDesc(&d)) ? (uint64_t(d.Format)<<8)|uint64_t(d.MultiSampleType) : 1;
+}
+inline void TrackTarget(DWORD index,IDirect3DSurface9* surface) {
+    if(index>=Signature::Targets) return;
+    if(Learner* l=Tracking()) l->live.Set(Signature::Target0+index,ResourceClass(l,surface,[&]{return SurfaceClass(surface);}));
+}
+inline void TrackDepth(IDirect3DSurface9* surface) {
+    if(Learner* l=Tracking()) l->live.Set(Signature::Depth,ResourceClass(l,surface,[&]{return SurfaceClass(surface);}));
+}
+inline void TrackDeclaration(IDirect3DVertexDeclaration9* declaration) {
+    Learner* l=Tracking();if(!l) return;
+    l->live.Set(Signature::Declaration,ResourceClass(l,declaration,[&]()->uint64_t {
+        D3DVERTEXELEMENT9 elements[MAXD3DDECLLENGTH+1];UINT count=MAXD3DDECLLENGTH+1;
+        if(FAILED(declaration->GetDeclaration(elements,&count)) || !count || count>MAXD3DDECLLENGTH+1) return 1;
+        uint64_t h=1469598103934665603ull;const auto* b=reinterpret_cast<const unsigned char*>(elements);
+        for(size_t i=0;i<size_t(count)*sizeof(D3DVERTEXELEMENT9);++i) h=(h^b[i])*1099511628211ull;
+        return h|1;}));
+}
+inline void TrackFvf(DWORD fvf) {if(Learner* l=Tracking()) l->live.Set(Signature::Declaration,(uint64_t(1)<<63)|fvf);}
+inline void TrackRenderState(D3DRENDERSTATETYPE state,DWORD value) {
+    unsigned slot=0;
+    switch(state) {
+    case D3DRS_SRGBWRITEENABLE: slot=Signature::SrgbWrite;value=value!=0;break;
+    case D3DRS_ALPHATESTENABLE: slot=Signature::AlphaTest;value=value!=0;break;
+    case D3DRS_ALPHAFUNC: slot=Signature::AlphaFunc;break;
+    case D3DRS_FOGENABLE: slot=Signature::Fog;value=value!=0;break;
+    case D3DRS_CLIPPLANEENABLE: slot=Signature::ClipPlanes;break;
+    default: return; // not a compile input: no work on the hot path
+    }
+    if(Learner* l=Tracking()) l->live.Set(slot,value);
+}
+inline void TrackFrequency(UINT stream,UINT frequency) {
+    if(stream>=Signature::Streams) return;
+    if(Learner* l=Tracking()) l->live.Set(Signature::Frequency0+stream,frequency);
+}
+inline void TrackSamplerSrgb(DWORD sampler,D3DSAMPLERSTATETYPE type,DWORD value) {
+    if(type!=D3DSAMP_SRGBTEXTURE || sampler>=Signature::Samplers) return;
+    if(Learner* l=Tracking()) l->live.Set(Signature::SamplerSrgb0+sampler,value!=0);
+}
+inline void TrackTexture(DWORD stage,IDirect3DBaseTexture9* texture) {
+    if(stage>=Signature::Samplers) return;
+    Learner* l=Tracking();if(!l) return;
+    l->live.Set(Signature::Texture0+stage,ResourceClass(l,texture,[&]()->uint64_t {
+        const auto type=texture->GetType();D3DSURFACE_DESC d{};D3DVOLUME_DESC v{};HRESULT hr=E_FAIL;
+        if(type==D3DRTYPE_TEXTURE) hr=static_cast<IDirect3DTexture9*>(texture)->GetLevelDesc(0,&d);
+        else if(type==D3DRTYPE_CUBETEXTURE) hr=static_cast<IDirect3DCubeTexture9*>(texture)->GetLevelDesc(0,&d);
+        else if(type==D3DRTYPE_VOLUMETEXTURE) {hr=static_cast<IDirect3DVolumeTexture9*>(texture)->GetLevelDesc(0,&v);d.Format=v.Format;}
+        if(FAILED(hr)) return 1;
+        return (uint64_t(type)<<48)|(uint64_t(d.Usage&(D3DUSAGE_RENDERTARGET|D3DUSAGE_DEPTHSTENCIL))<<32)|uint64_t(d.Format);}));
+}
+
+// Learning key: VS/PS identity plus the tracked compile-relevant state, so each
+// state VARIANT of a pair is captured once (not only the first per session).
+// Captures per frame are budgeted; a deferred key retries on its next draw.
 // The seen key is inserted only after a usable snapshot. One failed capture
 // stays eligible; a second failure, or a full manifest, is permanent.
 inline void ObserveDraw(IDirect3DDevice9* dev,const void* vs,const void* ps) {
@@ -390,11 +473,13 @@ inline void ObserveDraw(IDirect3DDevice9* dev,const void* vs,const void* ps) {
     if(!l || GetCurrentThreadId()!=l->thread.load(std::memory_order_relaxed)) return;
     if(l->saturated.load(std::memory_order_relaxed)) return;
     const auto v=reinterpret_cast<uintptr_t>(vs),p=reinterpret_cast<uintptr_t>(ps);
-    if(v==l->lastVs && p==l->lastPs) return;
-    l->lastVs=v;l->lastPs=p;
+    const uint64_t key=l->live.Key(v,p)|1; // never 0 (0 = no previous key)
+    if(key==l->lastKey) return;
+    l->lastKey=key;l->lastVs=v;l->lastPs=p;
     if(!v || l->seen.size()>=MaxSeenPairs) return;
-    const uint64_t key=(uint64_t(v)<<32)|uint32_t(p);
     if(l->seen.find(key)!=l->seen.end()) return;
+    if(l->capturesThisFrame>=CapturesPerFrame) {++l->deferred;l->lastKey=0;return;}
+    ++l->capturesThisFrame;
     try {
         Record record;
         if(!Capture(dev,record)) {NoteCaptureFailure(l,key);return;}
@@ -445,12 +530,14 @@ static void Tick(ULONGLONG now=GetTickCount64()) {
     // Learning follows the thread that presents, which also issues the draws.
     // A changed owner restarts the consecutive-pair filter, not the seen set.
     const DWORD current=GetCurrentThreadId();
-    if(l->thread.exchange(current,std::memory_order_relaxed)!=current) l->lastVs=l->lastPs=~uintptr_t(0);
+    if(l->thread.exchange(current,std::memory_order_relaxed)!=current) {l->lastVs=l->lastPs=~uintptr_t(0);l->lastKey=0;}
+    l->capturesThisFrame=0;
     if(now<l->nextTick) return;
     l->nextTick=now+2000;
     if(!l->manifest.Size() || l->saved.load()>=l->manifest.Version() || l->writing.exchange(true)) return;
-    Log("[PipelineWarmup] saving records=%zu learned=%llu captureFailures=%llu writeFailures=%llu saturated=%d",
-        l->manifest.Size(),l->learned.load(),l->captureFailures.load(),l->writeFailures.load(),int(l->saturated.load()));
+    Log("[PipelineWarmup] saving records=%zu learned=%llu captureFailures=%llu writeFailures=%llu saturated=%d keys=%zu deferred=%llu",
+        l->manifest.Size(),l->learned.load(),l->captureFailures.load(),l->writeFailures.load(),int(l->saturated.load()),
+        l->seen.size(),l->deferred.load());
     try {
         auto job=std::make_unique<WriteJob>();job->owner=l;
         job->data=l->manifest.Serialize(job->version);

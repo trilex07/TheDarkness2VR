@@ -2419,6 +2419,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDi
     // later replay bind or replace the observed hardware-depth texture.
     const HRESULT result = g_origSetDepthStencilSurface(dev, pNewZStencil);
     if (FAILED(result)) return result;
+    d2vr_pipeline_warmup::TrackDepth(pNewZStencil);
     if (d2vr_replay::g_recActive) {
         d2vr_replay::RecEmit(d2vr_replay::OP_SetDepthStencilSurface, 0, (uint32_t)(uintptr_t)pNewZStencil);
         // depth surface -> owning texture (INTZ), once per surface - diagnostic trace link
@@ -2463,6 +2464,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* dev, DWORD Stage, ID
     if(d2vr_stateblock::Active(dev))return g_origSetTexture(dev,Stage,pTexture);
     const HRESULT result = g_origSetTexture(dev, Stage, pTexture);
     if (FAILED(result)) return result;
+    d2vr_pipeline_warmup::TrackTexture(Stage,pTexture);
     if (d2vr_replay::g_recActive) {
         d2vr_replay::RecEmit(d2vr_replay::OP_SetTexture, 0, Stage, (uint32_t)(uintptr_t)pTexture);
         // texture -> level-0 surface map for the traces (once per texture, capped)

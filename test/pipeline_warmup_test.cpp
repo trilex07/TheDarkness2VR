@@ -260,6 +260,41 @@ int wmain(int argc,wchar_t** argv) {
           learned.state.textures[0].format==D3DFMT_A8R8G8B8 && learned.state.textures[0].srgb==1 && learned.state.depth==D3DFMT_D24S8);
     puts("PASS learned exact bytecode + effective declaration/targets/depth/render/sampler state from the first live draw only");
 
+    // Compile-state VARIANTS of one VS/PS pair are learned once each (the
+    // measured gameplay stall source); non-compile state and repeats are free.
+    {
+        Learner variants(GetCurrentThreadId(),L"");
+        d2vr_pipeline_warmup::learner.store(&variants);
+        HR(device->SetVertexShader(gameVs));HR(device->SetPixelShader(gamePs));HR(device->SetVertexDeclaration(declaration));
+        HR(device->SetTexture(0,texture));
+        TrackDeclaration(declaration);TrackTexture(0,texture);
+        TrackRenderState(D3DRS_ALPHATESTENABLE,TRUE);TrackSamplerSrgb(0,D3DSAMP_SRGBTEXTURE,TRUE);
+        IDirect3DTexture9* other=nullptr;HR(device->CreateTexture(4,4,1,0,D3DFMT_X8R8G8B8,gamePool,&other,nullptr));
+        HR(device->BeginScene());
+        ObserveDraw(device,gameVs,gamePs);                                          // variant 1
+        HR(device->SetTexture(0,other));TrackTexture(0,other);ObserveDraw(device,gameVs,gamePs);   // variant 2: texture format
+        HR(device->SetTexture(0,texture));TrackTexture(0,texture);ObserveDraw(device,gameVs,gamePs); // known key
+        HR(device->SetRenderState(D3DRS_ALPHATESTENABLE,FALSE));TrackRenderState(D3DRS_ALPHATESTENABLE,FALSE);
+        ObserveDraw(device,gameVs,gamePs);                                          // variant 3: alpha test
+        TrackRenderState(D3DRS_ZENABLE,TRUE);ObserveDraw(device,gameVs,gamePs);      // not a compile input
+        HR(device->EndScene());
+        CHECK(variants.learned==3 && variants.manifest.Size()==3 && variants.seen.size()==3 && variants.captureFailures==0);
+        uint64_t v=0;std::vector<Record> learnedVariants;auto words=variants.manifest.Serialize(v);
+        CHECK(Parse(words.data(),words.size(),learnedVariants) && learnedVariants.size()==3);
+        CHECK(learnedVariants[1].state.textures[0].format==D3DFMT_X8R8G8B8 && learnedVariants[2].state.alphaTest==0);
+        // Per-frame capture budget: excess keys are deferred, never marked seen.
+        variants.capturesThisFrame=d2vr_pipeline_warmup::CapturesPerFrame;
+        HR(device->SetTexture(0,other));TrackTexture(0,other);
+        HR(device->BeginScene());ObserveDraw(device,gameVs,gamePs);HR(device->EndScene());
+        CHECK(variants.deferred==1 && variants.seen.size()==3);
+        variants.nextTick=~0ull; // budget reset only: no background save of this stack-owned learner
+        Tick(0);HR(device->BeginScene());ObserveDraw(device,gameVs,gamePs);HR(device->EndScene());
+        CHECK(variants.seen.size()==4 && variants.learned==4 && variants.capturesThisFrame==1);
+        d2vr_pipeline_warmup::learner.store(nullptr);
+        HR(device->SetTexture(0,texture));HR(device->SetRenderState(D3DRS_ALPHATESTENABLE,TRUE));other->Release();
+        puts("PASS variant learning: texture-format and alpha-test variants of one pair captured once each; ZENABLE ignored; per-frame budget defers without loss");
+    }
+
     // Startup pool owns two copies of each shader; warmup borrows them only.
     const auto cache=prefix+L"-learned.bin",seed=prefix+L"-seed.bin";
     d2vr_shader_preload::Pool<IUnknown> package(device);CHECK(package.Remember(device,vs));CHECK(package.Remember(device,ps));

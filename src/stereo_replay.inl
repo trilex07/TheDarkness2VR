@@ -1384,7 +1384,9 @@ static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWO
         // a released surface wrapper address must not alias a later RT.
         CollectLightReadbackTarget(s);
     }
-    return RecordLiveResult(g_orig.SetRenderTarget(dev, idx, s));
+    const HRESULT result=RecordLiveResult(g_orig.SetRenderTarget(dev, idx, s));
+    if(SUCCEEDED(result)) d2vr_pipeline_warmup::TrackTarget(idx,s);
+    return result;
 }
 static HRESULT STDMETHODCALLTYPE Hook_Clear(IDirect3DDevice9* dev, DWORD count, const D3DRECT* rects,
                                             DWORD flags, D3DCOLOR color, float z, DWORD st) {
@@ -1422,7 +1424,9 @@ static HRESULT STDMETHODCALLTYPE Hook_SetRenderState(IDirect3DDevice9* dev, D3DR
     if(d2vr_stateblock::Active(dev))return g_orig.SetRenderState(dev,st,v);
     d2vr_record_sync::NativeMutation();
     if (g_recActive) RecEmit(OP_SetRenderState, 0, st, v);
-    return RecordLiveResult(g_orig.SetRenderState(dev, st, v));
+    const HRESULT result=RecordLiveResult(g_orig.SetRenderState(dev, st, v));
+    if(SUCCEEDED(result)) d2vr_pipeline_warmup::TrackRenderState(st,v);
+    return result;
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetTextureStageState(IDirect3DDevice9* dev, DWORD stage, D3DTEXTURESTAGESTATETYPE t, DWORD v) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetTextureStageState(dev,stage,t,v);
@@ -1447,7 +1451,9 @@ static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWO
     d2vr_record_sync::NativeMutation();
     v = ResolveSamplerValue(dev, t, v);
     if (g_recActive) RecEmit(OP_SetSamplerState, 0, smp, t, v);
-    return RecordLiveResult(g_orig.SetSamplerState(dev, smp, t, v));
+    const HRESULT result=RecordLiveResult(g_orig.SetSamplerState(dev, smp, t, v));
+    if(SUCCEEDED(result)) d2vr_pipeline_warmup::TrackSamplerSrgb(smp,t,v);
+    return result;
 }
 // A MAXANISOTROPY budget alone leaves LINEAR minification bilinear. Restrict
 // promotion to one bytecode-verified world diffuse sampler and restore it at
@@ -1861,9 +1867,11 @@ static HRESULT STDMETHODCALLTYPE Hook_SetVertexDeclaration(IDirect3DDevice9* dev
     return RecordLiveResult(g_orig.SetVertexDeclaration(dev, d));
 
     };
-    return d2vr_submission::ForwardBinding(dev,
+    const HRESULT result=d2vr_submission::ForwardBinding(dev,
         (d2vr_submission::requested && d2vr_submission::bindingsRequested)?GetCurrentThreadId():0,
         g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::Declaration,(uintptr_t)d,0,0,send,[&](){return published;});
+    if(SUCCEEDED(result)) d2vr_pipeline_warmup::TrackDeclaration(d);
+    return result;
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetFVF(IDirect3DDevice9* dev, DWORD fvf) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetFVF(dev,fvf);
@@ -1871,6 +1879,7 @@ static HRESULT STDMETHODCALLTYPE Hook_SetFVF(IDirect3DDevice9* dev, DWORD fvf) {
     if (g_recActive) RecEmit(OP_SetFVF, 0, fvf);
     d2vr_submission::InvalidateBindings();
     const HRESULT result=RecordLiveResult(g_orig.SetFVF(dev,fvf));
+    if(SUCCEEDED(result)) d2vr_pipeline_warmup::TrackFvf(fvf);
     d2vr_submission::InvalidateBindings();return result;
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetVSConstI(IDirect3DDevice9* dev, UINT s, const int* d, UINT n) {
@@ -1907,9 +1916,11 @@ static HRESULT STDMETHODCALLTYPE Hook_SetStreamSourceFreq(IDirect3DDevice9* dev,
     return RecordLiveResult(g_orig.SetStreamSourceFreq(dev, num, freq));
 
     };
-    return d2vr_submission::ForwardBinding(dev,
+    const HRESULT result=d2vr_submission::ForwardBinding(dev,
         (d2vr_submission::requested && d2vr_submission::bindingsRequested)?GetCurrentThreadId():0,
         g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::Frequency(num),freq,0,0,send,[&](){return published;});
+    if(SUCCEEDED(result)) d2vr_pipeline_warmup::TrackFrequency(num,freq);
+    return result;
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3DIndexBuffer9* ib) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetIndices(dev,ib);
