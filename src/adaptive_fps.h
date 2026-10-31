@@ -9,8 +9,7 @@ enum class Result {Applied,Unsupported,Failed};
 struct Runtime {
     void* context=nullptr;
     Result (*setHalf)(void*,bool)=nullptr;
-    // Bind only a documented session-scoped pacing adapter. This is not a
-    // display-refresh request, thread sleep, or permission to skip XR frames.
+    // Controls application pacing only; does not assert compositor synthesis.
 };
 struct Work {
     uint64_t frame=0;
@@ -62,10 +61,7 @@ class Controller {
     double goodSince_=0,goodLast_=0;
     static bool Time(double t){return std::isfinite(t) && t>0;}
     static double Threshold(double hz) {
-        if(std::fabs(hz-90)<=.5)return 80;
-        if(std::fabs(hz-120)<=.5)return 100;
-        if(std::fabs(hz-72)<=.5)return 60;
-        return 0; // rates without an agreed policy are not silently rounded
+        return hz>=1 && hz<=1000 ? hz*.98:0; // small tolerance for cadence jitter
     }
     void ResetSamples() {
         frame_=workFrame_=0;time_=windowStart_=fps_=badSeconds_=0;intervals_=0;
@@ -85,6 +81,13 @@ class Controller {
     }
 public:
     void DiscardFrames(){ResetSamples();}
+    // A bounded uncapped probe measures actual fresh-frame throughput again.
+    // Capped FPS alone is never used as proof of recovered headroom.
+    void Probe(double now) {
+        if(mode_==Mode::Auto && half_ && Time(now) && now-changed_>=8 && Request(false,now))
+            ResetSamples();
+    }
+
     Snapshot State()const {
         return {mode_,status_,refresh_,fps_,refresh_>0 ? refresh_/(half_?2:1):0,half_,frame_};
     }

@@ -73,8 +73,9 @@ int main() {
         CHECK(r.control.State().status==Status::Full);
         r.Seconds(1.5,hz*.5);CHECK(!r.control.State().half); // residence/hysteresis
     }
-    for(const double threshold:{60.,80.,100.}) {
-        Run r(threshold==60?72:threshold==80?90:120);
+    for(const double hz:{72.,90.,120.}) {
+        const double threshold=hz*.98;
+        Run r(hz);
         r.Seconds(12,threshold);CHECK(r.pacer.calls.empty()); // exact boundary
         r.Seconds(5,threshold-2);CHECK(r.control.State().half);
     }
@@ -141,7 +142,7 @@ int main() {
         Pacer p;CHECK(c.Bind(p.Adapter(),3));
         CHECK(c.Configure(Mode::Auto,0,3));CHECK(c.State().status==Status::UnknownRefresh);
         CHECK(c.Configure(Mode::Half,NAN,4));CHECK(c.State().status==Status::UnknownRefresh);
-        CHECK(c.Configure(Mode::Auto,144,5));CHECK(c.State().status==Status::UnsupportedRefresh);
+        CHECK(c.Configure(Mode::Auto,144,5));CHECK(c.State().status==Status::Full);
         CHECK(!c.Configure(Mode(7),90,6));CHECK(!c.Configure(Mode::Off,90,NAN));
     }
     {
@@ -152,5 +153,14 @@ int main() {
         CHECK(r.control.State().half); // stale work is not recovery evidence
         r.Seconds(4,45,.001,.001);CHECK(!r.control.State().half);
     }
-    std::printf("PASS x86 adaptive FPS policy: %u checks; supported-rate thresholds, unique frames, sustained entry, workload-only recovery, missing/stale samples, mode/rate/session changes, and rejected runtime transitions. Real runtime pacing and HMD validation NOT RUN.\n",checks);
+    {
+        Run r(90);r.Seconds(5,85);CHECK(r.control.State().half);
+        r.control.Probe(r.now+1);CHECK(r.control.State().half);
+        r.now+=9;r.control.Probe(r.now);CHECK(!r.control.State().half);
+        r.Seconds(5,90);CHECK(!r.control.State().half);
+        r.Seconds(5,85);CHECK(r.control.State().half);
+        Run manual(120,Mode::Half);manual.control.Probe(manual.now+100);
+        CHECK(manual.control.State().half);
+    }
+    std::printf("PASS x86 adaptive FPS policy: %u checks; refresh-relative thresholds, unique frames, sustained entry, workload recovery and explicit uncapped probe, missing/stale samples, mode/rate/session changes, and rejected runtime transitions. Real runtime pacing and HMD validation NOT RUN.\n",checks);
 }

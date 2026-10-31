@@ -45,3 +45,9 @@ $exe=Join-Path $out 'd2vr-adaptive-integration.exe'
 cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /WX /O2 /std:c++17 /I`"$out`" /I`"$sdk/include`" `"$source`" /Fo:`"$out\d2vr-adaptive-integration.obj`" /Fe:`"$exe`""
 if($LASTEXITCODE -ne 0){throw 'Adaptive host integration compile failed'}
 Invoke-Regression $exe
+
+$source=Join-Path $PSScriptRoot 'app_half_rate_test.cpp'
+$exe=Join-Path $out 'd2vr-app-half-rate.exe'
+cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /WX /O2 /std:c++17 `"$source`" /Fo:`"$out\app-half-rate.obj`" /Fe:`"$exe`""
+if($LASTEXITCODE -ne 0){throw 'Application half-rate compile failed'}
+Invoke-Regression $exe

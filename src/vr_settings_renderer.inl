@@ -86,7 +86,7 @@ struct VrSettingsRenderer {
         if(drawnMode==int(mode) && drawnPointer==pointer.visible && drawnX==px && drawnY==py &&
            drawnToggleKey==g_vrSettingsToggleKey)return true;
         if(!Fill({0,0,Width,Height},RGB(16,24,36)) || !Text(32,24,"DARKNESS II VR - SETTINGS") ||
-           !Text(32,80,"Adaptive Reprojection"))return false;
+           !Text(32,80,"Adaptive Frame Rate"))return false;
         const char* names[]={"OFF","AUTO","HALF"};
         for(unsigned i=0;i<3;++i) {
             const auto r=ModeRect(i);const auto& p=g_vrSettings.Pointer();
@@ -94,10 +94,9 @@ struct VrSettingsRenderer {
             if(!Fill(r,hover?RGB(40,110,145):unsigned(mode)==i?RGB(28,82,100):RGB(42,50,66)) ||
                !Text(r.x+32,r.y+14,names[i]))return false;
         }
-        // This build has no documented runtime half-rate adapter. Selecting a
-        // request must never imply that motion smoothing has actually started.
+        // Application limiting does not assert runtime motion smoothing.
         if(!Text(32,220,mode==d2vr_adaptive::Mode::Off ? "OFF - runtime pacing unchanged" :
-            "UNSUPPORTED - runtime pacing unchanged") ||
+            "APP CAP - reprojection by runtime") ||
            !Text(32,286,g_vrSettingsToggleKey==VK_INSERT ? "INSERT: toggle   B: close" :
                 g_vrSettingsToggleKey ? "Custom toggle key   B: close" : "B: close") ||
            !Fill(CloseRect,RGB(60,65,78)) || !Text(502,286,"CLOSE"))return false;

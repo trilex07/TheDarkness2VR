@@ -26,6 +26,7 @@
 #include "xr_display_refresh.h"
 #include "steamvr_refresh_native.h"
 #include "adaptive_fps.h"
+#include "app_half_rate.h"
 #include "vr_settings.h"
 
 #include <xinput.h>
@@ -685,11 +686,11 @@ void LoadConfig() {
 
     g_asyncLogRequested = GetPrivateProfileIntA("Render", "AsyncLog", 0, chosenIni) != 0;
     char adaptive[32]{};
-    GetPrivateProfileStringA("Render","AdaptiveFPS","OFF",adaptive,sizeof(adaptive),chosenIni);
+    GetPrivateProfileStringA("Render","AdaptiveFPS","AUTO",adaptive,sizeof(adaptive),chosenIni);
     g_adaptiveFPSMode=(!_stricmp(adaptive,"AUTO") || !strcmp(adaptive,"1")) ? d2vr_adaptive::Mode::Auto:
         (!_stricmp(adaptive,"HALF") || !strcmp(adaptive,"2")) ? d2vr_adaptive::Mode::Half:d2vr_adaptive::Mode::Off;
     if(g_adaptiveFPSMode!=d2vr_adaptive::Mode::Off)
-        Log("[AdaptiveFPS] requested=%s; runtime pacing adapter unavailable; will report unsupported, never sleep or skip XR frames",
+        Log("[AdaptiveFPS] requested=%s; application half-rate cap; compositor reprojection remains runtime-controlled",
             g_adaptiveFPSMode==d2vr_adaptive::Mode::Auto ? "AUTO":"HALF");
     Log("[AsyncLog] requested=%d; startup synchronous, worker starts only at HookDevice", (int)g_asyncLogRequested);
     g_testMode = GetPrivateProfileIntA("Render", "TestMode", 0, chosenIni);
@@ -1429,6 +1430,45 @@ static d2vr_refresh::SteamReader<d2vr_refresh::SteamNative> g_steamRefresh;
 static ULONGLONG g_steamRefreshNext=0;
 static d2vr_adaptive::Controller g_adaptiveFPS;
 static thread_local d2vr_adaptive::Presentation g_adaptivePresentation;
+static d2vr_adaptive::AppHalfRate g_appHalfRate;
+static bool g_appPacingBound=false;
+static d2vr_adaptive::Result SetApplicationHalfRate(void*,bool) {
+    // Local deadline policy only: no SteamVR global or per-application settings.
+    return d2vr_adaptive::Result::Applied;
+}
+static double PacingNow() {
+    LARGE_INTEGER ticks,frequency;
+    QueryPerformanceCounter(&ticks);QueryPerformanceFrequency(&frequency);
+    return double(ticks.QuadPart)/double(frequency.QuadPart);
+}
+static void PaceApplicationFrame() {
+    const bool active=g_xrSessionState==XR_SESSION_STATE_FOCUSED &&
+        g_submitMode==4 && g_stereoMode>=1 && g_frameBoundaryPolicy==0;
+    const double now=GetTickCount64()*.001;
+    if(!g_appPacingBound) {
+        g_appPacingBound=g_adaptiveFPS.Bind({nullptr,SetApplicationHalfRate},now);
+    }
+    g_adaptiveFPS.Configure(active ? g_adaptiveFPSMode:d2vr_adaptive::Mode::Off,g_displayRefresh.Hz(),now);
+    g_adaptiveFPS.Probe(now);
+    const auto state=g_adaptiveFPS.State();
+    if(!active || !state.half) {g_appHalfRate.Reset();return;}
+    const double delay=g_appHalfRate.Delay(PacingNow(),state.refresh,true);
+    // Waiting happens before xrWaitFrame/pose location, never between eyes.
+    // Do not busy-spin on the game/render owner or modify XR display times.
+    if(delay>0) {
+        HANDLE timer=CreateWaitableTimerExW(nullptr,nullptr,0x00000002,TIMER_ALL_ACCESS);
+        if(!timer)timer=CreateWaitableTimerW(nullptr,FALSE,nullptr);
+        if(timer) {
+            LARGE_INTEGER due;due.QuadPart=-LONGLONG(std::ceil(delay*10000000));
+            if(SetWaitableTimer(timer,&due,0,nullptr,nullptr,FALSE))
+                WaitForSingleObject(timer,INFINITE);
+            else Sleep(DWORD(std::ceil(delay*1000)));
+            CloseHandle(timer);
+        } else Sleep(DWORD(std::ceil(delay*1000)));
+    }
+    g_appHalfRate.Started(PacingNow());
+}
+
 static uint64_t BeginAdaptivePresentation() {
     return g_adaptiveFPSMode!=d2vr_adaptive::Mode::Off && g_submitMode==4 && g_frameBoundaryPolicy==0 ?
         g_adaptivePresentation.Begin():0;
@@ -1440,8 +1480,7 @@ static void EndAdaptivePresentation(uint64_t serial,HRESULT hr,bool forwarded=tr
     __declspec(align(16)) unsigned char floating[512];
     _fxsave(floating);
     __asm fninit
-    // No runtime adapter is bound yet. This activates truthful unique-frame
-    // feedback and policy status, not an emulated cap or compositor control.
+    // Count only acknowledged fresh stereo frames; pacing is applied before wait-frame.
     const double now=GetTickCount64()*.001;
     g_adaptiveFPS.Configure(g_adaptiveFPSMode,g_displayRefresh.Hz(),now);
     g_adaptiveFPS.Frame(frame,now);
@@ -1449,7 +1488,7 @@ static void EndAdaptivePresentation(uint64_t serial,HRESULT hr,bool forwarded=tr
     static int lastStatus=-1;
     if(lastStatus!=int(state.status) || frame%300==0) {
         lastStatus=int(state.status);
-        Log("[AdaptiveFPS] status=%s physicalHz=%.3f uniqueAppFPS=%.2f halfApplied=%d frame=%llu; requires fresh stereo XR + forwarded D3D_OK; complete CPU/GPU recovery input not connected",
+        Log("[AdaptiveFPS] status=%s physicalHz=%.3f uniqueAppFPS=%.2f halfApplied=%d frame=%llu; requires fresh stereo XR + forwarded D3D_OK; application cap only; AUTO uncapped recovery probe every 8s",
             d2vr_adaptive::Name(state.status),state.refresh,state.fps,int(state.half),frame);
     }
     _fxrstor(floating);
@@ -5167,7 +5206,7 @@ void PumpXR() {
                             g_steamRefreshNext=GetTickCount64()+2000;
                         }
                     }
-                    Log("[DisplayRefresh] physicalHz=%.3f extensionEnabled=%d; zero=unknown; application pacing is separate; half-rate control unimplemented",
+                    Log("[DisplayRefresh] physicalHz=%.3f extensionEnabled=%d; zero=unknown; application pacing is separate; application half-rate cap available; compositor controls reprojection",
                         double(g_displayRefresh.Hz()),int(g_displayRefresh.Enabled()));
                     if(g_displayRefresh.FallbackActive())
                         Log("[DisplayRefresh] source=OpenVR HMD DisplayFrequency; read-only background client, no pacing/settings control");
@@ -5184,7 +5223,7 @@ void PumpXR() {
                 ReleaseVrSettingsRenderer();
                 d2vr::psvr2::SubmitBothOff(d2vr::psvr2::TriggerOffReason::SessionEnd);
                 if (g_gameHwnd) ShowWindow(g_gameHwnd, SW_SHOWNA);
-                if(xrEndSession(g_xrSession)==XR_SUCCESS)g_adaptiveFPS.SessionEnded();
+                if(xrEndSession(g_xrSession)==XR_SUCCESS){g_adaptiveFPS.SessionEnded();g_appPacingBound=false;g_appHalfRate.Reset();}
                 g_xrRunning = false;
                 g_displayRefresh.Stop();
                 g_steamRefresh.Stop();
@@ -6008,6 +6047,7 @@ static void BeginTrackedFrame() {
     if (!g_xrReady || g_trackedFrame.open) return;
     PumpXR();
     if (!g_xrRunning) { g_haveViews = false; return; }
+    PaceApplicationFrame();
     XrFrameState fs{ XR_TYPE_FRAME_STATE };
     XrResult r;
     {
