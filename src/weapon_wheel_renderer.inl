@@ -93,14 +93,12 @@ struct QuadAtlas {
 static QuadAtlas g_wheelAtlas("WeaponWheel",512,2);
 static QuadAtlas g_ammoAtlas("AmmoHud",128,2);
 static QuadAtlas g_gazeAtlas("GazeDot",64,1);
-static XrSpace g_viewSpace=XR_NULL_HANDLE;
 static bool g_gazeDotDrawn=false;
 static uint64_t g_wheelDrawn=~0ull;
 static int g_ammoDrawn[2]{-3,-3};
 static void ReleaseWeaponWheelRenderer() {
     g_wheelAtlas.Reset(); g_ammoAtlas.Reset(); g_gazeAtlas.Reset(); g_wheelDrawn=~0ull; g_ammoDrawn[0]=g_ammoDrawn[1]=-3;
-    g_gazeDotDrawn=false;
-    if(g_viewSpace) { xrDestroySpace(g_viewSpace); g_viewSpace=XR_NULL_HANDLE; }
+    g_gazeDotDrawn=false; // g_viewSpace belongs to the session code in d3d9.cpp
 }
 
 static void AppendWheelQuads(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,uint32_t limit,
@@ -172,13 +170,7 @@ static void AppendGazeDot(const XrCompositionLayerBaseHeader** layers,uint32_t& 
     if(!g_gazeDotEnabled || layerCount>=limit) return;
     XrVector3f d{};
     if(!LatestGaze(d)) return;
-    if(!g_viewSpace) {
-        static XrSession failedFor=XR_NULL_HANDLE;
-        if(failedFor==g_xrSession) return;
-        XrReferenceSpaceCreateInfo ci{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
-        ci.referenceSpaceType=XR_REFERENCE_SPACE_TYPE_VIEW; ci.poseInReferenceSpace.orientation.w=1;
-        if(XR_FAILED(xrCreateReferenceSpace(g_xrSession,&ci,&g_viewSpace))) { g_viewSpace=XR_NULL_HANDLE; failedFor=g_xrSession; Log("[EyeTracking] VIEW space unavailable"); return; }
-    }
+    if(!g_viewSpace) return; // VIEW space created with the session (d3d9.cpp)
     if(!g_gazeAtlas.Ensure()) return;
     if(!g_gazeDotDrawn) {
         auto t=g_gazeAtlas.Cell(0);

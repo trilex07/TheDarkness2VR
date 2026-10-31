@@ -2,7 +2,7 @@
 // into "Local\Darkness2VR.Gaze.<pid>" (src/psvr2/GazeShare.h). Read-only here;
 // stale (>100 ms), invalid or blinking samples mean "no gaze" and every
 // consumer keeps its controller behaviour. Recon: docs/research/psvr2-eye-tracking-recon.md.
-#include "psvr2/GazeShare.h"
+// psvr2/GazeShare.h is included at the top of d3d9.cpp (outside the anonymous namespace).
 
 struct GazeReader {
     HANDLE mapping=nullptr;

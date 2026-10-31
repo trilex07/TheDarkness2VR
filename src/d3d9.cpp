@@ -120,6 +120,7 @@ static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
 #include "psvr2/IpcClient.h"
 #include "psvr2/HapticDelivery.h"
 #include "psvr2/ShotEvents.h"
+#include "psvr2/GazeShare.h"
 
 namespace {
 
