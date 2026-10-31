@@ -106,6 +106,56 @@ int main() {
         drawResult=failure?-1:0;CHECK(ActualDraw(&dev,op)==!failure);
     }
     CHECK(drawCalls==8 && clipRestores==8);
+    // Shared-capture colour reuse: the right capture slot replaces the history
+    // copy. Adoption makes no copy, is only read by Seed, and Save never writes
+    // through it (the slot is a live D3D11 input).
+    {
+        IDirect3DSurface9 slot;g_rightColorHistory.Release();
+        for(unsigned frame=1;frame<=1000;++frame) {
+            const unsigned before=dev.copies;
+            g_rightHistoryFromCapture=true;
+            output.pixel=output.untouchedPixel=3*frame; // right eye after replay
+            CHECK(SaveActualCaller(&dev,&output,true,true) && dev.copies==before); // validate only
+            slot.pixel=slot.untouchedPixel=3*frame;     // exact right capture copy
+            g_rightHistoryFromCapture=false;
+            CHECK(CompleteRightEyeHistory(&dev,&output,&slot) && dev.copies==before);
+            CHECK(g_rightColorHistory.adopted && g_rightColorHistory.pixels==&slot);
+            CHECK(slot.refs==2 && output.refs==2);           // stable, no per-frame leak
+            output.pixel=output.untouchedPixel=3*frame+1;    // next live/left pixels
+            g_hadWorldDrawThisFrame=(frame&1)!=0;
+            CHECK(SeedActualCaller(&dev,&output) && dev.copies==before+1);
+            CHECK(output.pixel==3*frame && output.untouchedPixel==3*frame);
+            CHECK(slot.pixel==3*frame);                       // seed only reads the slot
+        }
+        // Rejected replay invalidates even when the capture would supply history.
+        g_rightHistoryFromCapture=true;
+        CHECK(!SaveActualCaller(&dev,&output,false,true));
+        CHECK(g_rightColorHistory.rejected && !g_rightColorHistory.pixels && slot.refs==1 && output.refs==1);
+        g_rightHistoryFromCapture=false;
+        CHECK(SeedRightEyeBackground(&dev,&output,true));
+        // Capture failed or did not mirror RT0: legacy full-surface save, same pixels.
+        output.pixel=41;const unsigned before=dev.copies;
+        CHECK(CompleteRightEyeHistory(&dev,&output,nullptr) && dev.copies==before+1 && !g_rightColorHistory.adopted);
+        output.pixel=0;CHECK(SeedRightEyeBackground(&dev,&output,false) && output.pixel==41);
+        // A legacy Save after adoption allocates its own surface; slot untouched.
+        CHECK(CompleteRightEyeHistory(&dev,&output,&slot) && slot.refs==2);
+        slot.pixel=55;output.pixel=66;CHECK(g_rightColorHistory.Save(&dev,&output));
+        CHECK(slot.pixel==55 && slot.refs==1 && g_rightColorHistory.pixels!=&slot && !g_rightColorHistory.adopted);
+        output.pixel=1;CHECK(SeedRightEyeBackground(&dev,&output,false) && output.pixel==66);
+        // Target switch, null inputs and Reset release every adopted reference.
+        CHECK(CompleteRightEyeHistory(&dev,&output,&slot));
+        CHECK(CompleteRightEyeHistory(&dev,&other,&slot) && output.refs==1 && other.refs==2 && slot.refs==2);
+        other.pixel=7;slot.pixel=8;CHECK(SeedRightEyeBackground(&dev,&other,false) && other.pixel==8);
+        output.pixel=1;CHECK(SeedRightEyeBackground(&dev,&output,false) && output.pixel==1); // unrelated target: released, unseeded
+        CHECK(slot.refs==1 && other.refs==1 && !g_rightColorHistory.pixels);
+        CHECK(CompleteRightEyeHistory(&dev,&other,&slot) && slot.refs==2 && other.refs==2);
+        g_rightColorHistory.Adopt(&other,nullptr);
+        CHECK(g_rightColorHistory.rejected && slot.refs==1 && other.refs==1);
+        CHECK(CompleteRightEyeHistory(&dev,&output,&slot));
+        g_rightColorHistory.Release();CHECK(slot.refs==1 && output.refs==1 && !g_rightColorHistory.adopted);
+        CHECK(SeedRightEyeBackground(&dev,&output,false));
+    }
+    std::puts("PASS shared-capture colour reuse: 1000 adopted right histories with zero history copies, read-only slot, rejection, legacy fallback, alias-safe Save, target switch and Reset references");
     std::puts("PASS actual-source right-eye history:1000 partial-world/camera-only/UI segments +1000 rejected UI segments; untouched right pixels, failure invalidation, target switch, world recovery, Reset; four draw HRESULTs and clip restoration; simulated pixels, not HMD evidence");
     return 0;
 }
