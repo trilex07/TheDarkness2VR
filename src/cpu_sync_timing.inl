@@ -41,6 +41,25 @@ struct Timing {
         e.over5+=ms>=5; e.over11+=ms>=11.111; e.over22+=ms>=22.222;
         ReleaseSRWLockExclusive(&lock);
     }
+    // Per-call identity for rare producer-fence outliers only. The window
+    // aggregate cannot prove which call (or which sub-step) owns a stall, nor
+    // relate it to one PresentMon interval. Values are QPC ticks on the same
+    // clock as PresentMon/ETW; logging happens only after an already >=11.111 ms
+    // stall, so ordinary frames add no file I/O.
+    LONG producerOutliers=0;
+    void ProducerOutlier(unsigned capture,const LARGE_INTEGER& begin,
+                         const LARGE_INTEGER& issued,HRESULT hr) {
+        if(!enabled) return;
+        LARGE_INTEGER end{};
+        if(!QueryPerformanceCounter(&end) || end.QuadPart<begin.QuadPart) return;
+        const double totalMs=(end.QuadPart-begin.QuadPart)*1000.0/frequency.QuadPart;
+        if(totalMs<11.111 || InterlockedIncrement(&producerOutliers)>256) return;
+        Log("[CPUSync] producer outlier capture=%u qpcBegin=%lld qpcIssued=%lld qpcEnd=%lld issueMs=%.3f flushMs=%.3f totalMs=%.3f hr=0x%08lX tid=%lu",
+            capture,begin.QuadPart,issued.QuadPart,end.QuadPart,
+            (issued.QuadPart-begin.QuadPart)*1000.0/frequency.QuadPart,
+            (end.QuadPart-issued.QuadPart)*1000.0/frequency.QuadPart,
+            totalMs,hr,GetCurrentThreadId());
+    }
     void Report(unsigned width,unsigned height,unsigned long long frame) {
         if(!enabled) return;
         const ULONGLONG now=GetTickCount64();

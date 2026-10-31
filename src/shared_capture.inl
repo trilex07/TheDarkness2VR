@@ -190,9 +190,12 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
     // GPU fence: D3D9Ex and D3D11 run on separate queues; flush D3D9 batch before D3D11 reads
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::Scope cpuProducer(d2vr_cpu_sync::D3D9Fence);
+    LARGE_INTEGER producerBegin{},producerIssued{};
+    const bool producerTimed=d2vr_cpu_sync::timing.enabled && QueryPerformanceCounter(&producerBegin);
 #endif
     if (FAILED(slot.producer->Issue(D3DISSUE_END))) return false;
 #ifdef D2VR_MATCHED_CAPTURE
+    if(producerTimed) QueryPerformanceCounter(&producerIssued);
     d2vr_replay::d2vr_command_history::Scope command(dev,::d2vr_command_history::ProducerFlush,
         d2vr_replay::g_replayEye,0,capture,D3DGETDATA_FLUSH);
 #endif
@@ -204,6 +207,7 @@ static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=f
         slot.producerStatus=hr;
 #ifdef D2VR_MATCHED_CAPTURE
         command.Finish(hr);
+        if(producerTimed) d2vr_cpu_sync::timing.ProducerOutlier(capture,producerBegin,producerIssued,hr);
 #endif
         g_srcW=slot.width; g_srcH=slot.height;
         return hr==S_OK || hr==S_FALSE;
