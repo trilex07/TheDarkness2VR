@@ -611,6 +611,7 @@ static float g_nisSharpness = .20f;
 static bool g_foveatedSharpen = true;
 static bool g_foveatedCopyBase = false;
 static void ParseEngineMaxFrameRate(const char* text); // engine_frame_cap.inl
+static void ParseEngineLodScale(const char* text); // engine_lod_scale.inl
 static float g_foveaPeriphery = .35f, g_foveaSharpness = 1.f, g_foveaSize = .22f;
 static bool g_headAttachedTentacles = false;
 static bool g_hideNativeHud = false;
@@ -754,6 +755,12 @@ void LoadConfig() {
         GetPrivateProfileStringA("Render", "EngineMaxFrameRate", "0", value, sizeof(value), chosenIni);
         ParseEngineMaxFrameRate(value);
         Log("[FrameCap] EngineMaxFrameRate=%s (0=untouched, AUTO=headset refresh)",value);
+    }
+    {
+        char value[32]{};
+        GetPrivateProfileStringA("Render", "EngineLODScale", "0", value, sizeof(value), chosenIni);
+        ParseEngineLodScale(value);
+        Log("[EngineLOD] EngineLODScale=%s (0=untouched; 1.0-1.5 whole-scene trial)",value);
     }
     g_hideNativeHud = GetPrivateProfileIntA("Render", "HideNativeHUD", 0, chosenIni)!=0;
     Log("[NativeHUD] requested=%d; protected owner callback required",int(g_hideNativeHud));
@@ -4580,6 +4587,7 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
 #include "eye_gaze.inl"
 #include "gaze_lod_diagnostic.inl"
 #include "engine_frame_cap.inl"
+#include "engine_lod_scale.inl"
 
 static d2vr_input::UnarmedTriggerDpad g_unarmedTriggerDpadState;
 static d2vr_input::DoubleTapDpad g_doubleTapDpadState;
@@ -5424,7 +5432,7 @@ void PumpXR() {
     }
     ObserveNativeMenuReceiver();
     ApplyGazeMenuCursor(); // same native window thread as the receiver observation
-    if(g_xrRunning) { ApplyEngineFrameCap(); ObserveGazeLodConfiguration(); ReportGazeLodRuntimeObserver(); } // Graphics.MaxFrameRate override (engine_frame_cap.inl)
+    if(g_xrRunning) { ApplyEngineFrameCap(); ApplyEngineLodScale(); ObserveGazeLodConfiguration(); ReportGazeLodRuntimeObserver(); }
     if(g_xrRunning && g_displayRefresh.FallbackActive() && GetTickCount64()>=g_steamRefreshNext) {
         g_steamRefreshNext=GetTickCount64()+2000;
         const float previous=g_displayRefresh.Hz();
