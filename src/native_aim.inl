@@ -8,6 +8,7 @@ static bool NativeCinematicPlaying() {
 }
 static void ObserveNativePauseState(void* manager);
 static void TraceNativeCameraShake(DWORD camera,DWORD avatar);
+static void SuppressNativeCameraShakeHeap(DWORD avatar);
 static bool ProtectedAimCameraOwned(void* camera);
 static DWORD ProtectedAimCameraTable();
 static bool PrepareProtectedAimCamera(void* camera);
@@ -318,6 +319,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
         if(NativeAimOwnerMatches(reinterpret_cast<void*>(owner.camera)) &&
            CaptureNativeGameplay(reinterpret_cast<void*>(owner.camera))) {
             TraceNativeCameraShake(owner.camera,owner.avatar);
+            SuppressNativeCameraShakeHeap(owner.avatar);
             // The distinct +18C getter's strong reference owns this avatar here.
             PrepareProtectedAimCamera(reinterpret_cast<void*>(owner.camera));
             PrepareProtectedThrowForCamera(reinterpret_cast<void*>(owner.camera));
