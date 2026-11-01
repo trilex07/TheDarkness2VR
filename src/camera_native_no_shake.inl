@@ -73,6 +73,10 @@ static void __fastcall CameraSourceDispatchBridge(void* self,void*,void* cameraR
     owner[0x9BC]=0;owner[0x1118]=0;
     __try {
         g_cameraSourceOwnedDispatch(self,cameraReference);
+        // Native slot32 (8446C0) exposes +100 to first-person models.
+        // The ordinary fallback skips 5E1164..5E1192, so retain that snapshot
+        // for EVERY stabilized dispatch, not only the channel adapter.
+        std::memcpy(owner+0x100,owner+0x70,64);
     } __finally {
         std::memcpy(owner+0x1F0,saved.translation,16);
         std::memcpy(owner+0x20C,saved.rotation,12);

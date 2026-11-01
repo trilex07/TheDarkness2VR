@@ -2818,6 +2818,13 @@ Actual-source x86 recorder test with the binary's own RPM import redirected: zer
 `warmed=N` only replayed pipelines already in pipeline-warmup.bin. On the RTX 5070 a recorded-state draw does compile that shader object, including a degenerate triangle, and Reset does not drop it. The 90.88 ms nvgpucomp flush was the first in-process compile of pooled objects that had no stored record. A failed first snapshot never retried that pointer pair, and Add() discarded every record past 1024, so those pipelines hitch on every later launch. Warmup now submits a covering triangle (indices 0,1,2, clip-space positions, identity VS constants, cull none, scissor off, depth test that passes) without replacing the recorded declaration, formats, alpha, fog, clip or samplers. A failed capture is retried once. The manifest holds 4096 records / 32MB. PipelineWarmupMs defaults to 30000. No Reset-time warmup and no synthetic draws for shaders that have no recorded declaration. In-game hitch removal is not measured here.
 # 2026-11-01: selected native camera composition candidate
 
+Subsequent headset test: camera shake gone, haptics present; tentacles frozen and
+weapon flickers. Live read proves owner+100 and model parent frozen~33 units
+behind current+70/camera. Native slot32(8446C0) exposes+100. Restore the native
+70->100 snapshot copy on every stabilized dispatch; keep working camera/haptics.
+Changing-pose ordinary-fallback regression fixture PASS10000 calls. See camera
+research/handoff for raw positions, DLL hash and physical acceptance status.
+
 MAIN: user requests combined camera shake/haptic test. The proven active owner
 chain admits a private slot25 override, with complete pinned native method copies
 730890/7255E0/809390 and all155 relative calls relocated. Synchronous composition

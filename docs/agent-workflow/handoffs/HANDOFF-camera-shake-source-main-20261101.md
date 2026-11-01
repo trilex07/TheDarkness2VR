@@ -8,6 +8,19 @@
 
 ## Goal and status
 
+NEWEST: model regression isolated to frozen owner+100 first-person snapshot.
+Slot32/8446C0 returns+100; +70 moved~33 units while+100 and avatar parent stayed
+at spawn. Native5E1164..5E1192 normally copies70->100; ordinary source fallback
+skipped it. Added that64-byte copy after every admitted dispatch. New actual
+ordinary-path fixture passes10000 changing poses, channel case, ABI/SEH/haptics.
+Built DLL9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D.
+User explicitly confirmed game closed and requested installation. Deployment
+preflight PASS with `-NativeNoShake -ModelSnapshotFix`; installation pending at
+this source commit. Preserve source stabilization and event rumble.
+Recorder20340 is COMPLETED,25318 samples, capture hash in research document.
+Earlier suggestion to replace all final camera arguments was NOT implemented;
+the much narrower snapshot correction addresses the observed missing update.
+
 In progress: zero forced camera shake, stable weapons, impact/train haptics,
 no haptics from walking or stick turning. No working new fix is claimed.
 User agrees to a train/damage test with read-only diagnostics.

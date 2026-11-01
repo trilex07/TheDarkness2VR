@@ -1,6 +1,6 @@
 # Selected-owner feedback, optionally combined with native camera composition.
 # Never enables the rejected render-time camera stabilizers.
-param([switch]$Install,[switch]$NativeNoShake,
+param([switch]$Install,[switch]$NativeNoShake,[switch]$ModelSnapshotFix,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$CandidateHash)
 $CandidateHash=$CandidateHash.ToUpperInvariant()
 $ErrorActionPreference='Stop'
@@ -16,6 +16,11 @@ $exeHash='D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1'
 if($NativeNoShake){
     $expected='8DB11F12A5032BCAC7FA4806C22E1439DDE63BE5035B244159FDD043EF1A8966'
     $diagnosticHash='D218DB73AF6452218E9AE2829767869304F05EE294A3A88354EC00385FE963F3'
+}
+if($ModelSnapshotFix){
+    if(!$NativeNoShake){throw 'Model snapshot fix requires NativeNoShake'}
+    $expected='61C4270D5C9DF9475A8A53C55AA4FD5C122408F51626CDDDC7AB3F305F74CB37'
+    $diagnosticHash='AC8290E48D6CD8CA34ED935734E7293572E2F9227B0AA27D4CA03507FA619299'
 }
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}
 $exe=Join-Path $game 'DarknessII.exe'
@@ -45,7 +50,7 @@ foreach($key in @('CameraAnimStabilize','CameraShakeSourceSuppress','CameraShake
     if([D2vrProfileGate]::GetPrivateProfileInt('Diagnostics',$key,0,$diagnosticIni) -ne 0){throw "Rejected camera path enabled: $key"}
 }
 if(!$Install){Write-Output "PREFLIGHT PASS DLL=$candidateHash; nine protected targets; no files changed";return}
-$packageKind=if($NativeNoShake){'camera-native-no-shake-'}else{'camera-event-rumble-'}
+$packageKind=if($ModelSnapshotFix){'camera-model-snapshot-'}elseif($NativeNoShake){'camera-native-no-shake-'}else{'camera-event-rumble-'}
 $package=Join-Path $local ('packages/'+$packageKind+(Get-Date -Format 'yyyyMMddTHHmmssfff'))
 $rollback=Join-Path $package 'rollback'
 $candidateDir=Join-Path $package 'candidate'

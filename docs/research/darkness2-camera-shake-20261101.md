@@ -1,5 +1,34 @@
 # Darkness II VR camera-shake source audit (2026-11-01)
 
+## First-person model snapshot regression and fix
+
+User physically confirms61C4270D... removes visible camera shake and delivers
+vibration, but tentacles stay in world and the weapon disappears intermittently.
+Images show displaced tentacles and a floating gun. Read-only PID38032 evidence:
+active owner334ABCA0 +70 position(43.367115,-7.249016,209.560516), forward
+(0.115947,0,-0.993255); +100 remains the initial position
+(43.586800,-7.248966,176.255997), forward(-0.314704,0,0.949190).
+Selected parent333FB1E0 +140 also remains near that initial pose
+(43.585567,-7.266966,176.255585). Camera80 is current
+(43.365681,-7.249016,209.571747). The missing model snapshot update is proven;
+its role in the visible disappearance still needs headset confirmation.
+
+Native owner slot32 =8446C0 (`lea eax,[ecx+100]; ret`) exposes that stale model
+snapshot. Native5E1164..5E1192 copies70..A0 to100..130 after FP composition;
+the new ordinary fallback omitted this copy. Its channel adapter contained a
+copy but runtime `animationBypass=0`, so that code never ran. Correction performs
+the same64-byte snapshot copy after EVERY admitted native dispatch. Camera math,
+source masking, raw haptic signals and native restoration are unchanged.
+
+Regression fixture now exercises10000 changing poses through the ordinary
+fallback WITHOUT the channel adapter, requiring100 to match70 each time, then
+checks the channel branch separately. It retains ABI/reference/SEH/noise tests.
+DLL9AF9A51E... built successfully; physical model acceptance pending.
+
+Read-only300s recording completed25318 samples, five owners/one camera,
+`test-output/camera-native-source-20261101T2220.jsonl`, SHA256
+`A6DCD516F32F305C83335023F4F02E763C92A5354CC0FF0726A0716FE46FC0E8`.
+
 ## Selected native composition candidate after event capture (2026-11-01)
 
 New `CameraNativeNoShake` is default OFF. User requested a combined shake/haptic

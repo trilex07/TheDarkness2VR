@@ -41,4 +41,6 @@ assert read(0x809c02,3) == bytes.fromhex('c20c00')
 assert hashlib.sha256(read(0xfdf16c,91*4)).hexdigest() == 'd13a6d5ccdfff5871c8583600a0ac2bcf48cdbda46932c4fa8ee0a460b671f66'
 assert read(0xfdf2d8,18) == b'Use Camera Channel'
 assert struct.unpack('<I',read(0xfdf170+25*4,4))[0] == 0x730890
+assert struct.unpack('<I',read(0xfdf170+32*4,4))[0] == 0x8446c0
+assert read(0x8446c0,7) == bytes.fromhex('8d8100010000c3')  # model snapshot getter +100
 print('PASS exact EXE, three complete pinned functions, 155 relocations, internal instruction-boundary branches, ABI, bone branch, 90-slot table boundary')

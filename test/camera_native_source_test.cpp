@@ -29,9 +29,17 @@ static void __fastcall Compose(void* self,void*,void* av,void* cam,const float* 
     assert(*reinterpret_cast<float*>(owner+0xca0)==.5f);
     --avatarRef[1];--cameraRef[1];++compositions;
     if(raiseInCompose)RaiseException(0xE0001234,0,0,nullptr);
-    for(unsigned i=0;i<64;++i)owner[0x70+i]=BYTE(i+1);
+    for(unsigned i=0;i<64;++i)owner[0x70+i]=BYTE(i+1+compositions%123);
 }
-static void __fastcall Owned(void* self,void*,void* ref) {CameraSourceNoAnimation(self,nullptr,ref);}
+static bool useChannel=false;
+static void __fastcall Owned(void* self,void*,void* ref) {
+    if(useChannel){CameraSourceNoAnimation(self,nullptr,ref);return;}
+    // Actual failing runtime path: ordinary composer updates +70 but does NOT
+    // call the channel adapter or update model snapshot +100.
+    ++avatarRef[1];
+    alignas(16) const float zero[4]={};
+    Compose(self,nullptr,avatarRef,ref,zero,0,0,0);
+}
 static void Setup() {
     std::memset(owner,0,sizeof(owner));std::memset(controller,0,sizeof(controller));
     *reinterpret_cast<DWORD*>(owner)=0xfdf170;
@@ -70,12 +78,16 @@ int main() {
         assert(std::memcmp(owner+0x70,owner+0x100,64)==0);
     }
     assert(compositions==10000 && originals==0);
+    assert(g_cameraSourceNoAnimationCalls.load()==0);
+    Setup();useChannel=true;CameraSourceDispatchBridge(owner,nullptr,cameraRef);CheckRestored();
+    assert(std::memcmp(owner+0x70,owner+0x100,64)==0);
+    assert(g_cameraSourceNoAnimationCalls.load()==1);useChannel=false;
     for(unsigned flag:{0x10afu,0x8a4u,0x10adu,0x10aeu}) {
         Setup();owner[flag]=1;CameraSourceDispatchBridge(owner,nullptr,cameraRef);CheckRestored();
     }
     Setup();*reinterpret_cast<DWORD*>(controller)=0;CameraSourceDispatchBridge(owner,nullptr,cameraRef);
     Setup();g_cameraSourceAvatar.store(0);CameraSourceDispatchBridge(owner,nullptr,cameraRef);
-    assert(originals==6 && compositions==10000);
+    assert(originals==6 && compositions==10001);
     Setup();raiseInCompose=true;assert(ExceptionRestores());CheckRestored();
     DWORD flags=0,a=0,c=0;
     __asm {
