@@ -96,3 +96,15 @@ caller (or prove its route from the owned renderer), preserve protected-native
 EXE invariance, and integrate against the archived installed source. Existing
 hand-resource private hook only owns avatar hands, not scene decorations.
 No runtime hook or installation was performed in this preflight.
+
+## Latest-source configuration diagnostic
+
+Extracted exact installed source.zip into build/gaze-lod-diagnostic; archive
+omits third_party, supplied from current checkout. Added standalone tracked
+src/gaze_lod_diagnostic.inl after eye_gaze.inl and its call alongside the
+existing XR-running ApplyEngineFrameCap call in that isolated source copy.
+Render/GazeLodDiagnostic=1 enables a five-second configuration/gaze witness.
+Default OFF. Native enable/scale instruction bytes checked against actual EXE.
+Logs explicitly say config-only and object observation NOT connected.
+No settings or native image writes. This identifies effective mode and fresh
+gaze availability; it cannot measure per-object LOD or CPU savings yet.
