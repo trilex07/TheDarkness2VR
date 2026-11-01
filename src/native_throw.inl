@@ -114,7 +114,8 @@ static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0
             if(*(const DWORD*)nativeCharacterReference!=character)return false;
         } else if(character)return false;
         const float zero[3]{};
-        if(!d2vr_aim::BuildRayMatrix((float*)((BYTE*)token.camera+0x80),zero,token.direction,ray)) return false;
+        float stableCamera[16];
+        if(!d2vr_aim::BuildRayMatrix(StabilizedCameraWorld(reinterpret_cast<const void*>(token.camera),stableCamera),zero,token.direction,ray)) return false;
         const float directionLength=std::sqrt(ray[8]*ray[8]+ray[9]*ray[9]+ray[10]*ray[10]);
         if(!std::isfinite(directionLength) || directionLength<.5f || directionLength>2.f)return false;
         memcpy(original,velocity,sizeof(original));

@@ -102,7 +102,6 @@ static bool g_protectedLeftThrow=false;
 static bool g_protectedTrackedHands=false;
 static bool g_shotgunCandidate=false;
 static bool g_cameraShakeTrace=false;
-static bool g_cameraShakeSuppressHeap=false;
 static ULONGLONG g_cameraShakeTraceStart=0;
 static d2vr_input::Tentacles g_protectedRightTentacle;
 static volatile LONG g_protectedRecenterRequested=0;
@@ -681,10 +680,10 @@ void LoadConfig() {
     g_protectedTrackedHands=GetPrivateProfileIntA("Diagnostics","ProtectedTrackedHands",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_shotgunCandidate=GetPrivateProfileIntA("Diagnostics","ShotgunCandidate",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraShakeTrace=GetPrivateProfileIntA("Diagnostics","CameraShakeTrace",0,".\\Darkness2VR-diagnostic.ini")!=0;
-    g_cameraShakeSuppressHeap=GetPrivateProfileIntA("Diagnostics","CameraShakeSuppressHeap",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_cameraAnimStabilize=GetPrivateProfileIntA("Diagnostics","CameraAnimStabilize",0,".\\Darkness2VR-diagnostic.ini")!=0;
     Log("[ShotgunCandidate] requested=%d; model and final pellet ray share right aim after first admitted shot; left squeeze near fore-end supports stock hand pose",int(g_shotgunCandidate));
     Log("[CameraShakeTrace] requested=%d; selected camera and avatar matrices read only for first 30 gameplay seconds",int(g_cameraShakeTrace));
-    Log("[CameraShakeHeap] requested=%d; heap-only zero of procedural shake factors on verified 01001630+5E0 -> 00FDF170 owner",int(g_cameraShakeSuppressHeap));
+    Log("[CameraStabilize] requested=%d; view/hands/gun/shot use avatar-parent-stabilized camera, native memory untouched",int(g_cameraAnimStabilize));
     Log("[ProtectedLeftAim] requested=%d; private getter, legacy NativeLeftAim stays OFF; separate ProtectedLeftThrow=%d",int(g_protectedLeftAim),int(g_protectedLeftThrow));
     Log("[ProtectedHands] requested=%d; private selected-resource packer only; legacy hands/weapon hooks remain independent",int(g_protectedTrackedHands));
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
@@ -1715,6 +1714,8 @@ d2vr_input::WorldActivity g_worldActivity;
 // Frozen with the rest of FrameContext, never updated between live and replay.
 static float g_headDeltaView[16]{};
 static bool g_headDeltaValid=false;
+static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
+static bool CameraStabilizerDelta(float out[16]);
 static XrPosef g_headGeometryReference{};
 static void UpdateHeadGeometry(const XrPosef& head);
 
@@ -2006,7 +2007,11 @@ static d2vr_replay::StereoParams BuildEyeParams(int eye) {
         float wideInverse[16];
         memcpy(wideInverse,d2vr_replay::g_cameraInverseProjection,sizeof(wideInverse));
         for(int c=0;c<4;++c) { wideInverse[c]/=sp.fovScaleX; wideInverse[4+c]/=sp.fovScaleY; }
-        sp.headGeometry=d2vr_math::HeadClipTransform(wideInverse,g_headDeltaView,sp.headClip,sp.inverseHeadClip);
+        // Render from the stabilized base camera: delta = (C_anim * C_stab^-1) * H.
+        float stabilizer[16],headDelta[16];
+        if(CameraStabilizerDelta(stabilizer))d2vr_math::Multiply(stabilizer,g_headDeltaView,headDelta);
+        else memcpy(headDelta,g_headDeltaView,sizeof(headDelta));
+        sp.headGeometry=d2vr_math::HeadClipTransform(wideInverse,headDelta,sp.headClip,sp.inverseHeadClip);
     }
     // Validation must use the same unshifted camera for BOTH live and replay.
     // Previously live retained transX while only replay cleared it.
@@ -4175,6 +4180,7 @@ static void ResetPoseInput() {
 #include "gaze_lod_owner_diagnostic.inl"
 #include "gaze_lod_runtime_observer.inl"
 #include "native_aim.inl"
+#include "camera_anim_stabilizer.inl"
 // Gaze rays for grab/throw (defined in eye_gaze.inl, tracking space).
 static bool GazeWorldDirection(XrVector3f& direction);
 static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction);
@@ -4241,98 +4247,6 @@ static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
             nativeSum[0],nativeSum[1],nativeSum[2],
             nativeShift[0],nativeShift[1],nativeShift[2]);
     }
-}
-// Heap-owned procedural camera-shake suppression (Diagnostics/CameraShakeSuppressHeap,
-// default OFF). Static evidence (EXE D46BB6CB...4EC1, notes in
-// docs/research/darkness2-camera-shake-20261101.md): generator 00628420 scales its
-// rotation outputs (+0x38..+0x40) by mShakeFactorRot (+0x10..+0x18) and its position
-// vector (+0x00) by mShakeFactorPos (+0x24); loader B2EEE0 fills those factors once.
-// Zeroing the four factors of the four first-person blocks removes their output while
-// phase, amplitude decay and every EXE byte stay native. Impact springs at +0x1170 are
-// left active and only measured.
-struct CameraShakeHeapState {
-    DWORD owner=0;
-    float original[4][4]{};
-    unsigned refills=0,writes=0,refusals=0;
-    ULONGLONG start=0,nextLog=0;
-    DWORD lastRefusal=0;
-};
-static CameraShakeHeapState g_cameraShakeHeap;
-static void SuppressNativeCameraShakeHeap(DWORD avatar) {
-    if(!g_cameraShakeSuppressHeap || !avatar || !g_trackedFrame.open ||
-       GetCurrentThreadId()!=g_renderThreadId)return;
-    constexpr unsigned blocks[4]={0x8C0,0x910,0x960,0xCA0};
-    constexpr unsigned factors[4]={0x10,0x14,0x18,0x24};
-    auto& state=g_cameraShakeHeap;
-    const auto refuse=[&](DWORD reason,DWORD value) {
-        ++state.refusals;
-        if(reason!=state.lastRefusal) {
-            state.lastRefusal=reason;
-            Log("[CameraShakeHeap] REFUSED reason=%lu value=%08lX avatar=%08lX; no write",reason,value,avatar);
-        }
-    };
-    DWORD avatarTable=0,ownerTable=0,owner=0;
-    float before[4][4]{},outputs[4][7]{},impactRot[3]{},impactPos[3]{},sum[3]{},shift[3]{};
-    unsigned refilled=0;
-    __try {
-        avatarTable=*reinterpret_cast<const DWORD*>(avatar);
-        if(avatarTable!=0x1001630){refuse(1,avatarTable);return;}
-        const DWORD reference=*reinterpret_cast<const DWORD*>(avatar+0x5E0);
-        if(!reference){refuse(2,0);return;}
-        owner=*reinterpret_cast<const DWORD*>(reference);
-        if(!owner || !g_nativeImageGuard.Allows(owner,0x1300)){refuse(3,owner);return;}
-        ownerTable=*reinterpret_cast<const DWORD*>(owner);
-        if(ownerTable!=0xFDF170){refuse(4,ownerTable);return;}
-        auto base=reinterpret_cast<BYTE*>(owner);
-        for(unsigned i=0;i<4;++i)
-            for(unsigned j=0;j<4;++j) {
-                before[i][j]=*reinterpret_cast<const float*>(base+blocks[i]+factors[j]);
-                if(!std::isfinite(before[i][j]) || std::fabs(before[i][j])>1.0e4f){refuse(5,blocks[i]+factors[j]);return;}
-            }
-        if(owner!=state.owner) {
-            // New/rebuilt owner: remember the native factors before the first write.
-            state.owner=owner;std::memcpy(state.original,before,sizeof(before));
-            Log("[CameraShakeHeap] owner=%08lX avatar=%08lX nativeFactors view=(%.3f,%.3f,%.3f|%.3f) rumble=(%.3f,%.3f,%.3f|%.3f) zoom=(%.3f,%.3f,%.3f|%.3f) blkCA0=(%.3f,%.3f,%.3f|%.3f)",
-                owner,avatar,
-                before[0][0],before[0][1],before[0][2],before[0][3],before[1][0],before[1][1],before[1][2],before[1][3],
-                before[2][0],before[2][1],before[2][2],before[2][3],before[3][0],before[3][1],before[3][2],before[3][3]);
-        }
-        for(unsigned i=0;i<4;++i)
-            for(unsigned j=0;j<4;++j)
-                if(before[i][j]!=0.0f) {
-                    if(state.writes)++refilled; // native code restored a factor after our write
-                    *reinterpret_cast<float*>(base+blocks[i]+factors[j])=0.0f;
-                }
-        for(unsigned i=0;i<4;++i) {
-            std::memcpy(outputs[i],base+blocks[i],3*sizeof(float));
-            std::memcpy(outputs[i]+3,base+blocks[i]+0x38,3*sizeof(float));
-            outputs[i][6]=*reinterpret_cast<const float*>(base+blocks[i]+0x20)+
-                *reinterpret_cast<const float*>(base+blocks[i]+0x2C)+*reinterpret_cast<const float*>(base+blocks[i]+0x30);
-        }
-        std::memcpy(impactRot,base+0x1170+0x180,sizeof(impactRot));
-        std::memcpy(impactPos,base+0x1170+0x190,sizeof(impactPos));
-        std::memcpy(sum,base+0x1F0,sizeof(sum));
-        std::memcpy(shift,base+0x20C,sizeof(shift));
-    } __except(EXCEPTION_EXECUTE_HANDLER){refuse(6,0);return;}
-    ++state.writes;state.refills+=refilled;
-    const auto now=GetTickCount64();
-    if(!state.start) {
-        state.start=now;
-        Log("[CameraShakeHeap] ACTIVE=1 owner=%08lX; procedural view/rumble/zoom/CA0 factors zeroed on heap; EXE untouched; impact springs measured only",owner);
-    }
-    if(now<state.nextLog || now-state.start>120000)return;
-    state.nextLog=now+(now-state.start<30000?250:1000);
-    float procedural=0.0f,amplitude=0.0f;
-    for(unsigned i=0;i<4;++i) {
-        for(unsigned k=0;k<6;++k)procedural=(std::max)(procedural,std::fabs(outputs[i][k]));
-        amplitude=(std::max)(amplitude,std::fabs(outputs[i][6]));
-    }
-    // Counter-prediction: procedural must read 0 after the first frame while amplitude
-    // may stay nonzero (proves the generator still runs). Nonzero impact = remaining shake.
-    Log("[CameraShakeHeap] ms=%llu writes=%u refills=%u refusals=%u proceduralMax=%.5f nativeAmplitudeMax=%.4f impactRot=(%.4f,%.4f,%.4f) impactPos=(%.4f,%.4f,%.4f) sum1F0=(%.4f,%.4f,%.4f) shift20C=(%.4f,%.4f,%.4f)",
-        static_cast<unsigned long long>(now-state.start),state.writes,state.refills,state.refusals,procedural,amplitude,
-        impactRot[0],impactRot[1],impactRot[2],impactPos[0],impactPos[1],impactPos[2],
-        sum[0],sum[1],sum[2],shift[0],shift[1],shift[2]);
 }
 #include "native_hands_witness.inl"
 #endif

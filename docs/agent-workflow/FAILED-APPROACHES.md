@@ -20,6 +20,15 @@ source, BASELINE.md and the task handoff before applying them.
 
 ## Known Failures (from existing docs)
 
+### Heap-only procedural shake factors on the 00FDF170 owner
+- **Date**: 2026-11-01
+- **Goal**: Remove first-person camera shake without EXE writes.
+- **Approach**: `CameraShakeSuppressHeap=1` zeroed `mShakeFactorRot`/`mShakeFactorPos` of blocks `8C0/910/960/CA0` on the owner reached by `01001630 avatar +0x5E0 -> 00FDF170`.
+- **Why Failed**: It ran (`ACTIVE=1`, 2602 writes, 0 refills, 0 refusals), but over 30 s of running and action the owner's generator amplitudes, outputs, impact springs `+0x1170` and accumulators `+0x1F0/+0x20C` were all exactly zero. That owner is not driving the visible shake. The user still saw shake everywhere. Same-run trace: camera relative to avatar root moved up to ~0.1 units while running and was steady when standing still, which points to animated camera/head bob rather than this procedural system.
+- **Evidence**: commit `146f8dfc`, DLL `FB370181C19676C4151D076D52FFA3CA2D5DD4F6C1E63D987ADA77B0A39CBBA4`, INI `B42211412D5F6D94147C652679111A6B8B49A60DDAFB51B8293B89BCF6F9B3A1`, package `camera-shake-heap-20261101T194916318`, `[CameraShakeHeap]` lines in `d3d9.log`.
+- **Lesson**: A verified type chain does not prove a live owner. Check that the target fields actually change during the symptom before writing them.
+- **Status**: Rejected
+
 ### Procedural shake call-site patch under protected image guard
 - **Date**: 2026-11-01
 - **Branch/Commit**: `codex/gaze-nis-main-integration` / `d1ed1aa9`

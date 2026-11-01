@@ -85,7 +85,8 @@ static bool TryNativeWeaponMatrix(void* self,float world[16],DWORD cameraVtable=
         auto gun=**(BYTE***)(inventory+0xB0+12*(1-hand));
         if(!gun || *(DWORD*)gun!=0x1010E30 || **(BYTE***)(gun+0x980)!=avatar ||
            **(void***)(gun+0x12C)!=self) return false;
-        if(!d2vr_aim::BuildWeaponMatrix((float*)(camera+0x80),pose.local,world)) return false;
+        float stableCamera[16];
+        if(!d2vr_aim::BuildWeaponMatrix(StabilizedCameraWorld(camera,stableCamera),pose.local,world)) return false;
         // Refuse unrelated/dropped models or implausible transforms.
         float distance=0;
         for(int c=0;c<3;++c) {

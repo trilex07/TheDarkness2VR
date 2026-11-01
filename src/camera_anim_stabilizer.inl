@@ -1,0 +1,181 @@
+// camera_anim_stabilizer.inl - remove first-person animation motion from the VR base camera.
+//
+// Evidence (docs/research/darkness2-camera-shake-20261101.md, headset traces 2026-11-01):
+// the selected camera world matrix camera+0x80 follows the animated first-person rig
+// (run bob up to ~0.1 units, 1-4 deg during tentacle/heart/melee animations) while the
+// avatar parent world matrix parent+0x140 (class 00FFC300) carries the look yaw/pitch
+// and agrees with the camera to ~0.1 deg at rest. Procedural shake owner 00FDF170 read
+// zero throughout, so it is not the source.
+//
+// Diagnostics/CameraAnimStabilize=1 (default OFF) builds C_stab = parent rotation with
+// the slowly averaged camera offset in parent space, then:
+//   * view:  head delta H becomes D*H with D = C_anim * C_stab^-1 (row vectors,
+//            view = C^-1), so the eye renders from C_stab;
+//   * hands, gun model and shot ray use C_stab instead of camera+0x80,
+// keeping world, arms and weapon in one frame. Large deviations (finishers, scripted
+// cameras) and cinematics fade the correction out. No native memory is written.
+struct CameraAnimStabilizerState {
+    DWORD camera=0;
+    bool valid=false,restValid=false,refusedLogged=false;
+    float stable[16]{},delta[16]{};
+    float restLocal[3]{};
+    float weight=0.f;
+    ULONGLONG time=0,start=0,nextLog=0;
+    unsigned long long frame=0,updates=0;
+    float peakTranslation=0.f,peakAngle=0.f;
+};
+static CameraAnimStabilizerState g_cameraAnimStabilizer;
+static SRWLOCK g_cameraAnimStabilizerLock=SRWLOCK_INIT;
+
+namespace d2vr_camera_stabilizer {
+inline float Dot3(const float* a,const float* b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+inline bool Normalize3(float* v){
+    const float n=std::sqrt(Dot3(v,v));
+    if(!std::isfinite(n) || n<1e-6f)return false;
+    v[0]/=n;v[1]/=n;v[2]/=n;return true;
+}
+inline void Cross3(const float* a,const float* b,float* o){
+    o[0]=a[1]*b[2]-a[2]*b[1];o[1]=a[2]*b[0]-a[0]*b[2];o[2]=a[0]*b[1]-a[1]*b[0];
+}
+// Orthonormal rows (right, up, forward) from a possibly scaled affine matrix.
+inline bool Basis(const float m[16],float r[3][3]){
+    float f[3]={m[8],m[9],m[10]},x[3]={m[0],m[1],m[2]},u[3];
+    if(!Normalize3(f))return false;
+    const float d=Dot3(x,f);
+    for(int i=0;i<3;++i)x[i]-=d*f[i];
+    if(!Normalize3(x))return false;
+    Cross3(f,x,u);
+    if(Dot3(u,m+4)<0){for(float& c:u)c=-c;} // keep the native up sign
+    for(int i=0;i<3;++i){r[0][i]=x[i];r[1][i]=u[i];r[2][i]=f[i];}
+    return true;
+}
+inline void ToQuat(const float r[3][3],float q[4]){
+    const float t=r[0][0]+r[1][1]+r[2][2];
+    if(t>0){float s=std::sqrt(t+1.f)*2.f;q[3]=.25f*s;q[0]=(r[2][1]-r[1][2])/s;q[1]=(r[0][2]-r[2][0])/s;q[2]=(r[1][0]-r[0][1])/s;}
+    else if(r[0][0]>r[1][1]&&r[0][0]>r[2][2]){float s=std::sqrt(1.f+r[0][0]-r[1][1]-r[2][2])*2.f;q[3]=(r[2][1]-r[1][2])/s;q[0]=.25f*s;q[1]=(r[0][1]+r[1][0])/s;q[2]=(r[0][2]+r[2][0])/s;}
+    else if(r[1][1]>r[2][2]){float s=std::sqrt(1.f+r[1][1]-r[0][0]-r[2][2])*2.f;q[3]=(r[0][2]-r[2][0])/s;q[0]=(r[0][1]+r[1][0])/s;q[1]=.25f*s;q[2]=(r[1][2]+r[2][1])/s;}
+    else {float s=std::sqrt(1.f+r[2][2]-r[0][0]-r[1][1])*2.f;q[3]=(r[1][0]-r[0][1])/s;q[0]=(r[0][2]+r[2][0])/s;q[1]=(r[1][2]+r[2][1])/s;q[2]=.25f*s;}
+}
+inline void FromQuat(const float q[4],float r[3][3]){
+    const float x=q[0],y=q[1],z=q[2],w=q[3];
+    r[0][0]=1-2*(y*y+z*z);r[0][1]=2*(x*y-z*w);r[0][2]=2*(x*z+y*w);
+    r[1][0]=2*(x*y+z*w);r[1][1]=1-2*(x*x+z*z);r[1][2]=2*(y*z-x*w);
+    r[2][0]=2*(x*z-y*w);r[2][1]=2*(y*z+x*w);r[2][2]=1-2*(x*x+y*y);
+}
+inline void Slerp(const float a[4],const float b0[4],float t,float o[4]){
+    float b[4]={b0[0],b0[1],b0[2],b0[3]};
+    float d=a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3];
+    if(d<0){d=-d;for(float& c:b)c=-c;}
+    float wa=1-t,wb=t;
+    if(d<.9995f){const float th=std::acos((std::min)(1.f,d)),s=std::sin(th);wa=std::sin((1-t)*th)/s;wb=std::sin(t*th)/s;}
+    float n=0;for(int i=0;i<4;++i){o[i]=wa*a[i]+wb*b[i];n+=o[i]*o[i];}
+    n=std::sqrt(n);for(int i=0;i<4;++i)o[i]/=n;
+}
+inline float AngleDegrees(const float a[3][3],const float b[3][3]){
+    // trace(A*B^T) for rotation rows
+    float t=0;for(int i=0;i<3;++i)t+=Dot3(a[i],b[i]);
+    const float c=(std::max)(-1.f,(std::min)(1.f,(t-1.f)*.5f));
+    return std::acos(c)*57.29578f;
+}
+}
+
+// Called on the render thread from the selected-owner path, before hands/weapon prepare.
+static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
+#ifdef D2VR_MATCHED_CAPTURE
+    namespace s=d2vr_camera_stabilizer;
+    if(!g_cameraAnimStabilize || !camera || !avatar || !g_trackedFrame.open ||
+       GetCurrentThreadId()!=g_renderThreadId)return;
+    auto& st=g_cameraAnimStabilizer;
+    float anim[16]{},root[16]{};
+    __try {
+        auto parent=**reinterpret_cast<BYTE***>(reinterpret_cast<BYTE*>(avatar)+0x1F8C);
+        if(!parent || *reinterpret_cast<DWORD*>(parent)!=0xFFC300) {
+            if(!st.refusedLogged){st.refusedLogged=true;Log("[CameraStabilize] REFUSED parent class; game camera unchanged");}
+            AcquireSRWLockExclusive(&g_cameraAnimStabilizerLock);st.valid=false;ReleaseSRWLockExclusive(&g_cameraAnimStabilizerLock);
+            return;
+        }
+        std::memcpy(anim,reinterpret_cast<const BYTE*>(camera)+0x80,sizeof(anim));
+        std::memcpy(root,parent+0x140,sizeof(root));
+    } __except(EXCEPTION_EXECUTE_HANDLER){return;}
+    float ra[3][3],rr[3][3];
+    for(float v:anim)if(!std::isfinite(v))return;
+    for(float v:root)if(!std::isfinite(v))return;
+    if(!s::Basis(anim,ra) || !s::Basis(root,rr))return;
+    const auto now=GetTickCount64();
+    const float dt=st.time ? (std::min)(.1f,float(now-st.time)*.001f) : 0.f;
+    const bool gap=!st.time || now-st.time>500 || st.camera!=camera;
+    st.time=now;
+    // Camera position in parent axes.
+    float rel[3]={anim[12]-root[12],anim[13]-root[13],anim[14]-root[14]},local[3];
+    for(int i=0;i<3;++i)local[i]=s::Dot3(rel,rr[i]);
+    if(gap || !st.restValid){std::memcpy(st.restLocal,local,sizeof(local));st.restValid=true;st.weight=0.f;}
+    // Stable candidate (full correction).
+    float stablePos[3];
+    for(int c=0;c<3;++c)stablePos[c]=root[12+c]+st.restLocal[0]*rr[0][c]+st.restLocal[1]*rr[1][c]+st.restLocal[2]*rr[2][c];
+    float off[3]={anim[12]-stablePos[0],anim[13]-stablePos[1],anim[14]-stablePos[2]};
+    const float translation=std::sqrt(s::Dot3(off,off)),angle=s::AngleDegrees(ra,rr);
+    // Ordinary locomotion/attack animation is removed; finisher-scale or scripted moves fade out.
+    float target=1.f;
+    target=(std::min)(target,std::clamp((1.0f-translation)/0.5f,0.f,1.f));
+    target=(std::min)(target,std::clamp((35.f-angle)/15.f,0.f,1.f));
+    if(NativeCinematicPlaying())target=0.f;
+    const float step=3.f*dt;
+    st.weight+= std::clamp(target-st.weight,-step,step);
+    // Average the rest offset only while the correction is engaged (1.5 s).
+    if(target>=1.f && dt>0){const float a=1.f-std::exp(-dt/1.5f);for(int i=0;i<3;++i)st.restLocal[i]+=a*(local[i]-st.restLocal[i]);}
+    // Blend: weight 1 = parent orientation + rest offset, 0 = native animated camera.
+    float qa[4],qr[4],q[4],rb[3][3];
+    s::ToQuat(ra,qa);s::ToQuat(rr,qr);s::Slerp(qa,qr,st.weight,q);s::FromQuat(q,rb);
+    float stable[16]{};
+    for(int r=0;r<3;++r){
+        const float scale=std::sqrt(s::Dot3(anim+4*r,anim+4*r)); // keep native row scale
+        for(int c=0;c<3;++c)stable[4*r+c]=rb[r][c]*scale;
+        stable[4*r+3]=anim[4*r+3];
+    }
+    for(int c=0;c<3;++c)stable[12+c]=anim[12+c]+st.weight*(stablePos[c]-anim[12+c]);
+    stable[15]=anim[15];
+    float inverse[16],delta[16];
+    if(!d2vr_math::Invert(stable,inverse))return;
+    d2vr_math::Multiply(anim,inverse,delta);
+    AcquireSRWLockExclusive(&g_cameraAnimStabilizerLock);
+    std::memcpy(st.stable,stable,sizeof(stable));std::memcpy(st.delta,delta,sizeof(delta));
+    st.camera=camera;st.frame=g_trackedFrame.id;st.valid=true;++st.updates;
+    ReleaseSRWLockExclusive(&g_cameraAnimStabilizerLock);
+    if(!st.start){st.start=now;Log("[CameraStabilize] ACTIVE=1 camera=%08lX; view, hands, gun and shot use parent-stabilized camera; native memory untouched",camera);}
+    st.peakTranslation=(std::max)(st.peakTranslation,translation*st.weight);
+    st.peakAngle=(std::max)(st.peakAngle,angle*st.weight);
+    if(now>=st.nextLog && now-st.start<180000) {
+        st.nextLog=now+500;
+        // Counter-prediction: removed* must be ~0 standing still and grow while running/attacking.
+        Log("[CameraStabilize] ms=%llu updates=%llu weight=%.2f removedPos=%.4f removedDeg=%.2f peakPos=%.4f peakDeg=%.2f rest=(%.4f,%.4f,%.4f) cinematic=%d",
+            static_cast<unsigned long long>(now-st.start),st.updates,st.weight,translation*st.weight,angle*st.weight,
+            st.peakTranslation,st.peakAngle,st.restLocal[0],st.restLocal[1],st.restLocal[2],int(NativeCinematicPlaying()));
+        st.peakTranslation=st.peakAngle=0.f;
+    }
+#else
+    (void)camera;(void)avatar;
+#endif
+}
+// Base camera for hand/gun/shot composition: stabilized when fresh for this camera.
+static const float* StabilizedCameraWorld(const void* camera,float (&scratch)[16]) {
+    const auto native=reinterpret_cast<const float*>(static_cast<const BYTE*>(camera)+0x80);
+    if(!g_cameraAnimStabilize)return native;
+    bool use=false;
+    AcquireSRWLockShared(&g_cameraAnimStabilizerLock);
+    const auto& st=g_cameraAnimStabilizer;
+    if(st.valid && st.camera==DWORD(reinterpret_cast<uintptr_t>(camera)) && GetTickCount64()-st.time<100) {
+        std::memcpy(scratch,st.stable,sizeof(scratch));use=true;
+    }
+    ReleaseSRWLockShared(&g_cameraAnimStabilizerLock);
+    return use?scratch:native;
+}
+// D = C_anim * C_stab^-1 for the view head delta (identity when inactive).
+static bool CameraStabilizerDelta(float out[16]) {
+    if(!g_cameraAnimStabilize)return false;
+    bool use=false;
+    AcquireSRWLockShared(&g_cameraAnimStabilizerLock);
+    const auto& st=g_cameraAnimStabilizer;
+    if(st.valid && GetTickCount64()-st.time<100){std::memcpy(out,st.delta,16*sizeof(float));use=true;}
+    ReleaseSRWLockShared(&g_cameraAnimStabilizerLock);
+    return use;
+}

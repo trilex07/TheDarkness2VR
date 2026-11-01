@@ -116,7 +116,8 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
             if(!d2vr_math::TrackingPose(rq,rp,reference) || !d2vr_math::Invert(reference,inverse) ||
                !d2vr_math::TrackingPose(aq,ap,tracking))return false;
             d2vr_math::Multiply(tracking,inverse,local);
-            const auto base=reinterpret_cast<const float*>(static_cast<BYTE*>(camera)+0x80);
+            float stableCamera[16];
+            const auto base=StabilizedCameraWorld(camera,stableCamera);
             if(stage)*stage=9+slot*16; // native camera matrix contract
             if(!d2vr_aim::BuildScaledWeaponMatrix(base,local,g_gameUnitsPerMeter,result))return false;
             if(stage)*stage=32+slot; // final consumer receives right/left ray
