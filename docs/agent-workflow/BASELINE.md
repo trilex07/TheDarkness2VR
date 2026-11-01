@@ -3,6 +3,14 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Current installed MAIN LOD observation candidate (2026-11-01)
+
+- **Installed DLL SHA256**: `2AB582630B09EF02AD44465582A74B7FCEB563EB1EA5B4D998C03D8FB716A327` (protected-native x86), source `0541741151b5f7dff1a0843abe3a5c9a07974c07` on `codex/gaze-nis-main-integration`.
+- **Package/rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-lod-runtime-20261101T110811047/rollback/Restore.ps1`; all nine backup hashes verified.
+- **Change**: opt-in one-sample native LOD dispatcher observer; `GazeLodRuntimeObserver=1` in active game INI. No native quality/object settings changed. The prior gaze dot and R2 fix are retained.
+- **Evidence**: exact EXE/DLL and protected profile checks passed; native execution boundary fixture passed. Game has not been launched with this candidate; headset/Lod owner and CPU benefit remain unverified.
+- **Integration**: diagnostic candidate remains on task branch until runtime evidence; remote main remains the previously installed gaze dot/R2 source.
+
 ## Current installed MAIN candidate: gaze dot and R2 fix (2026-11-01)
 
 - **Installed DLL SHA256**: `E6F49A7E9E520D24502B9F5ABAFB4E0DAE6A9D7DDC0ACDE86486DAD4128DB1BD` (protected-native x86).

@@ -7,7 +7,7 @@
 **Branch**: codex/gaze-nis-main-integration
 **Worktree**: C:/Users/Trilex/.codex/worktrees/gaze-nis-main-integration/Darkness2VR
 **Baseline**: installed gaze-dot/R2 candidate DLL `E6F49A7E...`; accepted rollback remains source `4a26aabd`.
-**Integration commit**: pending
+**Integration commit**: `0541741151b5f7dff1a0843abe3a5c9a07974c07`; deployment receipt follows.
 
 ## Goal
 
@@ -15,7 +15,7 @@ Identify the actual native LOD owner and resource classes in gameplay before a g
 
 ## Status
 
-Read-only runtime candidate built and preflighted; headset observation pending.
+Read-only runtime candidate installed and verified; headset observation pending.
 
 ## Context Loaded
 
@@ -37,10 +37,11 @@ Read-only runtime candidate built and preflighted; headset observation pending.
 - Prior camera `+2A4` owner was null in live gameplay; do not reuse that route.
 - Protected x86 candidate DLL SHA256 `2AB582630B09EF02AD44465582A74B7FCEB563EB1EA5B4D998C03D8FB716A327`; profile preflight PASS.
 - Existing hardware execution boundary fixture PASS (10,000 callbacks, register/flags preservation, 20 rearm cycles, unchanged EXE text). Synthetic 15.432 us/hit is not game timing.
+- Installed at `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/gaze-lod-runtime-20261101T110811047`; installed DLL, stock EXE, nine rollback backup hashes and active observer setting verified. Game closed and not launched by agent.
 
 ## Next Steps
 
-1. Install and run the current candidate in a gameplay scene; inspect `[GazeLOD]` selector call/sample/stopped records.
+1. User runs the installed candidate in a gameplay scene; inspect `[GazeLOD]` selector call/sample/stopped records.
 2. Resolve observed object/resource class vtables and selected mesh consumer. Measure selector and submit time on a normal build without the hardware observer.
 3. Only then trial a bounded, decoration-only gaze LOD adjustment; compare same-scene app CPU time and both eyes.
 
