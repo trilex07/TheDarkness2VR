@@ -20,6 +20,16 @@ source, BASELINE.md and the task handoff before applying them.
 
 ## Known Failures (from existing docs)
 
+### Shotgun model-only protected pose without native fire coupling
+- **Date**: 2026-11-01
+- **Branch/Commit**: `codex/gaze-nis-main-integration` / `eb00b9d6`
+- **Goal**: Point the equipped shotgun model with the right controller while preserving its native fire action.
+- **Approach**: Publish the shotgun's owned model vtable through the generic controller-pose bridge, and align the protected right human hand to the same aim pose. Leave shotgun fire action `00FD9D68` untouched.
+- **Why Failed**: User saw the shotgun point forward but could no longer hit targets; fingers also failed to reach the trigger. The native fire action apparently consumes model-derived state or another transform coupled to it. This is an inference from the A/B headset result, not a traced fire call.
+- **Evidence**: Installed trial DLL `5389DF98690B1A4D67E4585329E1DD525DE257C7F1E95E0B187A6DA5B7101BDF`; fresh `[WeaponPose] shotgun=1` logs and user screenshot `codex-clipboard-9c2f1f89-5202-4c25-9790-4f5fdbb07067.jpg`; `HANDOFF-shotgun-twohand-shake-20261101.md`. Protected rollback restored prior DLL `867E3DE9E96920836F9B3CE761AF53875029F6A89A26EB43AFC6E39118C3EE0C`, all nine targets verified.
+- **Lesson**: Do not steer this shotgun model through the generic weapon matrix before tracing its native shot origin/direction and hand socket. Model and shot require a proven shared frame or a display-only rendering adjustment outside native gameplay state.
+- **Status**: Rejected
+
 ### Bone matrix corruption from scanning all shader constants
 - **Date**: ~2026-10-18 (from handoffs)
 - **Source**: AGENT_HANDOFF_PROMPT.md §4A
