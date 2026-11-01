@@ -81,6 +81,12 @@ The unchanged second file cannot be used to dispute the user's performed test.
 It is not proven exactly when train/damage occurred; the native trace has no
 event markers. Game PID 38568 has exited by this follow-up. No further launch.
 
+Preserved full native log as local `test-output/camera-native-session-38568.log`.
+Analysis of 478 matched camera/root samples: camera path length 31.1595 game
+units; peak camera/root separation 0.12131 at ms=3079/frame=2053; peak forward
+angle difference 2.69505 degrees at ms=20672/frame=3463. These prove motion in
+the earlier interval, but do not identify individual train/damage events.
+
 Sampler header now includes explicit UTC and perf_counter start values so
 future native QPC logs can be aligned without relying on file creation times.
 For another user test, arm capture and verify it is actively recording BEFORE
