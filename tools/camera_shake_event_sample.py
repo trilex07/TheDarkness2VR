@@ -55,18 +55,6 @@ def main():
         exe = Path(name.value)
         if exe.name.lower() != 'darknessii.exe' or hashlib.sha256(exe.read_bytes()).hexdigest().upper() != EXE_SHA:
             raise RuntimeError('Refusing unpinned game executable')
-        print(f'GAME FOUND pid={pid}; waiting for gameplay camera', flush=True)
-        deadline = time.monotonic() + 180
-        while True:
-            scan = subprocess.check_output([sys.executable, str(Path(__file__).with_name(
-                'camera_shake_owner_scan.py')), str(pid)], text=True)
-            owners = [int(x, 16) for x in re.search(r'shake_owners=(.*)', scan)[1].split(',') if x]
-            cameras = [int(x, 16) for x in re.findall(r'camera=([0-9A-F]{8}).*selected_candidate=True', scan)]
-            if owners and cameras:
-                break
-            if time.monotonic() >= deadline:
-                raise RuntimeError('No gameplay camera/owners within 180 seconds')
-            time.sleep(5)
         def read(address, size):
             if address < 0x10000 or address + size >= 0x80000000:
                 return None
@@ -74,11 +62,36 @@ def main():
             if not api.ReadProcessMemory(process, address, data, size, ct.byref(got)) or got.value != size:
                 return None
             return data.raw
-        def floats(data, offset, count):
-            return list(struct.unpack_from('<' + 'f' * count, data, offset))
         def word(address):
             data = read(address, 4)
             return struct.unpack('<I', data)[0] if data else 0
+        def camera_type(camera):
+            table = word(camera)
+            # protected_left_aim.inl prepares 71 entries and replaces only 39.
+            # Match every other entry against the pinned original table.
+            actual, stock = read(table, 71 * 4), read(0xFFC7C0, 71 * 4)
+            return bool(actual and stock and actual[:39*4] == stock[:39*4] and
+                        actual[40*4:] == stock[40*4:] and word(table + 39*4))
+        print(f'GAME FOUND pid={pid}; waiting for gameplay camera', flush=True)
+        deadline = time.monotonic() + 180
+        while True:
+            scan = subprocess.check_output([sys.executable, str(Path(__file__).with_name(
+                'camera_shake_owner_scan.py')), str(pid)], text=True)
+            owners = [int(x, 16) for x in re.search(r'shake_owners=(.*)', scan)[1].split(',') if x]
+            cameras = [int(x, 16) for x in re.findall(r'camera=([0-9A-F]{8}).*selected_candidate=True', scan)]
+            avatars = [int(text, 16) for text in re.findall(r'^avatar=([0-9A-F]{8})', scan, re.M)]
+            for avatar in avatars:
+                camera = word(word(avatar + 0x62c))
+                if (word(avatar) == 0x1001630 and camera_type(camera) and
+                        word(word(camera + 0x30)) == avatar and camera not in cameras):
+                    cameras.append(camera)
+            if owners and cameras:
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError('No gameplay camera/owners within 180 seconds')
+            time.sleep(5)
+        def floats(data, offset, count):
+            return list(struct.unpack_from('<' + 'f' * count, data, offset))
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open('x', encoding='utf-8') as out:
             out.write(json.dumps({'kind': 'header', 'pid': pid, 'exe_sha256': EXE_SHA,
@@ -90,6 +103,12 @@ def main():
             while time.perf_counter() - start < args.seconds:
                 elapsed = time.perf_counter() - start
                 row = {'t': round(elapsed, 4), 'owners': [], 'cameras': []}
+                for avatar in avatars:
+                    if word(avatar) != 0x1001630:
+                        continue
+                    camera = word(word(avatar + 0x62c))
+                    if camera_type(camera) and word(word(camera + 0x30)) == avatar and camera not in cameras:
+                        cameras.append(camera)
                 for owner in owners:
                     data = read(owner, 0x1310)
                     if not data or struct.unpack_from('<I', data)[0] != 0xFDF170:
@@ -108,7 +127,7 @@ def main():
                         'sum_position': floats(data, 0x1f0, 3),
                         'sum_rotation': floats(data, 0x20c, 3)})
                 for camera in cameras:
-                    if word(camera) != 0xFFC7C0:
+                    if not camera_type(camera):
                         continue
                     avatar = word(word(camera + 0x30))
                     if word(avatar) != 0x1001630 or word(word(avatar + 0x62c)) != camera:

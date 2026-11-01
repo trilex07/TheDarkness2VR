@@ -55,6 +55,35 @@ Waits up to 180 seconds for game, then up to 180 seconds for gameplay candidates
 User should walk, turn stick, approach train, receive damage and report sequence.
 No test result is recorded until the file is read and associated with user events.
 
+Actual run: MAIN launched Steam AppID 67370 after the first process wait expired.
+Game PID `38568`. Initial 120 s capture has 11,052 samples, but only 348 camera
+samples: the existing protected aim path replaces getter slot 39 after admission.
+Fixed the sampler to compare all 70 unchanged entries in the 71-entry camera
+table against the stock table and follow each verified avatar's current camera.
+This matches `protected_left_aim.inl` / `native_view_instance.h`; no game write.
+
+Second file `test-output/camera-event-20261101-v2.jsonl`: 7,922 samples over
+89.999 s, camera valid in every sample. Camera XYZ is exactly unchanged
+`(43.58679962, -7.24896622, 176.25599670)` throughout. All five candidates have
+zero procedural impulse and impact output. This is an idle/paused observation,
+NOT evidence that the train or damage has no signal. User event confirmation is
+pending; a new async question asks whether gameplay is still paused.
+
+Validation: CLI help, invalid-duration rejection and non-game PID refusal before
+output creation PASS; `git diff --check` PASS. No runtime fix was built/deployed.
+
+## Additional static composition lead
+
+On the exact stock EXE, metadata loader `004B389A..004B38B1` loads reflected
+record `010B5348` (`mFPEntityIgnoresShakeTranslationAndRotation`) into owner byte
+`+0xBD5`. Method `00809390` tests it at `00809A11`. The enabled branch uses
+`+0x200/+0x204/+0x208`; the disabled branch at `00809A51..00809A7E` additionally
+adds owner `+0x1F0` to the first-person position. Both branches build owner
+matrix `+0x70..+0xA0`. Separately, `00809B47..00809BAF` still adds `+0x1F0`
+to the camera position and calls `00ADDE10`; thus this byte alone is NOT a
+complete camera-shake toggle. This is a useful native consumer lead, not a
+proven safe intervention or proof of active owner identity.
+
 ## Next
 
 1. Inspect actual capture completeness and user event sequence.
