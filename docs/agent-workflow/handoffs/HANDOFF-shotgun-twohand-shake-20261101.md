@@ -7,7 +7,7 @@
 **Branch**: codex/gaze-nis-main-integration
 **Worktree**: C:/Users/Trilex/.codex/worktrees/gaze-nis-main-integration/Darkness2VR
 **Baseline**: installed held-finisher candidate DLL `DDDEF1CD8FB135A7D89E6C515786D809351926914FC1FF1C195ADF1F27B6F5BF`, source `c9b86d0c`; its finisher headset result is still pending. Accepted rollback baseline remains `4a26aabd` per BASELINE.md.
-**Integration commit**: pending; read-only diagnostic source `1e0925e9`, deployment script `1680fb00`
+**Integration commit**: pending; read-only diagnostic `1e0925e9`, model-only trial `eb00b9d6`, deployment script `809b98c9`
 
 ## Goal
 
@@ -15,7 +15,7 @@ The next gameplay candidate should let the left hand support an equipped shotgun
 
 ## Status
 
-In Progress. The read-only observer established that the shotgun's distinct native fire action blocks our generic weapon path. A model-only trial is built offline; it is not installed or headset validated. Two-hand support and shake suppression remain open.
+In Progress. The read-only observer established that the shotgun's distinct native fire action blocks our generic weapon path. A model-only trial is installed, with headset result pending. Two-hand support and shake suppression remain open.
 
 ## Context Loaded
 
@@ -48,7 +48,8 @@ In Progress. The read-only observer established that the shotgun's distinct nati
 - `tools/assert-candidate-profile.ps1` PASS for current repo, game and local profiles; DLL SHA256 `867E3DE9E96920836F9B3CE761AF53875029F6A89A26EB43AFC6E39118C3EE0C`.
 - `git diff --check` PASS. No Steam launch or game file change.
 - Protected installer preflight PASS. MAIN installed the observer package without launching the game. Independent post-install check: backup hashes 9/9, live protected targets 9/9, stock EXE unchanged, game closed.
-- Model-only follow-up: `build.ps1 -DiagnosticCapture` x86 PASS; profile gate PASS; candidate DLL SHA256 `5389DF98690B1A4D67E4585329E1DD525DE257C7F1E95E0B187A6DA5B7101BDF`. This DLL is currently only in the worktree, not game.
+- Model-only follow-up: `build.ps1 -DiagnosticCapture` x86 PASS; profile gate PASS; candidate DLL SHA256 `5389DF98690B1A4D67E4585329E1DD525DE257C7F1E95E0B187A6DA5B7101BDF`.
+- Model-only deployment: first installer attempt safely refused because `DarknessII.exe` was still running; no game files changed. After the user reported it closed, installation succeeded. Independent post-install audit: nine backups correct, 9/9 live targets match expected hashes, stock EXE unchanged, game not launched by the agent.
 
 ## Installed MAIN observer receipt
 
@@ -57,9 +58,16 @@ In Progress. The read-only observer established that the shotgun's distinct nati
 - Rollback: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/shotgun-pose-observer-20261101T140317414/rollback/Restore.ps1`.
 - Existing finisher fix remains in source; headset finisher test remains pending. This observer does not include the three requested gameplay changes.
 
+## Installed MAIN model-only trial receipt
+
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/shotgun-model-trial-20261101T141729420`.
+- DLL SHA256 `5389DF98690B1A4D67E4585329E1DD525DE257C7F1E95E0B187A6DA5B7101BDF`; source `eb00b9d6`. Previous observer DLL `867E3DE9E96920836F9B3CE761AF53875029F6A89A26EB43AFC6E39118C3EE0C` saved.
+- Rollback: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/shotgun-model-trial-20261101T141729420/rollback/Restore.ps1`.
+- User headset check pending: visible shotgun follows right controller, right hand remains attached, both eyes, and shots still follow original native aim. Left support and camera shake are not changed in this trial.
+
 ## Next Steps
 
-1. Install the model-only trial with a new protected rollback after the game is closed. The previous finisher/observer functions remain. User checks whether the shotgun model now points with the controller and whether shots still hit correctly. Read `[WeaponPose] shotgun=1` and check both eyes/hands.
+1. User checks whether the shotgun model now points with the controller and whether shots still hit correctly. Read `[WeaponPose] shotgun=1` and check both eyes/hands.
 2. Identify the exact shotgun variant and fore-end support point. If the generic controller frame still leaves the model vertical, derive a model-only orientation from the new log and screenshot rather than guessing a fixed offset. The native shotgun fire action stays unmodified.
 3. Implement one coherent two-hand grip state for shotgun only: require fresh right/left tracking and intentional left grip near the proven fore-end; release on tracking loss, unequip, grab conflict, or cinematic. Keep model, shot ray and human IK in the same frame.
 4. Trace the native `viewShake` consumer and camera/human/gun transform order before adding a shake-disable switch. Verify no independent arm or weapon oscillation during a known shake event.
