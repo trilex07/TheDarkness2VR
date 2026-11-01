@@ -2,14 +2,16 @@
 #include "native_weapon_bridge.h"
 #include "psvr2/ShotEvents.h"
 #include "native_weapon_prefix_plan.h"
-static d2vr_native_view::InstanceTable g_protectedWeaponModelTable,g_protectedWeaponFireTable;
+static d2vr_native_view::InstanceTable g_protectedWeaponModelTable,g_protectedWeaponFireTable,g_protectedShotgunFireTable;
 static d2vr_native_clone::Code g_protectedWeaponModelCode,g_protectedWeaponFireCode;
 static bool g_protectedWeaponReady=false,g_protectedWeaponPrepareAttempted=false;
+static void* volatile g_shotgunFireValidated=nullptr;
+static void* volatile g_shotgunGunValidated=nullptr;
 static bool ProtectedWeaponModelOwned(void* model) {
     return g_protectedWeaponReady && g_protectedWeaponModelTable.Owns(model);
 }
 static bool ProtectedWeaponFireOwned(void* fire) {
-    return g_protectedWeaponReady && g_protectedWeaponFireTable.Owns(fire);
+    return g_protectedWeaponReady && (g_protectedWeaponFireTable.Owns(fire) || g_protectedShotgunFireTable.Owns(fire));
 }
 static bool ProtectedWeaponAvailable() {
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
@@ -50,8 +52,12 @@ static bool ProtectedWeaponOwner(void* camera,unsigned slot,void*& gun,void*& mo
         if(mode>=4)return false;
         auto parts=*reinterpret_cast<BYTE**>(weapon+0xA64);
         auto action=**reinterpret_cast<BYTE***>(parts+48*mode+0xC);
-        if(!action || (*reinterpret_cast<DWORD*>(action)!=0x1010AE0 && !ProtectedWeaponFireOwned(action)) ||
-           *reinterpret_cast<DWORD*>(action+4)!=0x11193F0 ||
+        const DWORD actionTable=action?*reinterpret_cast<DWORD*>(action):0;
+        const bool pistol=actionTable==0x1010AE0 || g_protectedWeaponFireTable.Owns(action);
+        const bool shotgun=g_shotgunCandidate && slot==0 &&
+            (actionTable==0xFD9D68 || g_protectedShotgunFireTable.Owns(action));
+        if((!pistol && !shotgun) ||
+           *reinterpret_cast<DWORD*>(action+4)!=(shotgun?0x10F4F58:0x11193F0) ||
            **reinterpret_cast<BYTE***>(action+0x4C)!=weapon)return false;
         // The shot action owns its equipped gun independently of the optional
         // +12C model reference. The live secondary pistol can have an empty
@@ -62,6 +68,15 @@ static bool ProtectedWeaponOwner(void* camera,unsigned slot,void*& gun,void*& mo
         if(entity && (*reinterpret_cast<DWORD*>(entity)==0xFD6BC0 || ProtectedWeaponModelOwned(entity)))model=entity;
         return true;
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+}
+static bool ProtectedShotgunSupportOwner(DWORD camera,void** selectedGun) {
+    if(selectedGun)*selectedGun=nullptr;
+    if(!g_shotgunCandidate)return false;
+    void *gun=nullptr,*model=nullptr,*fire=nullptr;
+    if(!ProtectedWeaponOwner(reinterpret_cast<void*>(camera),0,gun,model,fire) ||
+       !g_protectedShotgunFireTable.Owns(fire))return false;
+    if(selectedGun)*selectedGun=gun;
+    return true;
 }
 static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float* world,unsigned* stage=nullptr) {
     if(stage)*stage=1; // frame/tracking/thread context
@@ -126,6 +141,19 @@ static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {
     if(!current || !candidate)return false;
     float world[16];
     if(!ResolveProtectedWeapon(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(current)-0x140),nullptr,nullptr,world))return false;
+    // A shotgun's final fire call is a different virtual path from a pistol.
+    // Keep its stock model until that exact equipped action has demonstrably
+    // accepted the controller matrix. This avoids the failed model-only trial
+    // when firing occurs outside the tracked frame or on another thread.
+    NativeGameplaySample modelOwner;
+    if(CopyNativeGameplay(modelOwner)) {
+        void *gun=nullptr,*model=nullptr,*fire=nullptr;
+        if(ProtectedWeaponOwner(reinterpret_cast<void*>(modelOwner.camera),0,gun,model,fire) &&
+           model==reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(current)-0x140) &&
+           g_protectedShotgunFireTable.Owns(fire) &&
+           (InterlockedCompareExchangePointer(&g_shotgunFireValidated,nullptr,nullptr)!=fire ||
+            InterlockedCompareExchangePointer(&g_shotgunGunValidated,nullptr,nullptr)!=gun))return false;
+    }
     // Read-only receipt for the two-handed model investigation. The stock
     // world transform and our controller transform must be compared on the
     // same owned model before any model-axis calibration can be justified.
@@ -157,6 +185,12 @@ static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {
 static bool ResolveProtectedWeaponFire(void* fire,void* weaponRef,float* world) {
     unsigned stage=0;
     const bool applied=ResolveProtectedWeapon(nullptr,fire,weaponRef,world,&stage);
+    if(applied && g_protectedShotgunFireTable.Owns(fire)) {
+        __try {
+            InterlockedExchangePointer(&g_shotgunGunValidated,**static_cast<void***>(weaponRef));
+            InterlockedExchangePointer(&g_shotgunFireValidated,fire);
+        } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    }
     // Publication alone is not proof that the firing virtual is consumed or
     // that its context admits a controller ray. Bound receipts to two per
     // outcome on this thread; no per-frame tracing or retained native pointers.
@@ -195,6 +229,8 @@ static bool PrepareProtectedWeaponCode() {
     // class tables/header must match before any live-instance publication.
     if(!MatchesDigest(reinterpret_cast<void*>(0xFD6BBC),(weaponModelTableCount+1)*4,weaponModelTableDigest) ||
        !MatchesDigest(reinterpret_cast<void*>(0x1010ADC),(weaponFireTableCount+1)*4,weaponFireTableDigest) ||
+       (g_shotgunCandidate && !MatchesDigest(reinterpret_cast<void*>(0xFD9D64),34*4,
+           "0e44972a97d41330d8e977ed7327789e6afc700e774cc4b4200d09482b2e7c6f")) ||
        !MatchesDigest(weaponFireBlock.source,weaponFireBlock.bytes,weaponFireBlock.sha256) ||
        !MatchesDigest(weaponShotConsumer.source,weaponShotConsumer.bytes,weaponShotConsumer.sha256))return false;
     for(const auto& block:weaponHelpers)if(!MatchesDigest(block.source,block.bytes,block.sha256))return false;
@@ -216,7 +252,9 @@ static bool PrepareProtectedWeaponCode() {
        !g_protectedWeaponFireCode.Prepare(&weaponFireBlock,1,weaponFireCalls,
            _countof(weaponFireCalls),&shot,g_nativeImageGuard) ||
        !g_protectedWeaponFireTable.Prepare(reinterpret_cast<void**>(0x1010AE0),weaponFireTableCount,
-           0x64/4,g_protectedWeaponFireCode.Entry(0),g_nativeImageGuard))return false;
+           0x64/4,g_protectedWeaponFireCode.Entry(0),g_nativeImageGuard) ||
+       (g_shotgunCandidate && !g_protectedShotgunFireTable.Prepare(reinterpret_cast<void**>(0xFD9D68),33,
+           0x64/4,d2vr_weapon_bridge::Bridge::FireEntry(),g_nativeImageGuard)))return false;
     g_protectedWeaponReady=true;return true;
 }
 static void ReportProtectedWeaponRefusal(void* camera,unsigned slot) {
@@ -267,7 +305,8 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
             }
             return;
         }
-        const bool shot=!needsShot || g_protectedWeaponFireTable.Publish(fire,g_nativeImageGuard);
+        const bool shotgun=*static_cast<DWORD*>(fire)==0xFD9D68 || g_protectedShotgunFireTable.Owns(fire);
+        const bool shot=!needsShot || (shotgun ? g_protectedShotgunFireTable:g_protectedWeaponFireTable).Publish(fire,g_nativeImageGuard);
         const bool pose=shot && model && (!needsPose || g_protectedWeaponModelTable.Publish(model,g_nativeImageGuard));
         if(shot || pose)Log("[ProtectedWeapon] slot=%u model=%p fire=%p privatePose=%d privateShot=%d; independent aim spaces, original AD94A7 updates; native CFBBA0 flow with final C47570 controller ray, HMD validation pending",slot,model,fire,int(pose),int(shot));
     }

@@ -3,6 +3,8 @@ static bool ProtectedHandsAvailable();
 static bool ProtectedHandsResourceOwned(void* resource);
 static bool CopyProtectedHandPoses(DWORD camera,NativeWeaponPose (&poses)[2]);
 static bool CopyProtectedWeaponHandPose(DWORD camera,unsigned hand,XrPosef& pose);
+static bool ProtectedShotgunSupportOwner(DWORD camera,void** gun);
+static volatile LONG g_shotgunSupportIntent=0;
 // Shared guarded IK. Legacy triggers remain separate from the protected
 // private-instance packer in protected_hands.inl; neither is implicitly enabled.
 static bool g_nativeHandsInstalled=false;
@@ -25,6 +27,7 @@ static NativeHandsWriteStamp g_nativeHandsLastWrite;
 #endif
 struct NativeHandCalibration {
     void* parent=nullptr; void* skeleton=nullptr; void* resource=nullptr;
+    void* supportGun=nullptr;
     bool rightValid=false,leftValid=false,supportValid=false;
     float right[16]{},left[16]{},support[16]{};
 };
@@ -83,6 +86,11 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         NativeWeaponPose poses[2];
         if(!expectedResource || !CopyProtectedHandPoses(sample.camera,poses))return false;
         left=poses[0];right=poses[1];
+        void* shotgun=nullptr;
+        support=left.valid && right.valid && !sample.offHandEquipped &&
+            sample.grab==d2vr_input::GrabFeedback::Empty && !sample.alternateHeldTarget &&
+            InterlockedCompareExchange(&g_shotgunSupportIntent,0,0)!=0 &&
+            ProtectedShotgunSupportOwner(sample.camera,&shotgun);
     } else {
         if(!TryAcquireSRWLockShared(&g_nativeWeaponLock)) return false;
         left=g_nativeWeaponPoses[0]; right=g_nativeWeaponPoses[1]; support=g_nativeSupport;
@@ -163,6 +171,9 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         if(cal.parent!=parent || cal.skeleton!=skeleton || cal.resource!=resource) {
             cal={};cal.parent=parent;cal.skeleton=skeleton;cal.resource=resource;
         }
+        void* supportGun=nullptr;
+        if(support && !ProtectedShotgunSupportOwner(sample.camera,&supportGun))support=false;
+        if(cal.supportGun!=supportGun){cal.supportValid=false;cal.supportGun=supportGun;}
         rightValid=rightValid && d2vr_hands::Valid(bones[27]) && d2vr_hands::Valid(bones[43]);
         leftValid=leftValid && d2vr_hands::Valid(bones[5]) && d2vr_hands::Valid(bones[21]);
         if(rightValid && !cal.rightValid) {
@@ -181,6 +192,12 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
                 if(support){d2vr_math::Multiply(bones[5],inverse,cal.support);cal.supportValid=true;}
             }
         } else support=false;
+        if(support && cal.supportValid) {
+            float foregrip[16];d2vr_math::Multiply(cal.support,rightTarget,foregrip);
+            const float dx=foregrip[12]-leftTarget[12],dy=foregrip[13]-leftTarget[13],dz=foregrip[14]-leftTarget[14];
+            const float limit=.42f*g_gameUnitsPerMeter;
+            if(!std::isfinite(limit) || dx*dx+dy*dy+dz*dz>limit*limit)support=false;
+        }
         g_nativeHandCalibration=cal;
         float wrist[16];bool rightSolved=false,leftSolved=false;
         if(rightValid) {
@@ -233,7 +250,7 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         ReleaseSRWLockExclusive(&g_nativeHandsLock);
         locked=false;
         static ULONGLONG last=0; auto now=GetTickCount64();
-        if(now-last>1000) { last=now; Log("[NativeHands] route=%s right=%d left=%d wrists/fingers + arm IK; dirty=%s skin slot=%lu pose slot=%lu",protectedRoute?"private-pack":"legacy-pistol",int(rightSolved),int(leftSolved),(g_nativeHandsDirtyBoth || protectedRoute)?"both":"current",skinIndex,index); }
+        if(now-last>1000) { last=now; Log("[NativeHands] route=%s right=%d left=%d shotgunSupport=%d wrists/fingers + arm IK; dirty=%s skin slot=%lu pose slot=%lu",protectedRoute?"private-pack":"legacy-pistol",int(rightSolved),int(leftSolved),int(support && leftSolved),(g_nativeHandsDirtyBoth || protectedRoute)?"both":"current",skinIndex,index); }
         return true;
     } __except(EXCEPTION_EXECUTE_HANDLER) { if(locked) ReleaseSRWLockExclusive(&g_nativeHandsLock); return false; }
 }

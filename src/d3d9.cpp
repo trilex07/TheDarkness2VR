@@ -100,6 +100,7 @@ static bool g_protectedGestureActions=false;
 static bool g_protectedLeftAim=false;
 static bool g_protectedLeftThrow=false;
 static bool g_protectedTrackedHands=false;
+static bool g_shotgunCandidate=false;
 static d2vr_input::Tentacles g_protectedRightTentacle;
 static volatile LONG g_protectedRecenterRequested=0;
 static d2vr_protected_input::ExternalXInput g_protectedXInput;
@@ -675,6 +676,8 @@ void LoadConfig() {
     g_protectedLeftAim=GetPrivateProfileIntA("Diagnostics","ProtectedLeftAim",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_protectedLeftThrow=GetPrivateProfileIntA("Diagnostics","ProtectedLeftThrow",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_protectedTrackedHands=GetPrivateProfileIntA("Diagnostics","ProtectedTrackedHands",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_shotgunCandidate=GetPrivateProfileIntA("Diagnostics","ShotgunCandidate",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    Log("[ShotgunCandidate] requested=%d; model and final pellet ray share right aim after first admitted shot; left squeeze near fore-end supports stock hand pose",int(g_shotgunCandidate));
     Log("[ProtectedLeftAim] requested=%d; private getter, legacy NativeLeftAim stays OFF; separate ProtectedLeftThrow=%d",int(g_protectedLeftAim),int(g_protectedLeftThrow));
     Log("[ProtectedHands] requested=%d; private selected-resource packer only; legacy hands/weapon hooks remain independent",int(g_protectedTrackedHands));
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
@@ -4800,8 +4803,29 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     ApplyWeaponWheel(gp); // wheel owns triggers/right stick while open; crouch flick; equip pulses
     ApplyUnarmedTriggerDpad(gp); // before gestures/throw/haptics so they see the rewritten triggers
 #ifdef D2VR_MATCHED_CAPTURE
-    if(g_imagePreservingInput) gp.wButtons |= g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
-        g_hands[0].gripValid,g_hands[1].gripValid);
+    if(g_imagePreservingInput) {
+        // The left squeeze can support the equipped shotgun near its stock
+        // fore-end. Latch ownership until release so moving the hand away does
+        // not suddenly emit the same squeeze as a demon-arm grab.
+        NativeGameplaySample supportOwner;void* supportGun=nullptr;
+        const bool supportContext=g_shotgunCandidate && g_in3DGameplayMode && g_hands[0].gripValid &&
+            g_hands[1].aimValid && CopyNativeGameplay(supportOwner) &&
+            supportOwner.grab==d2vr_input::GrabFeedback::Empty &&
+            !supportOwner.alternateHeldTarget && !supportOwner.offHandEquipped &&
+            ProtectedShotgunSupportOwner(supportOwner.camera,&supportGun);
+        static bool swallowLeftGrip=false;
+        if(!g_hands[0].gripValid || g_hands[0].squeeze<.35f)swallowLeftGrip=false;
+        else if(supportContext && !swallowLeftGrip && g_hands[0].squeeze>.65f) {
+            const auto& a=g_hands[0].grip.position;const auto& b=g_hands[1].aim.position;
+            const float dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z;
+            swallowLeftGrip=dx*dx+dy*dy+dz*dz<.50f*.50f;
+        }
+        InterlockedExchange(&g_shotgunSupportIntent,swallowLeftGrip && supportContext?1:0);
+        WORD grips=g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
+            g_hands[0].gripValid,g_hands[1].gripValid);
+        if(swallowLeftGrip)grips &= ~XINPUT_GAMEPAD_LEFT_SHOULDER;
+        gp.wButtons |= grips;
+    }
     if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
     ApplyProtectedLeftThrow(gp);
     PublishProtectedLeftAim(gp);
