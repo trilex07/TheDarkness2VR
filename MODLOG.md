@@ -2838,4 +2838,3 @@ headset gate: `docs/research/darkness2-camera-shake-20261101.md` and per-task
 - User accepted camera stabilization, event haptics and model snapshot DLL9AF9A51E; source/acceptance history fast-forwarded and pushed to Git main at370897d3.
 - Installed prepared private Polish complete release (16 files) and64 comic weapon/tentacle textures with game closed. Wrapper `tools/deploy-polish-comic.py` retains verified22-file preimages and hash-gated rollback. Independent22 backups/22 installed archives/5 protected DLL,EXE,INI hashes PASS; texture H64/B64/F62 readbacks, unrelated TOC and cache-prefix preservation PASS.
 - Backup/receipt: `C:/Users/Trilex/AppData/Local/Darkness2VR/backups/polish-comic-main-20261101-accepted-camera`. Steam startup/rendering PASS PID27504 after22:40:52 Warsaw; asset sound/appearance user acceptance pending. See per-task handoff.
-
