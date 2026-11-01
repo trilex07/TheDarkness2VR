@@ -76,3 +76,23 @@ change native memory or infer decoration from an address.
 MSVC x86 /W4 /WX test/gaze_lod_observation_test.cpp: 13 checks, zero failures.
 This is offline policy validation, not a hooked observer or measured CPU saving.
 Native owner/resource admission and runtime observation integration remain open.
+
+## Runtime connection preflight
+
+Installed DLL independently hashed to
+7DB3D6475C8E78E25A793226559504A9B848EC8B7047DD0588E8571398D5FE38.
+No DarknessII process returned by preflight process lookup. This does not grant
+permission to overwrite the newer v11/frame-cap integration with this checkout.
+
+Read-only Ghidra export gaze-lod-view-entry.txt proves two direct selector
+calls:58290A inside5828B0 and B2A147 inside B2A0E0. First caller receives
+view-list argument on stack (ESI), renderer in ECX/EDI; invokes8513A0 with
+that list. The argument is NOT the scene reference passed to the existing
+985xxx selected-avatar observer. Reinterpreting that existing argument as the
+LOD list is unsupported and would risk invalid memory traversal.
+
+Required before deployment: connect a verified list lifetime at either real
+caller (or prove its route from the owned renderer), preserve protected-native
+EXE invariance, and integrate against the archived installed source. Existing
+hand-resource private hook only owns avatar hands, not scene decorations.
+No runtime hook or installation was performed in this preflight.
