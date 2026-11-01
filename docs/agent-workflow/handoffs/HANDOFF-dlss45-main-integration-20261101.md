@@ -15,7 +15,7 @@ Integrate an opt-in DLSS/DLAA candidate from SIDE, validate offline, and prepare
 
 ## Status
 
-Protected DLAA candidate installed with verified rollback. No headset result yet.
+Headset test failed: user reported heavy blur and FPS near 50. Full protected rollback completed and independently verified; DLAA is no longer installed or enabled. Keep this trial off main.
 
 ## Context Loaded
 
@@ -40,11 +40,13 @@ Protected DLAA candidate installed with verified rollback. No headset result yet
 - Protected-native x86 proxy build PASS and profile gate PASS. Installed DLL SHA256 `398B262A36582E136BBCF52C061681D3A7263FC111BFE1A51C47913A29ED1F42`.
 - x64 host built from current source with local NGX/FidelityFX SDKs. Test DLAA 2676x2728: approximately 2.7-2.8 ms GPU per eye; present-thread CPU approximately 3.5 ms per eye. No FPS or engine CPU saving claim.
 - Previous installed DLL and stock EXE matched BASELINE.md before deployment. The game host directory was absent. Protected deploy preflight PASS with seven staged host files and game closed.
+- Actual game run: host initialized NGX on RTX 5070 and created both 2676x2728 DLAA eye features. Proxy log recorded 4500/4500 frames per eye with zero refusals; GPU evaluate averages were 3.67 ms left and 2.95 ms right. User reported a very blurry image and FPS dropping to approximately 50. The log does not independently prove exact FPS or isolate the whole frame-time regression.
+- After the game closed, `Restore.ps1` restored all nine protected targets. Independent post-restore hash check passed 9/9. Installed DLL returned to `CC7DD6C7B048158255D607649841BDE6305D284414CAD790A4CE99B14A941248`, stock EXE stayed `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`, and the previously absent DLSS host directory is absent. The game INI again has LOD 1.25 and NIS 2 with sharpness 0.80 and no DLSS override.
 
 ## Next Steps
 
-1. User tests both eyes, motion/ghosting, weapons and frame pacing in headset. Read `%LOCALAPPDATA%/Darkness2VR/d3d9.log` and host log. Keep DLAA off main until accepted.
-2. If the test fails, restore the complete package and verify all nine protected targets plus the prior absent host directory. Do not change only the DLL.
+1. Diagnose native per-eye depth, projection jitter and motion-vector provenance before another visual candidate. Constant depth and rotation-only motion are plausible causes of blur, not yet proven.
+2. Reduce or decouple the synchronous host acknowledgement cost and measure a controlled same-scene frame-time comparison before another performance claim. Any new candidate needs a separate protected package and headset gate.
 
 ## Blockers
 
@@ -52,6 +54,6 @@ Native full-resolution per-eye depth and reliable object motion/jitter are not c
 
 ## Installed MAIN receipt
 
-- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/dlss45-dlaa-20261101T131236586`
+- Historical rejected trial package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/dlss45-dlaa-20261101T131236586`; restored as recorded above.
 - Installed DLL SHA256: `398B262A36582E136BBCF52C061681D3A7263FC111BFE1A51C47913A29ED1F42`; stock EXE `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.
 - Backups 9/9 and host files 7/7 hashes independently verified after install. `DlssMode=1`, `DlssPreset=11`, `DlssBackend=0`, `DlssObjectMotion=0`, `DlssBiasMask=0`, `NisMode=0` confirmed in game INI. `EngineLODScale=1.25` and `NativeViewBoundary=3` retained. Game closed; no agent launch.

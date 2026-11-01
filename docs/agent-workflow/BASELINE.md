@@ -3,14 +3,20 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
-## Installed DLAA integration trial (2026-11-01 13:12 Europe/Warsaw)
+## DLAA integration trial rejected and fully restored (2026-11-01)
+
+- **Current installed DLL SHA256**: `CC7DD6C7B048158255D607649841BDE6305D284414CAD790A4CE99B14A941248`, source `b9b1d190`. Stock EXE SHA256 `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`. The pretrial nine protected targets were restored and independently verified 9/9; the previously absent `d2vr_dlss/` host directory is absent again. Game was closed and not relaunched by the agent.
+- **Current game profile**: `EngineLODScale=1.25`, `FoveatedCopyBase=1`, `NisMode=2`, `NisSharpness=0.80`, `NativeViewBoundary=3`, with no `DlssMode` override (default OFF). Restore package: `%LOCALAPPDATA%/Darkness2VR/packages/dlss45-dlaa-20261101T131236586/rollback/Restore.ps1`.
+- **Headset result**: user reported a very blurry image and FPS falling to approximately 50. This candidate failed the headset quality/performance gate. Runtime log independently showed NGX initialized, DLAA features for both eyes at 2676x2728, and 4500/4500 frames per eye processed with zero refusals. At that point NGX GPU evaluate averages were 3.67 ms left and 2.95 ms right. The log does not independently establish the exact 50 FPS or isolate all frame-time causes. Missing native per-eye depth/jitter and rotation-only motion are plausible blur causes, not proven root causes.
+
+## Historical DLAA integration trial installation (2026-11-01 13:12 Europe/Warsaw)
 
 - **Installed DLL SHA256**: `398B262A36582E136BBCF52C061681D3A7263FC111BFE1A51C47913A29ED1F42`, source `c9bb4057` on `codex/gaze-nis-main-integration` (SIDE DLSS source `8f67a69d` integrated and hardened). Stock EXE SHA256 `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1` unchanged.
 - **Active game profile**: `DlssMode=1` (DLAA), `DlssPreset=11` (K), `DlssBackend=0` (NGX), `DlssObjectMotion=0`, `DlssBiasMask=0`, `NisMode=0`. Existing `EngineLODScale=1.25` and `NativeViewBoundary=3` retained. Repo default remains `DlssMode=0`.
 - **Host**: seven files installed to `d2vr_dlss/`, including `d2vr_dlss_host64.exe` and local `nvngx_dlss.dll` v310.9.1.0. All seven installed hashes verified; the directory was absent before this trial.
 - **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/dlss45-dlaa-20261101T131236586/rollback/Restore.ps1`; 9/9 protected backup hashes verified. Host manifest records prior absent files for removal on restore. Package source receipt confirms `c9bb405711751357347821e93ad13116612e1651`.
 - **Offline checks**: protected-native x86 build and profile gate PASS, x64 host build PASS, standalone NGX/FSR IPC/GPU suite 30/30 PASS. DLAA at 2676x2728 in the synthetic suite cost roughly 2.7-2.8 ms GPU and 3.5 ms present-thread CPU per eye. These are not in-game FPS or engine CPU measurements.
-- **Headset gate**: NOT RUN. Native per-eye depth and projection jitter are not connected; current guide uses a constant depth plane and rotation-only camera motion. Check stereo, smearing on movement/tentacles, hard cuts and frame pacing before any main promotion. Game was closed and not launched by the agent.
+- **Headset gate at installation**: NOT RUN. Subsequent headset result is recorded above. Native per-eye depth and projection jitter were not connected; the trial used a constant depth plane and rotation-only camera motion.
 
 ## Installed R2 post-load candidate with LOD 1.25 (2026-11-01 12:15 Europe/Warsaw)
 
