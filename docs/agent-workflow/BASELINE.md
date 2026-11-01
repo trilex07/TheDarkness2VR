@@ -3,6 +3,12 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed gated shotgun aim/support trial (2026-11-01 15:10 Europe/Warsaw)
+
+- **Installed DLL SHA256**: `00F659DF51A7D3ED43084A837D190F2E288BB05861A464E31721FA32DDA99139`, source `a4188551` on `codex/gaze-nis-main-integration`. Game diagnostic INI SHA256 `2B6D94F228A156ACAFCF9043FE44E65DF64AAB1706DAF5CEC8540D3F8319DA49` enables `ShotgunCandidate=1`; stock EXE hash remains `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.
+- **Change**: exact shotgun action table routes its final shot through the protected controller bridge; the model changes only after that action has accepted a shot. A nearby left squeeze supports the left hand at the shotgun's native animated fore-end and consumes the demon-arm grip until release. This is a physical test candidate; aim, hit and support results are NOT RUN.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/shotgun-aim-support-20261101T151042620/rollback/Restore.ps1`. Independent post-install audit verified all nine backups and all seven other unchanged protected targets, exact DLL and diagnostic INI hashes, stock EXE hash, and no game process. Camera shake suppression is not included.
+
 ## Installed shotgun pose observer after failed model-only trial rollback (2026-11-01)
 
 - **Installed DLL SHA256**: `867E3DE9E96920836F9B3CE761AF53875029F6A89A26EB43AFC6E39118C3EE0C`, source `1e0925e9` on `codex/gaze-nis-main-integration`. Stock EXE SHA256 `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1` unchanged.

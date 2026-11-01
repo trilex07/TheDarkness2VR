@@ -7,7 +7,7 @@
 **Branch**: codex/gaze-nis-main-integration
 **Worktree**: C:/Users/Trilex/.codex/worktrees/gaze-nis-main-integration/Darkness2VR
 **Baseline**: installed held-finisher candidate DLL `DDDEF1CD8FB135A7D89E6C515786D809351926914FC1FF1C195ADF1F27B6F5BF`, source `c9b86d0c`; its finisher headset result is still pending. Accepted rollback baseline remains `4a26aabd` per BASELINE.md.
-**Integration commit**: pending; read-only diagnostic `1e0925e9`, rejected model-only trial `eb00b9d6`, deployment script `809b98c9`, source rollback `f9a902d6`
+**Integration commit**: pending; read-only diagnostic `1e0925e9`, rejected model-only trial `eb00b9d6`, source rollback `f9a902d6`, gated shotgun candidate `a4188551`
 
 ## Goal
 
@@ -15,7 +15,7 @@ The next gameplay candidate should let the left hand support an equipped shotgun
 
 ## Status
 
-In Progress. The model-only headset trial failed and was rolled back 9/9. Installed game has the preceding read-only observer DLL `867E3DE9E96920836F9B3CE761AF53875029F6A89A26EB43AFC6E39118C3EE0C`. A new shotgun aim/support candidate is in source behind `Diagnostics/ShotgunCandidate=0` and has no headset result. Camera shake suppression remains open.
+In Progress. The model-only headset trial failed and was rolled back 9/9. A new shotgun aim/support candidate is installed with `Diagnostics/ShotgunCandidate=1` and awaits headset feedback. Camera shake suppression remains open.
 
 ## Context Loaded
 
@@ -58,6 +58,13 @@ In Progress. The model-only headset trial failed and was rolled back 9/9. Instal
 - Headset trial: user reported the model now pointed forward, but shots could not hit and fingers did not reach the trigger; screenshot `C:/Users/Trilex/AppData/Local/Temp/codex-clipboard-9c2f1f89-5202-4c25-9790-4f5fdbb07067.jpg` shows the forward model and finger offset. Log contains `[ProtectedWeapon] shotgun` and `[WeaponPose] shotgun=1` with native/tracked axes often close; shotgun `firearm=0` remains unclassified by haptics. The native fire action was not patched, so the loss of hits suggests indirect coupling to model state (inference, not traced call).
 - After user closed the game, the protected Restore.ps1 returned the prior nine targets; independent check confirmed 9/9 hashes, DLL `867E3DE9E96920836F9B3CE761AF53875029F6A89A26EB43AFC6E39118C3EE0C`, stock EXE and no running game.
 - Gated aim/support source trial: `build.ps1 -DiagnosticCapture` x86 PASS; profile gate `protected-native` PASS; DLL SHA256 `00F659DF51A7D3ED43084A837D190F2E288BB05861A464E31721FA32DDA99139`. Headset result NOT RUN. Native camera-shake suppression is not in this DLL.
+- Protected installer preflight PASS; MAIN installed the gated candidate only after the user closed the game. Independent audit: nine backup hashes match, seven unchanged protected targets match, installed DLL and diagnostic INI match staged hashes, stock EXE unchanged, game not launched by the agent.
+
+## Installed gated shotgun aim/support trial receipt
+
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/shotgun-aim-support-20261101T151042620`.
+- DLL SHA256 `00F659DF51A7D3ED43084A837D190F2E288BB05861A464E31721FA32DDA99139`; diagnostic INI SHA256 `2B6D94F228A156ACAFCF9043FE44E65DF64AAB1706DAF5CEC8540D3F8319DA49` with `ShotgunCandidate=1`. Stock EXE and other protected files unchanged.
+- Rollback: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/shotgun-aim-support-20261101T151042620/rollback/Restore.ps1`; prior observer DLL retained. Headset result NOT RUN. Shake suppression not included.
 
 ## Installed MAIN observer receipt
 
