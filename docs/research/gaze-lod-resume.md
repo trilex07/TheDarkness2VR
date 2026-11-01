@@ -117,3 +117,7 @@ from exact 7DB3D647 installed-source archive. The game was closed. Two active
 profiles have Render/GazeLodDiagnostic=1; existing EngineMaxFrameRate=120 is
 preserved. See HANDOFF-gaze-lod-diagnostic.md for complete package/rollback.
 No headset result or object-level observation yet.
+
+## Later MAIN read-only owner result (2026-11-01)
+
+`HANDOFF-gaze-lod-optimization-20261101.md` verified one active stock `00FF8818` owner in a live 3D scene, with non-null `+274` renderer and scene-list references. The hardware execution observer at `008513A0` refused occupied foreign DR state; no native quality setting or object LOD was changed. A CPU.Verbose ETW profile was refused by Windows policy. The stable gaze-dot/R2 DLL was restored with caches retained. This proves a candidate owner path, not safe decoration classification, mesh cost or CPU improvement.

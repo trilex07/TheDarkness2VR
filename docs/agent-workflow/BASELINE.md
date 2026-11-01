@@ -3,13 +3,12 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
-## Current installed MAIN LOD observation candidate (2026-11-01)
+## LOD observation completed and stable DLL restored (2026-11-01)
 
-- **Installed DLL SHA256**: `C398F251E9BE1556292E7683308D55E49A1D3B61C3A415669DF9BEBEC9EC1CB1` (protected-native x86), source `0a9d7754f3709e80c19f80e7ac3ed944977e3fe6` on `codex/gaze-nis-main-integration`.
-- **Package/rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-lod-debug-20261101T111242901/rollback/Restore.ps1`; all nine backup hashes verified. Previous LOD observer candidate was `2AB58263...` with package `gaze-lod-runtime-20261101T110811047`.
-- **Change**: opt-in one-sample native LOD dispatcher observer; `GazeLodRuntimeObserver=1` in active game INI. No native quality/object settings changed. The prior gaze dot and R2 fix are retained.
-- **Evidence**: exact EXE/DLL and protected profile checks passed; native execution boundary fixture passed. First LOD observer run refused an occupied hardware debug state. This second candidate logs exact DR registers before any further change. Game has not been launched with the second candidate; LOD owner and CPU benefit remain unverified.
-- **Integration**: diagnostic candidate remains on task branch until runtime evidence; remote main remains the previously installed gaze dot/R2 source.
+- **Installed DLL SHA256**: `E6F49A7E9E520D24502B9F5ABAFB4E0DAE6A9D7DDC0ACDE86486DAD4128DB1BD`, restored stable gaze-dot/R2 source `70f4e28e`.
+- **Restoration/rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-lod-observer-revert-20261101T112155709/rollback/Restore.ps1`; all nine backup hashes verified; current caches retained. Active game INI no longer contains `GazeLodRuntimeObserver`; `GazeDot=0` retained.
+- **LOD evidence**: hardware execution observer refused occupied DR state and made no quality change. Read-only live scan found one stock owner vtable `00FF8818`, a non-null `+274` renderer and scene-list references. Exact object classes, CPU savings and a safe gaze LOD adjustment remain unproven. Windows refused the attempted CPU.Verbose ETW profile (`0xC5585011`).
+- **Integration**: research and diagnostic commits remain on `codex/gaze-nis-main-integration`; remote main remains the stable gaze-dot/R2 source. See `HANDOFF-gaze-lod-optimization-20261101.md`.
 
 ## Current installed MAIN candidate: gaze dot and R2 fix (2026-11-01)
 
