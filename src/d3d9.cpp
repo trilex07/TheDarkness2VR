@@ -64,6 +64,7 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
 static bool g_cameraShakeRumble=true; // Diagnostics/CameraShakeRumble (default ON with the stabilizer)
 static bool g_cameraShakeSourceSuppress=false; // Diagnostics/CameraShakeSourceSuppress, default OFF
+static bool g_cameraEventRumble=false; // Diagnostics/CameraEventRumble, default OFF; native impact/environment only
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
 #include "diagnostic_present_patch.h"
@@ -686,6 +687,8 @@ void LoadConfig() {
     g_cameraAnimStabilize=GetPrivateProfileIntA("Diagnostics","CameraAnimStabilize",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraShakeRumble=GetPrivateProfileIntA("Diagnostics","CameraShakeRumble",1,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraShakeSourceSuppress=GetPrivateProfileIntA("Diagnostics","CameraShakeSourceSuppress",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_cameraEventRumble=GetPrivateProfileIntA("Diagnostics","CameraEventRumble",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    Log("[CameraEventRumble] requested=%d; read-only selected producer impact/environment output; no locomotion residual",int(g_cameraEventRumble));
     Log("[CameraShakeSource] requested=%d; heap-only native shake removal on all 00FDF170 owners",int(g_cameraShakeSourceSuppress));
     Log("[ShotgunCandidate] requested=%d; model and final pellet ray share right aim after first admitted shot; left squeeze near fore-end supports stock hand pose",int(g_shotgunCandidate));
     Log("[CameraShakeTrace] requested=%d; selected camera and avatar matrices read only for first 30 gameplay seconds",int(g_cameraShakeTrace));
@@ -4511,6 +4514,7 @@ static void LocateTrackedHands() {
     }
 }
 
+static bool MenuConfirmActive();
 static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
     if (!g_adaptiveTriggers) {
         StopGripHaptics();
@@ -4535,6 +4539,7 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         (gp && (gp->wButtons & XINPUT_GAMEPAD_START) != 0);
 #ifdef D2VR_MATCHED_CAPTURE
     menu=menu || g_protectedRightTentacle.paused || g_protectedLeftTentacle.paused;
+    if(g_cameraEventRumble)menu=menu || MenuConfirmActive();
 #endif
     gates.openXrFocused = focused && g_xrSessionState == XR_SESSION_STATE_FOCUSED;
     gates.gameplayActive = g_in3DGameplayMode && !menu;
@@ -4644,8 +4649,9 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         GripHaptic haptic = tentacleHaptic(cues[hand]);
         static ULONGLONG stickTurnUntil=0;
         if(gp && std::abs(int(gp->sThumbRX))>9000)stickTurnUntil=now+350; // stick turns never rumble
-        const float shakeRumble=active && now>=stickTurnUntil ?
+        const float legacyShake=now>=stickTurnUntil ?
             (std::max)(CameraShakeRumbleAmount(),CameraShakeImpulseRumble()) : 0.f;
+        const float shakeRumble=active ? (g_cameraEventRumble ? SelectedCameraEventRumble():legacyShake) : 0.f;
         if(shakeRumble>0.05f)
             haptic = combineGripHaptic(haptic, GripHaptic{0.15f+0.6f*shakeRumble,80.f,100000000ull});
         if (active && vibratingShot && !handReloading)

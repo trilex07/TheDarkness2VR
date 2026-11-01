@@ -1,5 +1,31 @@
 # Darkness II VR camera-shake source audit (2026-11-01)
 
+## Later MAIN event capture: confirmed live producer and haptic blind spot
+
+After rollback to DLL `7414984FF998FABDF154AEB5EE443D75805378DDB2359F7EC6F20E83E8A6FA55`,
+user repeated: steps, passing train, approach enemies/damage, one tentacle swing,
+further damage, pause. Read-only 300-second capture started 20:49:58.027 UTC;
+26,532 samples, live selected avatar `3FAA93F0`, source owner `3F82EC30`.
+Four other `00FDF170` candidates remained idle. The active producer's `+828`
+smart reference resolves controller `2E2968B0` (table `00FE3EE8`), whose `+74`
+reference resolves the exact selected avatar. Stock `0043BCB0` returns the
+controller's `+74` reference; `00631560..00631572` uses this route. Unlike the
+idle `avatar+5E0` object, this provides a verified producer/selected-player link.
+
+All procedural `+20` impulses stayed zero. Impact output `+12F0` reached
+1.39402; environmental `+CA0/+CD8` output reached 1.19662. Environmental output
+was sustained ~33..40 s (consistent with train by user sequence) and subsequent
+impact pulses continued ~41..56 s (consistent with damage). These associations
+do not establish native event IDs or distinguish each individual strike.
+
+New default-OFF `Diagnostics/CameraEventRumble` observes these outputs only on
+the verified selected producer. It does not use the movement/view block `+8C0`
+or a camera smoothing residual, and does not write native objects. Recorded
+samples replayed through the actual C++ signal function pass: 24,064 quiet,
+initial-step or paused samples yield zero; train/damage windows produce feedback.
+There is no physical controller acceptance yet. This is a haptics candidate;
+the native camera-shake suppression problem remains open.
+
 Pinned stock `DarknessII.exe` SHA256: `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`. Static addresses below are image VAs. No installed game file was modified for this audit.
 
 ## Confirmed producers

@@ -107,10 +107,66 @@ to the camera position and calls `00ADDE10`; thus this byte alone is NOT a
 complete camera-shake toggle. This is a useful native consumer lead, not a
 proven safe intervention or proof of active owner identity.
 
+## Successful event capture and haptics candidate (subsequent test)
+
+User says the game was never closed. Earlier sandbox `Get-Process` did NOT
+reliably expose the user's game; do not infer process exit from that observation.
+Use elevated `Get-CimInstance Win32_Process` / exact pinned PID for current state.
+
+Reran recorder on still-live PID 38568. File
+`test-output/camera-event-20261101T214956250.jsonl`, header UTC start
+`2026-11-01T20:49:58.027013+00:00` (21:49:58 Warsaw), 300 seconds,
+26,532 samples. User sequence: unpause, steps, train passes/look, approach enemies,
+damage, one tentacle swing, further damage, pause. Activity ~31..57 seconds.
+Source DLL remains `7414984F...`; the event trace is on the restored baseline.
+
+- Exactly one candidate (`3F82EC30`) shows substantial output; four remain idle.
+- Impulse `+20` of all four procedural blocks stays exactly zero for whole test.
+- Active owner's impact position output peaks 1.39402; CA0 environmental
+  output peaks 1.19662. CA0 is sustained ~33..40 s while movement/view block
+  drops to zero; later impact pulses ~41..56 s remain after CA0 stops. Association
+  with train and subsequent damage follows user ordering, not native event IDs.
+- Live read-only chain independently verified: active owner `+828 -> 2767F234
+  -> 2E2968B0` (controller table `00FE3EE8`), then controller `+74 -> 281253C0
+  -> 3FAA93F0` (selected avatar `01001630`). All four idle owners have an empty
+  `+828` reference. Stock getter `0043BCB0` returns controller `+74`; updater
+  `00631560..00631572` uses this same chain. This resolves producer ownership.
+
+Implemented default-OFF `Diagnostics/CameraEventRumble`: read-only selected
+producer matching via that chain, impact outputs `+12F0/+1300` plus CA0 outputs
+`+CA0/+CD8`, finite-value/expiry/unique-owner checks, native pause gating, existing
+OpenXR finite 100 ms feedback delivery. It excludes walking/view `+8C0`, avoids
+camera residuals and does not suppress real impacts merely because stick turns.
+No native memory write is introduced. Rejected stabilizers must remain OFF.
+Camera shake itself is still unresolved; this candidate addresses haptics only.
+
+Tests: `test/build_camera_event_feedback.ps1 -Replay test-output/camera-event-replay.txt`
+PASS, 50,624 checks. Replays 26,532 actual samples; 24,064 quiet/initial-step/paused
+samples give zero, 417 train-window samples and 353 later-impact samples active.
+Ownership refusal, wrong-avatar and NaN/Inf checks pass. These are offline
+signals, not physical controller acceptance or native pause integration proof.
+
+Build: initial BuildTools 18.6.2 link failed with MSPDB140.DLL version conflict;
+in-place VS18.8.2 retry hit LNK1114 access denied on old d3d9.lib. Isolated,
+unsandboxed VS18.8.2 build through `tools/build-camera-event.ps1` succeeds in
+`build/camera-event/`; no global toolchain or original build script modification.
+Final candidate also avoids periodic whole-memory rescans while its verified
+producer remains valid. Deployment helper
+`tools/deploy-camera-event-rumble.ps1 -CandidateHash <completed DLL SHA>`
+supports read-only preflight; `-Install` refuses a running game, verifies current
+baseline and nine backups, changes only DLL plus the event INI key, preserves
+shotgun/guard and refuses all rejected shake flags. No new DLL is installed yet.
+
+Final isolated x86 diagnostic build PASS, DLL SHA256
+`8DB11F12A5032BCAC7FA4806C22E1439DDE63BE5035B244159FDD043EF1A8966`.
+Read-only deployment/profile preflight PASS, all rejected shake flags OFF,
+shotgun retained. Installed DLL still `7414984F...`. Full capture SHA256
+`4F1786D5FD6F5CFD82003DA6007EA1D5E9B222C85329963CA087AAF57C7B845C`.
+
 ## Next
 
-1. Inspect actual capture completeness and user event sequence.
-2. Establish active owner and which impulse/output changes during events.
-3. If factor writer or transform order remains unknown, obtain a bounded hardware
+1. Finish final build/profile preflight; commit source and retain binary receipt.
+2. Game must be closed before an opt-in haptics-only candidate installation.
+3. For camera suppression, obtain a bounded hardware
    write watchpoint trace; do not recycle render-time zeroing or delayed filters.
 4. Implement and validate only after ownership/address/instruction evidence.
