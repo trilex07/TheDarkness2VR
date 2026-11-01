@@ -63,3 +63,16 @@ Ghidra project read-only, stock executable hash above. No project edits.
 Next: resolve actual resource vtable implementations of+124/+128/+158/+160
 for observed renderer resource types, then trace the geometry submission
 consumer. Do not patch generic offset matches.
+
+## Implemented observation policy (not wired to runtime)
+
+src/gaze_lod_observation.h classifies a verified object bounding sphere against
+fresh gaze. Full angular footprint protects large objects overlapping the
+35-degree central cone. Unknown owner, invalid bounds/index, future/stale gaze
+and invalid direction reject the observation. Candidate flag requires explicit
+decoration classification and an available lower-detail level. It does not
+change native memory or infer decoration from an address.
+
+MSVC x86 /W4 /WX test/gaze_lod_observation_test.cpp: 13 checks, zero failures.
+This is offline policy validation, not a hooked observer or measured CPU saving.
+Native owner/resource admission and runtime observation integration remain open.
