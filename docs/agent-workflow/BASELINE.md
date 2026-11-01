@@ -3,6 +3,14 @@
 Recorded by MAIN on 2026-10-31. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Current user-approved MAIN integration (2026-11-01)
+
+- **Installed DLL SHA256**: `916B9A5151CC25F694A0B967862F3CEFFCC21CE23E8C6D857BF654B164DB7FDF`.
+- **Source**: `a2fdaf58` on `codex/gaze-nis-main-integration`, merged with HUD/gaze evidence at `316135c`. This integrates the installed wheel, gaze, frame-cap, HUD and NIS source; the game DLL was built from the corresponding isolated candidate source.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-nis-copy-base-20261101T021726069/rollback/Restore.ps1` backs up the DLL, four INIs and four caches.
+- **Headset evidence**: NIS pair GPU time ~0.13 ms with valid gaze versus ~0.28–0.30 ms in the earlier foveated build. Both eyes took the fast path. Recent XR layers were near 90/s, but this is not native simulation FPS and does not establish an engine CPU gain. User requested promotion to main; visual quality feedback remains open.
+- **Native engine LOD**: unchanged. The tested camera+2A4 owner reference was null; object classification and safe selector ownership remain unproven.
+
 ## Accepted rollback baseline (retained, not currently installed)
 - **Accepted DLL SHA256**: 3FDEB05CD94D6FC4E14C6C446A2859DA5F9A9E832AF5348D4602E4A7EF03C3EA
 - **Accepted source commit**: 4a26aabdce15903eb5efe48bd707d47e200175e5
