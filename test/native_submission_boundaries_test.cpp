@@ -19,6 +19,7 @@ static SubmissionSoftwareProcessing g_submissionSoftwareProcessing=&Software;
 #include "actual_native_boundaries.inl"
 int main(int argc,char** argv){
  CHECK(argc==2);d2vr_submission::requested=true;d2vr_submission::gate.Configure(true);
+ d2vr_submission::deviceIdentity=device;
  void* out=nullptr;
  for(auto iid:{__uuidof(IUnknown),__uuidof(IDirect3DDevice9),__uuidof(IDirect3DDevice9Ex)}){
   status=S_FALSE;CHECK(SubmissionDeviceQueryInterface(device,iid,&out)==status && out==device);
@@ -38,11 +39,22 @@ int main(int argc,char** argv){
  }else if(!strcmp(argv[1],"alias")){
   CHECK(SubmissionDeviceQueryInterface(device,__uuidof(IDirect3DDevice9),&out)==status && out==returned);
   CHECK(d2vr_submission::gate.Reasons()&d2vr_submission::Epoch::InterfaceEscape);
+ }else if(!strcmp(argv[1],"callback")){
+  d2vr_record_sync::DriverScope callback;
+  CHECK(!d2vr_record_sync::NativeMutation());
+  CHECK(d2vr_submission::denialSources.load()&d2vr_submission::RecorderCallback);
+  CHECK(d2vr_submission::gate.Reasons()&d2vr_submission::Epoch::UncontrolledMutation);
  }else{
   CHECK(!strcmp(argv[1],"software"));status=S_FALSE;
+  const auto before=d2vr_submission::gate.Begin(GetCurrentThreadId());
+  CHECK(before && d2vr_submission::gate.Current(before));
   CHECK(SubmissionSetSoftwareProcessing(device,TRUE)==status && software==1);
-  CHECK(d2vr_submission::gate.Reasons()&d2vr_submission::Epoch::UncontrolledMutation);
+  CHECK(d2vr_submission::gate.Enabled() && !d2vr_submission::gate.Current(before));
+  CHECK(d2vr_submission::softwareTransitions.load()==1);
+  CHECK(d2vr_submission::firstSoftwareThread.load()==GetCurrentThreadId());
+  CHECK(d2vr_submission::firstSoftwareValue.load()==1);
+  CHECK(d2vr_submission::firstSoftwareResult.load()==S_FALSE);
  }
- d2vr_submission::gate.Invalidate();CHECK(!d2vr_submission::gate.Enabled());
- printf("PASS actual native submission boundary: %s; exact HRESULT/output/call count and persistent denial\n",argv[1]);
+ if(strcmp(argv[1],"software"))CHECK(!d2vr_submission::gate.Enabled());
+ printf("PASS actual native submission boundary: %s; exact HRESULT/output/call count and safe admission\n",argv[1]);
 }

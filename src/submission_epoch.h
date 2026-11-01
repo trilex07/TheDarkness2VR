@@ -3,6 +3,14 @@
 #include <cstdint>
 
 namespace d2vr_submission {
+enum DenialSource : uint32_t {
+    RecorderCallback=1, SoftwareHookFailure=2, MissingMutationThread=4
+};
+inline std::atomic<uint32_t> denialSources{0};
+inline std::atomic<uint32_t> softwareTransitions{0};
+inline std::atomic<uint32_t> firstSoftwareThread{0};
+inline std::atomic<uint32_t> firstSoftwareValue{0};
+inline std::atomic<long> firstSoftwareResult{0};
 // Ownership gate for native submission elimination, not a device-state cache.
 // Every intercepted mutation must enter this protocol before touching native
 // state. A ticket can certify a successful write only if no external/recursive
@@ -33,7 +41,8 @@ public:
     // is invalid, and callers must use actual runtime thread IDs, never a hash.
     void ObserveMutation(uint32_t thread){
         if(!requested_.load(std::memory_order_acquire))return;
-        if(!thread){Deny(UncontrolledMutation);return;}
+        if(!thread){denialSources.fetch_or(MissingMutationThread,std::memory_order_relaxed);
+            Deny(UncontrolledMutation);return;}
         uint32_t owner=owner_.load(std::memory_order_acquire);
         if(!owner){
             uint32_t expected=0;

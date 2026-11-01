@@ -3996,6 +3996,12 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
             Log("[NativeSubmission] enabled=%d denied=0x%X VS forwarded=%llu skipped=%llu uncaptured=%llu PS forwarded=%llu skipped=%llu uncaptured=%llu",
                 int(d2vr_submission::gate.Enabled()),d2vr_submission::gate.Reasons(),
                 calls.forwarded[0],calls.skipped[0],calls.uncaptured[0],calls.forwarded[1],calls.skipped[1],calls.uncaptured[1]);
+            Log("[NativeSubmissionGate] sources=0x%X softwareTransitions=%u firstThread=%u firstValue=%u firstHr=0x%08lX",
+                d2vr_submission::denialSources.load(std::memory_order_relaxed),
+                d2vr_submission::softwareTransitions.load(std::memory_order_relaxed),
+                d2vr_submission::firstSoftwareThread.load(std::memory_order_relaxed),
+                d2vr_submission::firstSoftwareValue.load(std::memory_order_relaxed),
+                static_cast<unsigned long>(d2vr_submission::firstSoftwareResult.load(std::memory_order_relaxed)));
         }
         if(d2vr_submission::requested && d2vr_submission::bindingsRequested)
             Log("[NativeBinding] forwarded=%llu skipped=%llu unowned=%llu; frame ledger only, no texture/depth elision",
@@ -7251,10 +7257,21 @@ static HRESULT STDMETHODCALLTYPE SubmissionDeviceQueryInterface(IDirect3DDevice9
 using SubmissionSoftwareProcessing=HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*,BOOL);
 static SubmissionSoftwareProcessing g_submissionSoftwareProcessing=nullptr;
 static HRESULT STDMETHODCALLTYPE SubmissionSetSoftwareProcessing(IDirect3DDevice9* dev,BOOL enabled) {
-    // Mixed vertex processing may select a different float bank. Never infer
-    // bank identity from an earlier successful hardware upload.
-    d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
-    return g_submissionSoftwareProcessing(dev,enabled);
+    // A bank switch invalidates all certified constants before and after the
+    // native call. The next owned upload may establish fresh bank contents.
+    d2vr_submission::CheckDevice(dev);
+    d2vr_submission::gate.ObserveMutation(GetCurrentThreadId());
+    HRESULT result;
+    {
+        d2vr_submission::Epoch::Bypass native(d2vr_submission::gate);
+        result=g_submissionSoftwareProcessing(dev,enabled);
+    }
+    if(d2vr_submission::softwareTransitions.fetch_add(1,std::memory_order_relaxed)==0){
+        d2vr_submission::firstSoftwareThread.store(GetCurrentThreadId(),std::memory_order_relaxed);
+        d2vr_submission::firstSoftwareValue.store(enabled!=FALSE,std::memory_order_relaxed);
+        d2vr_submission::firstSoftwareResult.store(result,std::memory_order_relaxed);
+    }
+    return result;
 }
 void HookDevice(IDirect3DDevice9* dev) {
     d2vr_sampling::InvalidateSamplerCaps();
@@ -7274,7 +7291,10 @@ void HookDevice(IDirect3DDevice9* dev) {
         g_submissionQueryInterface=reinterpret_cast<SubmissionQueryInterface>(PatchVTable(dev,0,reinterpret_cast<void*>(&SubmissionDeviceQueryInterface)));
         if(!g_submissionQueryInterface)d2vr_submission::gate.Deny(d2vr_submission::Epoch::InterfaceEscape);
         g_submissionSoftwareProcessing=reinterpret_cast<SubmissionSoftwareProcessing>(PatchVTable(dev,77,reinterpret_cast<void*>(&SubmissionSetSoftwareProcessing)));
-        if(!g_submissionSoftwareProcessing)d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
+        if(!g_submissionSoftwareProcessing){
+            d2vr_submission::denialSources.fetch_or(d2vr_submission::SoftwareHookFailure,std::memory_order_relaxed);
+            d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
+        }
     }
     LogStartupStage(11, "HookDevice (D3D9 vtable + replay hooks)");
     g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);

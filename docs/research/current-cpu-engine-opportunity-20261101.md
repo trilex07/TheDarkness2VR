@@ -8,12 +8,14 @@ PS packets. `NativeBinding` likewise reports zero forwarded/skipped calls.
 Thus this installed candidate receives **no CPU saving** from either native
 filter. The logged 0x10 bit is `Epoch::UncontrolledMutation`.
 
-The source has two possible origins for this bit: a live
-`SetSoftwareVertexProcessing` call through vtable slot 77, or failure to
-install that vtable hook. The existing log does not distinguish them.
+The source has four possible origins for this bit: a live
+`SetSoftwareVertexProcessing` call through vtable slot 77, failure to
+install that vtable hook, a recorder mutation during a native driver callback,
+or a zero thread identity. The existing log does not distinguish them.
 `PatchVTable` can return null if the image-write policy or `VirtualProtect`
-refuses the slot. The exact cause therefore remains unproven. Do not remove
-the denial: mixed vertex processing may change the shader constant bank.
+refuses the slot. The exact cause therefore remains unproven. Do not remove a
+denial without tracking its mutation boundary: mixed vertex processing may
+change the shader constant bank.
 
 The current log shows roughly 90 world-bearing XR layers/s in the recently
 tested scene. That is compositor cadence, not native simulation FPS, and that
@@ -52,3 +54,21 @@ Sources: `src/submission_epoch.h`, `src/d3d9.cpp`,
 `docs/agent-workflow/handoffs/HANDOFF-major-cpu-optimization.md`,
 `docs/research/outdoor-cpu-packets-20261026.md`,
 and the local `%LOCALAPPDATA%/Darkness2VR/d3d9.log`.
+
+## CPU gate candidate
+
+The next source revision converts an intercepted software vertex-processing
+transition into a full epoch invalidation and a scoped native bypass. A prior
+constant/binding certification cannot survive a bank switch, and callbacks
+inside the driver call cannot reuse the cache. Hook-install failure, foreign
+thread, recorder callback, opaque StateBlock and interface escape still deny
+admission. Sparse `[NativeSubmissionGate]` status reports the denial-source
+bits (1 recorder callback, 2 slot-77 hook failure, 4 missing thread), software
+transition count and the first call's thread/value/HRESULT.
+
+Offline boundary, epoch and float-cache tests pass. The protected x86 DLL
+passes the profile gate. This candidate has **no measured CPU saving** until
+the user runs it and `skipped` counters rise. The usual PDB-enabled build
+failed at link with a Visual Studio `MSPDB140.DLL` version mismatch in both
+installed toolsets. The candidate was compiled from the same source with
+`D2VR_MATCHED_CAPTURE=1`, x86 `/O2`, and a linker MAP, without PDB generation.

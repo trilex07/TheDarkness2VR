@@ -19,8 +19,11 @@ inline bool Busy(){return nativeDepth!=0 || nativeCalls.load(std::memory_order_a
 inline bool NativeMutation(){
     if(d2vr_submission::requested){
         d2vr_submission::gate.ObserveMutation(GetCurrentThreadId());
-        if(Callback() || nativeCalls.load(std::memory_order_acquire)!=0)
+        if(Callback() || nativeCalls.load(std::memory_order_acquire)!=0){
+            d2vr_submission::denialSources.fetch_or(
+                d2vr_submission::RecorderCallback,std::memory_order_relaxed);
             d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
+        }
     }
     if(Callback() || nativeCalls.load(std::memory_order_acquire)!=0){conflict.store(true,std::memory_order_release);return false;}
     return true;
