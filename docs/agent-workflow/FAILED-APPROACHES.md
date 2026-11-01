@@ -141,3 +141,9 @@ source, BASELINE.md and the task handoff before applying them.
 - **Evidence**: source 346fac93; log selected HALF at 120 Hz (~58 app FPS), but user reported it does not work and requested OFF.
 - **Boundary**: app limiting does not establish or force runtime frame synthesis. Do not describe cap transitions as reprojection proof.
 - **Status**: Disabled in Steam/local primary profiles; repo default OFF. See HANDOFF-adaptive-half-rate.md and BASELINE.md for rollback/identities.
+# 2026-11-01: rejected comic texture storage and incomplete Polish font coverage
+
+- `polish-comic-main-20261101-accepted-camera` installation had valid hashes but user reports rainbow artifacts on hands/tentacles and missing Polish caption letters.
+- Comic manifest `eb915af2...`: planar compressed-layout BC1/BC3 data was installed as uncompressed entries. Native uncompressed StreetSignsA uses standard BC blocks; direct decoding reproduces the candidate's noise. Fix the storage layout before reinstalling; a self-roundtrip and checksum alone cannot validate native interpretation.
+- Font pack patched six families only, leaving19 Latin font families without Polish codepoints. Compressed native BC2 uses four uint32 planes per16KB chunk, not one contiguous eight-byte alpha plane. Original texture dimensions must come from headers (Corbel26 is1024x64).
+- Evidence and repair: `handoffs/HANDOFF-texture-font-repair-20261101.md`. Preserve the accepted camera/haptics/model DLL and updated audio/text while repairing assets.
