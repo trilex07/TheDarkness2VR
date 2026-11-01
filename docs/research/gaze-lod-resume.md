@@ -121,3 +121,9 @@ No headset result or object-level observation yet.
 ## Later MAIN read-only owner result (2026-11-01)
 
 `HANDOFF-gaze-lod-optimization-20261101.md` verified one active stock `00FF8818` owner in a live 3D scene, with non-null `+274` renderer and scene-list references. The hardware execution observer at `008513A0` refused occupied foreign DR state; no native quality setting or object LOD was changed. A CPU.Verbose ETW profile was refused by Windows policy. The stable gaze-dot/R2 DLL was restored with caches retained. This proves a candidate owner path, not safe decoration classification, mesh cost or CPU improvement.
+
+## Read-only view-list path, 2026-11-01
+
+The stock `00776DC0` renderer path invoked from owner virtual `+0x94` builds the argument for `00AEA1A0` at `0077751D`. It traverses a linked list with sentinel at renderer `+0x124`; each node's `+0x10` is wrapped as the view pointer. `00AEA455` passes that wrapper to `005828B0`; `0058290A` then calls selector dispatcher `008513A0`. The wrapper is transient on the native stack, and some branches choose an alternate node through renderer `+0x14C`; the persistent list is only a partial observation path. This does not expose the selector's object list or establish that a view node is decorative.
+
+`tools/lod_owner_scan.py` now checks the live process EXE SHA256 before reading and, for an admitted `00FF8818` owner / `00FF89E8` renderer, follows at most 64 view nodes from that sentinel. It reports view pointer, mode `+0x61C`, LOD gate `+0x618` and kind `+0x178`; cycles, changed head and unreadable pointers stop observation. No native writes, debug registers or DLL changes. Python AST passed and a deliberate non-game process was refused by the SHA gate. A live 3D receipt remains required before object classification or a per-object quality edit.

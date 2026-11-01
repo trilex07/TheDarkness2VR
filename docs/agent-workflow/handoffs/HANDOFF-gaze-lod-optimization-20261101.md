@@ -70,3 +70,7 @@ Static stock-EXE path `0077751D` calls `00AEA1A0` on the `+274` renderer; `00AEA
 An attempted ten-second `WPR CPU.Verbose` trace did not start: Windows returned `0xC5585011` (profile policy). No ETL or CPU-time result was produced. Do not attribute an FPS change to LOD. User confirmed game closed; `tools/restore-after-lod-observer.ps1` prepares a full nine-target rollback before returning to the last stable DLL while retaining current caches.
 
 Restoration completed: package `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/gaze-lod-observer-revert-20261101T112155709`; installed DLL hash `E6F49A7E...`, stock EXE hash unchanged, 9/9 rollback copies valid, observer INI key absent, `GazeDot=0` retained, caches unchanged, game closed. This research branch was not promoted to main because it has no LOD performance change.
+
+## Resumed view-list observation
+
+User chose CPU performance through gaze-based LOD after rejecting the whole-scene LOD 2.0 candidate for lower perceived FPS. Static stock call path now links renderer `+0x124` view-list nodes to the transient wrapper passed at `0077751D -> 00AEA1A0 -> 005828B0 -> 008513A0`. `tools/lod_owner_scan.py` is extended with exact live EXE SHA gating and bounded read-only view-list sampling. See `docs/research/gaze-lod-resume.md`. No new DLL, game file or native quality change; await a user-controlled 3D scene for a read-only receipt. Selector object-list ownership, decoration classification and CPU milliseconds remain open.

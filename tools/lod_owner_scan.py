@@ -7,6 +7,8 @@ still need native ownership and lifetime validation before any LOD change.
 
 import argparse
 import ctypes as ct
+import hashlib
+from pathlib import Path
 import struct
 
 
@@ -18,6 +20,8 @@ PAGE_GUARD = 0x100
 PAGE_NOACCESS = 0x01
 READABLE = {0x02, 0x04, 0x08, 0x20, 0x40, 0x80}
 OWNER_VTABLE = 0x00FF8818  # stock EXE 56CD8B and FF88AC -> 9922F0
+RENDERER_VTABLE = 0x00FF89E8  # prior live owner+274 renderer; stock 77751D path
+STOCK_EXE_SHA256 = "D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1"
 PATTERN = struct.pack("<I", OWNER_VTABLE)
 
 
@@ -46,9 +50,22 @@ def main() -> None:
     api.ReadProcessMemory.argtypes = [ct.c_void_p, ct.c_void_p, ct.c_void_p, ct.c_size_t, ct.POINTER(ct.c_size_t)]
     api.ReadProcessMemory.restype = ct.c_int
     api.CloseHandle.argtypes = [ct.c_void_p]
+    api.QueryFullProcessImageNameW.argtypes = [ct.c_void_p, ct.c_ulong, ct.c_wchar_p, ct.POINTER(ct.c_ulong)]
+    api.QueryFullProcessImageNameW.restype = ct.c_int
     handle = api.OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, 0, args.pid)
     if not handle:
         raise OSError(ct.get_last_error(), "OpenProcess read-only failed")
+
+    image_path = ct.create_unicode_buffer(32768)
+    image_length = ct.c_ulong(len(image_path))
+    if not api.QueryFullProcessImageNameW(handle, 0, image_path, ct.byref(image_length)):
+        api.CloseHandle(handle)
+        raise OSError(ct.get_last_error(), "Cannot verify process image")
+    image = Path(image_path.value)
+    digest = hashlib.sha256(image.read_bytes()).hexdigest().upper()
+    if image.name.lower() != "darknessii.exe" or digest != STOCK_EXE_SHA256:
+        api.CloseHandle(handle)
+        raise RuntimeError(f"Refusing different executable: {image} SHA256={digest}")
 
     def read(address: int, size: int) -> bytes | None:
         if not address or address + size >= 0x80000000:
@@ -62,6 +79,34 @@ def main() -> None:
     def word(address: int) -> int | None:
         data = read(address, 4)
         return struct.unpack("<I", data)[0] if data else None
+
+    def view_list(renderer: int) -> tuple[str, list[tuple[int, int, int | None, int | None, int | None]]]:
+        # Stock 7774C9..77751D: iterate renderer+124 list; node+10 holds
+        # the view pointer wrapped on the stack for AEA1A0 -> 5828B0 -> 8513A0.
+        if word(renderer) != RENDERER_VTABLE:
+            return "renderer-type-mismatch", []
+        sentinel = renderer + 0x124
+        node = word(sentinel)
+        if node is None:
+            return "unreadable-head", []
+        views: list[tuple[int, int, int | None, int | None, int | None]] = []
+        seen: set[int] = set()
+        while node != sentinel:
+            if len(views) >= 64 or node < 0x10000 or node & 3 or node in seen:
+                return "truncated-or-invalid-list", views
+            seen.add(node)
+            next_node = word(node)
+            view = word(node + 0x10)
+            if next_node is None or view is None or view < 0x10000 or view & 3:
+                return "unreadable-node", views
+            kind, enabled, mode = word(view + 0x178), word(view + 0x618), word(view + 0x61C)
+            if kind is None or enabled is None or mode is None:
+                return "unreadable-view", views
+            views.append((node, view, kind, enabled, mode))
+            node = next_node
+        if word(sentinel) != (views[0][0] if views else sentinel):
+            return "head-changed-during-scan", views
+        return "complete", views
 
     try:
         address = 0x10000
@@ -99,7 +144,7 @@ def main() -> None:
                             found = data.find(PATTERN, found + 4)
                     offset += length
             address = next_address
-        print(f"searched_private_bytes={searched} candidates={len(candidates)}")
+        print(f"exe_sha256={digest} searched_private_bytes={searched} candidates={len(candidates)}")
         for owner, renderer, table, scene, camera_ref in candidates[:128]:
             scene_value = word(scene) if scene else None
             list_ref = word(renderer + 0x5B4)
@@ -110,6 +155,12 @@ def main() -> None:
                   f"renderer+5B4={list_ref or 0:08X} -> {list_value or 0:08X} "
                   f"list+200={list_count or 0:08X} "
                   f"owner+2A4={camera_ref or 0:08X}")
+            status, views = view_list(renderer)
+            print(f"  view_list={status} sampled={len(views)} (read-only; not a lifetime lease)")
+            for node, view, kind, enabled, mode in views[:16]:
+                print(f"  node={node:08X} view={view:08X} kind={kind if kind is not None else 'unreadable'} "
+                      f"enable618={enabled & 0xFF if enabled is not None else 'unreadable'} "
+                      f"mode61C={mode if mode is not None else 'unreadable'}")
     finally:
         api.CloseHandle(handle)
 
