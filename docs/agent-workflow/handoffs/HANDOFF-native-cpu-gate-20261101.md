@@ -111,3 +111,22 @@ after the user closed the game. The first install attempt stopped before any
 write because the game was still running. The successful installation
 verified the new DLL and stock EXE hashes and all nine backup hashes;
 the restore script is present. INIs and caches were not changed.
+
+## Third headset run: admission confirmed
+
+The user ran the 70F43D5D candidate. The live log shows
+`NativeSubmission enabled=1 denied=0x0`, `NativeSubmissionGate sources=0x0`,
+`pausedCallbacks=2`, `firstUnpaused=0x0`, and no software transitions.
+At the latest sampled cumulative window: VS forwarded 2,053,785 / skipped
+1,317,205 (~39.1% of attempted VS packets); PS forwarded 1,492,276 /
+skipped 781,594 (~34.4%); bindings forwarded 3,571,834 / skipped 182,168
+(~4.9%). These are actual omitted native calls, not measured milliseconds.
+
+The last TrueStereo windows report both eyes 1, overflow 0, and replay
+exceptions 0. XR world-bearing cadence is near 89.8–90.0 layers/s in this
+scene, but does not prove native engine simulation FPS or a gain against a
+controlled OFF run. Engine Present boundary work is about 5.1–5.3 ms mean in
+recent windows, a wall metric that excludes earlier game producer work.
+The user reported both eyes/weapon image correct and subjectively better FPS.
+This supports keeping the candidate, while exact CPU milliseconds and a
+controlled same-scene OFF comparison remain open.

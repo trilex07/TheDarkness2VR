@@ -5,9 +5,13 @@ Steam check or permission to deploy. Do not assume Git main is installed.
 
 ## Current user-approved MAIN integration (2026-11-01)
 
-- **Installed DLL SHA256**: `916B9A5151CC25F694A0B967862F3CEFFCC21CE23E8C6D857BF654B164DB7FDF`.
+- **Installed DLL SHA256**: `70F43D5D414887BE33270160686073541D61E3A9CBBB05877C5B65FE8CEB5A7F` (native CPU submission candidate, protected-native x86).
+- **Installed source**: `91ff126a`, with deployment receipt `fcd11456`; local and GitHub main promotion follows this headset test.
+- **Current rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/native-cpu-retain-20261101T030900484/rollback/Restore.ps1` protects DLL, four INIs and four caches.
+- **CPU headset evidence**: NativeSubmission enabled=1 denied=0; 1,317,205 VS constant, 781,594 PS constant and 182,168 binding calls skipped in a cumulative session sample. Both TrueStereo eyes succeeded with overflow=0. User reported correct image/weapons and better FPS. Exact app/engine CPU milliseconds saved are unmeasured; current scene's XR cadence near 90/s is not native simulation FPS.
+- **Previous installed gaze NIS DLL**: `916B9A5151CC25F694A0B967862F3CEFFCC21CE23E8C6D857BF654B164DB7FDF`, retained in the current rollback.
 - **Source**: `a2fdaf58` on `codex/gaze-nis-main-integration`, merged with HUD/gaze evidence at `316135c`. This integrates the installed wheel, gaze, frame-cap, HUD and NIS source; the game DLL was built from the corresponding isolated candidate source.
-- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-nis-copy-base-20261101T021726069/rollback/Restore.ps1` backs up the DLL, four INIs and four caches.
+- **Earlier gaze NIS rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-nis-copy-base-20261101T021726069/rollback/Restore.ps1` backs up the DLL, four INIs and four caches.
 - **Headset evidence**: NIS pair GPU time ~0.13 ms with valid gaze versus ~0.28–0.30 ms in the earlier foveated build. Both eyes took the fast path. Recent XR layers were near 90/s, but this is not native simulation FPS and does not establish an engine CPU gain. User requested promotion to main; visual quality feedback remains open.
 - **Native engine LOD**: unchanged. The tested camera+2A4 owner reference was null; object classification and safe selector ownership remain unproven.
 

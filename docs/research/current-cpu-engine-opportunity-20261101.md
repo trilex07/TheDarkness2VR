@@ -87,3 +87,14 @@ the driver call itself. Resource AddRef uses a pause-only scope so a normal
 Retain can preserve binding certification; callbacks invalidate the epoch.
 This is constrained to the observed mutation boundary. Actual skipped
 calls and frame-time gains are still pending a headset run.
+
+The third headset run admitted the native filters (`enabled=1 denied=0x0`).
+The latest counters show about 1.32 million VS constant packets, 0.78 million
+PS constant packets and 0.18 million bindings skipped during this session.
+This proves reduced native D3D9 call count. It does not establish milliseconds
+saved or faster native simulation; a controlled same-scene OFF comparison
+remains necessary.
+
+The user subsequently confirmed correct image in both eyes and correct weapon
+appearance, with subjectively better FPS. That is headset acceptance feedback,
+not a quantified CPU-time comparison.
