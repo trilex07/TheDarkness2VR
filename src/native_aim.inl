@@ -323,6 +323,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
             PrepareProtectedWeaponForCamera(reinterpret_cast<void*>(owner.camera));
             g_nativePlayerViewFrame=g_trackedFrame.id;g_nativePlayerViewRenderer=r;
             g_nativePlayerViewCamera=owner.camera;
+            ObserveGazeLodOwner(renderer);
         }
     };
     const auto status=d2vr_player_camera::WithSelectedLocalPlayer(r,

@@ -3,6 +3,7 @@
 #include "nis_runtime.h"
 #include "nis/NIS_Scaler_CS.h"
 #include "nis/NIS_Sharpen_CS.h"
+#include "gaze_nis_copy_base.inl"
 
 static NisRuntime g_nisEye;
 static ID3D11ShaderResourceView* g_nisEyeSource[2]{};
@@ -10,6 +11,7 @@ static ID3D11Texture2D* g_nisEyeSourceOwner[2]{};
 static bool g_nisScalerFailed=false;
 static bool g_nisEyeFailed=false;
 static bool g_nisEyeReported=false;
+static unsigned long long g_nisCopyBaseEyes=0;
 
 static void NisEyeLog(const char* message) { Log("[NIS] %s",message); }
 // Foveated sharpening ([Render] FoveatedSharpen): gaze pixel of this eye's
@@ -69,8 +71,8 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
     NisTimingPoll(&g_nisEye,g_ctx11);
     if(g_nisEye.timingFrames!=previousSamples &&
        (g_nisEye.timingFrames==1 || g_nisEye.timingFrames%120==0))
-        Log("[NIS] GPU pair dispatch sample=%.3fms peak=%.3fms samples=%d; excludes final copies/XR, asynchronous DONOTFLUSH",
-            g_nisEye.msGpu,g_nisEye.msGpuPeak,g_nisEye.timingFrames);
+        Log("[NIS] GPU pair dispatch sample=%.3fms peak=%.3fms samples=%d copyBaseEyes=%llu; excludes final copies/XR, asynchronous DONOTFLUSH",
+            g_nisEye.msGpu,g_nisEye.msGpuPeak,g_nisEye.timingFrames,g_nisCopyBaseEyes);
     NisTimingBegin(&g_nisEye,g_ctx11);
     // Foveated: whole image at the periphery level, then a transition square
     // and the fovea square around the gaze, each overwriting its rectangle.
@@ -80,6 +82,19 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
     if(foveaMode) for(int eye=0;eye<2;++eye) gaze[eye]=FoveaGazePixel(eye,outW,outH,gx[eye],gy[eye]);
     const auto levels=d2vr_fovea::Grade(g_foveaPeriphery,g_foveaSharpness);
     for(int eye=0;eye<2;++eye) {
+        const bool copyBase=gaze[eye] && g_foveatedCopyBase &&
+            desc[eye].SampleDesc.Count==1 && desc[eye].MipLevels==1 && desc[eye].ArraySize==1;
+        if(copyBase) {
+            const auto outer=d2vr_fovea::Around(gx[eye],gy[eye],outW,outH,g_foveaSize*1.7f);
+            const auto inner=d2vr_fovea::Around(gx[eye],gy[eye],outW,outH,g_foveaSize);
+            if(!NisCopyBaseAndSharpenGaze(&g_nisEye,g_ctx11,originals[eye],g_nisEyeSource[eye],
+                                         outW,outH,eye,outer,inner,levels)) {
+                NisTimingEnd(&g_nisEye,g_ctx11);
+                return NisEyeFailure("gaze copy-base dispatch");
+            }
+            ++g_nisCopyBaseEyes;
+            continue;
+        }
         const float base=gaze[eye] ? levels.periphery : g_nisSharpness;
         if(!NisDispatchEye(&g_nisEye,g_ctx11,g_nisEyeSource[eye],
                            desc[eye].Width,desc[eye].Height,eye,

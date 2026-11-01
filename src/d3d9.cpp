@@ -609,6 +609,8 @@ static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 // [Render] FoveatedSharpen: gaze-centred NIS (periphery/transition/fovea), mode 2 only.
 static bool g_foveatedSharpen = true;
+static bool g_foveatedCopyBase = false;
+static void ParseEngineMaxFrameRate(const char* text); // engine_frame_cap.inl
 static float g_foveaPeriphery = .35f, g_foveaSharpness = 1.f, g_foveaSize = .22f;
 static bool g_headAttachedTentacles = false;
 static bool g_hideNativeHud = false;
@@ -734,6 +736,7 @@ void LoadConfig() {
     {
         char value[32]{};
         g_foveatedSharpen = GetPrivateProfileIntA("Render", "FoveatedSharpen", 1, chosenIni) != 0;
+        g_foveatedCopyBase = GetPrivateProfileIntA("Render", "FoveatedCopyBase", 0, chosenIni) != 0;
         GetPrivateProfileStringA("Render", "FoveaPeriphery", "0.35", value, sizeof(value), chosenIni);
         g_foveaPeriphery = nis_upscale::ClampSharpness((float)atof(value));
         GetPrivateProfileStringA("Render", "FoveaSharpness", "1.0", value, sizeof(value), chosenIni);
@@ -743,8 +746,15 @@ void LoadConfig() {
         g_foveaSize = size>=.05f && size<=.8f ? size : .22f;
         Log("[NIS] FoveatedSharpen=%d periphery=%.2f fovea=%.2f size=%.2f (needs NisMode=2 and eye tracking; else uniform NisSharpness)",
             (int)g_foveatedSharpen,g_foveaPeriphery,g_foveaSharpness,g_foveaSize);
+        Log("[NIS] FoveatedCopyBase=%d (copy full eye; NIS only gaze rectangles)",int(g_foveatedCopyBase));
     }
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
+    {
+        char value[32]{};
+        GetPrivateProfileStringA("Render", "EngineMaxFrameRate", "0", value, sizeof(value), chosenIni);
+        ParseEngineMaxFrameRate(value);
+        Log("[FrameCap] EngineMaxFrameRate=%s (0=untouched, AUTO=headset refresh)",value);
+    }
     g_hideNativeHud = GetPrivateProfileIntA("Render", "HideNativeHUD", 0, chosenIni)!=0;
     Log("[NativeHUD] requested=%d; protected owner callback required",int(g_hideNativeHud));
     g_headAttachedTentacles = GetPrivateProfileIntA("Render", "HeadAttachedTentacles", 0, chosenIni)!=0;
@@ -4129,6 +4139,7 @@ static void ResetPoseInput() {
     ResetNativeAim();
     for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.flags=0; hand.squeeze=0; hand.motion={}; }
 }
+#include "gaze_lod_owner_diagnostic.inl"
 #include "native_aim.inl"
 // Gaze rays for grab/throw (defined in eye_gaze.inl, tracking space).
 static bool GazeWorldDirection(XrVector3f& direction);
@@ -4558,6 +4569,8 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
 
 #include "weapon_wheel_input.inl"
 #include "eye_gaze.inl"
+#include "gaze_lod_diagnostic.inl"
+#include "engine_frame_cap.inl"
 
 static d2vr_input::UnarmedTriggerDpad g_unarmedTriggerDpadState;
 static d2vr_input::DoubleTapDpad g_doubleTapDpadState;
@@ -5402,6 +5415,7 @@ void PumpXR() {
     }
     ObserveNativeMenuReceiver();
     ApplyGazeMenuCursor(); // same native window thread as the receiver observation
+    if(g_xrRunning) { ApplyEngineFrameCap(); ObserveGazeLodConfiguration(); } // Graphics.MaxFrameRate override (engine_frame_cap.inl)
     if(g_xrRunning && g_displayRefresh.FallbackActive() && GetTickCount64()>=g_steamRefreshNext) {
         g_steamRefreshNext=GetTickCount64()+2000;
         const float previous=g_displayRefresh.Hz();
