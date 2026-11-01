@@ -248,10 +248,12 @@ static void EnsureCameraStabilizerFrame() {
     ReleaseSRWLockExclusive(&g_cameraStabilizerComputeLock);
 #endif
 }
+static void SuppressCameraShakeSources();
 // Selected-owner path (render thread): refresh the owner pointers, compute if this frame has
 // no correction yet, and witness whether the native camera changed after an early compute.
 static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
 #ifdef D2VR_MATCHED_CAPTURE
+    SuppressCameraShakeSources(); // native source first; independent INI switch
     if(!g_cameraAnimStabilize || !camera || !avatar)return;
     InterlockedExchange(&g_cameraStabilizerCamera,LONG(camera));
     InterlockedExchange(&g_cameraStabilizerAvatar,LONG(avatar));

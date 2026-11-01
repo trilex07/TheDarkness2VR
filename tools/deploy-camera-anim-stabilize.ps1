@@ -44,9 +44,9 @@ if(@($manifest.before).Count -ne 9){throw 'Expected nine protected targets'}
 # 1. Commit the source on the MAIN integration branch.
 $branch=(git -C $root rev-parse --abbrev-ref HEAD).Trim()
 if($branch -ne 'codex/gaze-nis-main-integration'){throw "Unexpected branch $branch"}
-git -C $root add -- src/d3d9.cpp src/native_aim.inl src/camera_anim_stabilizer.inl src/native_hands.inl src/protected_weapon.inl src/native_weapon.inl src/native_throw.inl tools/deploy-camera-anim-stabilize.ps1 docs/research/darkness2-camera-shake-20261101.md docs/agent-workflow/handoffs/HANDOFF-shotgun-twohand-shake-20261101.md docs/agent-workflow/FAILED-APPROACHES.md
+git -C $root add -- src/d3d9.cpp src/native_aim.inl src/camera_anim_stabilizer.inl src/native_hands.inl src/protected_weapon.inl src/native_weapon.inl src/native_throw.inl src/camera_shake_source.inl tools/deploy-camera-anim-stabilize.ps1 docs/research/darkness2-camera-shake-20261101.md docs/agent-workflow/handoffs/HANDOFF-shotgun-twohand-shake-20261101.md docs/agent-workflow/FAILED-APPROACHES.md
 if(git -C $root diff --cached --name-only){
-    git -C $root commit -q -m "Camera stabilizer v6: drop private-vtable camera check, high-passed hit rumble; menu L1/R1 pass through as LB/RB" -m "Reject heap shake factors (owner idle in headset log). New Diagnostics/CameraAnimStabilize: view head delta, hands, gun and shot ray share a camera built from the avatar parent (00FFC300+0x140) rotation and averaged offset, removing run/attack/heart animation motion. Large or cinematic camera moves fade out. No native writes. Headset result NOT RUN." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01FyWRDxP6vih9TJ4UkrV5Bn"
+    git -C $root commit -q -m "Camera shake v7: native source suppression on all 00FDF170 owners, impulse rumble, stick-turn rumble gate" -m "Reject heap shake factors (owner idle in headset log). New Diagnostics/CameraAnimStabilize: view head delta, hands, gun and shot ray share a camera built from the avatar parent (00FFC300+0x140) rotation and averaged offset, removing run/attack/heart animation motion. Large or cinematic camera moves fade out. No native writes. Headset result NOT RUN." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01FyWRDxP6vih9TJ4UkrV5Bn"
     if($LASTEXITCODE){throw 'git commit failed'}
 }
 $sourceCommit=(git -C $root rev-parse HEAD).Trim()
@@ -93,7 +93,7 @@ public static class D2vrIniWrite {
 "@}
 try {
     Copy-Item -LiteralPath (Join-Path $candidateDir 'd3d9.dll') -Destination $target -Force
-    if(![D2vrIniWrite]::WritePrivateProfileString('Diagnostics','CameraAnimStabilize','1',$diagnosticIni)){throw 'INI write failed'}
+    if(![D2vrIniWrite]::WritePrivateProfileString('Diagnostics','CameraAnimStabilize','1',$diagnosticIni) -or ![D2vrIniWrite]::WritePrivateProfileString('Diagnostics','CameraShakeSourceSuppress','1',$diagnosticIni)){throw 'INI write failed'}
     if((Hash $target) -ne $candidateHash -or (Hash $exe) -ne $exeHash){throw 'Installed DLL/EXE mismatch'}
     if([D2vrProfileGate]::GetPrivateProfileInt('Diagnostics','CameraAnimStabilize',0,$diagnosticIni) -ne 1){throw 'INI key not readable'}
     foreach($entry in $before){
