@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Installed read-only camera, native hand and weapon-grip trace (2026-11-01)
+
+- **Installed DLL SHA256**: `EF58E6F6BEDEADF929F9021E562ED33C5D9A806E341CDEB950775D7C1A878567`, source `f3fad557` on `codex/gaze-nis-main-integration`. Game diagnostic INI SHA256 `30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD` retains `CameraShakeTrace=1` and `ShotgunCandidate=1`; stock EXE unchanged.
+- **Change**: same-frame native left/right wrist and weapon-grip bones are logged before controller IK alongside selected camera/root for the first 30 gameplay seconds. No transform is changed. Camera shake suppression remains NOT RUN; headset sample pending.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/camera-shake-hands-trace-20261101T175229197/rollback/Restore.ps1`. Independent audit verified 9/9 backups, 8/8 unchanged protected targets, exact DLL/diagnostic INI/EXE hashes, and no running game. The user was asked to test sprint and heart consumption; the agent did not launch the game.
+
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 

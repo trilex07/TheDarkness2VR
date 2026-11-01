@@ -96,6 +96,8 @@ Current shake observation: user ran/sprinted and consumed hearts with the read-o
 
 The next diagnostic source samples native left/right wrists and weapon grip bones before controller IK in the selected avatar packer, alongside the camera in the same frame. It preserves the shotgun trial and changes no pose. Protected-native x86 build and profile gate PASS; DLL SHA256 `EF58E6F6BEDEADF929F9021E562ED33C5D9A806E341CDEB950775D7C1A878567`. Headset result NOT RUN at source preparation.
 
+MAIN installed this diagnostic DLL after the user closed the game. Package `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/camera-shake-hands-trace-20261101T175229197`; `rollback/Restore.ps1` retains the previous nine targets. Independent post-install audit found all nine backup hashes correct, eight unchanged protected targets correct, exact DLL/diagnostic INI/stock EXE hashes and no running game. A headset sample was requested; no physical result has been read yet.
+
 1. Trace shotgun action `00FD9D68` to the actual pellet origin/direction and determine how it consumes the model matrix or socket. Observe the native shot and visible muzzle in the same frame before changing gameplay transforms again.
 2. Identify the fore-end support point and right trigger hand socket in the shotgun's native skeleton/model. Any display adjustment must preserve the shot frame; do not reapply the rejected generic model-only override.
 3. Implement one coherent two-hand grip state for shotgun only: require fresh right/left tracking and intentional left grip near the proven fore-end; release on tracking loss, unequip, grab conflict, or cinematic. Keep model, shot ray and human IK in the same frame.
