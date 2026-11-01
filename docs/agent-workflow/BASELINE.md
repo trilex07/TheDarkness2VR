@@ -1,5 +1,12 @@
 # Baseline and current MAIN candidate
 
+## Installed selected-owner event rumble candidate (2026-11-01 22:03 Warsaw)
+
+- **Installed DLL SHA256**: `8DB11F12A5032BCAC7FA4806C22E1439DDE63BE5035B244159FDD043EF1A8966`, source `63adb43b5d6130dc83757c9a328aed3e675a3176` on `codex/camera-shake-source-main-20261101`. Diagnostic INI SHA256 `D218DB73AF6452218E9AE2829767869304F05EE294A3A88354EC00385FE963F3` enables `CameraEventRumble=1`; shotgun and native image guard retained, rejected shake paths OFF.
+- **Scope**: read-only selected-owner impact/environment feedback through existing OpenXR haptics. Camera shake is still unresolved. Offline fixture/replay PASS 50,624 checks; physical controller acceptance NOT RUN.
+- **Deployment**: user confirmed game closed and authorized installation. Process checks passed; independent audit verified 9/9 rollback backups, 7/7 other protected targets unchanged, exact DLL/INI hashes and stock EXE `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`. Game not launched by agent.
+- **Rollback**: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/camera-event-rumble-20261101T220349965/rollback/Restore.ps1`, with game closed; restores prior shotgun/trace DLL `7414984F...` and diagnostic INI.
+
 ## Rejected animation stabilizer restored by MAIN (2026-11-01)
 
 - **Current installed DLL SHA256**: `7414984FF998FABDF154AEB5EE443D75805378DDB2359F7EC6F20E83E8A6FA55`, owner-trace/shotgun baseline described below. MAIN ran `camera-anim-stabilize-20261101T212812295/rollback/Restore.ps1` with the game closed. Independent post-restore verification matched all nine protected targets against that rollback manifest; stock EXE remains `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.

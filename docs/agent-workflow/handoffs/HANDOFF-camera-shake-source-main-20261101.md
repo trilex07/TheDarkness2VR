@@ -165,8 +165,25 @@ shotgun retained. Installed DLL still `7414984F...`. Full capture SHA256
 
 ## Next
 
-1. Finish final build/profile preflight; commit source and retain binary receipt.
-2. Game must be closed before an opt-in haptics-only candidate installation.
+1. Physical haptics acceptance pending: steps/stick turn should be quiet; train and damage should produce feedback. Camera shake remains unresolved.
+2. Inspect `[CameraEventRumble]` runtime evidence after user test.
 3. For camera suppression, obtain a bounded hardware
    write watchpoint trace; do not recycle render-time zeroing or delayed filters.
 4. Implement and validate only after ownership/address/instruction evidence.
+
+## Installed haptics-only candidate (22:03 Warsaw)
+
+User explicitly confirmed game closed and requested installation. Installed source
+`63adb43b5d6130dc83757c9a328aed3e675a3176`, DLL SHA256
+`8DB11F12A5032BCAC7FA4806C22E1439DDE63BE5035B244159FDD043EF1A8966`.
+Diagnostic INI SHA256
+`D218DB73AF6452218E9AE2829767869304F05EE294A3A88354EC00385FE963F3`,
+`CameraEventRumble=1`. Deployment process checks confirmed closed game.
+Independent audit verified all nine backup hashes, seven other protected targets
+unchanged, exact installed DLL and stock EXE hash. Shotgun and native image guard
+retained; rejected camera paths remain OFF. Agent did not launch game.
+
+Rollback (only with game closed):
+`C:/Users/Trilex/AppData/Local/Darkness2VR/packages/camera-event-rumble-20261101T220349965/rollback/Restore.ps1`.
+Package `deployment.json` records the source and installed hashes. Physical
+controller result NOT RUN; do not claim camera shake suppression.
