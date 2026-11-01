@@ -133,6 +133,7 @@ def main():
     ap.add_argument('--cache',type=Path,required=True)
     ap.add_argument('--textures',type=Path,required=True)
     ap.add_argument('--extract',type=Path,required=True)
+    ap.add_argument('--font-source',type=Path,help='Archive matching the extracted font bytes')
     ap.add_argument('--out',type=Path,required=True)
     a=ap.parse_args();require(not a.out.exists(),'Fresh output required')
     a.out.mkdir(parents=True);proof=a.out/'proof';proof.mkdir()
@@ -146,7 +147,7 @@ def main():
                 p=a.textures/tag.upper()/rel;require(sha(p)==item[tag+'_sha256'],'Input texture hash')
                 data=p.read_bytes()
                 replacements[stem][rel]=data if tag=='h' else (unplane(data,2) if item['format']=='DXT1' else unplane_bc3(data))
-    src=Cache(a.cache,'B.Texture_en');headers=Cache(a.cache,'H.Texture_en')
+    src=Cache(a.font_source or a.cache,'B.Texture_en')
     reports=[]
     for hp in sorted((a.extract/'H.Font').rglob('*')):
         if not hp.is_file():continue
@@ -171,7 +172,15 @@ def main():
     require(len(reports)==19,'Expected nineteen omitted Latin fonts')
     before={};after={}
     for stem,reps in replacements.items():
-        Cache(a.cache,stem).write(a.out/'payload',reps)
+        current=Cache(a.cache,stem)
+        # Preserve already accepted texture archives byte-for-byte.
+        with (a.cache/(stem+'.cache')).open('rb') as stream:
+            for rel,data in list(reps.items()):
+                _,off,packed,size=current.entries[rel]
+                if packed==size==len(data):
+                    stream.seek(off)
+                    if stream.read(size)==data:del reps[rel]
+        current.write(a.out/'payload',reps)
         for ext in ('.cache','.toc'):
             name=stem+ext;before[name]=sha(a.cache/name);after[name]=sha(a.out/'payload'/name)
     manifest=dict(schema=1,kind='texture-font-repair',before=before,files=after,fonts=reports,

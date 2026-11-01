@@ -147,3 +147,8 @@ source, BASELINE.md and the task handoff before applying them.
 - Comic manifest `eb915af2...`: planar compressed-layout BC1/BC3 data was installed as uncompressed entries. Native uncompressed StreetSignsA uses standard BC blocks; direct decoding reproduces the candidate's noise. Fix the storage layout before reinstalling; a self-roundtrip and checksum alone cannot validate native interpretation.
 - Font pack patched six families only, leaving19 Latin font families without Polish codepoints. Compressed native BC2 uses four uint32 planes per16KB chunk, not one contiguous eight-byte alpha plane. Original texture dimensions must come from headers (Corbel26 is1024x64).
 - Evidence and repair: `handoffs/HANDOFF-texture-font-repair-20261101.md`. Preserve the accepted camera/haptics/model DLL and updated audio/text while repairing assets.
+# 2026-11-01: font atlas enlargement failed physical acceptance
+
+- `texture-font-repair-v3` fixed comic texture artifacts (user accepted) but made gameplay/title text fragment. Its font strategy enlarged19 atlases and rescaled original English V coordinates. Offline glyph proofs and metrics checks were insufficient to validate native rendering. Exact native mismatch is not yet proven.
+- Replacement candidate must preserve original atlas dimensions, UV bytes, metrics and original glyph pixels; place new glyphs only in unused space. Do not roll back the now-accepted comic texture archives with the fonts. See `HANDOFF-texture-font-repair-20261101.md`.
+

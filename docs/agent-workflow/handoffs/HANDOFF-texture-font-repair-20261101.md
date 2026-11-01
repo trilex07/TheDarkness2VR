@@ -9,6 +9,20 @@
 
 ## Scope and status
 
+LATEST USER FEEDBACK: corrected64 comic textures accepted (user asks whether
+these are the new textures: yes, same new artwork with corrected storage).
+Font v3 rejected: gameplay and title lettering now fragment, despite offline
+glyph proofs. Atlas-height enlargement/rescaled UV candidate must not be reused.
+Exact native cause of the runtime mismatch is not yet proven.
+
+New `build-font-in-place.py` candidate restores original19 atlas dimensions and
+all original UV/metric/glyph pixel bytes, grafting Polish glyphs into free atlas
+space. Six accepted model texture archive files remain hash-identical. Existing
+six patched font families are unchanged. DebugFont may use Latin-donor fallback
+for characters that do not fit its compact debug atlas; actual caption/UI
+families receive drawn diacritics. Offline preservation checks and Corbel26/50
+glyph proof inspection PASS. Private build `build/font-in-place-v2`.
+
 Fix the data-only regressions; preserve accepted camera/haptics/model DLL,
 configuration and new dialogue audio/text. Built private14-file repair under
 `build/texture-font-repair-v3`, installed source `ef56b259` with closed-game checks.
