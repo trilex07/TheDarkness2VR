@@ -5,9 +5,9 @@ $game='C:/Program Files (x86)/Steam/steamapps/common/Darkness II'
 $local='C:/Users/Trilex/AppData/Local/Darkness2VR'
 $candidate=Join-Path $root 'build/gaze-lod-runtime/d3d9.dll'
 $candidateMap=Join-Path $root 'build/gaze-lod-runtime/d3d9.map'
-$previous=Join-Path $local 'packages/gaze-dot-r2-20261101T031753160/rollback'
-$oldDll='E6F49A7E9E520D24502B9F5ABAFB4E0DAE6A9D7DDC0ACDE86486DAD4128DB1BD'
-$newDll='2AB582630B09EF02AD44465582A74B7FCEB563EB1EA5B4D998C03D8FB716A327'
+$previous=Join-Path $local 'packages/gaze-lod-runtime-20261101T110811047/rollback'
+$oldDll='2AB582630B09EF02AD44465582A74B7FCEB563EB1EA5B4D998C03D8FB716A327'
+$newDll='C398F251E9BE1556292E7683308D55E49A1D3B61C3A415669DF9BEBEC9EC1CB1'
 $exeHash='D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1'
 function Hash([string]$path){(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}
 $exe=Join-Path $game 'DarknessII.exe'
@@ -20,11 +20,8 @@ if((Hash $candidate) -ne $newDll){throw 'Candidate DLL changed'}
 if(!(Test-Path -LiteralPath $candidateMap -PathType Leaf)){throw 'Candidate MAP missing'}
 $gate=& (Join-Path $root 'tools/assert-candidate-profile.ps1') -CandidateDll $candidate -RenderIni $profiles -DiagnosticIni (Join-Path $game 'Darkness2VR-diagnostic.ini')
 if($gate.Flavor -ne 'protected-native'){throw 'Protected-native candidate required'}
-$iniBytes=[IO.File]::ReadAllBytes($gameIni)
-$iniText=[Text.Encoding]::ASCII.GetString($iniBytes)
-$render=[regex]::Match($iniText,'(?m)^\[Render\]\r?\n')
-if(!$render.Success -or ([regex]::Matches($iniText,'(?m)^\[Render\]\r?\n')).Count -ne 1 -or
-   $iniText -match '(?im)^GazeLodRuntimeObserver\s*=') {throw 'Expected one Render section and no existing observer setting'}
+$iniText=[IO.File]::ReadAllText($gameIni)
+if($iniText -notmatch '(?im)^GazeLodRuntimeObserver\s*=\s*1\s*$'){throw 'LOD observer setting missing'}
 $diagnostic=Get-Content -LiteralPath (Join-Path $game 'Darkness2VR-diagnostic.ini') -Raw
 if($iniText -notmatch '(?im)^NativeViewBoundary\s*=\s*3\s*$' -or
    $diagnostic -notmatch '(?im)^ImagePreservingPresent\s*=\s*1\s*$'){throw 'Protected view profile mismatch'}
@@ -33,7 +30,7 @@ if(@($oldManifest.before).Count -ne 9){throw 'Expected nine protected targets'}
 foreach($entry in $oldManifest.before){if(!(Test-Path -LiteralPath $entry.target -PathType Leaf)){throw "Missing protected target: $($entry.target)"}}
 if(Get-Process DarknessII -ErrorAction SilentlyContinue){throw 'Close Darkness II before installation'}
 if(!$Install){Write-Output "PREFLIGHT PASS DLL=$newDll; no files changed";return}
-$package=Join-Path $local ('packages/gaze-lod-runtime-'+(Get-Date -Format 'yyyyMMddTHHmmssfff'))
+$package=Join-Path $local ('packages/gaze-lod-debug-'+(Get-Date -Format 'yyyyMMddTHHmmssfff'))
 $rollback=Join-Path $package 'rollback'
 New-Item -ItemType Directory -Path $rollback,(Join-Path $package 'candidate') | Out-Null
 $before=@();$index=0
@@ -56,18 +53,10 @@ $source=(git -C $root rev-parse HEAD).Trim()
     Set-Content -LiteralPath (Join-Path $package 'candidate/source.json') -Encoding UTF8
 try {
     Copy-Item -LiteralPath $candidate -Destination $target -Force
-    $break=if($render.Value.EndsWith("`r`n")){"`r`n"}else{"`n"}
-    $insert=[Text.Encoding]::ASCII.GetBytes("GazeLodRuntimeObserver=1$break")
-    $offset=$render.Index+$render.Length
-    $newBytes=New-Object byte[] ($iniBytes.Length+$insert.Length)
-    [Array]::Copy($iniBytes,0,$newBytes,0,$offset)
-    [Array]::Copy($insert,0,$newBytes,$offset,$insert.Length)
-    [Array]::Copy($iniBytes,$offset,$newBytes,$offset+$insert.Length,$iniBytes.Length-$offset)
-    [IO.File]::WriteAllBytes($gameIni,$newBytes)
     if((Hash $target) -ne $newDll){throw 'DLL install verification failed'}
     if(([regex]::Matches([IO.File]::ReadAllText($gameIni),'(?m)^GazeLodRuntimeObserver=1\s*$')).Count -ne 1){throw 'Observer setting verification failed'}
     foreach($entry in $before){
-        if($entry.target -in @($target,$gameIni)){continue}
+        if($entry.target -eq $target){continue}
         if((Hash $entry.target) -ne $entry.sha256){throw "Protected target changed: $($entry.target)"}
     }
     if((Hash $exe) -ne $exeHash){throw 'EXE changed after installation'}

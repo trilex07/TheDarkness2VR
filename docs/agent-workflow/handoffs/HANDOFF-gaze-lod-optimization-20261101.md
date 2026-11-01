@@ -48,3 +48,9 @@ Read-only runtime candidate installed and verified; headset observation pending.
 ## Blockers
 
 Native object classification and mesh cost remain unproven. This candidate has no CPU saving.
+
+## First runtime and narrowed diagnostic
+
+The first user launch produced `[GazeLOD] runtime observer installed=0 status=occupied-debug-state` on render thread 10832. The candidate refused to displace another debug register; no selector/object sample and no LOD change occurred. The log showed the mode-3 native translated-view QPC observer active, but that hook does not itself explain which hardware debug register was occupied. The game then closed.
+
+The next candidate logs DR0–DR3 and DR7 on the same failed admission. It keeps the same fail-closed hardware boundary. DLL SHA256 `C398F251E9BE1556292E7683308D55E49A1D3B61C3A415669DF9BEBEC9EC1CB1`, protected x86 build and installer preflight PASS. No new CPU gain is claimed.

@@ -69,8 +69,10 @@ static void InstallGazeLodRuntimeObserver() {
     if(!GazeLodEntryBytesMatch()){Log("[GazeLOD] runtime observer refused: selector bytes");return;}
     const bool installed=g_gazeLodBoundary.Start(reinterpret_cast<void*>(0x8513a0),
         ObserveNativeGazeLodEntry,g_nativeImageGuard);
-    Log("[GazeLOD] runtime observer installed=%d status=%s thread=%lu; selector=008513A0; read-only, native quality unchanged",
-        int(installed),g_gazeLodBoundary.Status(),GetCurrentThreadId());
+    Log("[GazeLOD] runtime observer installed=%d status=%s thread=%lu DR0=%08lX DR1=%08lX DR2=%08lX DR3=%08lX DR7=%08lX; selector=008513A0; read-only, native quality unchanged",
+        int(installed),g_gazeLodBoundary.Status(),GetCurrentThreadId(),
+        g_gazeLodBoundary.Debug(0),g_gazeLodBoundary.Debug(1),g_gazeLodBoundary.Debug(2),
+        g_gazeLodBoundary.Debug(3),g_gazeLodBoundary.Debug(4));
 }
 
 static void StopGazeLodRuntimeObserverAfterSample() {
