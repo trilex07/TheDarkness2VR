@@ -6,7 +6,7 @@
 **Branch**: codex/gaze-nis-main-integration  
 **Worktree**: C:/Users/Trilex/.codex/worktrees/gaze-nis-main-integration/Darkness2VR  
 **Baseline**: installed stable DLL E6F49A7E9E520D24502B9F5ABAFB4E0DAE6A9D7DDC0ACDE86486DAD4128DB1BD, stock EXE D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1  
-**Status**: In Progress
+**Status**: Installed; headset validation pending
 
 ## Goal
 
@@ -23,5 +23,6 @@ Make a reversible headset candidate to test whether native engine LOD improves C
 ## Verification and next step
 
 - Protected-native x86 `/O2` build and profile gate passed. Headset quality and CPU/FPS effect are unproven.
+- Source commit `97fd19cd`. Candidate installed at `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/engine-lod-trial-20261101T113328024`. Installed DLL SHA256 `9AFA35F2A4B3B74EFA79FBF2C10BCEA296F6A159126B407E1783B8E84F57A358`, stock EXE unchanged, active game INI has `EngineLODScale=1.25`, and all nine rollback copy hashes verified. Game was not launched by the agent.
 - After installation, user checks the same problem scene, both eyes, nearby models and FPS; inspect `[EngineLOD]` logs for `active=1`, effective selector mode and reapplications.
 - If visual quality regresses or no native selector effect is present, restore the complete package. Do not merge to main on offline evidence alone.

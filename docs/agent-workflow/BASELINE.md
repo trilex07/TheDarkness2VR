@@ -3,6 +3,12 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed native LODScale trial (2026-11-01 11:33 Europe/Warsaw)
+
+- **Installed DLL SHA256**: `9AFA35F2A4B3B74EFA79FBF2C10BCEA296F6A159126B407E1783B8E84F57A358`, source `97fd19cd` on `codex/gaze-nis-main-integration`. Stock EXE SHA256 unchanged: `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.
+- **Setting**: active game `EngineLODScale=1.25`, applied only in 3D gameplay. This is a reversible whole-scene engine LOD trial, not gaze/per-object LOD. No headset quality or CPU/FPS result yet.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/engine-lod-trial-20261101T113328024/rollback/Restore.ps1`; all nine backup hashes verified. Previously installed stable DLL was `E6F49A7E9E520D24502B9F5ABAFB4E0DAE6A9D7DDC0ACDE86486DAD4128DB1BD`. See `HANDOFF-gaze-lod-candidate-20261101.md`.
+
 ## LOD observation completed and stable DLL restored (2026-11-01)
 
 - **Installed DLL SHA256**: `E6F49A7E9E520D24502B9F5ABAFB4E0DAE6A9D7DDC0ACDE86486DAD4128DB1BD`, restored stable gaze-dot/R2 source `70f4e28e`.
