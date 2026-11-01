@@ -108,3 +108,12 @@ Default OFF. Native enable/scale instruction bytes checked against actual EXE.
 Logs explicitly say config-only and object observation NOT connected.
 No settings or native image writes. This identifies effective mode and fresh
 gaze availability; it cannot measure per-object LOD or CPU savings yet.
+
+## Installed diagnostic (2026-11-01 01:50 Europe/Warsaw)
+
+Installed protected-native candidate SHA256
+148538F92CB37B2AF2D166282972B29FF1C23E46E7D70BDB1787D700719889CF
+from exact 7DB3D647 installed-source archive. The game was closed. Two active
+profiles have Render/GazeLodDiagnostic=1; existing EngineMaxFrameRate=120 is
+preserved. See HANDOFF-gaze-lod-diagnostic.md for complete package/rollback.
+No headset result or object-level observation yet.
