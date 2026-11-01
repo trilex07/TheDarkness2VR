@@ -5,10 +5,10 @@ Steam check or permission to deploy. Do not assume Git main is installed.
 
 ## Current installed MAIN LOD observation candidate (2026-11-01)
 
-- **Installed DLL SHA256**: `2AB582630B09EF02AD44465582A74B7FCEB563EB1EA5B4D998C03D8FB716A327` (protected-native x86), source `0541741151b5f7dff1a0843abe3a5c9a07974c07` on `codex/gaze-nis-main-integration`.
-- **Package/rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-lod-runtime-20261101T110811047/rollback/Restore.ps1`; all nine backup hashes verified.
+- **Installed DLL SHA256**: `C398F251E9BE1556292E7683308D55E49A1D3B61C3A415669DF9BEBEC9EC1CB1` (protected-native x86), source `0a9d7754f3709e80c19f80e7ac3ed944977e3fe6` on `codex/gaze-nis-main-integration`.
+- **Package/rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-lod-debug-20261101T111242901/rollback/Restore.ps1`; all nine backup hashes verified. Previous LOD observer candidate was `2AB58263...` with package `gaze-lod-runtime-20261101T110811047`.
 - **Change**: opt-in one-sample native LOD dispatcher observer; `GazeLodRuntimeObserver=1` in active game INI. No native quality/object settings changed. The prior gaze dot and R2 fix are retained.
-- **Evidence**: exact EXE/DLL and protected profile checks passed; native execution boundary fixture passed. Game has not been launched with this candidate; headset/Lod owner and CPU benefit remain unverified.
+- **Evidence**: exact EXE/DLL and protected profile checks passed; native execution boundary fixture passed. First LOD observer run refused an occupied hardware debug state. This second candidate logs exact DR registers before any further change. Game has not been launched with the second candidate; LOD owner and CPU benefit remain unverified.
 - **Integration**: diagnostic candidate remains on task branch until runtime evidence; remote main remains the previously installed gaze dot/R2 source.
 
 ## Current installed MAIN candidate: gaze dot and R2 fix (2026-11-01)
