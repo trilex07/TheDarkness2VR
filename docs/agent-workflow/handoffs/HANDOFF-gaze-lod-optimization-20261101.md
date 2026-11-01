@@ -56,3 +56,7 @@ The first user launch produced `[GazeLOD] runtime observer installed=0 status=oc
 The next candidate logs DR0–DR3 and DR7 on the same failed admission. It keeps the same fail-closed hardware boundary. DLL SHA256 `C398F251E9BE1556292E7683308D55E49A1D3B61C3A415669DF9BEBEC9EC1CB1`, protected x86 build and installer preflight PASS. No new CPU gain is claimed.
 
 Installed the second candidate at `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/gaze-lod-debug-20261101T111242901` with game closed. Installed DLL/stock EXE and all nine rollback backups verified; `GazeLodRuntimeObserver=1` retained. Awaiting user run to distinguish occupied hardware slots from unrelated DR state.
+
+Second launch log: observer again refused `occupied-debug-state`, now reporting DR0=`0112263C`, DR1=`011223F0`, DR2=`01122878`, DR3=`017B177C`, DR7=`FFFF0015` on render thread 33396. DR7 enables slots 0–2; slot 3 still carries a foreign address/configuration. Do not displace any of these. The game closed after this short launch; no LOD selector sample or quality change.
+
+`tools/lod_owner_scan.py` is a read-only external fallback. It scans committed private memory for the exact stock owner vtable `00FF8818`, then reads only candidate `+274` renderer and `+594` reference fields. This is a *candidate finder*, not proof of active LOD ownership or permission to mutate an object. Python syntax and Win64 `MEMORY_BASIC_INFORMATION` size (48) checked offline. It needs the game left running in 3D gameplay; no scan result yet.
