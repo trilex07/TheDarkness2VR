@@ -99,3 +99,10 @@ C:/Users/Trilex/AppData/Local/Darkness2VR/packages/gaze-lod-owner-20261101T02052
 Independent verification: installed AC6D3568AF0D670F69A8330D08A57B9F3EA4E602783F499A4BEC449848F47E1A,
 9/9 rollback backups hashed, stock EXE unchanged, game closed. Awaiting
 user runtime log for `selected-view owner` before any engine LOD mutation.
+
+Runtime log through 02:10:01 shows repeated `selected-view owner=00000000`
+inside accepted selected-player callbacks (`status=8 accepted=1`). The
+camera's +2A4 reference is absent in tested gameplay, so it cannot provide
+the scene LOD owner. This candidate is read-only and provides no FPS gain.
+Do not build an owner hook from that field. Trace the actual 9922F0 caller
+or another owned renderer path and classify resource types before modulation.
