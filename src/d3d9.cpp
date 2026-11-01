@@ -4730,7 +4730,18 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     gp.bLeftTrigger = static_cast<BYTE>(lt * 255.f);
     gp.bRightTrigger = static_cast<BYTE>(rt * 255.f);
     LocateTrackedHands(); // current grip sample also owns the triangle modifier
-    if (ReadBool(g_actA, g_pathHandRight)) gp.wButtons |= PhysicalAButton(); // [Input] AButton, default X (reload)
+    const bool physicalA=ReadBool(g_actA,g_pathHandRight);
+    static bool priorPhysicalA=false;
+    static uint16_t priorPhysicalARoute=0;
+    if(physicalA) {
+        const uint16_t route=PhysicalAButton();
+        gp.wButtons|=route;
+        if(!priorPhysicalA || route!=priorPhysicalARoute)
+            Log("[PhysicalA] route=0x%04X gameplay=%d (A=stock held action, X=configured reload)",
+                route,(int)g_in3DGameplayMode);
+        priorPhysicalARoute=route;
+    }
+    priorPhysicalA=physicalA;
     if (ReadBool(g_actB, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_B;
     if (ReadBool(g_actX, g_pathHandLeft))  gp.wButtons |= XINPUT_GAMEPAD_X;
     bool triangleActive=false;
@@ -5059,6 +5070,7 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
     }
 
     DWORD res = ERROR_DEVICE_NOT_CONNECTED;
+    bool selectedXrPad=false;
     XINPUT_STATE xrPad{};
     if (g_enableVRGamepad && userIndex == 0 && CopyXrPad(xrPad)) {
         if (r == ERROR_SUCCESS && PadHasInput(real.Gamepad)) {
@@ -5068,6 +5080,7 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
         } else {
             *state = xrPad;
             res = ERROR_SUCCESS;
+            selectedXrPad=true;
 #ifdef D2VR_MATCHED_CAPTURE
             static LONG firstActivePacket = 0;
             if (PadHasInput(state->Gamepad) && InterlockedCompareExchange(&firstActivePacket, 1, 0) == 0)
@@ -5082,6 +5095,15 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
     }
 
     if (res == ERROR_SUCCESS) {
+        if(userIndex==0) {
+            static thread_local bool previousForwardedA=false;
+            const bool forwardedA=(state->Gamepad.wButtons&XINPUT_GAMEPAD_A)!=0;
+            if(forwardedA && !previousForwardedA)
+                Log("[FinisherRoute] forwardedA=1 source=%s buttons=0x%04X packet=%lu tid=%lu",
+                    selectedXrPad?"XR":"physical",state->Gamepad.wButtons,
+                    state->dwPacketNumber,GetCurrentThreadId());
+            previousForwardedA=forwardedA;
+        }
         if (!g_headGeometry && (g_headLookMode == 2 || g_headLookMode == 3) && g_in3DGameplayMode && userIndex == 0) {
             int addX = (int)InterlockedCompareExchange(&g_headStickX, 0, 0);
             int addY = (int)InterlockedCompareExchange(&g_headStickY, 0, 0);

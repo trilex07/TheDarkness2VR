@@ -15,7 +15,7 @@ Make the four smaller headless player tentacles follow physical head rotation in
 
 ## Status
 
-Protected candidate installed with complete rollback. Headset acceptance pending.
+Protected candidate installed with complete rollback. User reports four small tentacles now follow head correctly. Same run exposed a separate held-enemy finisher input issue, tracked in `HANDOFF-held-finisher-a-20261101.md`.
 
 ## Evidence
 
@@ -36,7 +36,8 @@ Protected candidate installed with complete rollback. Headset acceptance pending
 - Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/small-tentacles-head-20261101T133218114`.
 - Installed protected-native DLL: `EFDCCFB0B40F37F716014DF836F5BE127121177B5C88EABC3E3714B828375B9C`; package source commit `88ea30953e134ba7bb15dda3b3b9f5a6ad0fb6a7`.
 - Independent verification: nine backup hashes correct, 9/9 installed protected targets correct (only DLL changed), stock EXE correct, DLSS host directory absent, game closed and not launched.
+- Runtime log on installed candidate confirms four `mesh-scoped` draws with VS `1CB7CEE2`, VB `53120`, IB `11520`, offset `0`, eye 0. User reports the four small tentacles behave correctly in headset. Per-eye exhaustive and held-target behavior were not separately reported.
 
 ## Blockers
 
-No physical headset acceptance yet. The retained capture predates this candidate; its four draws cannot by themselves prove the current user-visible motion.
+User-confirmed head-follow behavior; exact both-eye/held-target acceptance is not separately recorded.

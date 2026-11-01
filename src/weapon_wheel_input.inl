@@ -450,12 +450,16 @@ static uint16_t ReadPadSetting(const char* key,const char* fallback,uint16_t fal
     return c->bits;
 }
 // Physical A (PSVR2 Cross): reload by default (stock X, user request 23:11).
-// While an enemy is held for an execution the stock A choice passes through.
+// Native alternate holds may retain the target in +584 or +590, or mark the
+// attached entity. The first path has demonHold=2; the others can still report
+// demonHold=1 while the stock contextual face-button choice is active. Routing
+// physical A to reload/X in that window also feeds the double-X weapon switch.
 static bool MenuConfirmActive(); // eye_gaze.inl: pause or menu without world
 static uint16_t PhysicalAButton() {
     if(!g_inputContext || MenuConfirmActive()) return XINPUT_GAMEPAD_A; // menus incl. pause: A confirms
     NativeGameplaySample sample;
-    if(CopyNativeGameplay(sample) && sample.demonHold==2) return XINPUT_GAMEPAD_A;
+    if(CopyNativeGameplay(sample) && (sample.demonHold==2 || sample.alternateHeldTarget))
+        return XINPUT_GAMEPAD_A;
     return ReadPadSetting("AButton","X",XINPUT_GAMEPAD_X);
 }
 
