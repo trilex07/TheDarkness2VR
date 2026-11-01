@@ -143,7 +143,16 @@ static std::atomic<bool> g_menuConfirmActive{false}; // window thread writes, in
 struct MenuSurface { bool valid=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; };
 static SRWLOCK g_menuSurfaceLock=SRWLOCK_INIT;
 static MenuSurface g_menuSurface;
-static bool MenuConfirmActive() { return g_menuConfirmActive.load(std::memory_order_acquire); }
+static bool MenuConfirmActive() {
+    // The window-thread gate is sampled every 100 ms. On unpause it can still
+    // report the previous menu while the input thread receives a fresh R2.
+    if(!g_in3DGameplayMode) return true;
+    if(!g_menuConfirmActive.load(std::memory_order_acquire)) return false;
+    const auto manager=uint32_t(g_nativeRegionManager);
+    if(!manager) return false;
+    __try { return *(BYTE*)(manager+0x198)==0 && **(DWORD**)(manager+0xEC)!=0; }
+    __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
 static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
     s.time=GetTickCount64(); s.space=quad.space;

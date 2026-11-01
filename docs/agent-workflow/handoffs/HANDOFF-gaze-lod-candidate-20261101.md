@@ -26,3 +26,9 @@ Make a reversible headset candidate to test whether native engine LOD improves C
 - Source commit `97fd19cd`. Candidate installed at `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/engine-lod-trial-20261101T113328024`. Installed DLL SHA256 `9AFA35F2A4B3B74EFA79FBF2C10BCEA296F6A159126B407E1783B8E84F57A358`, stock EXE unchanged, active game INI has `EngineLODScale=1.25`, and all nine rollback copy hashes verified. Game was not launched by the agent.
 - After installation, user checks the same problem scene, both eyes, nearby models and FPS; inspect `[EngineLOD]` logs for `active=1`, effective selector mode and reapplications.
 - If visual quality regresses or no native selector effect is present, restore the complete package. Do not merge to main on offline evidence alone.
+
+## First headset check and R2 follow-up
+
+- Runtime log: native selector and writable scale verified; active 3D scene had `scale=1.250`, `enabled=1`, `mode=-1`, `lowest=0`, `reapplies=0`. User reported smoother play and correct image. This is subjective evidence, not measured CPU milliseconds or proof that gaze changes LOD.
+- User also reported R2 causing a jump again. Prior `MenuConfirmActive` fix from `70f4e28e` remains in source. The menu gate is sampled every 100 ms; log shows pause gate transitions while the world is visible. A stale gate can route R2 to stock A after unpause. A fresh native pause check was added at input time, plus one `[R2Route]` log per trigger press to distinguish this path from an engine mapping.
+- New x86 protected-native build and profile gate passed; `test/build_eye_tracking.ps1` passed 29/29. R2 behavior still requires a headset check. `tools/deploy-engine-lod-r2.ps1` backs up all nine targets before installing the updated DLL with `EngineLODScale=1.25` retained.
