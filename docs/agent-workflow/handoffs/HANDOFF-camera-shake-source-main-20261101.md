@@ -8,6 +8,13 @@
 
 ## Goal and status
 
+LATEST INSTALLATION: user confirmed closed game. Installed sourceeda9420e,
+DLL9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D
+via camera-model-snapshot-20261101T222624275. Independent9/9 backups and8/8
+non-DLL targets unchanged, exact DLL and stock EXE. Both feature keys retained.
+Rollback in package/rollback/Restore.ps1 restores61C4270D candidate. Steam
+launch requested after verified installation; physical model acceptance pending.
+
 NEWEST: model regression isolated to frozen owner+100 first-person snapshot.
 Slot32/8446C0 returns+100; +70 moved~33 units while+100 and avatar parent stayed
 at spawn. Native5E1164..5E1192 normally copies70->100; ordinary source fallback

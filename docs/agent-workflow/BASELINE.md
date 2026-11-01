@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Installed model snapshot correction (2026-11-01 22:26 Warsaw)
+
+- Source `eda9420e`, DLL `9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D`. Native stabilized view now refreshes the first-person model snapshot on every dispatch, including the ordinary path. Camera stabilization and event rumble retained; physical model result pending.
+- Game closed as explicitly confirmed by user. Independent audit:9/9 backups verified,8/8 other protected targets unchanged (including diagnostic INI), exact DLL and stock EXE. Diagnostic hash remains`AC8290E48D6CD8CA34ED935734E7293572E2F9227B0AA27D4CA03507FA619299`.
+- Rollback with closed game: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/camera-model-snapshot-20261101T222624275/rollback/Restore.ps1`, restoring the preceding61C4270D candidate. MAIN requests Steam startup smoke after verification.
+
 ## Installed native source camera candidate: partial acceptance, model regression (2026-11-01)
 
 - Installed source `79c3e7ee52a01d33ca871db1d5b7bb87e30d3065`, DLL `61C4270D5C9DF9475A8A53C55AA4FD5C122408F51626CDDDC7AB3F305F74CB37`, diagnostic INI `AC8290E48D6CD8CA34ED935734E7293572E2F9227B0AA27D4CA03507FA619299`. Both `CameraNativeNoShake=1` and `CameraEventRumble=1`. Shotgun retained, rejected stabilizers OFF, EXE unchanged.
