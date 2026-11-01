@@ -3,6 +3,12 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed shotgun pose observer after failed model-only trial rollback (2026-11-01)
+
+- **Installed DLL SHA256**: `867E3DE9E96920836F9B3CE761AF53875029F6A89A26EB43AFC6E39118C3EE0C`, source `1e0925e9` on `codex/gaze-nis-main-integration`. Stock EXE SHA256 `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1` unchanged.
+- **Protected rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/shotgun-model-trial-20261101T141729420/rollback/Restore.ps1` restored all nine protected targets, independently hash-checked 9/9 after the user closed the game.
+- **Gate**: headset model-only shotgun trial FAIL (aimed model, missed shots, right fingers short of trigger). The rejected DLL `5389DF98690B1A4D67E4585329E1DD525DE257C7F1E95E0B187A6DA5B7101BDF` is no longer installed. The observer contains no shotgun gameplay adjustment; two-hand grip and shake suppression are still pending. See `HANDOFF-shotgun-twohand-shake-20261101.md`.
+
 ## Installed held-finisher A candidate (2026-11-01 13:42 Europe/Warsaw)
 
 - **Installed DLL SHA256**: `DDDEF1CD8FB135A7D89E6C515786D809351926914FC1FF1C195ADF1F27B6F5BF`, source `c9b86d0c` on `codex/gaze-nis-main-integration`; stock EXE SHA256 unchanged. The user-confirmed four small tentacle correction is included.
