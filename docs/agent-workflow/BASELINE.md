@@ -3,6 +3,13 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed held-finisher A candidate (2026-11-01 13:42 Europe/Warsaw)
+
+- **Installed DLL SHA256**: `DDDEF1CD8FB135A7D89E6C515786D809351926914FC1FF1C195ADF1F27B6F5BF`, source `c9b86d0c` on `codex/gaze-nis-main-integration`; stock EXE SHA256 unchanged. The user-confirmed four small tentacle correction is included.
+- **Change**: physical A now routes to the stock XInput A action for a fresh native alternate held target, including cases where `demonHold` remains 1. Ordinary gameplay's configurable A-as-X reload and menu confirmation are retained. `[PhysicalA]` and `[FinisherRoute]` logs distinguish proxy choice from the button returned to the engine.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/held-finisher-a-20261101T134251667/rollback/Restore.ps1`; all nine backup hashes and nine installed target hashes independently verified, with only the DLL changed. Previous DLL `EFDCCFB0B40F37F716014DF836F5BE127121177B5C88EABC3E3714B828375B9C` retained. Game closed and not launched by the agent.
+- **Gate**: protected-native x86 build and profile PASS, dual weapon wheel 137 checks PASS; **held-enemy finisher headset result: NOT RUN**. See `HANDOFF-held-finisher-a-20261101.md`.
+
 ## Installed four small tentacles head-attachment trial (2026-11-01 13:32 Europe/Warsaw)
 
 - **Installed DLL SHA256**: `EFDCCFB0B40F37F716014DF836F5BE127121177B5C88EABC3E3714B828375B9C`, source `88ea3095` on `codex/gaze-nis-main-integration`. Stock EXE SHA256 unchanged: `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.
