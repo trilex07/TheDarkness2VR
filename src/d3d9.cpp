@@ -102,7 +102,6 @@ static bool g_protectedLeftThrow=false;
 static bool g_protectedTrackedHands=false;
 static bool g_shotgunCandidate=false;
 static bool g_cameraShakeTrace=false;
-static bool g_cameraShakeSuppress=false;
 static ULONGLONG g_cameraShakeTraceStart=0;
 static d2vr_input::Tentacles g_protectedRightTentacle;
 static volatile LONG g_protectedRecenterRequested=0;
@@ -681,10 +680,8 @@ void LoadConfig() {
     g_protectedTrackedHands=GetPrivateProfileIntA("Diagnostics","ProtectedTrackedHands",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_shotgunCandidate=GetPrivateProfileIntA("Diagnostics","ShotgunCandidate",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraShakeTrace=GetPrivateProfileIntA("Diagnostics","CameraShakeTrace",0,".\\Darkness2VR-diagnostic.ini")!=0;
-    g_cameraShakeSuppress=GetPrivateProfileIntA("Diagnostics","CameraShakeSuppress",0,".\\Darkness2VR-diagnostic.ini")!=0;
     Log("[ShotgunCandidate] requested=%d; model and final pellet ray share right aim after first admitted shot; left squeeze near fore-end supports stock hand pose",int(g_shotgunCandidate));
     Log("[CameraShakeTrace] requested=%d; selected camera and avatar matrices read only for first 30 gameplay seconds",int(g_cameraShakeTrace));
-    Log("[CameraShakeSuppress] requested=%d; four pinned native procedural-shake call sites",int(g_cameraShakeSuppress));
     Log("[ProtectedLeftAim] requested=%d; private getter, legacy NativeLeftAim stays OFF; separate ProtectedLeftThrow=%d",int(g_protectedLeftAim),int(g_protectedLeftThrow));
     Log("[ProtectedHands] requested=%d; private selected-resource packer only; legacy hands/weapon hooks remain independent",int(g_protectedTrackedHands));
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
@@ -4183,7 +4180,6 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction);
 #include "protected_left_throw.inl"
 #include "native_weapon.inl"
 #include "native_hands.inl"
-#include "native_shake_suppress.inl"
 #include "protected_hands.inl"
 #include "protected_weapon.inl"
 #include "native_recenter.inl"
@@ -4192,11 +4188,21 @@ static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
     if(!g_cameraShakeTrace || !camera || !avatar || !g_trackedFrame.open ||
        GetCurrentThreadId()!=g_renderThreadId || NativeCinematicPlaying())return;
     float view[16]{},root[16]{};
+    DWORD avatarTable=0;
+    float nativeNoise[4][4]{},nativeSum[4]{},nativeShift[3]{};
     __try {
         auto parent=**reinterpret_cast<BYTE***>(reinterpret_cast<BYTE*>(avatar)+0x1F8C);
         if(!parent || *reinterpret_cast<DWORD*>(parent)!=0xFFC300)return;
         std::memcpy(view,reinterpret_cast<const BYTE*>(camera)+0x80,sizeof(view));
         std::memcpy(root,parent+0x140,sizeof(root));
+        avatarTable=*reinterpret_cast<const DWORD*>(avatar);
+        if(avatarTable==0xFDF170) {
+            constexpr unsigned offsets[4]={0x8C0,0x910,0x960,0xCA0};
+            for(unsigned i=0;i<4;++i)
+                std::memcpy(nativeNoise[i],reinterpret_cast<const BYTE*>(avatar)+offsets[i],sizeof(nativeNoise[i]));
+            std::memcpy(nativeSum,reinterpret_cast<const BYTE*>(avatar)+0x1F0,sizeof(nativeSum));
+            std::memcpy(nativeShift,reinterpret_cast<const BYTE*>(avatar)+0x20C,sizeof(nativeShift));
+        }
     } __except(EXCEPTION_EXECUTE_HANDLER){return;}
     for(unsigned i: {0u,1u,2u,8u,9u,10u,12u,13u,14u})
         if(!std::isfinite(view[i]) || !std::isfinite(root[i]))return;
@@ -4205,6 +4211,12 @@ static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
     if(!g_cameraShakeTraceStart){g_cameraShakeTraceStart=now;Log("[CameraShakeTrace] BEGIN 30-second read-only selected camera/root sample; provoke normal movement, shot or impact");}
     if(now-g_cameraShakeTraceStart>=30000 || now<next)return;
     next=now+50;
+    static DWORD reportedAvatarTable=0;
+    if(avatarTable!=reportedAvatarTable) {
+        reportedAvatarTable=avatarTable;
+        Log("[CameraShakeOwner] selectedAvatarTable=%08lX expected=00FDF170 ownerMatched=%d",
+            avatarTable,int(avatarTable==0xFDF170));
+    }
     Log("[CameraShakeTrace] ms=%llu frame=%llu cameraPos=(%.4f,%.4f,%.4f) cameraFwd=(%.4f,%.4f,%.4f) rootPos=(%.4f,%.4f,%.4f) rootFwd=(%.4f,%.4f,%.4f) headPos=(%.4f,%.4f,%.4f) headQuat=(%.4f,%.4f,%.4f,%.4f)",
         static_cast<unsigned long long>(now-g_cameraShakeTraceStart),static_cast<unsigned long long>(g_trackedFrame.id),
         view[12],view[13],view[14],view[8],view[9],view[10],
@@ -4212,6 +4224,20 @@ static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
         g_headGeometryReference.position.x,g_headGeometryReference.position.y,g_headGeometryReference.position.z,
         g_headGeometryReference.orientation.x,g_headGeometryReference.orientation.y,
         g_headGeometryReference.orientation.z,g_headGeometryReference.orientation.w);
+    if(avatarTable==0xFDF170) {
+        for(unsigned i=0;i<4;++i)
+            for(float value:nativeNoise[i])if(!std::isfinite(value))return;
+        for(float value:nativeSum)if(!std::isfinite(value))return;
+        for(float value:nativeShift)if(!std::isfinite(value))return;
+        Log("[CameraShakeOwner] ms=%llu frame=%llu slot8C0=(%.4f,%.4f,%.4f) slot910=(%.4f,%.4f,%.4f) slot960=(%.4f,%.4f,%.4f) slotCA0=(%.4f,%.4f,%.4f) sum1F0=(%.4f,%.4f,%.4f) shift20C=(%.4f,%.4f,%.4f)",
+            static_cast<unsigned long long>(now-g_cameraShakeTraceStart),static_cast<unsigned long long>(g_trackedFrame.id),
+            nativeNoise[0][0],nativeNoise[0][1],nativeNoise[0][2],
+            nativeNoise[1][0],nativeNoise[1][1],nativeNoise[1][2],
+            nativeNoise[2][0],nativeNoise[2][1],nativeNoise[2][2],
+            nativeNoise[3][0],nativeNoise[3][1],nativeNoise[3][2],
+            nativeSum[0],nativeSum[1],nativeSum[2],
+            nativeShift[0],nativeShift[1],nativeShift[2]);
+    }
 }
 #include "native_hands_witness.inl"
 #endif
@@ -7213,14 +7239,12 @@ static void InstallDiagnosticTrackedGameplay() {
     }
     const bool installed=InstallNativeAimHook() && InstallNativeThrowHook() &&
         InstallNativeWeaponHook() && InstallNativePistolHook() && InstallNativeHandsHook() &&
-        (!handPackRequested || InstallNativeHandsPackHook()) &&
-        d2vr_native_shake::Install();
+        (!handPackRequested || InstallNativeHandsPackHook());
     if(!installed) {
-        const bool shakeRemoved=d2vr_native_shake::Restore();
         const bool packRemoved=RemoveNativeHandsPackHook();
         RemoveNativeHandsHook(); RemoveNativePistolHook(); RemoveNativeWeaponHook();
         RemoveNativeThrowHook(); RemoveNativeAimHook();
-        if(!shakeRemoved || !packRemoved || !d2vr_tracked_gameplay::Validate(read,failed) ||
+        if(!packRemoved || !d2vr_tracked_gameplay::Validate(read,failed) ||
            (handPackRequested && !d2vr_tracked_gameplay::ValidateHandPack(read,failed))) {
             Log("[TrackedGameplay] FATAL rollback mismatch at %08X",failed);
             CloseHandle(locked); RaiseFailFastException(nullptr,nullptr,0); return;
@@ -7819,7 +7843,6 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
             (long)InterlockedCompareExchange(&d2vr_trace::g_dropped,0,0));
         d2vr::psvr2::ClientRequestStop();
 #ifdef D2VR_MATCHED_CAPTURE
-        if(!d2vr_native_shake::Restore()) RaiseFailFastException(nullptr,nullptr,0);
         if(!RemoveNativeHandsPackHook()) RaiseFailFastException(nullptr,nullptr,0);
 #endif
         RemoveNativeHandsHook();

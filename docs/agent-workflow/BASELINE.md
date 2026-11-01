@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Current after procedural shake trial rollback (2026-11-01)
+
+- **Current installed DLL SHA256**: `EF58E6F6BEDEADF929F9021E562ED33C5D9A806E341CDEB950775D7C1A878567`; diagnostic INI SHA256 `30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD` retains `ShotgunCandidate=1` and read-only `CameraShakeTrace=1`. Stock EXE unchanged. User reports the shotgun now works; left-hand grip, exact aim and both-eye details were not separately graded.
+- **Trial result**: camera still shook; the EXE call-site intervention did not activate because `BlockNativeImagePatches=1` and `RestoreTrackedGameplay=0`. Startup log has `requested=1` but no `active=1`. This is a failed admission, not an A/B result for the generator.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/camera-shake-suppress-20261101T180426583/rollback/Restore.ps1` restored all nine protected targets after the game closed. Independent audit: 9/9 current hashes match the pretrial manifest, previous DLL/INI exact, no game process.
+
 ## Installed opt-in procedural camera-shake trial (2026-11-01)
 
 - **Installed DLL SHA256**: `CC53C2E4D0EFEFAA3E713B0E3404148F07DF20BE61363AFEFC0D3D40B6992EB1`, source `d1ed1aa9` on `codex/gaze-nis-main-integration`. Diagnostic INI SHA256 `7E1160EF7C634EFFBD356AE21CCF7EB44F28C0218E633A062EDD2AF19D179687` enables `CameraShakeSuppress=1` while retaining `CameraShakeTrace=1` and `ShotgunCandidate=1`. Stock EXE unchanged.

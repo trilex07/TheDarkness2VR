@@ -3,10 +3,10 @@ $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $game='C:/Program Files (x86)/Steam/steamapps/common/Darkness II'
 $local='C:/Users/Trilex/AppData/Local/Darkness2VR'
-$prior=Join-Path $local 'packages/camera-shake-hands-trace-20261101T175229197/rollback'
+$prior=Join-Path $local 'packages/camera-shake-suppress-20261101T180426583/rollback'
 $candidate=Join-Path $root 'd3d9.dll'
 $expected='EF58E6F6BEDEADF929F9021E562ED33C5D9A806E341CDEB950775D7C1A878567'
-$candidateHash='CC53C2E4D0EFEFAA3E713B0E3404148F07DF20BE61363AFEFC0D3D40B6992EB1'
+$candidateHash='7414984FF998FABDF154AEB5EE443D75805378DDB2359F7EC6F20E83E8A6FA55'
 $diagnosticHash='30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD'
 $exeHash='D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1'
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}
@@ -25,9 +25,8 @@ $gate=& (Join-Path $root 'tools/assert-candidate-profile.ps1') -CandidateDll $ca
     -RenderIni @($gameIni,$localIni) -DiagnosticIni $diagnosticIni
 if($gate.Flavor -ne 'protected-native'){throw 'Protected-native candidate required'}
 if([D2vrProfileGate]::GetPrivateProfileInt('Diagnostics','ShotgunCandidate',0,$diagnosticIni) -ne 1 -or
-   [D2vrProfileGate]::GetPrivateProfileInt('Diagnostics','CameraShakeTrace',0,$diagnosticIni) -ne 1 -or
-   [D2vrProfileGate]::GetPrivateProfileInt('Diagnostics','CameraShakeSuppress',0,$diagnosticIni) -ne 0){
-    throw 'Installed profile must retain ShotgunCandidate=1, CameraShakeTrace=1, CameraShakeSuppress=0'
+   [D2vrProfileGate]::GetPrivateProfileInt('Diagnostics','CameraShakeTrace',0,$diagnosticIni) -ne 1){
+    throw 'Installed profile must retain ShotgunCandidate=1 and CameraShakeTrace=1'
 }
 foreach($ini in @($gameIni,$localIni)){
     if([D2vrProfileGate]::GetPrivateProfileInt('Render','HeadAttachedTentacles',0,$ini) -ne 1){
@@ -35,7 +34,7 @@ foreach($ini in @($gameIni,$localIni)){
     }
 }
 if(!$Install){Write-Output "PREFLIGHT PASS DLL=$candidateHash; nine protected targets; no files changed";return}
-$package=Join-Path $local ('packages/camera-shake-suppress-'+(Get-Date -Format 'yyyyMMddTHHmmssfff'))
+$package=Join-Path $local ('packages/camera-shake-owner-trace-'+(Get-Date -Format 'yyyyMMddTHHmmssfff'))
 $rollback=Join-Path $package 'rollback'
 $candidateDir=Join-Path $package 'candidate'
 New-Item -ItemType Directory -Force -Path $rollback,$candidateDir | Out-Null
@@ -55,32 +54,21 @@ foreach($name in @('d3d9.dll','d3d9.pdb','d3d9.map')){
     Copy-Item -LiteralPath (Join-Path $root $name) -Destination (Join-Path $candidateDir $name)
 }
 if((Hash (Join-Path $candidateDir 'd3d9.dll')) -ne $candidateHash){throw 'Staged candidate mismatch'}
-$diagnosticRaw=[IO.File]::ReadAllText($diagnosticIni)
-if(!$diagnosticRaw.StartsWith('[Diagnostics]') -or $diagnosticRaw -match '(?im)^\s*CameraShakeSuppress\s*='){
-    throw 'Unexpected diagnostic INI format or duplicate CameraShakeSuppress key'
-}
-$stagedDiagnostic=Join-Path $candidateDir 'Darkness2VR-diagnostic.ini'
-[IO.File]::WriteAllText($stagedDiagnostic,
-    $diagnosticRaw.Replace('[Diagnostics]','[Diagnostics]'+"`r`n"+'CameraShakeSuppress=1'),
-    [Text.Encoding]::ASCII)
-$candidateDiagnosticHash=Hash $stagedDiagnostic
 $sourceCommit=(git -C $root rev-parse HEAD).Trim()
-@{dll_sha256=$candidateHash;diagnostic_ini_sha256=$candidateDiagnosticHash;source_commit=$sourceCommit;change='opt-in native procedural shake suppression at four pinned call sites; shotgun candidate and trace retained';
+@{dll_sha256=$candidateHash;diagnostic_ini_sha256=$diagnosticHash;source_commit=$sourceCommit;change='read-only selected avatar procedural shake owner and fields; shotgun candidate retained';
   headset_validation='NOT RUN'} | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $candidateDir 'source.json') -Encoding UTF8
 if(Get-Process DarknessII -ErrorAction SilentlyContinue){throw 'Game started during backup'}
 foreach($entry in $before){if((Hash $entry.target) -ne $entry.sha256){throw 'Installed state changed during backup'}}
 try {
     Copy-Item -LiteralPath (Join-Path $candidateDir 'd3d9.dll') -Destination $target -Force
-    Copy-Item -LiteralPath $stagedDiagnostic -Destination $diagnosticIni -Force
-    if((Hash $target) -ne $candidateHash -or (Hash $diagnosticIni) -ne $candidateDiagnosticHash -or
+    if((Hash $target) -ne $candidateHash -or (Hash $diagnosticIni) -ne $diagnosticHash -or
        (Hash $exe) -ne $exeHash){throw 'Installed DLL/INI/EXE mismatch'}
     foreach($entry in $before){
-        if($entry.target -ne $target -and $entry.target -ne $diagnosticIni -and
-           (Hash $entry.target) -ne $entry.sha256){throw "Protected target changed: $($entry.target)"}
+        if($entry.target -ne $target -and (Hash $entry.target) -ne $entry.sha256){throw "Protected target changed: $($entry.target)"}
     }
 } catch { & (Join-Path $rollback 'Restore.ps1');throw }
-@{source_commit=$sourceCommit;dll_sha256=$candidateHash;diagnostic_ini_sha256=$candidateDiagnosticHash;rollback=$rollback;
+@{source_commit=$sourceCommit;dll_sha256=$candidateHash;diagnostic_ini_sha256=$diagnosticHash;rollback=$rollback;
   installed_utc=[DateTime]::UtcNow.ToString('o');game_launched=$false} |
     ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $package 'deployment.json') -Encoding UTF8
 Write-Output "INSTALLED $package DLL=$candidateHash rollback=$rollback; game not launched"

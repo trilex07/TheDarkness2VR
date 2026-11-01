@@ -20,6 +20,16 @@ source, BASELINE.md and the task handoff before applying them.
 
 ## Known Failures (from existing docs)
 
+### Procedural shake call-site patch under protected image guard
+- **Date**: 2026-11-01
+- **Branch/Commit**: `codex/gaze-nis-main-integration` / `d1ed1aa9`
+- **Goal**: Suppress first-person procedural camera shake while preserving the native hand and weapon transform order.
+- **Approach**: With `CameraShakeSuppress=1`, redirect four pinned EXE calls to generator `00628420`, run the original, then clear its output vector/scalars.
+- **Why Failed**: The installed profile has `BlockNativeImagePatches=1` and `RestoreTrackedGameplay=0`. The startup log recorded `requested=1` and `[NativeImageGuard] enabled`, but never `active=1`. The user reported that the camera still shook. This was an admission failure, not evidence that the generator does not contribute to shake.
+- **Evidence**: Candidate DLL `CC53C2E4D0EFEFAA3E713B0E3404148F07DF20BE61363AFEFC0D3D40B6992EB1`; diagnostic INI `7E1160EF7C634EFFBD356AE21CCF7EB44F28C0218E633A062EDD2AF19D179687`; runtime log at `%LOCALAPPDATA%/Darkness2VR/d3d9.log`. Protected rollback package `camera-shake-suppress-20261101T180426583` restored all nine targets; independent 9/9 hash audit verified prior DLL `EF58E6F6BEDEADF929F9021E562ED33C5D9A806E341CDEB950775D7C1A878567` and diagnostic INI `30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD`.
+- **Lesson**: Do not propose EXE call-site patches for the protected profile. Locate a selected, heap-owned live object and use a verified per-instance route or another admission-compatible intervention; prove activation in the log before evaluating visual effect.
+- **Status**: Rejected
+
 ### Shotgun model-only protected pose without native fire coupling
 - **Date**: 2026-11-01
 - **Branch/Commit**: `codex/gaze-nis-main-integration` / `eb00b9d6`
