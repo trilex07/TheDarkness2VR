@@ -33,7 +33,7 @@ try {
         'third_party\minhook\src\buffer.c third_party\minhook\src\hook.c third_party\minhook\src\trampoline.c third_party\minhook\src\hde\hde32.c '
     } else { '' }
     $cmd = "`"$vcvars`" x86 && cl /nologo /LD /EHsc /W3 /O2 /Zi /MD /std:c++17 " +
-           $captureDefine + "/I`"$inc`" /Fe:d3d9.dll src\d3d9.cpp " + $observerSources +
+           $captureDefine + "/I`"$inc`" /I`"$here\src`" /Fe:d3d9.dll src\d3d9.cpp src\dlss\dlss_client.cpp src\dlss\dlss_gpu.cpp " + $observerSources +
            "/link /DEBUG /OPT:REF /OPT:ICF /MAP:d3d9.map /DEF:d3d9.def /LIBPATH:`"$libDir`" openxr_loader.lib dxgi.lib d3d11.lib user32.lib gdi32.lib shell32.lib xinput.lib"
     cmd /c $cmd
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
@@ -55,6 +55,18 @@ try {
         Copy-Item (Join-Path $binDir "openxr_loader.dll") $GameDir -Force
         Copy-Item (Join-Path $here "Darkness2VR.ini") $GameDir -Force
         Copy-Item (Join-Path $here "third_party\openvr\LICENSE") (Join-Path $GameDir "Darkness2VR-OpenVR-LICENSE.txt") -Force
+        $dlssHostOut = Join-Path $here "build\dlss_host"
+        if (Test-Path (Join-Path $dlssHostOut "d2vr_dlss_host64.exe")) {
+            $dlssGameDir = Join-Path $GameDir "d2vr_dlss"
+            New-Item -ItemType Directory -Force -Path $dlssGameDir | Out-Null
+            foreach ($f in @("d2vr_dlss_host64.exe", "nvngx_dlss.dll", "amd_fidelityfx_loader_dx12.dll", "amd_fidelityfx_upscaler_dx12.dll", "NOTICE.md", "Darkness2VR-NGX-LICENSE.txt", "Darkness2VR-FidelityFX-LICENSE.txt")) {
+                $srcFile = Join-Path $dlssHostOut $f
+                if (Test-Path $srcFile) {
+                    Copy-Item $srcFile (Join-Path $dlssGameDir $f) -Force
+                }
+            }
+            Write-Host "Installed DLSS 4.5 / FSR helper to: $dlssGameDir"
+        }
         Write-Host "Installed to: $GameDir"
     }
 } finally {

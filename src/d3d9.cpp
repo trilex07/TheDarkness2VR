@@ -121,6 +121,10 @@ static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
 #include "psvr2/HapticDelivery.h"
 #include "psvr2/ShotEvents.h"
 #include "psvr2/GazeShare.h"
+#include "dlss/dlss_client.h"
+#include "dlss/dlss_gpu.h"
+#include "dlss/dlss_jitter.h"
+#include <thread>
 
 namespace {
 
@@ -612,6 +616,7 @@ static bool g_foveatedSharpen = true;
 static bool g_foveatedCopyBase = false;
 static void ParseEngineMaxFrameRate(const char* text); // engine_frame_cap.inl
 static void ParseEngineLodScale(const char* text); // engine_lod_scale.inl
+static void LoadDlssConfig(const char* chosenIni); // dlss_eye.inl
 static float g_foveaPeriphery = .35f, g_foveaSharpness = 1.f, g_foveaSize = .22f;
 static bool g_headAttachedTentacles = false;
 static bool g_hideNativeHud = false;
@@ -750,6 +755,7 @@ void LoadConfig() {
         Log("[NIS] FoveatedCopyBase=%d (copy full eye; NIS only gaze rectangles)",int(g_foveatedCopyBase));
     }
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
+    LoadDlssConfig(chosenIni);
     {
         char value[32]{};
         GetPrivateProfileStringA("Render", "EngineMaxFrameRate", "0", value, sizeof(value), chosenIni);
@@ -2343,6 +2349,8 @@ static ID3DBlob* CompileShaderBlob(const char* src, const char* entry, const cha
     if (err) err->Release();
     return blob;
 }
+
+#include "dlss_eye.inl"
 
 static bool EnsureDepthFreezeResources(IDirect3DDevice9* dev) {
     if (g_depthFreezeTex9 && g_depthFreezeSurf9 && g_depthFreezeSys9 && g_depthFreezeVS9 && g_depthFreezePS9) {
@@ -5444,7 +5452,9 @@ void PumpXR() {
 
 bool EnsureSwapchains(UINT w, UINT h) {
     UINT cacheW=w,cacheH=h;
-    if(g_nisMode==3 && g_submitMode==4 && !g_nisScalerFailed) {
+    if(DlssEyeActive()) {
+        DlssEyeCacheSize(w,h,&cacheW,&cacheH);
+    } else if(g_nisMode==3 && g_submitMode==4 && !g_nisScalerFailed) {
         if(NisInit(&g_nisEye,g_dev11,kNisScalerCS,sizeof(kNisScalerCS),
                    kNisSharpenCS,sizeof(kNisSharpenCS),nullptr,NisEyeLog)) {
             cacheW=std::min(w,(UINT)g_renderW);
@@ -5462,6 +5472,7 @@ bool EnsureSwapchains(UINT w, UINT h) {
     if (now < retryAfter) return false;
     g_eyePairReady=false;
     NisEyeReleaseSources();
+    DlssEyeReleaseSources();
     g_eyeCacheW=g_eyeCacheH=0;
     for (int e = 0; e < 2; ++e) {
         if (g_swapchain[e]) {
@@ -5946,10 +5957,16 @@ void SubmitXR(IDirect3DDevice9* dev) {
             const int leftIdx = (g_stereoDebugMode == 4) ? 1 : 0;
             const int rightIdx = (g_stereoDebugMode == 4) ? 0 : 1;
             ID3D11Texture2D* submitted[2]={g_eyeCache[leftIdx],g_eyeCache[rightIdx]};
+            ID3D11Texture2D* dlssOut[2]{};
+            const bool dlssProcessed=DlssEyeActive() && DlssEyeProcess(submitted[0],submitted[1],dlssOut);
+            if(dlssProcessed) {
+                submitted[0]=dlssOut[0]; submitted[1]=dlssOut[1];
+            }
             ID3D11Texture2D* sharpened[2]{};
-            const bool scaleRequired=g_nisMode==3 && !g_nisScalerFailed &&
+            const bool scaleRequired=!dlssProcessed &&
+                ((g_nisMode==3 && !g_nisScalerFailed) || DlssEyeActive()) &&
                 (g_eyeCacheW!=g_scW || g_eyeCacheH!=g_scH);
-            if((g_nisMode==2 || scaleRequired) && NisEyeProcess(submitted[0],submitted[1],sharpened)) {
+            if((g_nisMode==2 || scaleRequired) && NisEyeProcess(submitted[0],submitted[1],sharpened,scaleRequired)) {
                 submitted[0]=sharpened[0]; submitted[1]=sharpened[1];
             } else if(scaleRequired) {
                 // A small cache cannot be copied into the full-size XR images.
@@ -6448,6 +6465,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     }
     g_gpuTiming.Release();
     NisEyeShutdown();
+    DlssEyeShutdown();
     d2vr_replay::InvalidateShadowAtlasPass();
     if (g_forceWindowedReset && pp) {
         TweakPresentParams(pp);
@@ -6514,6 +6532,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetEx));
     g_gpuTiming.Release();
     NisEyeShutdown();
+    DlssEyeShutdown();
     d2vr_replay::InvalidateShadowAtlasPass();
     if (g_forceWindowedReset && pp) {
         TweakPresentParams(pp);

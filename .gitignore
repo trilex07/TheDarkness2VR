@@ -13,4 +13,7 @@ TheDarkness2VR/
 /build/matched-header-test/
 /build/weapon-wheel-graphics/
 /build/gaze-lod-diagnostic/
+/build/dlss_host/
+/third_party/ngx/
+/third_party/ffx/
 __pycache__/
