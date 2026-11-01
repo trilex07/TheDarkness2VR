@@ -61,6 +61,7 @@
 #include "nis_upscale.h"
 #include "frame_boundary.h"
 static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibility separate
+static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
 #include "diagnostic_present_patch.h"
@@ -1714,7 +1715,6 @@ d2vr_input::WorldActivity g_worldActivity;
 // Frozen with the rest of FrameContext, never updated between live and replay.
 static float g_headDeltaView[16]{};
 static bool g_headDeltaValid=false;
-static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
 static bool CameraStabilizerDelta(float out[16]);
 static XrPosef g_headGeometryReference{};
 static void UpdateHeadGeometry(const XrPosef& head);
