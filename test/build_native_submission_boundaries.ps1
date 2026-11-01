@@ -18,7 +18,7 @@ $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /WX /O2 /MD /std:c++17 /I`"$out`" `"$PSScriptRoot\native_submission_boundaries_test.cpp`" /Fo:`"$out\test.obj`" /Fe:`"$out\test.exe`""
 if($LASTEXITCODE){throw 'Native boundaries x86 build failed'}
-foreach($mode in 'unknown','alias','callback','driver_scope','paused_callback','software'){
+foreach($mode in 'unknown','alias','callback','driver_scope','retain_scope','retain_callback','paused_callback','software'){
  & "$out\test.exe" $mode
  if($LASTEXITCODE){throw "Native boundary failed: $mode"}
 }

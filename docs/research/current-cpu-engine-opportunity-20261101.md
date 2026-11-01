@@ -80,3 +80,10 @@ while the submission gate is already paused for raw VR replay, invalidating
 the epoch. Unpaused callbacks remain a permanent denial. The first unpaused
 context is now logged separately. This remains a test candidate, not a proven
 CPU performance improvement.
+
+The second headset run identified an unpaused DriverScope callback
+(`firstUnpaused=0x5`), not a replay callback. A third candidate protects
+the driver call itself. Resource AddRef uses a pause-only scope so a normal
+Retain can preserve binding certification; callbacks invalidate the epoch.
+This is constrained to the observed mutation boundary. Actual skipped
+calls and frame-time gains are still pending a headset run.

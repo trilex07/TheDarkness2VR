@@ -46,10 +46,25 @@ int main(int argc,char** argv){
   CHECK(d2vr_submission::denialSources.load()&d2vr_submission::RecorderCallback);
   CHECK(d2vr_submission::gate.Reasons()&d2vr_submission::Epoch::UncontrolledMutation);
  }else if(!strcmp(argv[1],"driver_scope")){
+  const auto before=d2vr_submission::gate.Begin(GetCurrentThreadId());
+  CHECK(before && d2vr_submission::gate.Current(before));
   d2vr_record_sync::DriverScope callback;
   CHECK(!d2vr_record_sync::NativeMutation());
-  CHECK(d2vr_submission::firstUnpausedCallback.load()&1u);
-  CHECK(d2vr_submission::gate.Reasons()&d2vr_submission::Epoch::UncontrolledMutation);
+  CHECK(d2vr_submission::gate.Enabled() && !d2vr_submission::gate.Current(before));
+  CHECK(d2vr_submission::pausedCallbacks.load()==1);
+  CHECK(d2vr_submission::denialSources.load()==0);
+ }else if(!strcmp(argv[1],"retain_scope")){
+  const auto before=d2vr_submission::gate.Begin(GetCurrentThreadId());
+  CHECK(before && d2vr_submission::gate.Current(before));
+  {d2vr_record_sync::RetainDriverScope native;CHECK(d2vr_submission::gate.Paused());}
+  CHECK(d2vr_submission::gate.Current(before));
+ }else if(!strcmp(argv[1],"retain_callback")){
+  const auto before=d2vr_submission::gate.Begin(GetCurrentThreadId());
+  CHECK(before && d2vr_submission::gate.Current(before));
+  {d2vr_record_sync::RetainDriverScope native;CHECK(!d2vr_record_sync::NativeMutation());}
+  CHECK(d2vr_submission::gate.Enabled() && !d2vr_submission::gate.Current(before));
+  CHECK(d2vr_submission::pausedCallbacks.load()==1);
+  CHECK(d2vr_submission::denialSources.load()==0);
  }else if(!strcmp(argv[1],"paused_callback")){
   const auto before=d2vr_submission::gate.Begin(GetCurrentThreadId());
   CHECK(before && d2vr_submission::gate.Current(before));
@@ -72,6 +87,8 @@ int main(int argc,char** argv){
   CHECK(d2vr_submission::firstSoftwareValue.load()==1);
   CHECK(d2vr_submission::firstSoftwareResult.load()==S_FALSE);
  }
- if(strcmp(argv[1],"software") && strcmp(argv[1],"paused_callback"))CHECK(!d2vr_submission::gate.Enabled());
+ if(strcmp(argv[1],"software") && strcmp(argv[1],"paused_callback") &&
+    strcmp(argv[1],"driver_scope") && strcmp(argv[1],"retain_scope") &&
+    strcmp(argv[1],"retain_callback"))CHECK(!d2vr_submission::gate.Enabled());
  printf("PASS actual native submission boundary: %s; exact HRESULT/output/call count and safe admission\n",argv[1]);
 }

@@ -495,7 +495,8 @@ static DeviceSnapshot g_frameStart;
 static uint64_t g_wvpHistoryGeneration=0;
 static d2vr_shader_registers::History g_vsConstantHistory;
 static d2vr_shader_registers::EyeHistory g_psEyeHistory;
-static FrameResourceRefs<IUnknown,d2vr_record_sync::DriverScope> g_recordRefs;
+static FrameResourceRefs<IUnknown,d2vr_record_sync::DriverScope,
+    d2vr_record_sync::RetainDriverScope> g_recordRefs;
 static bool DeferredBufferWritesPending();
 static void FinishBufferRecording();
 static void BeginBufferRecording();

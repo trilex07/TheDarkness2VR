@@ -9,7 +9,7 @@ namespace d2vr_replay {
 // remain distinct; no QueryInterface, hashing of shader bytes or cross-frame reuse.
 // Caller serializes Retain/Clear with the record-stream lock.
 struct DirectRefScope {};
-template<class Resource,class RefScope=DirectRefScope>
+template<class Resource,class RefScope=DirectRefScope,class RetainScope=RefScope>
 class FrameResourceRefs {
 public:
     FrameResourceRefs() = default;
@@ -31,7 +31,7 @@ public:
         owned_.push_back(resource);
         try { if(unique_) Insert(resource); }
         catch (...) {owned_.pop_back();throw;}
-        [[maybe_unused]] RefScope native;resource->AddRef();
+        [[maybe_unused]] RetainScope native;resource->AddRef();
     }
     void Clear() {
         // One native lease covers the release batch. Callbacks remain rejected

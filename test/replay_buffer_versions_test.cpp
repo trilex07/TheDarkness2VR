@@ -31,7 +31,8 @@ static std::vector<Rec> g_rec;
 static d2vr_record_payload::Storage g_recData;
 static std::atomic<bool> g_recActive{false},g_recOverflow{false};
 static uint64_t g_recCounts[40]{};
-static d2vr_replay::FrameResourceRefs<IUnknown,d2vr_record_sync::DriverScope> g_recordRefs;
+static d2vr_replay::FrameResourceRefs<IUnknown,d2vr_record_sync::DriverScope,
+    d2vr_record_sync::RetainDriverScope> g_recordRefs;
 @LOCK@
 static void NoteRecordedWorldDraw(){}
 static HRESULT RecordLiveResult(HRESULT hr){if(FAILED(hr))g_recOverflow=true;return hr;}

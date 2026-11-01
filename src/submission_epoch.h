@@ -73,6 +73,20 @@ public:
         Bypass(const Bypass&)=delete;
         ~Bypass(){if(active_)gate_.Resume();}
     };
+    // AddRef is state-neutral when it completes without a callback. Pause reuse
+    // during the native call; NativeMutation invalidates on an observed callback.
+    class ObserverPause {
+        Epoch& gate_;
+        bool active_;
+    public:
+        explicit ObserverPause(Epoch& gate):gate_(gate),active_(gate.Requested()){
+            if(active_)gate_.pauses_.fetch_add(1,std::memory_order_acq_rel);
+        }
+        ObserverPause(const ObserverPause&)=delete;
+        ~ObserverPause(){
+            if(active_)gate_.pauses_.fetch_sub(1,std::memory_order_acq_rel);
+        }
+    };
 private:
     std::atomic<unsigned> pauses_{0};
     void Pause(){pauses_.fetch_add(1,std::memory_order_acq_rel);Invalidate();}

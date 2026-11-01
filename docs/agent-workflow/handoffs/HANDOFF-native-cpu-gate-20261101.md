@@ -78,3 +78,29 @@ C:/Users/Trilex/AppData/Local/Darkness2VR/packages/native-cpu-callback-20261101T
 Postinstall DLL and stock EXE hashes matched, all nine backups matched their
 recorded hashes, the restore script was present, and the game remained closed.
 The user will launch it for the next runtime gate.
+
+## Second headset run and retained AddRef candidate
+
+The second installed DLL (63C72AE1) reported `sources=0x1`,
+`pausedCallbacks=0`, and `firstUnpaused=0x5` from the first frame onward.
+Bit 0x5 means the callback ran with a native DriverScope and an active native
+lease, outside the raw VrFrame bypass. The filter still had `enabled=0` and
+all skipped counts zero. Thus neither earlier candidate saved CPU in this
+scene.
+
+The third source revision encloses DriverScope native calls in a full
+submission bypass, but gives resource AddRef a separate pause-only scope. An
+AddRef with no callback preserves certified state; an observed callback
+invalidates it. Release, state snapshot and other DriverScope calls still
+invalidate at both edges. This avoids revoking binding knowledge on every
+normal resource Retain while preventing reuse inside native callbacks.
+Unpaused callbacks and foreign threads still deny filtering.
+
+The actual-source native binding fixture initially failed when it still
+instantiated the old two-parameter resource ledger. Updating the fixture to
+the same third Retain scope as the renderer restored the duplicate-binding
+regression. Boundary, recorder, frame resource reference, replay buffer,
+live resource and stateblock tests pass. Protected x86 DLL/profile PASS.
+Candidate SHA256: 70F43D5D414887BE33270160686073541D61E3A9CBBB05877C5B65FE8CEB5A7F.
+Install through `tools/deploy-native-cpu-retain.ps1`. Runtime admission,
+stereo appearance and actual CPU saving remain unverified.

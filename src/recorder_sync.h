@@ -49,10 +49,12 @@ inline void RecoverReplayException(){
     if(nativeLeases)nativeCalls.fetch_sub(nativeLeases,std::memory_order_release);
     nativeLeases=0;nativeDepth=0;conflict.store(true,std::memory_order_release);
 }
-class DriverScope {
+template<class SubmissionScope>
+class DriverScopeT {
+    SubmissionScope submissionScope_{d2vr_submission::gate};
     unsigned saved_=depth;bool resumed_=false,finished_=false;
 public:
-    DriverScope(){
+    DriverScopeT(){
         if(saved_){
             ++nativeLeases;
             if(nativeCalls.fetch_add(1,std::memory_order_acq_rel)!=0 || nativeDepth)conflict.store(true,std::memory_order_release);
@@ -60,9 +62,11 @@ public:
         }
         ++nativeDepth;
     }
-    DriverScope(const DriverScope&)=delete;
+    DriverScopeT(const DriverScopeT&)=delete;
     void Resume(){if(saved_ && !resumed_){mutex.lock();depth=saved_;held.store(1,std::memory_order_relaxed);resumed_=true;}}
     void Finish(){if(!finished_){Resume();--nativeDepth;if(saved_){--nativeLeases;nativeCalls.fetch_sub(1,std::memory_order_release);}finished_=true;}}
-    ~DriverScope(){Finish();}
+    ~DriverScopeT(){Finish();}
 };
+using DriverScope=DriverScopeT<d2vr_submission::Epoch::Bypass>;
+using RetainDriverScope=DriverScopeT<d2vr_submission::Epoch::ObserverPause>;
 }
