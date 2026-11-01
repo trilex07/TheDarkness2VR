@@ -24,3 +24,8 @@ User requests a trial of native LODScale 2.0, no NIS outside gaze, and actual 2x
 1. Protected-native x86 build and profile checks.
 2. Full nine-target rollback, exact installed DLL/stock EXE/profile hashes, game closed.
 3. User headset check of image quality, edge transitions, FPS and R2; log LOD and NIS effective state. Genuine 2x gaze-region rendering remains a separate upstream research/implementation gate.
+
+## Installation and source-image bound
+
+- Source commit `bc8e57cc`; protected-native x86 build/profile preflight passed. Installed candidate DLL `A174A1199450BBE1C3D7933E81611EC0FFFA8165B3AFC54C651A4DB0EFCF5DD1` at `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/lod2-gaze-nis0-20261101T120551448`. Active game INI values, stock EXE hash and all nine rollback backup hashes verified. Game not launched by agent.
+- Prior runtime log showed NIS `source=2676x2728 output=2676x2728`; this proves the current sharpen path uses equal pixel counts and cannot meet a request for genuine 2x source resolution. A regional engine render remains unimplemented and requires its own evidence gate.

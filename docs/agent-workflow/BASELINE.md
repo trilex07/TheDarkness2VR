@@ -3,6 +3,12 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed LOD 2.0 and gaze NIS periphery trial (2026-11-01 12:05 Europe/Warsaw)
+
+- **Installed DLL SHA256**: `A174A1199450BBE1C3D7933E81611EC0FFFA8165B3AFC54C651A4DB0EFCF5DD1`, source `bc8e57cc` on `codex/gaze-nis-main-integration`. Stock EXE unchanged.
+- **Active game settings**: `EngineLODScale=2.0`, `FoveaPeriphery=0`, `FoveaSharpness=1.0`, `NisSharpness=0`; `NisMode=2` and `FoveatedCopyBase=1` retained. With valid gaze, copy-base keeps outside pixels unsharpened; this does not render a 2x resolution gaze region.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/lod2-gaze-nis0-20261101T120551448/rollback/Restore.ps1`; 9/9 backup hashes verified. Previous R2/LOD 1.25 candidate retained. Headset quality/FPS and R2 check pending.
+
 ## Installed R2 follow-up with native LODScale trial (2026-11-01 11:53 Europe/Warsaw)
 
 - **Installed DLL SHA256**: `999047FBE28943C29FE5C06B601B657B5122DC0B88915FC4AC18B65BB17C24F5`, source `7313549d` on `codex/gaze-nis-main-integration`; stock EXE unchanged.
