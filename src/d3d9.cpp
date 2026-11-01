@@ -63,7 +63,6 @@
 static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibility separate
 static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
 static bool g_cameraShakeRumble=true; // Diagnostics/CameraShakeRumble (default ON with the stabilizer)
-static void PublishCameraStabilizerFrame();
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
 #include "diagnostic_present_patch.h"
@@ -1920,7 +1919,6 @@ static void RecordPreSceneWrite(IDirect3DDevice9* dev);
 
 static void UpdateHeadGeometry(const XrPosef& head) {
     g_headDeltaValid=false;
-    PublishCameraStabilizerFrame();
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingPresent && (!g_protectedHeadTracking || !ProtectedHeadConfigurationAllowed())) return;
 #endif
@@ -6424,6 +6422,7 @@ static void BeginTrackedFrame() {
         SyncStereoIpdFromOpenXr();
         if (g_submitMode == 4) UpdateSubmissionFovFromMatrices();
         const auto head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
+        PublishCameraStabilizerFrame(); // one stabilizer snapshot per tracked frame
         UpdateHeadGeometry(head);
         g_trackedFrame.layerPose=g_headDeltaValid ? head:LockedViewPose(head);
         // On positional tracking loss, let the compositor reproject the last
