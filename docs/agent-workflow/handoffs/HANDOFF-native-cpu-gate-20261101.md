@@ -14,8 +14,8 @@ fail-closed cause without changing the renderer's visible output.
 
 ## Status
 
-Source and offline tests complete. Runtime CPU benefit and admission pending
-user headset test. The installed Steam DLL must be checked after deployment.
+Source and offline tests complete. Installed in Steam; runtime CPU benefit and
+admission pending user headset test.
 
 ## Changes
 
@@ -34,14 +34,17 @@ user headset test. The installed Steam DLL must be checked after deployment.
 - Protected x86 DLL and profile gate PASS. Normal PDB link failed due
   MSPDB140.DLL mismatch; isolated no-PDB build with MAP succeeded.
 - Candidate DLL SHA256 F5BEFA82966F8A02CAE04B9B30C40BE86514D72F95399E452F9FD5C6FCB577FE.
+- Installed package:
+  C:/Users/Trilex/AppData/Local/Darkness2VR/packages/native-cpu-gate-20261101T025125859.
+  Postinstall DLL and stock EXE hashes match; all nine rollback backups match
+  their recorded hashes; both active INIs retain native filters and gaze NIS.
+  Game was not launched by the agent.
 
 ## Next Steps
 
-1. Install through the nine-target rollback package with exact EXE/DLL/profile
-   checks, leaving INIs and caches unchanged.
-2. User runs the problematic scene. Read NativeSubmissionGate, NativeSubmission
+1. User runs the problematic scene. Read NativeSubmissionGate, NativeSubmission
    and NativeBinding counters; compare actual application frame timing.
-3. If denied, investigate the recorded source before widening admission. If
+2. If denied, investigate the recorded source before widening admission. If
    enabled with skips, inspect both eyes, weapons, menus, Reset and stability.
 
 ## Blockers
