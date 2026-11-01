@@ -92,6 +92,10 @@ In Progress. The model-only headset trial failed and was rolled back 9/9. A new 
 
 ## Next Steps
 
+Current shake observation: user ran/sprinted and consumed hearts with the read-only trace. The first 30 seconds produced 478 samples. At 21–22 seconds the root moved 4.14–4.29 units/s while camera/root translation reached 0.070 units. At 26–28 seconds, with root nearly still, camera/root heading differed by up to 13.5 degrees. User reports moderate shake. The log does not timestamp the heart action, and these deltas are not proof of the common shake producer. See `docs/research/darkness2-camera-shake-20261101.md`.
+
+The next diagnostic source samples native left/right wrists and weapon grip bones before controller IK in the selected avatar packer, alongside the camera in the same frame. It preserves the shotgun trial and changes no pose. Protected-native x86 build and profile gate PASS; DLL SHA256 `EF58E6F6BEDEADF929F9021E562ED33C5D9A806E341CDEB950775D7C1A878567`. Headset result NOT RUN at source preparation.
+
 1. Trace shotgun action `00FD9D68` to the actual pellet origin/direction and determine how it consumes the model matrix or socket. Observe the native shot and visible muzzle in the same frame before changing gameplay transforms again.
 2. Identify the fore-end support point and right trigger hand socket in the shotgun's native skeleton/model. Any display adjustment must preserve the shot frame; do not reapply the rejected generic model-only override.
 3. Implement one coherent two-hand grip state for shotgun only: require fresh right/left tracking and intentional left grip near the proven fore-end; release on tracking loss, unequip, grab conflict, or cinematic. Keep model, shot ray and human IK in the same frame.

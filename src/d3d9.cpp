@@ -102,6 +102,7 @@ static bool g_protectedLeftThrow=false;
 static bool g_protectedTrackedHands=false;
 static bool g_shotgunCandidate=false;
 static bool g_cameraShakeTrace=false;
+static ULONGLONG g_cameraShakeTraceStart=0;
 static d2vr_input::Tentacles g_protectedRightTentacle;
 static volatile LONG g_protectedRecenterRequested=0;
 static d2vr_protected_input::ExternalXInput g_protectedXInput;
@@ -4195,13 +4196,13 @@ static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
     } __except(EXCEPTION_EXECUTE_HANDLER){return;}
     for(unsigned i: {0u,1u,2u,8u,9u,10u,12u,13u,14u})
         if(!std::isfinite(view[i]) || !std::isfinite(root[i]))return;
-    static ULONGLONG began=0,next=0;
+    static ULONGLONG next=0;
     const auto now=GetTickCount64();
-    if(!began){began=now;Log("[CameraShakeTrace] BEGIN 30-second read-only selected camera/root sample; provoke normal movement, shot or impact");}
-    if(now-began>=30000 || now<next)return;
+    if(!g_cameraShakeTraceStart){g_cameraShakeTraceStart=now;Log("[CameraShakeTrace] BEGIN 30-second read-only selected camera/root sample; provoke normal movement, shot or impact");}
+    if(now-g_cameraShakeTraceStart>=30000 || now<next)return;
     next=now+50;
     Log("[CameraShakeTrace] ms=%llu frame=%llu cameraPos=(%.4f,%.4f,%.4f) cameraFwd=(%.4f,%.4f,%.4f) rootPos=(%.4f,%.4f,%.4f) rootFwd=(%.4f,%.4f,%.4f) headPos=(%.4f,%.4f,%.4f) headQuat=(%.4f,%.4f,%.4f,%.4f)",
-        static_cast<unsigned long long>(now-began),static_cast<unsigned long long>(g_trackedFrame.id),
+        static_cast<unsigned long long>(now-g_cameraShakeTraceStart),static_cast<unsigned long long>(g_trackedFrame.id),
         view[12],view[13],view[14],view[8],view[9],view[10],
         root[12],root[13],root[14],root[8],root[9],root[10],
         g_headGeometryReference.position.x,g_headGeometryReference.position.y,g_headGeometryReference.position.z,

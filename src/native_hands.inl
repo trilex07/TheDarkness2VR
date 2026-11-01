@@ -167,6 +167,35 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
                 cache.appliedValid[hand]=false;
             }
         }
+#ifdef D2VR_MATCHED_CAPTURE
+        // Compare native animation with the selected camera before controller IK.
+        // A camera-only shake cancellation is unsafe if these bones also move.
+        if(protectedRoute && g_cameraShakeTrace && g_cameraShakeTraceStart &&
+           d2vr_hands::Valid(bones[5]) && d2vr_hands::Valid(bones[27]) &&
+           d2vr_hands::Valid(bones[21]) && d2vr_hands::Valid(bones[43])) {
+            static ULONGLONG nextShakeHands=0;
+            const auto shakeNow=GetTickCount64();
+            if(shakeNow-g_cameraShakeTraceStart<30000 && shakeNow>=nextShakeHands) {
+                nextShakeHands=shakeNow+50;
+                float leftWristWorld[16],rightWristWorld[16];
+                float leftWeaponWorld[16],rightWeaponWorld[16];
+                auto parentWorld=(float*)(parent+0x140);
+                d2vr_math::Multiply(bones[5],parentWorld,leftWristWorld);
+                d2vr_math::Multiply(bones[27],parentWorld,rightWristWorld);
+                d2vr_math::Multiply(bones[21],parentWorld,leftWeaponWorld);
+                d2vr_math::Multiply(bones[43],parentWorld,rightWeaponWorld);
+                auto cameraWorld=(float*)(camera+0x80);
+                Log("[CameraShakeHands] ms=%llu frame=%llu camera=(%.4f,%.4f,%.4f) nativeLW=(%.4f,%.4f,%.4f) nativeRW=(%.4f,%.4f,%.4f) nativeLG=(%.4f,%.4f,%.4f) nativeRG=(%.4f,%.4f,%.4f)",
+                    static_cast<unsigned long long>(shakeNow-g_cameraShakeTraceStart),
+                    static_cast<unsigned long long>(g_trackedFrame.id),
+                    cameraWorld[12],cameraWorld[13],cameraWorld[14],
+                    leftWristWorld[12],leftWristWorld[13],leftWristWorld[14],
+                    rightWristWorld[12],rightWristWorld[13],rightWristWorld[14],
+                    leftWeaponWorld[12],leftWeaponWorld[13],leftWeaponWorld[14],
+                    rightWeaponWorld[12],rightWeaponWorld[13],rightWeaponWorld[14]);
+            }
+        }
+#endif
         NativeHandCalibration cal=g_nativeHandCalibration;
         if(cal.parent!=parent || cal.skeleton!=skeleton || cal.resource!=resource) {
             cal={};cal.parent=parent;cal.skeleton=skeleton;cal.resource=resource;
