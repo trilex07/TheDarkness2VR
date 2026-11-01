@@ -81,8 +81,9 @@ def main() -> None:
         return struct.unpack("<I", data)[0] if data else None
 
     def view_list(renderer: int) -> tuple[str, list[tuple[int, int, int | None, int | None, int | None]]]:
-        # Stock 7774C9..77751D: iterate renderer+124 list; node+10 holds
-        # the view pointer wrapped on the stack for AEA1A0 -> 5828B0 -> 8513A0.
+        # Stock 7774C9..77751D: iterate renderer+124 list; the view is the
+        # inline subobject at node+10, wrapped on the stack for
+        # AEA1A0 -> 5828B0 -> 8513A0. Do not dereference node+10.
         if word(renderer) != RENDERER_VTABLE:
             return "renderer-type-mismatch", []
         sentinel = renderer + 0x124
@@ -96,8 +97,8 @@ def main() -> None:
                 return "truncated-or-invalid-list", views
             seen.add(node)
             next_node = word(node)
-            view = word(node + 0x10)
-            if next_node is None or view is None or view < 0x10000 or view & 3:
+            view = node + 0x10
+            if next_node is None or view < 0x10000 or view & 3:
                 return "unreadable-node", views
             kind, enabled, mode = word(view + 0x178), word(view + 0x618), word(view + 0x61C)
             if kind is None or enabled is None or mode is None:
@@ -109,6 +110,15 @@ def main() -> None:
         return "complete", views
 
     try:
+        # Stock 8513A3..851462: global LOD gate, force-last gate and
+        # signed selector override. View mode is used only when override < 0.
+        lod_enable = word(0x0110DE54)
+        force_last = word(0x0110DF40)
+        mode_override = word(0x0110DFF0)
+        signed_override = ct.c_int32(mode_override).value if mode_override is not None else None
+        print(f"lod_global_enable={lod_enable & 0xFF if lod_enable is not None else 'unreadable'} "
+              f"force_last={force_last & 0xFF if force_last is not None else 'unreadable'} "
+              f"mode_override={signed_override if signed_override is not None else 'unreadable'}")
         address = 0x10000
         searched = 0
         candidates: list[tuple[int, int, int, int | None, int | None]] = []
@@ -149,18 +159,25 @@ def main() -> None:
             scene_value = word(scene) if scene else None
             list_ref = word(renderer + 0x5B4)
             list_value = word(list_ref) if list_ref else None
-            list_count = word(list_value + 0x200) if list_value else None
+            object_list_ref = word(list_value + 0x200) if list_value else None
             print(f"owner={owner:08X} renderer={renderer:08X} table={table:08X} "
                   f"renderer+594={scene or 0:08X} -> {scene_value or 0:08X} "
                   f"renderer+5B4={list_ref or 0:08X} -> {list_value or 0:08X} "
-                  f"list+200={list_count or 0:08X} "
+                  f"object_list_ref+200={object_list_ref or 0:08X} "
                   f"owner+2A4={camera_ref or 0:08X}")
             status, views = view_list(renderer)
             print(f"  view_list={status} sampled={len(views)} (read-only; not a lifetime lease)")
             for node, view, kind, enabled, mode in views[:16]:
+                selected_mode = signed_override if signed_override is not None and signed_override >= 0 else mode
+                selector = ("unknown" if None in (lod_enable, force_last, signed_override, enabled, mode) else
+                            "disabled/005F6160" if not lod_enable or not enabled else
+                            "force-last/006281F0" if force_last else
+                            "projection/006BF3D0" if selected_mode and selected_mode > 0 else
+                            "distance/00AE30C0")
                 print(f"  node={node:08X} view={view:08X} kind={kind if kind is not None else 'unreadable'} "
                       f"enable618={enabled & 0xFF if enabled is not None else 'unreadable'} "
-                      f"mode61C={mode if mode is not None else 'unreadable'}")
+                      f"mode61C={mode if mode is not None else 'unreadable'} "
+                      f"predicted_selector={selector} (no call witness)")
     finally:
         api.CloseHandle(handle)
 
