@@ -9,6 +9,13 @@
 
 ## Scope and status
 
+CURRENT INSTALLED: source44cb00b9, `build/font-metrics-six-v1` four-file correction
+on top of native-cells-v3. Closed-game installation; independent4 backups,
+4 installed hashes and23 protected files PASS. Receipt:
+`C:/Users/Trilex/AppData/Local/Darkness2VR/backups/font-metrics-six-20261101-v1/deployment.json`.
+Manifest20e0e54d9aae8330a624436160040ea4bfda6c6f9c630ebb5204b9bf8beb4510.
+Steam launch requested23:18:40 Warsaw. Physical final font appearance pending.
+
 LATEST USER: native-cells-v3 is "prawie" (almost). Title readable but accented
 letter geometry still differs. Further inspection found the **six previously
 shipped** Polish font families also used oversized PL UV spans and donor

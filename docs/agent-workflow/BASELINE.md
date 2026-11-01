@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Latest font geometry candidate (2026-11-01 23:18 Warsaw)
+
+- User grades native-cell-v3 "prawie": text readable, accented geometry still uneven. Found pre-existing six font families also had oversized PL UV spans and advance+1. Installed source `44cb00b9` normalizes those108 earlier glyphs to donor cells/metrics; all non-PL UVs and decoded glyph pixels are verified unchanged.
+- Four-file font-only install/audit PASS:4 backups,4 installed hashes,23 protected runtime/audio/text/model/font-header files unchanged. Accepted64 model textures remain unchanged. Physical final font geometry acceptance PENDING.
+- Receipt `C:/Users/Trilex/AppData/Local/Darkness2VR/backups/font-metrics-six-20261101-v1/deployment.json`; manifest SHA256 `20e0e54d9aae8330a624436160040ea4bfda6c6f9c630ebb5204b9bf8beb4510`. Hash-gated closed-game rollback uses `tools/deploy-asset-repair.py rollback` with that backup and explicit game directory. Steam launch requested23:18:40; no input injected.
+
 ## Current: textures accepted, revised font candidate (2026-11-01 23:14 Warsaw)
 
 - User accepts corrected new comic model textures. Six H/B/F.Texture files remain byte-identical through subsequent font-only updates. The enlarged-atlas font attempt failed physical acceptance; in-place-v2 improved the title but its screenshot still showed uneven new glyphs.
