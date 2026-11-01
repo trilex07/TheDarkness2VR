@@ -18,3 +18,7 @@ Pinned stock `DarknessII.exe` SHA256: `D46BB6CB762732B72AB9D34428237D2AFA89F5792
 ## Candidate gate
 
 Identify the live owner and the native transform application order for camera, first-person arms, and gun. Suppress shake upstream of all three; preserve look, locomotion, aiming, recoil feedback that does not move the head, and cinematic transitions. A camera-only correction is excluded because it could leave the hands and weapon oscillating against a still scene. No shake-disable patch is ready or installed.
+
+## Read-only selected-owner trace
+
+The protected selected-player path already verifies the camera, avatar and parent model links. A gated `Diagnostics/CameraShakeTrace` observer reads the camera matrix at `camera+0x80` and the avatar parent world matrix at `parent+0x140` on that render path, at most every 50 ms for the first 30 gameplay seconds. It logs both forward vectors and positions with frame/time and the OpenXR head reference. The parent identity is pinned to the existing `00FFC300` class check used by the protected human-hand packer. This establishes a matched transform comparison during a repeatable shot/impact without writing either native matrix. It cannot itself prove the specific shake source or remove the effect.

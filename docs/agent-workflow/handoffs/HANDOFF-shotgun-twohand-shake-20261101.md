@@ -38,6 +38,7 @@ In Progress. The model-only headset trial failed and was rolled back 9/9. A new 
 - The stock EXE contains the `mShakeAmbient` property name at VA `00F6A514`; static references at `010A391C` and `010B9BCC` appear in registration tables. The registered setter `00DC8F50` writes float field `+0x2C` of a script-resolved view-shake object at `00DC8FFC`, and the getter `00DC9030` reads it at `00DC90AA`. These are evidence for one scripting property, not the native camera-shake consumer or a safe patch site.
 - A separate native field is named `mFPEntityIgnoresShakeTranslationAndRotation` (VA `00FB8900`); its description at `00F87CD8` says the first-person entity ignores shake translation and rotation from animation and other sources. This is promising for keeping the weapon/arms stable, but the owning object and live use are not verified; do not write the field by name alone.
 - Expanded read-only shake source audit and rejected static candidates: `docs/research/darkness2-camera-shake-20261101.md`. No safe shared producer or suppression point was identified.
+- Gated read-only `CameraShakeTrace` observes selected camera `+0x80` and avatar parent `+0x140` transforms on one render frame, 20 Hz for 30 seconds. This is for native camera-vs-body shake attribution before any suppression; it changes no matrix. See the research note.
 
 ## Changes
 
@@ -60,6 +61,7 @@ In Progress. The model-only headset trial failed and was rolled back 9/9. A new 
 - After user closed the game, the protected Restore.ps1 returned the prior nine targets; independent check confirmed 9/9 hashes, DLL `867E3DE9E96920836F9B3CE761AF53875029F6A89A26EB43AFC6E39118C3EE0C`, stock EXE and no running game.
 - Gated aim/support source trial: `build.ps1 -DiagnosticCapture` x86 PASS; profile gate `protected-native` PASS; DLL SHA256 `00F659DF51A7D3ED43084A837D190F2E288BB05861A464E31721FA32DDA99139`. Headset result NOT RUN. Native camera-shake suppression is not in this DLL.
 - Protected installer preflight PASS; MAIN installed the gated candidate only after the user closed the game. Independent audit: nine backup hashes match, seven unchanged protected targets match, installed DLL and diagnostic INI match staged hashes, stock EXE unchanged, game not launched by the agent.
+- Shake trace build: `build.ps1 -DiagnosticCapture` x86 PASS; profile gate `protected-native` PASS; DLL SHA256 `B92C42F4A84161BFF7F4597B1C412C7B6B784764DB9798F95393A10637A2301E`. Installer preflight PASS. Headset/trace result NOT RUN; no shake suppression yet.
 
 ## Installed gated shotgun aim/support trial receipt
 
