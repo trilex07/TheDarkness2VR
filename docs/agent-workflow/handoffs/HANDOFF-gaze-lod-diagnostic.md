@@ -16,7 +16,7 @@ Install a read-only native LOD/gaze diagnostic on the latest installed source,
 preserving gaze, weapon wheels and existing frame cap. User launches the game.
 
 ## Status
-Installed; user runtime check pending.
+Installed; user runtime test logged, object-level observation still pending.
 
 ## Context Loaded
 - [x] AGENTS.md, BASELINE.md, FAILED-APPROACHES.md, relevant reverse engineering.
@@ -58,3 +58,22 @@ Installed; user runtime check pending.
 ## Blockers
 None for configuration diagnostic. Object-level native list hook remains
 unproven and is the next reverse-engineering gate.
+
+## First user runtime test (2026-11-01 ~01:53)
+
+Installed DLL still SHA256 148538F9...; game closed after user test.
+`%LOCALAPPDATA%/Darkness2VR/d3d9.log` has 19 `[GazeLOD]` records.
+In gameplay the effective settings were enable=1, lowest=0, scale=1.0000,
+mode=-1, bias=0. Gaze became valid after bridge start; sampled direction
+changed with look, e.g. (-0.084,-0.015,-0.996), later (0.080,-0.267,-0.960).
+EyeTracking bridge reported 287/287 valid samples in one five-second window.
+The first windows had no bridge section and gaze=0; this is expected fallback.
+`FrameCap` logged native 60 -> 120 with mode0. No fatal log line found.
+This proves config/gaze availability only, not selected per-object LOD or
+CPU improvement. No automatic game launch or further deployment.
+
+Read-only Ghidra follow-up: selector 8513A0 is called at 58290A inside
+5828B0, which is in turn called at AEA455 inside AEA1A0. 5828B0 receives
+the view-list on stack and uses its own renderer receiver for 8513A0;
+it is distinct from the existing selected-player observer's scene reference.
+Export: C:/Users/Trilex/darkness2-native-re-settings/gaze-lod-call-path-2.txt.
