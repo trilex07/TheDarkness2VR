@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Rejected animation stabilizer restored by MAIN (2026-11-01)
+
+- **Current installed DLL SHA256**: `7414984FF998FABDF154AEB5EE443D75805378DDB2359F7EC6F20E83E8A6FA55`, owner-trace/shotgun baseline described below. MAIN ran `camera-anim-stabilize-20261101T212812295/rollback/Restore.ps1` with the game closed. Independent post-restore verification matched all nine protected targets against that rollback manifest; stock EXE remains `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.
+- **Rejected DLL**: `A6BDC3043B495D73FDDE0EA86D3BB2910AF19A7A7DC102FC2D482F42DA17C683`. Latest user feedback: walking vibrates, camera continues shaking including train, damage produces no vibration. Do not redeploy the stabilizer/source-suppression package as a working fix.
+- **Current work**: `codex/camera-shake-source-main-20261101`, based on `3c19e744`, in `.main-camera-shake/`. No new runtime change is installed. A separate read-only event sampler observes all candidate noise owners and impact output fields on the restored DLL. See `handoffs/HANDOFF-camera-shake-source-main-20261101.md`.
+
 ## Installed read-only selected shake-owner trace (2026-11-01)
 
 - **Installed DLL SHA256**: `7414984FF998FABDF154AEB5EE443D75805378DDB2359F7EC6F20E83E8A6FA55`, source `6eb59a04` on `codex/gaze-nis-main-integration`. Diagnostic INI SHA256 `30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD` retains `ShotgunCandidate=1` and `CameraShakeTrace=1`, with no suppression request. Stock EXE unchanged.

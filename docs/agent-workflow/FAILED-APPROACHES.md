@@ -20,6 +20,12 @@ source, BASELINE.md and the task handoff before applying them.
 
 ## Known Failures (from existing docs)
 
+### View/hand camera stabilizer and per-frame heap shake suppression
+- **Date**: 2026-11-01
+- **Approach**: `CameraAnimStabilize` (post-hoc view/hand correction from avatar parent) and `CameraShakeSourceSuppress` (zero factors/impact enables on all 00FDF170 owners each frame).
+- **Why Failed**: game writes the camera after the correction is computed (one frame late every frame); factors are rewritten ~every frame (refills); user verdict "tragedia".
+- **Status**: Rejected; see HANDOFF-camera-shake-stabilizer-20261101.md
+
 ### Heap-only procedural shake factors on the 00FDF170 owner
 - **Date**: 2026-11-01
 - **Goal**: Remove first-person camera shake without EXE writes.
