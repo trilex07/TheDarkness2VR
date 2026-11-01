@@ -24,6 +24,18 @@ if((Hash $target) -eq $heapHash){
     Write-Output 'Rejected heap candidate installed; restoring owner-trace baseline first'
     & $heapRestore
 }
+# A previous stabilizer candidate: roll back through its own recorded package.
+if((Hash $target) -ne $expected){
+    $previous=Get-ChildItem -LiteralPath (Join-Path $local 'packages') -Directory -Filter 'camera-anim-stabilize-*' |
+        Sort-Object Name -Descending | Where-Object {
+            $d=Join-Path $_.FullName 'deployment.json'
+            (Test-Path -LiteralPath $d) -and ((Get-Content -LiteralPath $d -Raw | ConvertFrom-Json).dll_sha256 -eq (Hash $target))
+        } | Select-Object -First 1
+    if($previous){
+        Write-Output "Previous stabilizer candidate installed; restoring via $($previous.Name)"
+        & (Join-Path $previous.FullName 'rollback/Restore.ps1')
+    }
+}
 if((Hash $exe) -ne $exeHash -or (Hash $target) -ne $expected){throw 'Installed EXE/DLL identity mismatch'}
 if((Hash $diagnosticIni) -ne $diagnosticHash){throw 'Installed diagnostic INI identity mismatch'}
 $manifest=Get-Content -LiteralPath (Join-Path $prior 'manifest.json') -Raw | ConvertFrom-Json
@@ -34,7 +46,7 @@ $branch=(git -C $root rev-parse --abbrev-ref HEAD).Trim()
 if($branch -ne 'codex/gaze-nis-main-integration'){throw "Unexpected branch $branch"}
 git -C $root add -- src/d3d9.cpp src/native_aim.inl src/camera_anim_stabilizer.inl src/native_hands.inl src/protected_weapon.inl src/native_weapon.inl src/native_throw.inl tools/deploy-camera-anim-stabilize.ps1 docs/research/darkness2-camera-shake-20261101.md docs/agent-workflow/handoffs/HANDOFF-shotgun-twohand-shake-20261101.md docs/agent-workflow/FAILED-APPROACHES.md
 if(git -C $root diff --cached --name-only){
-    git -C $root commit -q -m "Camera animation stabilizer candidate (default OFF)" -m "Reject heap shake factors (owner idle in headset log). New Diagnostics/CameraAnimStabilize: view head delta, hands, gun and shot ray share a camera built from the avatar parent (00FFC300+0x140) rotation and averaged offset, removing run/attack/heart animation motion. Large or cinematic camera moves fade out. No native writes. Headset result NOT RUN." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01FyWRDxP6vih9TJ4UkrV5Bn"
+    git -C $root commit -q -m "Camera animation stabilizer: current-frame correction, One Euro shake filter, shake rumble" -m "Reject heap shake factors (owner idle in headset log). New Diagnostics/CameraAnimStabilize: view head delta, hands, gun and shot ray share a camera built from the avatar parent (00FFC300+0x140) rotation and averaged offset, removing run/attack/heart animation motion. Large or cinematic camera moves fade out. No native writes. Headset result NOT RUN." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01FyWRDxP6vih9TJ4UkrV5Bn"
     if($LASTEXITCODE){throw 'git commit failed'}
 }
 $sourceCommit=(git -C $root rev-parse HEAD).Trim()

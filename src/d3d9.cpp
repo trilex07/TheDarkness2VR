@@ -62,6 +62,7 @@
 #include "frame_boundary.h"
 static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibility separate
 static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
+static bool g_cameraShakeRumble=true; // Diagnostics/CameraShakeRumble (default ON with the stabilizer)
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
 #include "diagnostic_present_patch.h"
@@ -682,6 +683,7 @@ void LoadConfig() {
     g_shotgunCandidate=GetPrivateProfileIntA("Diagnostics","ShotgunCandidate",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraShakeTrace=GetPrivateProfileIntA("Diagnostics","CameraShakeTrace",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraAnimStabilize=GetPrivateProfileIntA("Diagnostics","CameraAnimStabilize",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_cameraShakeRumble=GetPrivateProfileIntA("Diagnostics","CameraShakeRumble",1,".\\Darkness2VR-diagnostic.ini")!=0;
     Log("[ShotgunCandidate] requested=%d; model and final pellet ray share right aim after first admitted shot; left squeeze near fore-end supports stock hand pose",int(g_shotgunCandidate));
     Log("[CameraShakeTrace] requested=%d; selected camera and avatar matrices read only for first 30 gameplay seconds",int(g_cameraShakeTrace));
     Log("[CameraStabilize] requested=%d; view/hands/gun/shot use avatar-parent-stabilized camera, native memory untouched",int(g_cameraAnimStabilize));
@@ -4636,12 +4638,15 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         const bool handReloading=reloading || now<g_gestures.reloadUntilByHand[hand];
         const bool vibratingShot=nativeShots ? now<shotUntil[hand] : pulled;
         GripHaptic haptic = tentacleHaptic(cues[hand]);
+        const float shakeRumble=active ? CameraShakeRumbleAmount() : 0.f;
+        if(shakeRumble>0.05f)
+            haptic = combineGripHaptic(haptic, GripHaptic{0.15f+0.6f*shakeRumble,80.f,100000000ull});
         if (active && vibratingShot && !handReloading)
             haptic = combineGripHaptic(haptic, weaponHaptic(kinds[hand], true, nativeShots?0:held));
         const auto identity=(static_cast<std::uint64_t>(nativeShots?serial:fireSince[hand])<<8)
             | static_cast<unsigned char>(cues[hand]);
-        const bool continuous=!nativeShots && pulled &&
-            (kinds[hand]==Firearm::Automatic || kinds[hand]==Firearm::Smg || kinds[hand]==Firearm::Rifle);
+        const bool continuous=(shakeRumble>0.05f) || (!nativeShots && pulled &&
+            (kinds[hand]==Firearm::Automatic || kinds[hand]==Firearm::Smg || kinds[hand]==Firearm::Rifle));
         ApplyGripHaptic(hand, active ? haptic : GripHaptic{},identity,continuous);
         if (!triggerClient) continue;
         const auto which = hand ? TriggerHand::Right : TriggerHand::Left;
