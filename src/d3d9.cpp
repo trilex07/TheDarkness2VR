@@ -64,6 +64,7 @@ static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibil
 static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
 static bool g_cameraShakeRumble=true; // Diagnostics/CameraShakeRumble (default ON with the stabilizer)
 static bool g_cameraShakeSourceSuppress=false; // Diagnostics/CameraShakeSourceSuppress, default OFF
+static bool g_cameraNativeNoShake=false; // Diagnostics/CameraNativeNoShake, default OFF
 static bool g_cameraEventRumble=false; // Diagnostics/CameraEventRumble, default OFF; native impact/environment only
 #ifdef D2VR_MATCHED_CAPTURE
 #include "capture_present_witness.h"
@@ -687,6 +688,8 @@ void LoadConfig() {
     g_cameraAnimStabilize=GetPrivateProfileIntA("Diagnostics","CameraAnimStabilize",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraShakeRumble=GetPrivateProfileIntA("Diagnostics","CameraShakeRumble",1,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraShakeSourceSuppress=GetPrivateProfileIntA("Diagnostics","CameraShakeSourceSuppress",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_cameraNativeNoShake=GetPrivateProfileIntA("Diagnostics","CameraNativeNoShake",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    Log("[CameraNativeNoShake] requested=%d; selected native FP composition, private code/table only",int(g_cameraNativeNoShake));
     g_cameraEventRumble=GetPrivateProfileIntA("Diagnostics","CameraEventRumble",0,".\\Darkness2VR-diagnostic.ini")!=0;
     Log("[CameraEventRumble] requested=%d; read-only selected producer impact/environment output; no locomotion residual",int(g_cameraEventRumble));
     Log("[CameraShakeSource] requested=%d; heap-only native shake removal on all 00FDF170 owners",int(g_cameraShakeSourceSuppress));
@@ -4189,6 +4192,7 @@ static void ResetPoseInput() {
 #include "gaze_lod_runtime_observer.inl"
 #include "native_aim.inl"
 #include "camera_anim_stabilizer.inl"
+#include "camera_native_no_shake.inl"
 #include "camera_shake_source.inl"
 // Gaze rays for grab/throw (defined in eye_gaze.inl, tracking space).
 static bool GazeWorldDirection(XrVector3f& direction);

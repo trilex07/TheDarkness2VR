@@ -20,6 +20,10 @@ int main(int argc,char** argv) {
     memory=original;memory[0x40000]=0x60000;memory[0x60000]=0x1001630;
     Check(!Matches(0x10000,0x50000,read)); // valid type, different avatar
     memory=original;for(uint32_t bad:{0u,3u,0xfffffffcu})Check(!Matches(bad,0x50000,read));
+    memory=original;memory[0x10000]=0x60000;
+    Check(!Matches(0x10000,0x50000,read));
+    Check(Matches(0x10000,0x50000,read,0x60000));
+    memory[0x40000]=0x60000;Check(!Matches(0x10000,0x50000,read,0x60000));
     Sample s{};Check(Amount(s)==0);
     s.impactPosition[0]=.00012f;Check(Amount(s)==0); // captured paused residue
     s.impactPosition[0]=.8f;Check(Amount(s)>.99f);

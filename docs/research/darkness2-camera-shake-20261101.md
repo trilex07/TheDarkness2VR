@@ -1,5 +1,57 @@
 # Darkness II VR camera-shake source audit (2026-11-01)
 
+## Selected native composition candidate after event capture (2026-11-01)
+
+New `CameraNativeNoShake` is default OFF. User requested a combined shake/haptic
+candidate for their next test. It does not reuse the rejected delayed stabilizer
+or render-time all-owner factor writes.
+
+Exact stock EXE evidence: `00FDF170` has 90 function entries; the literal
+`Use Camera Channel` starts at `00FDF2D8`. Header+90 entries digest:
+`d13a6d5ccdfff5871c8583600a0ac2bcf48cdbda46932c4fa8ee0a460b671f66`.
+Slot25 is `00730890` (ret4), the native camera dispatch. Ordinary first-person
+camera-channel branch `00730C3D` calls `005E0D20`. That method reads the animated
+camera bone, builds owner angles `+200` at `005E1097..005E10B5`, then calls
+`00809390` at `005E115F`. Replacing a render residual cannot precede these writes.
+
+The non-channel native fallback `00730FCF..00730FFB` calls `007255E0` with avatar
+and camera smart references, a zero vector pointer, and three zero float words
+(ret18). `007258D1..00725909` obtains base look from avatar virtual `+24C`:
+`00A450B0 -> avatar virtual +2F8 (00C7C710, avatar+62C ref) -> camera virtual +84
+(00A9F7E0, input angles +110)`. It is separate from rendered camera matrix +80.
+`00725DD8..00725DFA` writes base owner angles; the first-person branch calls
+`00809390` at `00726565`. Native `0074BFA0` calculates base position through the
+avatar's native position getter; the ordinary getter's `00B949BA..00B949CC`
+uses avatar+140 and eye offset +1E40, preserving native locomotion/height.
+
+Plan copies three complete digest-pinned methods (`730890`, `7255E0`, `809390`)
+to owned RX memory, relocates all155 direct calls, and verifies all jumps are to
+instruction boundaries inside their original function. Only the selected live
+owner's heap vptr is published (slot25), with the proven controller/avatar
+back-reference checked on each dispatch. No native EXE/static table write.
+
+In the copy, camera-channel call `730C3D` invokes the native ordinary composer
+with the above exact ABI. Composition synchronously masks accumulators +1F0 and
++20C, channel byte +9BC and apply-shake byte +1118; all are restored on return,
+including SEH unwinding. Raw impact +12F0/+1300 and environmental +CA0/+CD8
+remain unchanged for haptics. Reflected loader `004B3E00..004B3E17` maps
+`mUseAvatarCameraChannel` to +9BC. In the copied FP composer, a flags-only adapter
+replaces `cmp byte ptr [esp+17],0` at `8098FA`, making existing JE809A0E skip
+the extra animated bone contribution. Native owner70..A0 and camera composition
+are produced during the native update, before render, with no temporal filter.
+The first-person snapshot owner100..130 is copied as in `5E1164..5E1192`.
+Alternate/cinematic state bytes10AF/8A4/10AD/10AE refuse the intervention and run
+the untouched native dispatcher. Physical cutscene/weapon acceptance is pending.
+
+Offline evidence: actual compiled x86 bridge fixture runs10000 calls with
+reference-count/stack ABI checks, verifies restored source fields and untouched
+haptic waveforms, refusal cases, SEH restoration and exact compare flags.
+`tools/audit-camera-source-plan.py` verifies the full binary plan. Event replay
+passes50627 checks/26532 samples after adding cloned-owner identity cases.
+These tests do not establish in-game source activation, zero visible shake or
+physical haptic strength. Runtime requires `[CameraNativeNoShake] published`,
+increasing `dispatch` AND `animationBypass`, followed by user headset feedback.
+
 ## Later MAIN event capture: confirmed live producer and haptic blind spot
 
 After rollback to DLL `7414984FF998FABDF154AEB5EE443D75805378DDB2359F7EC6F20E83E8A6FA55`,

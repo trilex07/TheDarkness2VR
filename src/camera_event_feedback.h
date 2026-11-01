@@ -8,13 +8,13 @@ namespace d2vr_camera_event {
 // 00631560..00631572 / 0043BCB0: owner+828 -> controller ->
 // controller+74 smart reference -> native avatar. Unlike avatar+5E0, this
 // route identified the live producer in the 2026-11-01 event capture.
-template<class Read> bool Matches(uint32_t owner,uint32_t avatar,Read read) {
+template<class Read> bool Matches(uint32_t owner,uint32_t avatar,Read read,uint32_t ownerTable=0xfdf170) {
     const auto word=[&](uint32_t base,uint32_t offset,uint32_t& result) {
         return base>=0x10000 && !(base&3) && base<=0x7fffffff-offset && read(base+offset,result);
     };
     uint32_t table=0,reference=0,controller=0,avatarReference=0,found=0;
     return word(avatar,0,table) && table==0x1001630 &&
-        word(owner,0,table) && table==0xfdf170 &&
+        word(owner,0,table) && table==ownerTable &&
         word(owner,0x828,reference) && word(reference,0,controller) &&
         word(controller,0,table) && table==0xfe3ee8 &&
         word(controller,0x74,avatarReference) && word(avatarReference,0,found) && found==avatar;

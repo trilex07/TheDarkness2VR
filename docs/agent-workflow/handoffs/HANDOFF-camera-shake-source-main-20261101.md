@@ -171,6 +171,23 @@ shotgun retained. Installed DLL still `7414984F...`. Full capture SHA256
    write watchpoint trace; do not recycle render-time zeroing or delayed filters.
 4. Implement and validate only after ownership/address/instruction evidence.
 
+## Subsequent combined candidate requested by user
+
+User requested camera shake correction before testing both features together.
+Implemented default-OFF `CameraNativeNoShake`, a selected native slot25 owned
+code/table path. See the new first section of
+`docs/research/darkness2-camera-shake-20261101.md` for exact addresses, dataflow,
+ABI, pin digests and limitations. This supersedes the above next-step plan:
+native dispatch/composition evidence now supports a source-stage candidate.
+
+Files: `src/camera_native_no_shake.inl`, `camera_source_clone_plan.h`, observer
+and matcher changes; tests `test/build_camera_native_source.ps1`, event replay;
+deploy helper `-NativeNoShake` expects the currently installed haptics-only
+8DB11F12... DLL and D218DB73... diagnostic INI. It enables both event rumble and
+native no-shake while preserving rejected paths OFF and the shotgun profile.
+Physical result remains NOT RUN; do not treat offline ABI/static proof as headset
+acceptance. Logs distinguish dispatcher invocation from actual animation bypass.
+
 ## Installed haptics-only candidate (22:03 Warsaw)
 
 User explicitly confirmed game closed and requested installation. Installed source

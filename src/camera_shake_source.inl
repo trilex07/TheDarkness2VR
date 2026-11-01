@@ -38,7 +38,7 @@ static DWORD WINAPI CameraShakeSourceScan(void*) {
            !(mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) && !(base<=image && image<end)) {
             __try {
                 for(auto p=reinterpret_cast<const DWORD*>(base);reinterpret_cast<uintptr_t>(p)+0x1300<=end && count<16;++p)
-                    if(*p==0xFDF170) {
+                    if(IsCameraSourceTable(*p)) {
                         const auto o=reinterpret_cast<const BYTE*>(p);
                         bool ok=true;
                         for(unsigned b: {0x8C0u,0x910u,0x960u,0xCA0u})
@@ -71,23 +71,19 @@ static void RequestCameraShakeSourceScan() {
     }
 }
 
-// Read-only callback on the selected-player render path. The memory search
-// finds candidates; the independently verified back-reference admits ONE owner.
+// Selected-player observer. The memory search finds candidates; the verified
+// back-reference admits ONE owner. Optional source hook publishes only on that owner.
 static void ObserveSelectedCameraEvent(DWORD avatar) {
 #ifdef D2VR_MATCHED_CAPTURE
-    if(!g_cameraEventRumble)return;
+    if(!g_cameraEventRumble && !g_cameraNativeNoShake)return;
     DWORD owners[16]{};unsigned count=0;
     auto& st=g_cameraShakeSource;
     AcquireSRWLockShared(&st.lock);
     std::memcpy(owners,st.owners,sizeof(owners));count=st.count;
     ReleaseSRWLockShared(&st.lock);
-    const auto read=[](uint32_t address,uint32_t& value) {
-        __try {value=*reinterpret_cast<const uint32_t*>(address);return true;}
-        __except(EXCEPTION_EXECUTE_HANDLER){return false;}
-    };
     d2vr_camera_event::Sample sample{};DWORD selected=0;unsigned matched=0;
     for(unsigned i=0;i<count;++i) {
-        if(!d2vr_camera_event::Matches(owners[i],avatar,read))continue;
+        if(!CameraSourceOwnerMatches(owners[i],avatar))continue;
         __try {
             const auto owner=reinterpret_cast<const BYTE*>(owners[i]);
             d2vr_camera_event::Sample candidate{};
@@ -95,9 +91,10 @@ static void ObserveSelectedCameraEvent(DWORD avatar) {
             std::memcpy(candidate.impactRotation,owner+0x1300,sizeof(candidate.impactRotation));
             std::memcpy(candidate.environmentalPosition,owner+0xCA0,sizeof(candidate.environmentalPosition));
             std::memcpy(candidate.environmentalRotation,owner+0xCD8,sizeof(candidate.environmentalRotation));
-            if(d2vr_camera_event::Matches(owners[i],avatar,read)){sample=candidate;selected=owners[i];++matched;}
+            if(CameraSourceOwnerMatches(owners[i],avatar)){sample=candidate;selected=owners[i];++matched;}
         } __except(EXCEPTION_EXECUTE_HANDLER){}
     }
+    if(matched==1 && g_cameraNativeNoShake)PrepareCameraNativeNoShake(selected,avatar);
     const float amount=matched==1?d2vr_camera_event::Amount(sample):0.f;
     const auto now=GetTickCount64();
     // A verified live producer needs no periodic whole-process rescan. Refresh
