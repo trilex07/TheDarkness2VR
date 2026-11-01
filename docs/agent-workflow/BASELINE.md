@@ -1,5 +1,12 @@
 # Baseline and current MAIN candidate
 
+## Installed Polish update and comic textures (2026-11-01 22:40 Warsaw)
+
+- Following user acceptance and integration of the camera/model fix into `main` (`370897d3`), MAIN installed the prepared private Polish complete release (16 archive files) and 64 comic weapon/tentacle textures. Runtime DLL remains accepted `9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D`; EXE and all three INIs unchanged.
+- Independent audit PASS: 22/22 preimage backup hashes, 22/22 installed archive hashes, 5/5 protected runtime files. Texture readback verifies 64 H + 64 B + 62 F payloads and preserves every original cache byte and unrelated TOC field. This is installation/integrity evidence; the new audio and texture appearance still require in-game user acceptance.
+- Evidence/rollback: `C:/Users/Trilex/AppData/Local/Darkness2VR/backups/polish-comic-main-20261101-accepted-camera/deployment.json`. Closed-game rollback: `python -B tools/deploy-polish-comic.py --rollback --backup <that-directory>`. Restore returns all 22 archives to the exact pre-update state and leaves the accepted camera DLL/configuration intact.
+- Package provenance and startup results: `handoffs/HANDOFF-polish-comic-main-20261101.md`.
+
 ## Accepted camera and first-person models (2026-11-01)
 
 - User physically tested DLL `9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D` (source `eda9420e`) and confirmed "jest okej", requesting integration into main. This accepts the model snapshot correction together with the previously confirmed camera stabilization and event vibration.
