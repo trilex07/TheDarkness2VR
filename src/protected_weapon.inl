@@ -126,6 +126,31 @@ static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {
     if(!current || !candidate)return false;
     float world[16];
     if(!ResolveProtectedWeapon(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(current)-0x140),nullptr,nullptr,world))return false;
+    // Read-only receipt for the two-handed model investigation. The stock
+    // world transform and our controller transform must be compared on the
+    // same owned model before any model-axis calibration can be justified.
+    // This never changes either transform or the firing ray.
+    static thread_local ULONGLONG nextPoseReport=0;
+    const auto now=GetTickCount64();
+    if(now>=nextPoseReport) {
+        NativeGameplaySample owner;
+        if(CopyNativeGameplay(owner)) {
+            void *gun=nullptr,*model=nullptr,*fire=nullptr;
+            void* camera=reinterpret_cast<void*>(owner.camera);
+            if(ProtectedWeaponOwner(camera,0,gun,model,fire) &&
+               model==reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(current)-0x140)) {
+                nextPoseReport=now+1000;
+                const auto& right=g_hands[1];const auto& left=g_hands[0];
+                Log("[WeaponPose] firearm=%u gun=%p model=%p nativePos=(%.3f,%.3f,%.3f) nativeAxes=(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f) trackedPos=(%.3f,%.3f,%.3f) trackedAxes=(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f) rightAim=%d leftGrip=%d leftSqueeze=%.2f leftPos=(%.3f,%.3f,%.3f); observer only",
+                    unsigned(owner.firearm[0]),gun,model,current[12],current[13],current[14],
+                    current[0],current[1],current[2],current[4],current[5],current[6],current[8],current[9],current[10],
+                    world[12],world[13],world[14],world[0],world[1],world[2],
+                    world[4],world[5],world[6],world[8],world[9],world[10],
+                    int(right.aimValid),int(left.gripValid),left.squeeze,
+                    left.grip.position.x,left.grip.position.y,left.grip.position.z);
+            }
+        }
+    }
     __try {std::memcpy(candidate,world,sizeof(world));return true;}
     __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
