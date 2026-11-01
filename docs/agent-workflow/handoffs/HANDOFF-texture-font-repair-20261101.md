@@ -9,6 +9,12 @@
 
 ## Scope and status
 
+FINAL USER ACCEPTANCE: "dobra moze byc daj na main" after testing the final
+six-family geometry correction. Task complete; MAIN integrates this branch into
+main. Corrected comic textures and tested Polish font appearance accepted.
+Prior pending/rejected entries below are chronological evidence. Integration
+does not redeploy or change any installed game file.
+
 CURRENT INSTALLED: source44cb00b9, `build/font-metrics-six-v1` four-file correction
 on top of native-cells-v3. Closed-game installation; independent4 backups,
 4 installed hashes and23 protected files PASS. Receipt:

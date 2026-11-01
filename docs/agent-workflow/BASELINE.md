@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Accepted texture and Polish font repair (2026-11-01)
+
+- User accepted the final installed font geometry correction: "dobra moze byc daj na main". This supersedes the pending font acceptance entries below. Corrected64 comic model textures were accepted separately during the same test sequence; final font source is `44cb00b9`, on top of native-cell source `fcee7c8f`.
+- MAIN integrates the complete repair branch into Git main by fast-forward. Accepted camera/haptics/model DLL `9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D`, updated Polish audio/text and current configuration remain unchanged. This is acceptance of the tested result, not an exhaustive linguistic/audio audit.
+- Deployment provenance and verified rollback paths remain in `handoffs/HANDOFF-texture-font-repair-20261101.md`. Integration is source/documentation only; no additional game installation or launch is needed.
+
 ## Latest font geometry candidate (2026-11-01 23:18 Warsaw)
 
 - User grades native-cell-v3 "prawie": text readable, accented geometry still uneven. Found pre-existing six font families also had oversized PL UV spans and advance+1. Installed source `44cb00b9` normalizes those108 earlier glyphs to donor cells/metrics; all non-PL UVs and decoded glyph pixels are verified unchanged.
