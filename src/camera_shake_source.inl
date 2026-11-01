@@ -28,7 +28,7 @@ static DWORD WINAPI CameraShakeSourceScan(void*) {
     uintptr_t address=0x10000;
     MEMORY_BASIC_INFORMATION mbi{};
     while(address<0x7FFF0000 && VirtualQuery(reinterpret_cast<void*>(address),&mbi,sizeof(mbi))==sizeof(mbi)) {
-        const auto base=reinterpret_cast<uintptr_t>(mbi.BaseAddress),end=base+mbi.RegionSize;
+        const uintptr_t base=reinterpret_cast<uintptr_t>(mbi.BaseAddress);const uintptr_t end=base+uintptr_t(mbi.RegionSize);
         if(end<=address)break;
         if(mbi.State==MEM_COMMIT && mbi.Type==MEM_PRIVATE && (mbi.Protect&(PAGE_READWRITE|PAGE_EXECUTE_READWRITE)) &&
            !(mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) && !(base<=image && image<end)) {
