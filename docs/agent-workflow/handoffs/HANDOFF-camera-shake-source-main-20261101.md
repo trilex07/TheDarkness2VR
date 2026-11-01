@@ -12,6 +12,28 @@ In progress: zero forced camera shake, stable weapons, impact/train haptics,
 no haptics from walking or stick turning. No working new fix is claimed.
 User agrees to a train/damage test with read-only diagnostics.
 
+LATEST: installed combined source79c3e7ee / DLL61C4270D... at22:17 Warsaw.
+User confirms no camera shake and vibration present, but tentacles remain in
+world and weapon appears/disappears. Preserve stabilization; fix model regression.
+Detailed installation/rollback is now the top BASELINE section. This is partial
+physical acceptance only, not a finished candidate.
+
+Game MAIN-launched via Steam, live PID38032, owner334ABCA0/avatar333D8F10.
+Native private dispatch count10800+, animationBypass=0. Current source mask9BC=0
+causes ordinary fallback rather than the camera-channel branch; may skip native
+FP rig/snapshot/bounds work. Hypothesis, not yet proven model root cause.
+Look next at preserving full original native FP dispatch/model updates and
+replacing ONLY final ADDE10 camera pose arguments, using native input angles
+(avatar62C reference -> camera110) and native base eye position/view offset.
+Do not reuse delayed render correction. Need exact ABI/evidence first.
+
+Current read-only recorder session20340:300s capture in
+`test-output/camera-native-source-20261101T2220.jsonl`, PID38032, five owners/one
+camera confirmed at start. It may still be running; poll write_stdin to finish.
+Recorder now accepts `--owner 0x334ABCA0`, validates91-word header/table with only
+slot25 changed and exact installed61C4270D DLL hash. Tool change uncommitted at
+this note. Full native log preserved `test-output/camera-native-source-38032.log`.
+
 ## Completed
 
 - Read bootstrap, actual MAIN baseline, failed approaches and predecessor handoff.

@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Installed native source camera candidate: partial acceptance, model regression (2026-11-01)
+
+- Installed source `79c3e7ee52a01d33ca871db1d5b7bb87e30d3065`, DLL `61C4270D5C9DF9475A8A53C55AA4FD5C122408F51626CDDDC7AB3F305F74CB37`, diagnostic INI `AC8290E48D6CD8CA34ED935734E7293572E2F9227B0AA27D4CA03507FA619299`. Both `CameraNativeNoShake=1` and `CameraEventRumble=1`. Shotgun retained, rejected stabilizers OFF, EXE unchanged.
+- Installed at22:17 Warsaw with game closed; independent9/9 backups and7/7 other protected targets unchanged. Rollback: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/camera-native-no-shake-20261101T221730972/rollback/Restore.ps1` (restores haptics-only8DB11F12...). MAIN launched via Steam; PID38032. Runtime selected owner334ABCA0/avatar333D8F10; private dispatch published and count10800+, `animationBypass=0` (ordinary direct path; don't claim channel adapter activation).
+- **User physical feedback**: no visible camera shake; vibration present. **Regression**: tentacles stay in world, weapon appears/disappears. Two attached screenshots show displaced tentacles and floating weapon. This is NOT a fully accepted baseline. User asks to preserve stabilization and fix models next.
+
 ## Installed selected-owner event rumble candidate (2026-11-01 22:03 Warsaw)
 
 - **Installed DLL SHA256**: `8DB11F12A5032BCAC7FA4806C22E1439DDE63BE5035B244159FDD043EF1A8966`, source `63adb43b5d6130dc83757c9a328aed3e675a3176` on `codex/camera-shake-source-main-20261101`. Diagnostic INI SHA256 `D218DB73AF6452218E9AE2829767869304F05EE294A3A88354EC00385FE963F3` enables `CameraEventRumble=1`; shotgun and native image guard retained, rejected shake paths OFF.

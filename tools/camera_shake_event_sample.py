@@ -21,6 +21,8 @@ from camera_shake_owner_scan import EXE_SHA
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pid', type=int)
+    parser.add_argument('--owner', type=lambda value: int(value,0), action='append', default=[],
+                        help='Optional live owner from the current log; full stock/private table validated')
     parser.add_argument('--seconds', type=float, default=120)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
@@ -73,12 +75,27 @@ def main():
             actual, stock = read(table, 71 * 4), read(0xFFC7C0, 71 * 4)
             return bool(actual and stock and actual[:39*4] == stock[:39*4] and
                         actual[40*4:] == stock[40*4:] and word(table + 39*4))
+        dll_sha = hashlib.sha256(exe.with_name('d3d9.dll').read_bytes()).hexdigest().upper()
+        def owner_type(owner):
+            table = word(owner)
+            if table == 0xFDF170:
+                return True
+            if dll_sha != '61C4270D5C9DF9475A8A53C55AA4FD5C122408F51626CDDDC7AB3F305F74CB37':
+                return False
+            # Native source bridge: header and all90 entries, only slot25 differs.
+            actual, stock = read(table-4,91*4), read(0xFDF16C,91*4)
+            return bool(actual and stock and actual[:26*4] == stock[:26*4] and
+                        actual[27*4:] == stock[27*4:] and word(table+25*4))
+        for owner in args.owner:
+            if not owner_type(owner):
+                raise RuntimeError(f'Refusing unverified extra owner {owner:08X}')
         print(f'GAME FOUND pid={pid}; waiting for gameplay camera', flush=True)
         deadline = time.monotonic() + 180
         while True:
             scan = subprocess.check_output([sys.executable, str(Path(__file__).with_name(
                 'camera_shake_owner_scan.py')), str(pid)], text=True)
             owners = [int(x, 16) for x in re.search(r'shake_owners=(.*)', scan)[1].split(',') if x]
+            owners = list(dict.fromkeys(owners + args.owner))
             cameras = [int(x, 16) for x in re.findall(r'camera=([0-9A-F]{8}).*selected_candidate=True', scan)]
             avatars = [int(text, 16) for text in re.findall(r'^avatar=([0-9A-F]{8})', scan, re.M)]
             for avatar in avatars:
@@ -114,7 +131,7 @@ def main():
                         cameras.append(camera)
                 for owner in owners:
                     data = read(owner, 0x1310)
-                    if not data or struct.unpack_from('<I', data)[0] != 0xFDF170:
+                    if not data or not owner_type(owner):
                         continue
                     blocks = [{'offset': hex(b), 'position': floats(data, b, 3),
                                'rotation': floats(data, b + 0x38, 3),
