@@ -30,9 +30,23 @@ Existing user-selected rendering/profile settings remain unchanged. Installed fi
 
 - MSVC x86 host parser/foreign-image-refusal test /W4 /WX PASS.
 - tools/verify_engine_frame_cap.py against installed EXE: all four signatures, defaults, category, mode mapping and writable section PASS.
-- Protected x86 DLL build PASS (build.ps1). Sandbox PDB LNK1101/hang resolved by stopping that local build and building outside the sandbox with a private MSPDB endpoint; no source workaround. DLL SHA256 AE64C072C02C9BAD6C63D05CADD3EC28528CC2A3205890BFD29340A728B7BF49.
+- Initial standard x86 DLL build PASS (build.ps1); protected-native integration validated separately below. Sandbox PDB LNK1101/hang resolved by stopping that local build and building outside the sandbox with a private MSPDB endpoint; no source workaround. DLL SHA256 AE64C072C02C9BAD6C63D05CADD3EC28528CC2A3205890BFD29340A728B7BF49.
 - Steam runtime, active wait caller, FPS improvement and physical PSVR2: NOT TESTED. Game was not running during inspection; no launch/deployment performed.
 
 Next controlled test: deploy a hash-backed candidate on the CURRENT accepted source integration (this isolated candidate excludes uncommitted eye/wheel changes), start with OBSERVE, then capture caller 00938B67 and wait arguments before/after fixed 90 or AUTO in the same scene. Values alone are not active-path proof. Preserve all accepted installed files/config/cache and verify restoration if unsuccessful.
 
 Remote push blocked by automatic approval review pending explicit destination approval.
+
+## Authorized v11 installation, 2026-11-01
+
+User explicitly requested zero and installation, and approved push to trilex07/thedarkness2vr.
+Installed protected-native SHA256: 7DB3D6475C8E78E25A793226559504A9B848EC8B7047DD0588E8571398D5FE38.
+Previous installed v11 and original worktree DLL both matched AE52F6F4557120ACA32D7A5FDEA61AE8D31EDD6B82F2B3262E1B37C3A0122D1C.
+Copied existing v11 src/assets to isolated build/frame-cap-v11, replaced engine_frame_cap.inl and guarded its existing call with g_xrRunning. Original worktree untouched. Exact integrated source archive retained in package candidate/source.zip.
+
+First standard build was refused by profile gate BEFORE any installed modification. Correct build.ps1 -DiagnosticCapture PASS; protected-native profile gate PASS. Eye tracking 26/26 and weapon wheels 137/137 host checks PASS.
+
+Package: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/engine-frame-cap-zero-20261101T012443594.
+Rollback: package rollback/Restore.ps1; all nine backups hash-verified.
+EngineMaxFrameRate=0 confirmed via Win32 INI reads in Steam and LocalAppData primary profiles. Independent byte comparison confirms only that key was added to both profiles; remaining protected INIs/caches identical. PSVR2 bridge not changed.
+No game launch, active OpenXR session or physical VR acceptance claimed. Zero leaves native engine limiter unchanged.

@@ -1,5 +1,10 @@
 # Baseline and current MAIN candidate
 
+## Current MAIN deployment: engine frame cap zero (2026-11-01)
+
+User-authorized v11-based protected-native candidate installed; SHA256 `7DB3D6475C8E78E25A793226559504A9B848EC8B7047DD0588E8571398D5FE38`. Both primary profiles explicitly `EngineMaxFrameRate=0` (native limiter untouched). Existing v11 gaze/weapon source retained; bridge unchanged. Build/profile gate and host checks PASS; runtime/PSVR2 NOT TESTED. Full backup and integrated source: `%LOCALAPPDATA%/Darkness2VR/packages/engine-frame-cap-zero-20261101T012443594`. See `handoffs/HANDOFF-engine-frame-cap.md`. Older snapshots below are historical.
+
+
 Recorded by MAIN on 2026-10-31. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
