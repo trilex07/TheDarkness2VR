@@ -59,4 +59,12 @@ Installed the second candidate at `C:/Users/Trilex/AppData/Local/Darkness2VR/pac
 
 Second launch log: observer again refused `occupied-debug-state`, now reporting DR0=`0112263C`, DR1=`011223F0`, DR2=`01122878`, DR3=`017B177C`, DR7=`FFFF0015` on render thread 33396. DR7 enables slots 0–2; slot 3 still carries a foreign address/configuration. Do not displace any of these. The game closed after this short launch; no LOD selector sample or quality change.
 
-`tools/lod_owner_scan.py` is a read-only external fallback. It scans committed private memory for the exact stock owner vtable `00FF8818`, then reads only candidate `+274` renderer and `+594` reference fields. This is a *candidate finder*, not proof of active LOD ownership or permission to mutate an object. Python syntax and Win64 `MEMORY_BASIC_INFORMATION` size (48) checked offline. It needs the game left running in 3D gameplay; no scan result yet.
+`tools/lod_owner_scan.py` is a read-only external fallback. It scans committed private memory for the exact stock owner vtable `00FF8818`, then reads candidate renderer and list references. This is a *candidate finder*, not proof of active LOD ownership or permission to mutate an object. Python syntax and Win64 `MEMORY_BASIC_INFORMATION` size (48) checked offline. It needs the game left running in 3D gameplay.
+
+## External owner scan while game was running
+
+User left the game active in a 3D scene. The log reported `[WorldActivity] active=1`. The read-only scanner accessed 527–532 MB of committed private memory in approximately one second and found exactly one `00FF8818` owner at `0E9D06D0`. Its `+274` renderer was `0A64DC40`, renderer vtable `00FF89E8`; renderer `+594` reference `04050B30 -> 0A651360`, renderer `+5B4` reference `04053248 -> 2594EC00`, and the latter's `+200` field was nonzero `0A3348E8`. The prior camera `+2A4` field remained null. These addresses are process-local and cannot be reused in another run.
+
+Static stock-EXE path `0077751D` calls `00AEA1A0` on the `+274` renderer; `00AEA455` calls the LOD dispatcher `005828B0`, which calls `008513A0`. This closes the owner-to-selector call chain, but a scan alone cannot identify safe decoration classes or prove per-mesh CPU savings. The direct hardware observer remains disallowed by foreign debug state.
+
+An attempted ten-second `WPR CPU.Verbose` trace did not start: Windows returned `0xC5585011` (profile policy). No ETL or CPU-time result was produced. Do not attribute an FPS change to LOD. User confirmed game closed; `tools/restore-after-lod-observer.ps1` prepares a full nine-target rollback before returning to the last stable DLL while retaining current caches.

@@ -101,8 +101,15 @@ def main() -> None:
             address = next_address
         print(f"searched_private_bytes={searched} candidates={len(candidates)}")
         for owner, renderer, table, scene, camera_ref in candidates[:128]:
+            scene_value = word(scene) if scene else None
+            list_ref = word(renderer + 0x5B4)
+            list_value = word(list_ref) if list_ref else None
+            list_count = word(list_value + 0x200) if list_value else None
             print(f"owner={owner:08X} renderer={renderer:08X} table={table:08X} "
-                  f"renderer+594={scene or 0:08X} owner+2A4={camera_ref or 0:08X}")
+                  f"renderer+594={scene or 0:08X} -> {scene_value or 0:08X} "
+                  f"renderer+5B4={list_ref or 0:08X} -> {list_value or 0:08X} "
+                  f"list+200={list_count or 0:08X} "
+                  f"owner+2A4={camera_ref or 0:08X}")
     finally:
         api.CloseHandle(handle)
 
