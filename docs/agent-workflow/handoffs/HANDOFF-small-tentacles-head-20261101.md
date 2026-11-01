@@ -7,7 +7,7 @@
 **Branch**: codex/gaze-nis-main-integration
 **Worktree**: C:/Users/Trilex/.codex/worktrees/gaze-nis-main-integration/Darkness2VR
 **Baseline**: restored pre-DLAA installed DLL `CC7DD6C7B048158255D607649841BDE6305D284414CAD790A4CE99B14A941248`, source `b9b1d190`; stock EXE `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`. DLAA headset trial rejected and fully rolled back.
-**Integration commit**: pending
+**Integration commit**: `88ea3095`
 
 ## Goal
 
@@ -15,7 +15,7 @@ Make the four smaller headless player tentacles follow physical head rotation in
 
 ## Status
 
-Offline candidate built. Headset acceptance pending.
+Protected candidate installed with complete rollback. Headset acceptance pending.
 
 ## Evidence
 
@@ -28,9 +28,14 @@ Offline candidate built. Headset acceptance pending.
 
 ## Next Steps
 
-1. Install with a fresh nine-target rollback while the game is closed; leave both INIs and all four caches unchanged.
-2. User checks idle head yaw/pitch for the four small strands in both eyes, then a native grab/hold/release and enemy/world stability. Read `HeadAttachedTentacles` log on that exact candidate.
-3. If the four strands still fail to follow, capture their current draw signatures rather than broadening the gate by shader alone. Restore the complete package if image or interaction regresses.
+1. User checks idle head yaw/pitch for the four small strands in both eyes, then a native grab/hold/release and enemy/world stability. Read `HeadAttachedTentacles` log on that exact candidate.
+2. If the four strands still fail to follow, capture their current draw signatures rather than broadening the gate by shader alone. Restore the complete package if image or interaction regresses.
+
+## Installed MAIN receipt
+
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/small-tentacles-head-20261101T133218114`.
+- Installed protected-native DLL: `EFDCCFB0B40F37F716014DF836F5BE127121177B5C88EABC3E3714B828375B9C`; package source commit `88ea30953e134ba7bb15dda3b3b9f5a6ad0fb6a7`.
+- Independent verification: nine backup hashes correct, 9/9 installed protected targets correct (only DLL changed), stock EXE correct, DLSS host directory absent, game closed and not launched.
 
 ## Blockers
 

@@ -3,6 +3,13 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed four small tentacles head-attachment trial (2026-11-01 13:32 Europe/Warsaw)
+
+- **Installed DLL SHA256**: `EFDCCFB0B40F37F716014DF836F5BE127121177B5C88EABC3E3714B828375B9C`, source `88ea3095` on `codex/gaze-nis-main-integration`. Stock EXE SHA256 unchanged: `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.
+- **Change**: the existing `HeadAttachedTentacles=1` render scope now admits the separately captured four smaller headless player tentacle draws by full VB/IB/shader/matrix signature. Fresh native Empty/no-held-target, stereo, non-shadow and head-geometry gates remain. Both game and local INIs and all caches were left byte-identical; NIS 2 and LOD 1.25 remain active, DLSS stays OFF.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/small-tentacles-head-20261101T133218114/rollback/Restore.ps1`; nine backup hashes and all nine post-install protected targets independently verified. The prior DLL `CC7DD6C7B048158255D607649841BDE6305D284414CAD790A4CE99B14A941248` is retained in the rollback. The DLSS host directory remains absent. Game was closed and not launched by the agent.
+- **Offline gate**: actual-source scope fixture 27,099 checks PASS; protected-native x86 build and profile gate PASS. **Headset result: NOT RUN**. User must check all four strands in both eyes while turning/leaning, then grabbing and releasing a target. See `HANDOFF-small-tentacles-head-20261101.md`.
+
 ## DLAA integration trial rejected and fully restored (2026-11-01)
 
 - **Current installed DLL SHA256**: `CC7DD6C7B048158255D607649841BDE6305D284414CAD790A4CE99B14A941248`, source `b9b1d190`. Stock EXE SHA256 `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`. The pretrial nine protected targets were restored and independently verified 9/9; the previously absent `d2vr_dlss/` host directory is absent again. Game was closed and not relaunched by the agent.
