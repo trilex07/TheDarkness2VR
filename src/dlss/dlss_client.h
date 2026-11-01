@@ -56,6 +56,7 @@ public:
     ID3D11Texture2D* output_texture(int eye) const;
     bool built(int eye, uint32_t w, uint32_t h, uint32_t ow, uint32_t oh, DXGI_FORMAT colorFormat) const;
     bool running() const;
+    uint32_t helper_pid() const;
     void stop();
     const char* adapter() const { return adapter_; }
     const char* runtime() const { return runtime_; }

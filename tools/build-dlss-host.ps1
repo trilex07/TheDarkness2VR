@@ -30,7 +30,12 @@ $dlss45Candidate = "C:\Users\Trilex\Desktop\DLSS.Swapper-1.2.4.0-portable\Stored
 $dll = if (Test-Path $dlss45Candidate) { $dlss45Candidate } else { $dllSdk }
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$vs = & $vswhere -latest -products Microsoft.VisualStudio.Product.BuildTools `
+    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if (-not $vs) {
+    $vs = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+}
 if (-not $vs) { throw "Visual Studio C++ x64 build tools not found" }
 $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
 

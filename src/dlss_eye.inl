@@ -11,12 +11,12 @@
 //                     4=Performance (2.0x), 5=UltraPerformance (3.0x), 6=UltraQuality (1.3x)
 //   DlssPreset:       0/11=K, 10=J, 12=L (DLSS 4.5), 13=M (DLSS 4.5), 16=Per-mode (K/M/L), 5=E, 6=F
 //   DlssBackend:      0=DLSS (NGX), 1=FSR (FidelityFX API)
-//   DlssObjectMotion: 1=enable 8x8 tile + 3x3 patch block-matching motion pass (default 1)
+//   DlssObjectMotion: 1=enable experimental 8x8 tile + 3x3 patch block-matching motion pass (default 0)
 //   DlssBiasMask:     1=enable current-color disagreement bias mask (default 0)
 static int g_dlssMode = 0;
 static int g_dlssPreset = 16;
 static int g_dlssBackend = 0;
-static bool g_dlssObjectMotion = true;
+static bool g_dlssObjectMotion = false;
 static bool g_dlssBiasMask = false;
 
 namespace d2vr_dlss_eye {
@@ -278,6 +278,7 @@ static void StartAsyncBuild(ID3D11Device* dev, uint32_t inW, uint32_t inH, uint3
 
 static bool DlssEyeActive() {
     return g_dlssMode > 0 && g_submitMode == 4 &&
+           !g_nisScalerFailed &&
            d2vr_dlss_eye::g_state.load(std::memory_order_acquire) != (int)d2vr_dlss_eye::State::Failed;
 }
 
@@ -434,7 +435,10 @@ static bool DlssEyeProcess(ID3D11Texture2D* left, ID3D11Texture2D* right, ID3D11
 
         if (!g_client.evaluate(g_ctx11, e, in, why, sizeof(why))) {
             Log("[DLSS:ERR] evaluate eye %d failed: %s", e, why);
-            if (!g_client.running()) g_state.store((int)State::Failed, std::memory_order_release);
+            // An NGX refusal with a live pipe is still a failed eye pair.
+            // Stop retrying the same feature every frame; the caller will
+            // use NIS for this frame and rebuild full-size caches next frame.
+            g_state.store((int)State::Failed, std::memory_order_release);
             return false;
         }
         CopyOutputToBgra(g_ctx11, e, g_client.output(e), outW, outH);
@@ -471,7 +475,7 @@ static void LoadDlssConfig(const char* chosenIni) {
     g_dlssPreset = d2vr_dlss_eye::ParseDlssPreset(dlssVal);
     GetPrivateProfileStringA("Render", "DlssBackend", "0", dlssVal, sizeof(dlssVal), chosenIni);
     g_dlssBackend = (!_stricmp(dlssVal, "FSR") || !strcmp(dlssVal, "1")) ? 1 : 0;
-    g_dlssObjectMotion = GetPrivateProfileIntA("Render", "DlssObjectMotion", 1, chosenIni) != 0;
+    g_dlssObjectMotion = GetPrivateProfileIntA("Render", "DlssObjectMotion", 0, chosenIni) != 0;
     g_dlssBiasMask = GetPrivateProfileIntA("Render", "DlssBiasMask", 0, chosenIni) != 0;
     Log("[DLSS] mode=%d (%s) preset=%d backend=%s objectMotion=%d biasMask=%d",
         g_dlssMode, d2vr_dlss_eye::ModeName(g_dlssMode), g_dlssPreset,

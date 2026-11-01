@@ -49,7 +49,7 @@ const char* kSrc =
     "        if (!(z > 0) || !isfinite(z)) z = 0;\n"
     "    }\n"
     "    bool scene = z > 0 && z < 1000;\n"
-    "    o.depth = scene ? 1.0 / (1.0 + z) : 0.0;\n"
+    "    o.depth = gFlags.z > 0.5 ? (scene ? 1.0 / (1.0 + z) : 0.0) : 0.5;\n"
     "    o.mv = 0;\n"
     "    if (gFlags.w < 0.5) return o;\n"
     "    if (gBody.y > 0.5) {\n"

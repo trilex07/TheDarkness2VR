@@ -574,14 +574,18 @@ int main(int argc, char** argv) {
 
     // 5. Helper loss: kill it; the next evaluate must fail fast and stop the client, never hang.
     {
-        system("taskkill /F /IM d2vr_dlss_host64.exe >NUL 2>&1");
-        Sleep(200);
+        const DWORD helperPid = c.helper_pid();
+        HANDLE helper = helperPid ? OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, helperPid) : nullptr;
+        const bool killed = helper && TerminateProcess(helper, 0xD155) &&
+                            WaitForSingleObject(helper, 5000) == WAIT_OBJECT_0;
+        if (helper) CloseHandle(helper);
         EyeInputs in; in.color = color[0].t; in.depth = depth.t; in.motion = motion.t;
         LARGE_INTEGER a, b; QueryPerformanceCounter(&a);
         const bool r = c.evaluate(ctx, 0, in, why, sizeof(why));
         QueryPerformanceCounter(&b);
         const double ms = (b.QuadPart - a.QuadPart) * 1000.0 / f0.QuadPart;
-        check(!r && !c.running() && ms < 1500, "helper killed: fail fast, no hang", "evaluate %s in %.0f ms, running %d (%s)",
+        check(killed && !r && !c.running() && ms < 1500, "helper killed: fail fast, no hang", "pid %lu killed %d, evaluate %s in %.0f ms, running %d (%s)",
+              (unsigned long)helperPid, (int)killed,
               r ? "succeeded" : "failed", ms, (int)c.running(), why);
     }
     c.stop();

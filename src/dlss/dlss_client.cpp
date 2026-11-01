@@ -69,6 +69,9 @@ void Client::fail(const char* fmt, ...) {
 }
 
 bool Client::running() const { return running_; }
+uint32_t Client::helper_pid() const {
+    return process_ ? (uint32_t)GetProcessId((HANDLE)process_) : 0;
+}
 
 bool Client::send(const void* p, uint32_t n, uint32_t ms) {
     const BYTE* c = (const BYTE*)p;

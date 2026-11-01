@@ -22,8 +22,12 @@ foreach ($p in @($inc, $libDir, $binDir)) {
 }
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$vsPath = & $vswhere -latest -products * `
+$vsPath = & $vswhere -latest -products Microsoft.VisualStudio.Product.BuildTools `
     -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if (-not $vsPath) {
+    $vsPath = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+}
 $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
 
 Push-Location $here
@@ -59,7 +63,7 @@ try {
         if (Test-Path (Join-Path $dlssHostOut "d2vr_dlss_host64.exe")) {
             $dlssGameDir = Join-Path $GameDir "d2vr_dlss"
             New-Item -ItemType Directory -Force -Path $dlssGameDir | Out-Null
-            foreach ($f in @("d2vr_dlss_host64.exe", "nvngx_dlss.dll", "amd_fidelityfx_loader_dx12.dll", "amd_fidelityfx_upscaler_dx12.dll", "NOTICE.md", "Darkness2VR-NGX-LICENSE.txt", "Darkness2VR-FidelityFX-LICENSE.txt")) {
+            foreach ($f in @("d2vr_dlss_host64.exe", "nvngx_dlss.dll", "amd_fidelityfx_loader_dx12.dll", "amd_fidelityfx_upscaler_dx12.dll", "NOTICE.md", "NVIDIA-DLSS-LICENSE.txt", "AMD-FIDELITYFX-LICENSE.md")) {
                 $srcFile = Join-Path $dlssHostOut $f
                 if (Test-Path $srcFile) {
                     Copy-Item $srcFile (Join-Path $dlssGameDir $f) -Force

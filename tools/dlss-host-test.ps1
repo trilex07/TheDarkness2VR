@@ -6,7 +6,12 @@ $repo = Split-Path -Parent $PSScriptRoot
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$vs = & $vswhere -latest -products Microsoft.VisualStudio.Product.BuildTools `
+    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if (-not $vs) {
+    $vs = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+}
 $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvarsall.bat"
 
 $outDir = Join-Path $repo "build\dlss_host"

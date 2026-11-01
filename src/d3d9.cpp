@@ -5963,8 +5963,10 @@ void SubmitXR(IDirect3DDevice9* dev) {
                 submitted[0]=dlssOut[0]; submitted[1]=dlssOut[1];
             }
             ID3D11Texture2D* sharpened[2]{};
+            // A failed DLSS evaluate can change DlssEyeActive() mid-frame.
+            // The eye cache remains small until EnsureSwapchains rebuilds it,
+            // so size alone must decide whether the fallback needs scaling.
             const bool scaleRequired=!dlssProcessed &&
-                ((g_nisMode==3 && !g_nisScalerFailed) || DlssEyeActive()) &&
                 (g_eyeCacheW!=g_scW || g_eyeCacheH!=g_scH);
             if((g_nisMode==2 || scaleRequired) && NisEyeProcess(submitted[0],submitted[1],sharpened,scaleRequired)) {
                 submitted[0]=sharpened[0]; submitted[1]=sharpened[1];
