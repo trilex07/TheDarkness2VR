@@ -9,6 +9,7 @@ Steam check or permission to deploy. Do not assume Git main is installed.
 - **Change**: current native pause recheck before R2 can become menu A; `[R2Route]` logs one line per R2 press. This addresses a possible stale pause gate. Headset verification pending; root cause is not yet confirmed.
 - **LOD**: `EngineLODScale=1.25` retained. Prior headset trial: user reported smoother play and correct image. Runtime logged `active=1`, `enabled=1`, `mode=-1`, `lowest=0`; CPU milliseconds saved are unmeasured.
 - **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/engine-lod-r2-20261101T115339035/rollback/Restore.ps1`; all nine backup hashes verified. Previous LOD candidate DLL `9AFA35F2A4B3B74EFA79FBF2C10BCEA296F6A159126B407E1783B8E84F57A358` retained in rollback.
+- **R2 headset acceptance**: user reported R2 no longer jumps. Same run logged eight `[R2Route] menu=0 world=1 inputContext=1 stickY=0 buttonsBefore=0x0000` presses, so those presses stayed on the gameplay trigger path. No pause-menu R2 confirmation was observed in this log.
 
 ## Installed native LODScale trial (2026-11-01 11:33 Europe/Warsaw)
 
