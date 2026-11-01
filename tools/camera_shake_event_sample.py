@@ -5,6 +5,7 @@ are asynchronous observations, not proof of native update/render ordering.
 """
 import argparse
 import ctypes as ct
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -94,11 +95,13 @@ def main():
             return list(struct.unpack_from('<' + 'f' * count, data, offset))
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open('x', encoding='utf-8') as out:
+            start = time.perf_counter()
+            started_utc = datetime.now(timezone.utc).isoformat()
             out.write(json.dumps({'kind': 'header', 'pid': pid, 'exe_sha256': EXE_SHA,
+                'started_utc': started_utc, 'started_perf_counter': start,
                 'dll_sha256': hashlib.sha256(exe.with_name('d3d9.dll').read_bytes()).hexdigest().upper(),
                 'scan': scan, 'warning': 'candidate objects; asynchronous read-only samples'}) + '\n')
             print(f'CAPTURE BEGIN pid={pid} owners={len(owners)} seconds={args.seconds} output={args.output}', flush=True)
-            start = time.perf_counter()
             samples, next_report = 0, 0
             while time.perf_counter() - start < args.seconds:
                 elapsed = time.perf_counter() - start

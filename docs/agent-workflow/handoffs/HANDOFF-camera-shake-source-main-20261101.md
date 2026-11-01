@@ -65,9 +65,26 @@ This matches `protected_left_aim.inl` / `native_view_instance.h`; no game write.
 Second file `test-output/camera-event-20261101-v2.jsonl`: 7,922 samples over
 89.999 s, camera valid in every sample. Camera XYZ is exactly unchanged
 `(43.58679962, -7.24896622, 176.25599670)` throughout. All five candidates have
-zero procedural impulse and impact output. This is an idle/paused observation,
-NOT evidence that the train or damage has no signal. User event confirmation is
-pending; a new async question asks whether gameplay is still paused.
+zero procedural impulse and impact output. This does NOT establish that the
+train or damage has no signal, or that the user did not perform the test.
+
+### Timing correction after user confirmed the test was already completed
+
+User explicitly says the test was performed. Compared native `[PerfClock]` QPC
+markers against a current QPC/UTC pair from the same Windows boot. The native
+478-sample camera trace spans frames 1804..4217, about 20:40:39..20:41:09 UTC
+(21:40:39..21:41:09 Warsaw). It records substantial movement: XYZ ranges
+42.7077..43.9238, -7.2559..-7.2263, 176.2475..204.7839.
+External capture files were created at 20:41:22 UTC and 20:42:46 UTC, respectively.
+Thus the external capture began after the native 30-second trace had ended.
+The unchanged second file cannot be used to dispute the user's performed test.
+It is not proven exactly when train/damage occurred; the native trace has no
+event markers. Game PID 38568 has exited by this follow-up. No further launch.
+
+Sampler header now includes explicit UTC and perf_counter start values so
+future native QPC logs can be aligned without relying on file creation times.
+For another user test, arm capture and verify it is actively recording BEFORE
+asking the user to trigger an event; use a sufficient window (up to 300 seconds).
 
 Validation: CLI help, invalid-duration rejection and non-game PID refusal before
 output creation PASS; `git diff --check` PASS. No runtime fix was built/deployed.
