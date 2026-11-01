@@ -29,6 +29,8 @@ struct CameraAnimStabilizerState {
     // hand/gun correction always come from the same update, whatever the call order.
     bool pubValid=false;DWORD pubCamera=0;ULONGLONG pubTime=0;
     float pubDelta[16]{},pubCorrection[16]{};
+    // Timing witness: was the correction consumed in the frame that produced it?
+    volatile LONG viewSame=0,viewStale=0,handSame=0,handStale=0;
     float weight=0.f;
     ULONGLONG time=0,start=0,nextLog=0;
     unsigned long long frame=0,updates=0;
@@ -213,9 +215,9 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
     if(now>=st.nextLog && now-st.start<180000) {
         st.nextLog=now+500;
         // Counter-prediction: removed* must be ~0 standing still and grow while running/attacking.
-        Log("[CameraStabilize] ms=%llu updates=%llu weight=%.2f removedPos=%.4f removedDeg=%.2f peakPos=%.4f peakDeg=%.2f filterResidualPeakDeg=%.2f parentTiltPeak=%.2f speed=%.2f turn=%.1f rumblePeak=%.2f rest=(%.4f,%.4f,%.4f) cinematic=%d",
+        Log("[CameraStabilize] ms=%llu updates=%llu weight=%.2f removedPos=%.4f removedDeg=%.2f peakPos=%.4f peakDeg=%.2f filterResidualPeakDeg=%.2f parentTiltPeak=%.2f speed=%.2f turn=%.1f rumblePeak=%.2f view(same/stale)=%ld/%ld hand(same/stale)=%ld/%ld rest=(%.4f,%.4f,%.4f) cinematic=%d",
             static_cast<unsigned long long>(now-st.start),st.updates,st.weight,translation*st.weight,angle*st.weight,
-            st.peakTranslation,st.peakAngle,st.peakResidualDeg,st.peakTilt,st.speed,st.angularSpeed,st.peakRumble,
+            st.peakTranslation,st.peakAngle,st.peakResidualDeg,st.peakTilt,st.speed,st.angularSpeed,st.peakRumble,InterlockedExchange(&st.viewSame,0),InterlockedExchange(&st.viewStale,0),InterlockedExchange(&st.handSame,0),InterlockedExchange(&st.handStale,0),
             st.restLocal[0],st.restLocal[1],st.restLocal[2],int(NativeCinematicPlaying()));
         st.peakTranslation=st.peakAngle=st.peakRumble=st.peakResidualDeg=st.peakTilt=0.f;
     }
@@ -231,8 +233,9 @@ static const float* StabilizedCameraWorld(const void* camera,float (&scratch)[16
     float correction[16];bool use=false;
     AcquireSRWLockShared(&g_cameraAnimStabilizerLock);
     const auto& st=g_cameraAnimStabilizer;
-    if(st.pubValid && st.pubCamera==DWORD(reinterpret_cast<uintptr_t>(camera)) && GetTickCount64()-st.pubTime<100) {
-        std::memcpy(correction,st.pubCorrection,sizeof(correction));use=true;
+    if(st.valid && st.camera==DWORD(reinterpret_cast<uintptr_t>(camera)) && GetTickCount64()-st.time<100) {
+        std::memcpy(correction,st.correction,sizeof(correction));use=true;
+        InterlockedIncrement(st.frame==g_trackedFrame.id ? &g_cameraAnimStabilizer.handSame:&g_cameraAnimStabilizer.handStale);
     }
     ReleaseSRWLockShared(&g_cameraAnimStabilizerLock);
     if(!use)return native;
@@ -253,7 +256,10 @@ static bool CameraStabilizerDelta(float out[16]) {
     bool use=false;
     AcquireSRWLockShared(&g_cameraAnimStabilizerLock);
     const auto& st=g_cameraAnimStabilizer;
-    if(st.pubValid && GetTickCount64()-st.pubTime<100){std::memcpy(out,st.pubDelta,16*sizeof(float));use=true;}
+    if(st.valid && GetTickCount64()-st.time<100){
+        std::memcpy(out,st.delta,16*sizeof(float));use=true;
+        InterlockedIncrement(st.frame==g_trackedFrame.id ? &g_cameraAnimStabilizer.viewSame:&g_cameraAnimStabilizer.viewStale);
+    }
     ReleaseSRWLockShared(&g_cameraAnimStabilizerLock);
     return use;
 }
