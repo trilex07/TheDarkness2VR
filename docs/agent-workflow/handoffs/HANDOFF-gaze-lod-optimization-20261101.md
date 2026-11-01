@@ -7,7 +7,7 @@
 **Branch**: codex/gaze-nis-main-integration
 **Worktree**: C:/Users/Trilex/.codex/worktrees/gaze-nis-main-integration/Darkness2VR
 **Baseline**: installed gaze-dot/R2 candidate DLL `E6F49A7E...`; accepted rollback remains source `4a26aabd`.
-**Integration commit**: `0541741151b5f7dff1a0843abe3a5c9a07974c07`; deployment receipt follows.
+**Integration commit**: not merged to main; research branch tip recorded in Git. First diagnostic commit `0541741151b5f7dff1a0843abe3a5c9a07974c07`.
 
 ## Goal
 
