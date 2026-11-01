@@ -31,6 +31,8 @@ struct CameraAnimStabilizerState {
     float pubDelta[16]{},pubCorrection[16]{};
     // Timing witness: was the correction consumed in the frame that produced it?
     volatile LONG viewSame=0,viewStale=0,handSame=0,handStale=0;
+    volatile LONG cameraMovedAfterCompute=0;
+    float anim[16]{};
     float weight=0.f;
     ULONGLONG time=0,start=0,nextLog=0;
     unsigned long long frame=0,updates=0;
@@ -93,15 +95,17 @@ inline float AngleDegrees(const float a[3][3],const float b[3][3]){
 }
 }
 
-// Called on the render thread from the selected-owner path, before hands/weapon prepare.
-static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
+// One computation per tracked frame, serialized by the caller (EnsureCameraStabilizerFrame).
+// The first consumer of a frame (either eye's view, hands or gun) triggers it, so both eyes
+// and the hand/gun composition share one correction.
+static void ComputeCameraStabilizer(DWORD camera,DWORD avatar) {
 #ifdef D2VR_MATCHED_CAPTURE
     namespace s=d2vr_camera_stabilizer;
-    if(!g_cameraAnimStabilize || !camera || !avatar || !g_trackedFrame.open ||
-       GetCurrentThreadId()!=g_renderThreadId)return;
+    if(!g_cameraAnimStabilize || !camera || !avatar || !g_trackedFrame.open)return;
     auto& st=g_cameraAnimStabilizer;
     float anim[16]{},root[16]{};
     __try {
+        if(*reinterpret_cast<const DWORD*>(camera)!=0xFFC7C0)return; // selected camera class
         auto parent=**reinterpret_cast<BYTE***>(reinterpret_cast<BYTE*>(avatar)+0x1F8C);
         if(!parent || *reinterpret_cast<DWORD*>(parent)!=0xFFC300) {
             if(!st.refusedLogged){st.refusedLogged=true;Log("[CameraStabilize] REFUSED parent class; game camera unchanged");}
@@ -196,7 +200,7 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
     {
         if(gap || dt<=0.f)st.tiltAverage=tilt;
         else st.tiltAverage+=(1.f-std::exp(-dt/0.4f))*(tilt-st.tiltAverage);
-        const float shake=std::fabs(tilt-st.tiltAverage)+residualDeg;
+        const float shake=std::fabs(tilt-st.tiltAverage); // heading residual excluded: stick turns lag
         const float still=std::clamp((0.25f-st.speed)/0.15f,0.f,1.f)*std::clamp((12.f-st.angularSpeed)/8.f,0.f,1.f);
         const float raw=st.weight*still*std::clamp((shake-0.4f)/2.0f,0.f,1.f);
         st.rumble=raw>st.rumble ? raw : st.rumble+(raw-st.rumble)*(std::min)(1.f,dt*6.f);
@@ -207,7 +211,7 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
     }
     AcquireSRWLockExclusive(&g_cameraAnimStabilizerLock);
     std::memcpy(st.stable,stable,sizeof(stable));std::memcpy(st.delta,delta,sizeof(delta));std::memcpy(st.correction,correction,sizeof(correction));
-    st.camera=camera;st.frame=g_trackedFrame.id;st.valid=true;++st.updates;
+    st.camera=camera;st.frame=g_trackedFrame.id;st.valid=true;++st.updates;std::memcpy(st.anim,anim,sizeof(anim));
     ReleaseSRWLockExclusive(&g_cameraAnimStabilizerLock);
     if(!st.start){st.start=now;Log("[CameraStabilize] ACTIVE=1 camera=%08lX; view, hands, gun and shot use parent-stabilized camera; native memory untouched",camera);}
     st.peakTranslation=(std::max)(st.peakTranslation,translation*st.weight);
@@ -215,12 +219,45 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
     if(now>=st.nextLog && now-st.start<180000) {
         st.nextLog=now+500;
         // Counter-prediction: removed* must be ~0 standing still and grow while running/attacking.
-        Log("[CameraStabilize] ms=%llu updates=%llu weight=%.2f removedPos=%.4f removedDeg=%.2f peakPos=%.4f peakDeg=%.2f filterResidualPeakDeg=%.2f parentTiltPeak=%.2f speed=%.2f turn=%.1f rumblePeak=%.2f view(same/stale)=%ld/%ld hand(same/stale)=%ld/%ld rest=(%.4f,%.4f,%.4f) cinematic=%d",
+        Log("[CameraStabilize] ms=%llu updates=%llu weight=%.2f removedPos=%.4f removedDeg=%.2f peakPos=%.4f peakDeg=%.2f filterResidualPeakDeg=%.2f parentTiltPeak=%.2f speed=%.2f turn=%.1f rumblePeak=%.2f cameraMovedAfterCompute=%ld view(same/stale)=%ld/%ld hand(same/stale)=%ld/%ld rest=(%.4f,%.4f,%.4f) cinematic=%d",
             static_cast<unsigned long long>(now-st.start),st.updates,st.weight,translation*st.weight,angle*st.weight,
-            st.peakTranslation,st.peakAngle,st.peakResidualDeg,st.peakTilt,st.speed,st.angularSpeed,st.peakRumble,InterlockedExchange(&st.viewSame,0),InterlockedExchange(&st.viewStale,0),InterlockedExchange(&st.handSame,0),InterlockedExchange(&st.handStale,0),
+            st.peakTranslation,st.peakAngle,st.peakResidualDeg,st.peakTilt,st.speed,st.angularSpeed,st.peakRumble,InterlockedExchange(&st.cameraMovedAfterCompute,0),InterlockedExchange(&st.viewSame,0),InterlockedExchange(&st.viewStale,0),InterlockedExchange(&st.handSame,0),InterlockedExchange(&st.handStale,0),
             st.restLocal[0],st.restLocal[1],st.restLocal[2],int(NativeCinematicPlaying()));
         st.peakTranslation=st.peakAngle=st.peakRumble=st.peakResidualDeg=st.peakTilt=0.f;
     }
+#else
+    (void)camera;(void)avatar;
+#endif
+}
+static SRWLOCK g_cameraStabilizerComputeLock=SRWLOCK_INIT;
+static volatile LONG g_cameraStabilizerCamera=0,g_cameraStabilizerAvatar=0;
+static void EnsureCameraStabilizerFrame() {
+#ifdef D2VR_MATCHED_CAPTURE
+    if(!g_cameraAnimStabilize || !g_trackedFrame.open || !g_trackedFrame.id)return;
+    const DWORD camera=DWORD(g_cameraStabilizerCamera),avatar=DWORD(g_cameraStabilizerAvatar);
+    if(!camera || !avatar)return;
+    if(!TryAcquireSRWLockExclusive(&g_cameraStabilizerComputeLock))return;
+    const auto& st=g_cameraAnimStabilizer;
+    if(!(st.valid && st.frame==g_trackedFrame.id && st.camera==camera))ComputeCameraStabilizer(camera,avatar);
+    ReleaseSRWLockExclusive(&g_cameraStabilizerComputeLock);
+#endif
+}
+// Selected-owner path (render thread): refresh the owner pointers, compute if this frame has
+// no correction yet, and witness whether the native camera changed after an early compute.
+static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
+#ifdef D2VR_MATCHED_CAPTURE
+    if(!g_cameraAnimStabilize || !camera || !avatar)return;
+    InterlockedExchange(&g_cameraStabilizerCamera,LONG(camera));
+    InterlockedExchange(&g_cameraStabilizerAvatar,LONG(avatar));
+    AcquireSRWLockExclusive(&g_cameraStabilizerComputeLock);
+    auto& st=g_cameraAnimStabilizer;
+    if(st.valid && st.frame==g_trackedFrame.id && st.camera==camera) {
+        __try {
+            if(std::memcmp(st.anim,reinterpret_cast<const BYTE*>(camera)+0x80,sizeof(st.anim)))
+                InterlockedIncrement(&st.cameraMovedAfterCompute);
+        } __except(EXCEPTION_EXECUTE_HANDLER){}
+    } else ComputeCameraStabilizer(camera,avatar);
+    ReleaseSRWLockExclusive(&g_cameraStabilizerComputeLock);
 #else
     (void)camera;(void)avatar;
 #endif
@@ -230,6 +267,7 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
 static const float* StabilizedCameraWorld(const void* camera,float (&scratch)[16]) {
     const auto native=reinterpret_cast<const float*>(static_cast<const BYTE*>(camera)+0x80);
     if(!g_cameraAnimStabilize)return native;
+    EnsureCameraStabilizerFrame();
     float correction[16];bool use=false;
     AcquireSRWLockShared(&g_cameraAnimStabilizerLock);
     const auto& st=g_cameraAnimStabilizer;
@@ -253,6 +291,7 @@ static float CameraShakeRumbleAmount() {
 // D = C_anim * C_stab^-1 for the view head delta (identity when inactive).
 static bool CameraStabilizerDelta(float out[16]) {
     if(!g_cameraAnimStabilize)return false;
+    EnsureCameraStabilizerFrame();
     bool use=false;
     AcquireSRWLockShared(&g_cameraAnimStabilizerLock);
     const auto& st=g_cameraAnimStabilizer;
