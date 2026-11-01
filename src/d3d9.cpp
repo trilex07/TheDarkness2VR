@@ -589,6 +589,7 @@ LONG WINAPI CrashVehHandler(PEXCEPTION_POINTERS ep) {
 static std::string g_matchedIniPath;
 static volatile LONG g_cameraUploadWitnessBudget=0;
 #endif
+static void ParseEngineMaxFrameRate(const char* text);
 static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
 static float g_nisSharpness = .20f;
 static bool g_headAttachedTentacles = false;
@@ -689,6 +690,9 @@ void LoadConfig() {
     }
 
     g_asyncLogRequested = GetPrivateProfileIntA("Render", "AsyncLog", 0, chosenIni) != 0;
+    char engineCap[64]{};
+    GetPrivateProfileStringA("Render", "EngineMaxFrameRate", "0", engineCap, sizeof(engineCap), chosenIni);
+    ParseEngineMaxFrameRate(engineCap);
     char adaptive[32]{};
     GetPrivateProfileStringA("Render","AdaptiveFPS","OFF",adaptive,sizeof(adaptive),chosenIni);
     g_adaptiveFPSMode=(!_stricmp(adaptive,"AUTO") || !strcmp(adaptive,"1")) ? d2vr_adaptive::Mode::Auto:
@@ -1435,6 +1439,7 @@ bool g_xrReady = false;
 bool g_xrRunning = false;
 XrSessionState g_xrSessionState = XR_SESSION_STATE_UNKNOWN;
 static d2vr_refresh::Display g_displayRefresh;
+#include "engine_frame_cap.inl"
 static d2vr_refresh::SteamReader<d2vr_refresh::SteamNative> g_steamRefresh;
 static ULONGLONG g_steamRefreshNext=0;
 static d2vr_adaptive::Controller g_adaptiveFPS;
@@ -5339,6 +5344,7 @@ void PumpXR() {
         ev = { XR_TYPE_EVENT_DATA_BUFFER };
     }
     ObserveNativeMenuReceiver();
+    if(g_xrRunning) ApplyEngineFrameCap();
     if(g_xrRunning && g_displayRefresh.FallbackActive() && GetTickCount64()>=g_steamRefreshNext) {
         g_steamRefreshNext=GetTickCount64()+2000;
         const float previous=g_displayRefresh.Hz();
