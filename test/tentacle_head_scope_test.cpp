@@ -81,6 +81,33 @@ int main(){
             headAttachmentAllowed=g_headAttachedTentacles=true;
         }
     }
+    // The second captured player mesh is four repeated draws of a smaller
+    // VB/IB pair, with a separate camera-local c3 signature.
+    const float smallAttached[16]={1.1f,0,0,0,0,1.7f,0,0,0,0,1.0001f,1,0,0,-.2f,-.1f};
+    float smallDelta[16],smallHeadClip[16],smallOriginal[16];
+    const float smallQ[4]={0,std::sin(.21f),0,std::cos(.21f)};
+    const float smallPosition[3]={.03f,-.02f,.01f};
+    CHECK(d2vr_math::TrackingPose(smallQ,smallPosition,smallDelta));
+    // The renderer uses the same tracked-camera clip transform for both mesh
+    // projections; only the tendril's camera-local c3 differs.
+    CHECK(d2vr_math::HeadClipTransform(inverseProjection,smallDelta,smallHeadClip,params.inverseHeadClip));
+    d2vr_math::Multiply(smallAttached,smallHeadClip,smallOriginal);
+    for(int eye=-1;eye<2;++eye) for(int tendril=0;tendril<4;++tendril){
+        IDirect3DDevice9 tendrilDevice;tendrilDevice.vb.desc.Size=53120;tendrilDevice.ib.desc.Size=11520;
+        shader.hash=0x1CB7CEE2;g_replayEye=eye;
+        memcpy(tendrilDevice.matrix,smallOriginal,64);
+        {TentacleHeadScope scope(&tendrilDevice);CHECK(scope.applied && Equal(tendrilDevice.matrix,smallAttached));}
+        CHECK(Equal(tendrilDevice.matrix,smallOriginal) && tendrilDevice.sets==2 && !tendrilDevice.vb.refs && !tendrilDevice.ib.refs);
+        auto rejectSmall=[&]{float before[16];memcpy(before,tendrilDevice.matrix,64);
+            {TentacleHeadScope scope(&tendrilDevice);CHECK(!scope.applied);}
+            CHECK(Equal(before,tendrilDevice.matrix) && !tendrilDevice.vb.refs && !tendrilDevice.ib.refs);};
+        headAttachmentAllowed=false;rejectSmall();headAttachmentAllowed=true;
+        shader.hash=0x34D4EEE8;rejectSmall();shader.hash=0x1CB7CEE2;
+        tendrilDevice.offset=2640;rejectSmall();tendrilDevice.offset=0;
+        tendrilDevice.vb.desc.Size=53121;rejectSmall();tendrilDevice.vb.desc.Size=53120;
+        tendrilDevice.ib.desc.Size=11521;rejectSmall();tendrilDevice.ib.desc.Size=11520;
+        tendrilDevice.matrix[14]+=.1f;rejectSmall();tendrilDevice.matrix[14]-=.1f;
+    }
     IDirect3DDevice9 dev;memcpy(dev.matrix,attached,64);
     const float identity[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};memcpy(params.inverseHeadClip,identity,64);
     auto rejected=[&]{const unsigned sets=dev.sets;float before[16];memcpy(before,dev.matrix,64);

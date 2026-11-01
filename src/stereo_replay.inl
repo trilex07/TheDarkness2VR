@@ -1476,7 +1476,11 @@ struct WorldDiffuseScope {
 // IB, stride 40 and these seven stream byte offsets in both eyes. Check the
 // bound resources at the actual DIP, after all state-block restores, before
 // cancelling the world head transform. Any mismatch keeps the ordinary world
-// pose. This profile-specific opt-in leaves the default renderer unchanged.
+// pose. The four smaller headless tendrils use a separate 53120-byte VB and
+// 11520-byte IB at offset zero (captured eye draws 7..10), with a distinct
+// camera-local c3=(-0.2,-0.1) signature. Match the complete resource pair and
+// matrix signature before extending the same correction to them. This
+// profile-specific opt-in leaves the default renderer unchanged.
 struct TentacleHeadScope {
     IDirect3DDevice9* dev=nullptr;
     float original[16]{};
@@ -1503,21 +1507,26 @@ struct TentacleHeadScope {
             vb->Release();return;
         }
         D3DVERTEXBUFFER_DESC vd{};D3DINDEXBUFFER_DESC id{};
-        const bool vertexGeometry=SUCCEEDED(vb->GetDesc(&vd)) && vd.Size==302920;
+        const bool vertexGeometry=SUCCEEDED(vb->GetDesc(&vd)) &&
+            (vd.Size==302920 || (vd.Size==53120 && offset==0 && g_activeVs->hash==0x1CB7CEE2u));
         vb->Release();
         if(!vertexGeometry || FAILED(dev->GetIndices(&ib)) || !ib)return;
-        const bool geometry=SUCCEEDED(ib->GetDesc(&id)) && id.Size==213588;
+        const bool smallTendril=vd.Size==53120;
+        const bool geometry=SUCCEEDED(ib->GetDesc(&id)) &&
+            id.Size==(smallTendril?11520u:213588u);
         ib->Release();
         if(!geometry || FAILED(dev->GetVertexShaderConstantF(0,original,4))) return;
         float attached[16];d2vr_math::Multiply(original,sp.inverseHeadClip,attached);
-        // After cancellation, the captured camera-local player WVP has c3.z
-        // near -0.1 and c3.w near zero. This secondary gate rejects a buffer
-        // recycled for another model, without modifying its draw.
+        // After cancellation, the captured camera-local WVP has c3.z/w near
+        // (-0.1,0) for the large mesh or (-0.2,-0.1) for the four tendrils.
+        // This secondary gate rejects a buffer recycled for another model.
         if(!std::isfinite(attached[12]) || !std::isfinite(attached[13]) ||
            !std::isfinite(attached[14]) || !std::isfinite(attached[15]) ||
            std::fabs(attached[12])>=0.15f || std::fabs(attached[13])>=0.15f ||
-           attached[14]<=-0.16f || attached[14]>=-0.06f ||
-           std::fabs(attached[15])>=0.05f) return;
+           (smallTendril ? (attached[14]<=-0.25f || attached[14]>=-0.15f ||
+                             attached[15]<=-0.15f || attached[15]>=-0.05f)
+                         : (attached[14]<=-0.16f || attached[14]>=-0.06f ||
+                            std::fabs(attached[15])>=0.05f))) return;
         d2vr_submission::Invalidate();
         applied=SUCCEEDED(g_orig.SetVertexShaderConstantF(dev,0,attached,4));
         if(applied) {
