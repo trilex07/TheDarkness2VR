@@ -7,7 +7,7 @@
 **Branch**: codex/gaze-nis-main-integration
 **Worktree**: C:/Users/Trilex/.codex/worktrees/gaze-nis-main-integration/Darkness2VR
 **Baseline**: installed DLL 916B9A51; previous retained rollback 3FDEB05C (BASELINE.md).
-**Integration commit**: a2fdaf58, merge 316135c; main promotion pending.
+**Integration commit**: a2fdaf58, merge 316135c; local and GitHub main promoted at 0ce7f131.
 
 ## Goal
 Promote all currently installed weapon-wheel, eye-tracking, HUD, frame-cap and
@@ -15,7 +15,8 @@ NIS source to Git main with source and rollback evidence. Continue research on
 larger native engine and CPU savings.
 
 ## Status
-Integrated and offline tested; main promotion pending.
+Integrated, offline tested and promoted to local and GitHub main. The matching
+gaze NIS candidate is installed in Steam for user-run testing.
 
 ## Context Loaded
 - [x] AGENTS.md, WORKFLOW.md, BASELINE.md, FAILED-APPROACHES.md.
@@ -36,9 +37,11 @@ Integrated and offline tested; main promotion pending.
 - All nine protected rollback targets verified in installed package.
 
 ## Next Steps
-1. Commit baseline and handoff, fast-forward local main and push main.
-2. Review newest CPU frame timings; identify a native engine selector or
-   rendering phase with measurable CPU benefit, then design narrow diagnostic.
+1. User launches the installed candidate and reports visual quality and frame
+   drops in the problematic scene. No agent game launch is pending.
+2. For CPU work, distinguish the two possible sources of native submission
+   denial 0x10 before any change to admission. See
+   `docs/research/current-cpu-engine-opportunity-20261101.md`.
 
 ## Blockers
 Native gaze LOD owner and decoration-only classification are not proven.
