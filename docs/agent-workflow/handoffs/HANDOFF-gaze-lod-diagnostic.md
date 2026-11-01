@@ -94,3 +94,8 @@ Source: src/gaze_lod_owner_diagnostic.inl; isolated integration in
 build/gaze-lod-diagnostic-final/src/d3d9.cpp and native_aim.inl.
 Candidate AC6D3568... passed build and protected-profile preflight.
 Full nine-target installer: tools/deploy-gaze-lod-owner.ps1.
+Installed at 02:05 in game, user launches manually. Package:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/gaze-lod-owner-20261101T020523890.
+Independent verification: installed AC6D3568AF0D670F69A8330D08A57B9F3EA4E602783F499A4BEC449848F47E1A,
+9/9 rollback backups hashed, stock EXE unchanged, game closed. Awaiting
+user runtime log for `selected-view owner` before any engine LOD mutation.
