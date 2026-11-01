@@ -1,5 +1,13 @@
 # Baseline and current MAIN candidate
 
+## Current: textures accepted, revised font candidate (2026-11-01 23:14 Warsaw)
+
+- User accepts corrected new comic model textures. Six H/B/F.Texture files remain byte-identical through subsequent font-only updates. The enlarged-atlas font attempt failed physical acceptance; in-place-v2 improved the title but its screenshot still showed uneven new glyphs.
+- Installed source `fcee7c8f`, private `build/font-native-cells-v3`: original atlas dimensions, existing UV/pixels and metrics retained; newly drawn Polish glyphs also preserve their native donor's full cell, UV span and half-texel phase. Font appearance remains PENDING user test; do not claim resolved from offline proof.
+- Independent install audit PASS:14 backups,14 installed archive hashes,13 protected runtime/audio/text files; six accepted model texture archives unchanged. Game closed during installation. DLL9AF9A51E remains accepted; audio/text and INIs unchanged.
+- Receipt/rollback backup: `C:/Users/Trilex/AppData/Local/Darkness2VR/backups/font-native-cells-20261101-v3/deployment.json`. Repair manifest SHA256 `4c625aee5f915b78d8a4386caeff92935a1f63729701fa0880ea7d5ae0e3a7b0`. Closed-game rollback uses `tools/deploy-asset-repair.py rollback` with that backup and the explicit game directory; it restores the preceding font-only candidate and retains model textures. Steam launch requested23:14:51; no input injected.
+- Current source/deployment evidence is on `codex/texture-font-repair-20261101`; main remains `564f8342`. No unaccepted font candidate has been merged into main.
+
 ## Installed texture/font repair candidate (2026-11-01 22:57 Warsaw)
 
 - Previous asset update failed physical acceptance: rainbow artifacts on hands/tentacles and absent Polish gameplay-caption glyphs. Camera/haptics/model DLL9AF9A51E remains accepted and unchanged.

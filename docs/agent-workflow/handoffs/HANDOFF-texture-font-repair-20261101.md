@@ -9,6 +9,14 @@
 
 ## Scope and status
 
+CURRENT INSTALLED: native-cell-v3, sourcefcee7c8f, installed with closed game;
+independent14 backups/14 installed/13 protected hash audit PASS, six accepted
+model texture files identical. Receipt:
+`C:/Users/Trilex/AppData/Local/Darkness2VR/backups/font-native-cells-20261101-v3/deployment.json`.
+Manifest `4c625aee5f915b78d8a4386caeff92935a1f63729701fa0880ea7d5ae0e3a7b0`.
+Steam launch requested23:14:51 Warsaw. Physical new-glyph appearance pending.
+No font candidate merged into main; runtime/asset source branch remains current.
+
 LATEST FONT ITERATIONS: in-place-v2 (source103ebf14) installed23:07 with verified
 14 backups/14 installed archives/13 protected files and six accepted model
 texture archives identical. Receipt at
