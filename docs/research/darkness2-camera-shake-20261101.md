@@ -11,6 +11,7 @@ Pinned stock `DarknessII.exe` SHA256: `D46BB6CB762732B72AB9D34428237D2AFA89F5792
 ## Native candidates and limits
 
 - The executable also contains named parameters `mCameraShakeStrength`, `mPlayerShakeStrength`, `mRunShake`, `mWalkShake`, `mImpactShake`, `mFallScreenShakeScaling`, `mRecoilStrength`, `mFPEntityIgnoresShakeTranslationAndRotation` and others. Their names do not establish a shared camera transform or safe live offsets.
+- One contiguous reflected property group at `010B53C4..010B540C` names `mWalkShake` (walking noise), `mJogShake` (jogging noise), `mRunShake` (running noise), `mImpactShake` (impacts), `mZoomShake`, `mRumbleShake`, and `mViewShake` (camera shake params). This gives a more focused native parameter family. The group is metadata, not a writable live object or a common consumer; the layout/owner and animation order remain unresolved.
 - The `mFPEntityIgnoresShakeTranslationAndRotation` name at `00FB8900` is a property metadata reference at `010B534C`, beside its description at `010B5350`. It does not identify an owned live first-person entity or an effective on/off value.
 - A read-only scan for scalar loads at offsets `+0x2C`, `+0x34`, `+0x44`, `+0x48` found a cluster at `008D2662..008D2715`. It interpolates many fields between two objects, so it is not established as the camera-shake producer. `0066BC76..0066BD24` copies matrix rows; `00BAD219..00BAD260` reads camera-like parameters, but neither has proven `viewShake` ownership.
 
