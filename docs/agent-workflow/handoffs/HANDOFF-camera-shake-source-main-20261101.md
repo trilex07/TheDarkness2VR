@@ -8,6 +8,13 @@
 
 ## Goal and status
 
+FINAL ACCEPTANCE (2026-11-01): user reports "jest okej" after testing the
+9AF9A51E model snapshot correction and explicitly requests integration into
+Git main. Camera stabilization, event vibration and first-person model fix are
+accepted together. Prior pending/regression entries below are chronological.
+Next task: install prepared Polish complete release and comic weapon/tentacle
+textures with closed-game checks and independent backup/hash verification.
+
 LATEST INSTALLATION: user confirmed closed game. Installed sourceeda9420e,
 DLL9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D
 via camera-model-snapshot-20261101T222624275. Independent9/9 backups and8/8

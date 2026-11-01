@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Accepted camera and first-person models (2026-11-01)
+
+- User physically tested DLL `9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D` (source `eda9420e`) and confirmed "jest okej", requesting integration into main. This accepts the model snapshot correction together with the previously confirmed camera stabilization and event vibration.
+- MAIN verified the installed DLL still matches that hash. Preserve both enabled features and the existing shotgun profile. User next requests installation of the prepared Polish localization/dubbing update and 64 comic weapon/tentacle textures; their runtime acceptance is separate.
+- Git `main` is the requested integration target. The former `codex/gaze-nis-main-integration` branch remains historical; this task branch contains its source history.
+
 ## Installed model snapshot correction (2026-11-01 22:26 Warsaw)
 
 - Source `eda9420e`, DLL `9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D`. Native stabilized view now refreshes the first-person model snapshot on every dispatch, including the ordinary path. Camera stabilization and event rumble retained; physical model result pending.
