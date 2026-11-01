@@ -168,7 +168,8 @@ bool g_gazeDotEnabled=false;      // [EyeTracking] GazeDot: debug ring at the ga
 bool g_gazeGrab=true;             // [EyeTracking] GazeGrab: tentacle grab acquires the gazed target
 bool g_gazeThrow=true;            // [EyeTracking] GazeThrow: thrown objects fly towards the gaze
 float g_gazeThrowAssist=.85f;     // [EyeTracking] GazeThrowAssist (percent): gaze share of the throw direction
-bool g_gazeMenu=true;             // [EyeTracking] GazeMenu: native menu cursor follows the gaze
+bool g_gazeMenu=false;            // [EyeTracking] GazeMenu: menu cursor follows the gaze (experimental, off: user 01:01)
+bool g_gazeWheel=true;            // [EyeTracking] GazeWheel: weapon wheel item under the gaze is selected
 bool g_gazeMenuForceCursor=true;  // [EyeTracking] GazeMenuForceCursor: put the top Flash movie in cursor mode while gazing
 int g_gazeMenuMode=2;             // [EyeTracking] GazeMenuMode: 2 relative mouse input (events), 1 native setter
 bool g_ammoHudEnabled=true;       // [Input] AmmoHud: magazine counter on the back of each armed hand
@@ -835,10 +836,11 @@ void LoadConfig() {
     g_gazeGrab = GetPrivateProfileIntA("EyeTracking", "GazeGrab", 1, chosenIni) != 0;
     g_gazeThrow = GetPrivateProfileIntA("EyeTracking", "GazeThrow", 1, chosenIni) != 0;
     g_gazeThrowAssist = std::min(100u,GetPrivateProfileIntA("EyeTracking", "GazeThrowAssist", 85, chosenIni))*.01f;
-    g_gazeMenu = GetPrivateProfileIntA("EyeTracking", "GazeMenu", 1, chosenIni) != 0;
+    g_gazeMenu = GetPrivateProfileIntA("EyeTracking", "GazeMenu", 0, chosenIni) != 0;
+    g_gazeWheel = GetPrivateProfileIntA("EyeTracking", "GazeWheel", 1, chosenIni) != 0;
     g_gazeMenuMode = GetPrivateProfileIntA("EyeTracking", "GazeMenuMode", 2, chosenIni)==1 ? 1 : 2;
     g_gazeMenuForceCursor = GetPrivateProfileIntA("EyeTracking", "GazeMenuForceCursor", 1, chosenIni) != 0;
-    Log("[EyeTracking] GazeGrab=%d GazeThrow=%d GazeThrowAssist=%.2f GazeMenu=%d",(int)g_gazeGrab,(int)g_gazeThrow,g_gazeThrowAssist,(int)g_gazeMenu);
+    Log("[EyeTracking] GazeGrab=%d GazeThrow=%d GazeThrowAssist=%.2f GazeMenu=%d GazeWheel=%d",(int)g_gazeGrab,(int)g_gazeThrow,g_gazeThrowAssist,(int)g_gazeMenu,(int)g_gazeWheel);
     Log("[EyeTracking] enabled=%d gazeDot=%d (needs AdaptiveTriggers bridge + Toolkit gaze calibration)",(int)g_eyeTrackingEnabled,(int)g_gazeDotEnabled);
     Log("[AmmoHud] enabled=%d (magazine rounds from gun+0xA48 on a grip-space quad; reserve ammo not shown yet)",(int)g_ammoHudEnabled);
     Log("[WeaponWheel] enabled=%d (hold R3: one wheel at the right hand with every owned weapon, move the hand to it, release; closed-loop stock D-pad equip; R3 tap still reaches the game)",(int)g_weaponWheelEnabled);

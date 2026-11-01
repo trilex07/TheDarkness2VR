@@ -166,7 +166,9 @@ static void ApplyGazeMenuCursor() {
 #ifdef D2VR_MATCHED_CAPTURE
     static d2vr_gaze_menu::CursorFilter filter;
     static ULONGLONG nextObserve=0; static uint32_t mouse=0; static bool contractOk=false, contractChecked=false;
-    if(!g_gazeMenu || !g_eyeTrackingEnabled) { filter.Reset(); g_gazeMenuActive=false; RestoreMenuClamp(); return; }
+    // The menu gate (pause / Flash cursor / no world) also drives A-confirm in
+    // pause menus, so it runs even with GazeMenu off (user 01:01: gaze menu dropped).
+    const bool cursorFeature=g_gazeMenu && g_eyeTrackingEnabled;
     const HWND window=g_renderSizeHwnd;
     DWORD pid=0;
     if(!window || GetWindowThreadProcessId(window,&pid)!=GetCurrentThreadId() || pid!=GetCurrentProcessId()) return;
@@ -208,7 +210,7 @@ static void ApplyGazeMenuCursor() {
     // yet nothing highlighted: the top movie had cursorRequested=0 (pad mode,
     // mouse ignored). Request the cursor the way the game's own setter B072E0
     // does (movie+F4 = 1) while the gaze menu is active; restore on exit.
-    if(g_gazeMenuForceCursor) {
+    if(cursorFeature && g_gazeMenuForceCursor) {
         static int setterOk=-1;
         if(setterOk<0) {
             static const BYTE setterBytes[]={0x8A,0x44,0x24,0x04,0x88,0x81,0xF4,0x00,0x00,0x00,0xC2,0x04,0x00};
@@ -236,7 +238,7 @@ static void ApplyGazeMenuCursor() {
             int(paused),int(cursorWanted),int(g_in3DGameplayMode),unsigned(g_nativeRegionManager));
     }
     g_gazeMenuActive=gate;
-    if(!gate) { filter.Reset(); RestoreMenuClamp(); return; }
+    if(!gate || !cursorFeature) { filter.Reset(); RestoreMenuClamp(); return; }
     if(!contractChecked) {
         contractChecked=true;
         static const BYTE setter[]={0x83,0xEC,0x18,0x55,0x8B,0x6C,0x24,0x24,0x56,0x57,0x8B,0x7C,0x24,0x28,0x8B,0xF1,0x8B,0x8E,0xE8,0x01,0,0};

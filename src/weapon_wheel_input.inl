@@ -477,6 +477,18 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
                 const float v=-(d.x*w.axisY.x+d.y*w.axisY.y+d.z*w.axisY.z);
                 const int before=w.pick.hover;
                 w.pick.Update(u,v,w.menu.count,kWheelDeadM);
+                // [EyeTracking] GazeWheel: looking at an item selects it (wins over
+                // the hand while the gaze is on the wheel; user 01:01).
+                XrVector3f go{},gd{}; float gu=0,gv=0;
+                if(g_gazeWheel && GazeWorldRay(go,gd) &&
+                   d2vr_gaze_menu::HitQuad({go.x,go.y,go.z},{gd.x,gd.y,gd.z},
+                       {w.pose.position.x,w.pose.position.y,w.pose.position.z},
+                       {w.pose.orientation.x,w.pose.orientation.y,w.pose.orientation.z,w.pose.orientation.w},
+                       kWheelSizeM,kWheelSizeM,gu,gv)) {
+                    // Plane units: quad spans [-1,1]; wheel radius .9, centre disc .23.
+                    const int sector=d2vr_wheel::SectorFromOffset((gu-.5f)*2,(gv-.5f)*2,w.menu.count,.23f);
+                    if(sector>=0) { w.pick.hover=sector; w.pick.touched=true; }
+                }
                 if(w.pick.hover!=before && w.pick.hover>=0)
                     Log("[WeaponWheel] %s hand hovers item %d (kind=%d slot=%d)",h ? "right":"left",w.pick.hover,
                         int(w.menu.item[w.pick.hover].kind),w.menu.item[w.pick.hover].slot);
@@ -518,7 +530,7 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
 
 // Menus with gaze: the right trigger confirms like A (look + pull).
 static void ApplyMenuTriggerConfirm(XINPUT_GAMEPAD& gp) {
-    if(!g_gazeMenu || !g_eyeTrackingEnabled || !GazeMenuActive()) return;
+    if(!GazeMenuActive()) return; // pause/menu: trigger confirms like A
     if(gp.bRightTrigger>150) { gp.wButtons|=XINPUT_GAMEPAD_A; gp.bRightTrigger=0; }
 }
 
