@@ -4148,6 +4148,7 @@ static void ResetPoseInput() {
     for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.flags=0; hand.squeeze=0; hand.motion={}; }
 }
 #include "gaze_lod_owner_diagnostic.inl"
+#include "gaze_lod_runtime_observer.inl"
 #include "native_aim.inl"
 // Gaze rays for grab/throw (defined in eye_gaze.inl, tracking space).
 static bool GazeWorldDirection(XrVector3f& direction);
@@ -5423,7 +5424,7 @@ void PumpXR() {
     }
     ObserveNativeMenuReceiver();
     ApplyGazeMenuCursor(); // same native window thread as the receiver observation
-    if(g_xrRunning) { ApplyEngineFrameCap(); ObserveGazeLodConfiguration(); } // Graphics.MaxFrameRate override (engine_frame_cap.inl)
+    if(g_xrRunning) { ApplyEngineFrameCap(); ObserveGazeLodConfiguration(); ReportGazeLodRuntimeObserver(); } // Graphics.MaxFrameRate override (engine_frame_cap.inl)
     if(g_xrRunning && g_displayRefresh.FallbackActive() && GetTickCount64()>=g_steamRefreshNext) {
         g_steamRefreshNext=GetTickCount64()+2000;
         const float previous=g_displayRefresh.Hz();
@@ -6747,6 +6748,7 @@ HRESULT STDMETHODCALLTYPE Hook_BeginScene(IDirect3DDevice9* dev) {
 
 HRESULT STDMETHODCALLTYPE Hook_EndScene(IDirect3DDevice9* dev) {
     if (g_insidePresentation) return g_origEndScene(dev);
+    StopGazeLodRuntimeObserverAfterSample();
     PollHotkeys();
     if (g_submitMode == 4 && g_stereoMode >= 1) {
         d2vr_replay::RecEmit(d2vr_replay::OP_EndScene, 0);
@@ -7366,6 +7368,7 @@ void HookDevice(IDirect3DDevice9* dev) {
     InstallImagePresent(dev);
     InstallProtectedSourceQuality();
     InstallNativeViewBoundary();
+    InstallGazeLodRuntimeObserver();
     InstallDiagnosticEnginePresent();
     InstallDiagnosticTrackedGameplay();
     InstallDiagnosticCameraCover();
