@@ -104,3 +104,10 @@ live resource and stateblock tests pass. Protected x86 DLL/profile PASS.
 Candidate SHA256: 70F43D5D414887BE33270160686073541D61E3A9CBBB05877C5B65FE8CEB5A7F.
 Install through `tools/deploy-native-cpu-retain.ps1`. Runtime admission,
 stereo appearance and actual CPU saving remain unverified.
+
+Installed third candidate at
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/native-cpu-retain-20261101T030900484
+after the user closed the game. The first install attempt stopped before any
+write because the game was still running. The successful installation
+verified the new DLL and stock EXE hashes and all nine backup hashes;
+the restore script is present. INIs and caches were not changed.
