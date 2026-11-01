@@ -72,3 +72,9 @@ The second protected x86 DLL is 63C72AE1A4253ED448A71742E5073A410B6600769C5846F5
 Native boundary and recorder tests passed; the protected profile gate passed.
 Install/test through `tools/deploy-native-cpu-callback.ps1`; neither admission
 nor saving is established until the next headset run.
+
+Installed second candidate at
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/native-cpu-callback-20261101T030344702.
+Postinstall DLL and stock EXE hashes matched, all nine backups matched their
+recorded hashes, the restore script was present, and the game remained closed.
+The user will launch it for the next runtime gate.
