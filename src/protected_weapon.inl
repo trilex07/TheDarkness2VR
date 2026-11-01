@@ -63,6 +63,31 @@ static bool ProtectedWeaponOwner(void* camera,unsigned slot,void*& gun,void*& mo
         return true;
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
+// The equipped shotgun uses a different native fire action. Its gun and model
+// links are valid in the live log, but the generic protected fire chain must
+// not be widened to admit a shot path we have not reverse engineered. Admit
+// only its visible model and leave FD9D68's native firing action untouched.
+static bool ProtectedShotgunModelOwner(void* camera,unsigned slot,void*& gun,void*& model) {
+    if(slot>=2 || !camera || !ProtectedAimCameraOwned(camera) || !NativeAimOwnerMatches(camera))return false;
+    __try {
+        auto avatar=**reinterpret_cast<BYTE***>(static_cast<BYTE*>(camera)+0x30);
+        auto inventory=**reinterpret_cast<BYTE***>(avatar+0x630);
+        auto weapon=**reinterpret_cast<BYTE***>(inventory+0xB0+12*slot);
+        if(!ProtectedGunType(weapon) ||
+           **reinterpret_cast<BYTE***>(weapon+0x980)!=avatar)return false;
+        const DWORD mode=*reinterpret_cast<DWORD*>(weapon+0xA78);
+        if(mode>=4)return false;
+        auto parts=*reinterpret_cast<BYTE**>(weapon+0xA64);
+        auto action=**reinterpret_cast<BYTE***>(parts+48*mode+0xC);
+        if(!action || *reinterpret_cast<DWORD*>(action)!=0xFD9D68 ||
+           *reinterpret_cast<DWORD*>(action+4)!=0x10F4F58 ||
+           **reinterpret_cast<BYTE***>(action+0x4C)!=weapon)return false;
+        auto entity=**reinterpret_cast<BYTE***>(weapon+0x12C);
+        if(!entity || (*reinterpret_cast<DWORD*>(entity)!=0xFD6BC0 &&
+                       !ProtectedWeaponModelOwned(entity)))return false;
+        gun=weapon;model=entity;return true;
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+}
 static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float* world,unsigned* stage=nullptr) {
     if(stage)*stage=1; // frame/tracking/thread context
     if(!world || (!model && !fire) || !ProtectedWeaponAvailable())return false;
@@ -79,10 +104,13 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
         if(stage)*stage=4; // selected fire/model must actually be equipped
         for(unsigned slot=0;slot<2;++slot) {
             void *gun=nullptr,*equippedModel=nullptr,*equippedFire=nullptr;
-            if(!ProtectedWeaponOwner(camera,slot,gun,equippedModel,equippedFire) ||
+            const bool shotgunModel=model && !fire &&
+                ProtectedShotgunModelOwner(camera,slot,gun,equippedModel);
+            if(!shotgunModel && !ProtectedWeaponOwner(camera,slot,gun,equippedModel,equippedFire))continue;
+            if(
                (model && model!=equippedModel) || (fire && fire!=equippedFire))continue;
             if(stage)*stage=5+slot*16; // instance publication
-            if(!ProtectedWeaponFireOwned(equippedFire) ||
+            if((!shotgunModel && !ProtectedWeaponFireOwned(equippedFire)) ||
                (model && !ProtectedWeaponModelOwned(equippedModel)))return false;
             if(stage)*stage=6+slot*16; // native shot argument's gun reference
             if(fire && (!weaponRef || **static_cast<void***>(weaponRef)!=gun || !ProtectedWeaponFireOwned(fire)))return false;
@@ -118,8 +146,11 @@ static bool CopyProtectedWeaponHandPose(DWORD camera,unsigned hand,XrPosef& pose
     // falling back to grip rotates the visible gun away from its actual ray.
     // This selects a pose for our already-owned human palette only. It neither
     // admits nor writes the optional (possibly unknown) model instance.
-    if(!ProtectedWeaponOwner(reinterpret_cast<void*>(camera),1-hand,gun,model,fire) ||
-       !ProtectedWeaponFireOwned(fire))return false;
+    const bool regular=ProtectedWeaponOwner(reinterpret_cast<void*>(camera),1-hand,gun,model,fire) &&
+        ProtectedWeaponFireOwned(fire);
+    const bool shotgun=!regular && ProtectedShotgunModelOwner(reinterpret_cast<void*>(camera),1-hand,gun,model) &&
+        ProtectedWeaponModelOwned(model);
+    if(!regular && !shotgun)return false;
     pose=g_hands[hand].aim;return true;
 }
 static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {
@@ -137,12 +168,13 @@ static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {
         if(CopyNativeGameplay(owner)) {
             void *gun=nullptr,*model=nullptr,*fire=nullptr;
             void* camera=reinterpret_cast<void*>(owner.camera);
-            if(ProtectedWeaponOwner(camera,0,gun,model,fire) &&
+            const bool shotgun=ProtectedShotgunModelOwner(camera,0,gun,model);
+            if((shotgun || ProtectedWeaponOwner(camera,0,gun,model,fire)) &&
                model==reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(current)-0x140)) {
                 nextPoseReport=now+1000;
                 const auto& right=g_hands[1];const auto& left=g_hands[0];
-                Log("[WeaponPose] firearm=%u gun=%p model=%p nativePos=(%.3f,%.3f,%.3f) nativeAxes=(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f) trackedPos=(%.3f,%.3f,%.3f) trackedAxes=(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f) rightAim=%d leftGrip=%d leftSqueeze=%.2f leftPos=(%.3f,%.3f,%.3f); observer only",
-                    unsigned(owner.firearm[0]),gun,model,current[12],current[13],current[14],
+                Log("[WeaponPose] firearm=%u shotgun=%d gun=%p model=%p nativePos=(%.3f,%.3f,%.3f) nativeAxes=(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f) trackedPos=(%.3f,%.3f,%.3f) trackedAxes=(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f)/(%.3f,%.3f,%.3f) rightAim=%d leftGrip=%d leftSqueeze=%.2f leftPos=(%.3f,%.3f,%.3f); model pose trial only",
+                    unsigned(owner.firearm[0]),int(shotgun),gun,model,current[12],current[13],current[14],
                     current[0],current[1],current[2],current[4],current[5],current[6],current[8],current[9],current[10],
                     world[12],world[13],world[14],world[0],world[1],world[2],
                     world[4],world[5],world[6],world[8],world[9],world[10],
@@ -254,6 +286,13 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
     for(unsigned slot=0;slot<2;++slot) {
         void *gun=nullptr,*model=nullptr,*fire=nullptr;
         if(!ProtectedWeaponOwner(camera,slot,gun,model,fire)) {
+            if(ProtectedShotgunModelOwner(camera,slot,gun,model)) {
+                if(ProtectedWeaponModelOwned(model))continue;
+                if(!PrepareProtectedWeaponCode())return;
+                const bool pose=g_protectedWeaponModelTable.Publish(model,g_nativeImageGuard);
+                Log("[ProtectedWeapon] shotgun slot=%u model=%p privatePose=%d nativeFire=FD9D68 unchanged; model-only trial",slot,model,int(pose));
+                continue;
+            }
             ReportProtectedWeaponRefusal(camera,slot);continue;
         }
         const bool needsShot=!ProtectedWeaponFireOwned(fire);
