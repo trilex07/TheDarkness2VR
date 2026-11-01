@@ -102,6 +102,7 @@ static bool g_protectedLeftThrow=false;
 static bool g_protectedTrackedHands=false;
 static bool g_shotgunCandidate=false;
 static bool g_cameraShakeTrace=false;
+static bool g_cameraShakeSuppress=false;
 static ULONGLONG g_cameraShakeTraceStart=0;
 static d2vr_input::Tentacles g_protectedRightTentacle;
 static volatile LONG g_protectedRecenterRequested=0;
@@ -680,8 +681,10 @@ void LoadConfig() {
     g_protectedTrackedHands=GetPrivateProfileIntA("Diagnostics","ProtectedTrackedHands",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_shotgunCandidate=GetPrivateProfileIntA("Diagnostics","ShotgunCandidate",0,".\\Darkness2VR-diagnostic.ini")!=0;
     g_cameraShakeTrace=GetPrivateProfileIntA("Diagnostics","CameraShakeTrace",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_cameraShakeSuppress=GetPrivateProfileIntA("Diagnostics","CameraShakeSuppress",0,".\\Darkness2VR-diagnostic.ini")!=0;
     Log("[ShotgunCandidate] requested=%d; model and final pellet ray share right aim after first admitted shot; left squeeze near fore-end supports stock hand pose",int(g_shotgunCandidate));
     Log("[CameraShakeTrace] requested=%d; selected camera and avatar matrices read only for first 30 gameplay seconds",int(g_cameraShakeTrace));
+    Log("[CameraShakeSuppress] requested=%d; four pinned native procedural-shake call sites",int(g_cameraShakeSuppress));
     Log("[ProtectedLeftAim] requested=%d; private getter, legacy NativeLeftAim stays OFF; separate ProtectedLeftThrow=%d",int(g_protectedLeftAim),int(g_protectedLeftThrow));
     Log("[ProtectedHands] requested=%d; private selected-resource packer only; legacy hands/weapon hooks remain independent",int(g_protectedTrackedHands));
     if (g_imagePreservingPresent || GetPrivateProfileIntA("Diagnostics","BlockNativeImagePatches",0,".\\Darkness2VR-diagnostic.ini")) {
@@ -4180,6 +4183,7 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction);
 #include "protected_left_throw.inl"
 #include "native_weapon.inl"
 #include "native_hands.inl"
+#include "native_shake_suppress.inl"
 #include "protected_hands.inl"
 #include "protected_weapon.inl"
 #include "native_recenter.inl"
@@ -7209,12 +7213,14 @@ static void InstallDiagnosticTrackedGameplay() {
     }
     const bool installed=InstallNativeAimHook() && InstallNativeThrowHook() &&
         InstallNativeWeaponHook() && InstallNativePistolHook() && InstallNativeHandsHook() &&
-        (!handPackRequested || InstallNativeHandsPackHook());
+        (!handPackRequested || InstallNativeHandsPackHook()) &&
+        d2vr_native_shake::Install();
     if(!installed) {
+        const bool shakeRemoved=d2vr_native_shake::Restore();
         const bool packRemoved=RemoveNativeHandsPackHook();
         RemoveNativeHandsHook(); RemoveNativePistolHook(); RemoveNativeWeaponHook();
         RemoveNativeThrowHook(); RemoveNativeAimHook();
-        if(!packRemoved || !d2vr_tracked_gameplay::Validate(read,failed) ||
+        if(!shakeRemoved || !packRemoved || !d2vr_tracked_gameplay::Validate(read,failed) ||
            (handPackRequested && !d2vr_tracked_gameplay::ValidateHandPack(read,failed))) {
             Log("[TrackedGameplay] FATAL rollback mismatch at %08X",failed);
             CloseHandle(locked); RaiseFailFastException(nullptr,nullptr,0); return;
@@ -7813,6 +7819,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
             (long)InterlockedCompareExchange(&d2vr_trace::g_dropped,0,0));
         d2vr::psvr2::ClientRequestStop();
 #ifdef D2VR_MATCHED_CAPTURE
+        if(!d2vr_native_shake::Restore()) RaiseFailFastException(nullptr,nullptr,0);
         if(!RemoveNativeHandsPackHook()) RaiseFailFastException(nullptr,nullptr,0);
 #endif
         RemoveNativeHandsHook();
