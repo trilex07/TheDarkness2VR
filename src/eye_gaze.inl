@@ -139,11 +139,11 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction) {
 // game's own pad handling. Cursor setter MouseDeviceWin vtable FC00C8 +0x70 ->
 // C4B690 (thiscall x,y client pixels: ClientToScreen, SetCursorPos when
 // acquired, stores +21C/+220). Runs only on the native window thread.
-static volatile bool g_gazeMenuActive=false; // window thread writes, input thread reads
+static std::atomic<bool> g_menuConfirmActive{false}; // window thread writes, input thread reads
 struct MenuSurface { bool valid=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; };
 static SRWLOCK g_menuSurfaceLock=SRWLOCK_INIT;
 static MenuSurface g_menuSurface;
-static bool GazeMenuActive() { return g_gazeMenuActive; }
+static bool MenuConfirmActive() { return g_menuConfirmActive.load(std::memory_order_acquire); }
 static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
     s.time=GetTickCount64(); s.space=quad.space;
@@ -237,7 +237,8 @@ static void ApplyGazeMenuCursor() {
         Log("[GazeMenu] menu cursor %s (pause=%d flashCursor=%d world=%d manager=%08X)",gate ? "ON" : "off",
             int(paused),int(cursorWanted),int(g_in3DGameplayMode),unsigned(g_nativeRegionManager));
     }
-    g_gazeMenuActive=gate;
+    g_menuConfirmActive.store(d2vr_gaze_menu::PadConfirmContext(paused,g_in3DGameplayMode),
+                              std::memory_order_release);
     if(!gate || !cursorFeature) { filter.Reset(); RestoreMenuClamp(); return; }
     if(!contractChecked) {
         contractChecked=true;

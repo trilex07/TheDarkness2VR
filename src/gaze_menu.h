@@ -5,6 +5,12 @@
 
 namespace d2vr_gaze_menu {
 
+// A Flash cursor can belong to a world-space overlay while gameplay continues.
+// Only a paused game or a menu without the 3D world may turn R2 into pad A.
+inline bool PadConfirmContext(bool paused,bool worldVisible) {
+    return paused || !worldVisible;
+}
+
 struct V3 { float x,y,z; };
 struct Quat { float x,y,z,w; };
 

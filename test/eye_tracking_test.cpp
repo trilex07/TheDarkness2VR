@@ -35,6 +35,9 @@ static void Fovea() {
 }
 static void Menu() {
     using namespace d2vr_gaze_menu; float u,v;
+    CHECK(!PadConfirmContext(false,true)); // Flash cursor over active gameplay: R2 fires
+    CHECK(PadConfirmContext(true,true));   // pause over world: R2 confirms
+    CHECK(PadConfirmContext(false,false)); // cinema/menu without world: R2 confirms
     Quat id{0,0,0,1}; V3 c{0,1.5f,-2};
     CHECK(HitQuad({0,1.5f,0},{0,0,-1},c,id,2,1.125f,u,v) && std::fabs(u-.5f)<1e-4f && std::fabs(v-.5f)<1e-4f);
     CHECK(HitQuad({0,1.5f,0},{-0.2f,0.1f,-1},c,id,2,1.125f,u,v) && u<.5f && v<.5f);
