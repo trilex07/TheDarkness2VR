@@ -4,6 +4,7 @@
 
 - **Installed DLL SHA256**: `7414984FF998FABDF154AEB5EE443D75805378DDB2359F7EC6F20E83E8A6FA55`, source `6eb59a04` on `codex/gaze-nis-main-integration`. Diagnostic INI SHA256 `30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD` retains `ShotgunCandidate=1` and `CameraShakeTrace=1`, with no suppression request. Stock EXE unchanged.
 - **Change**: read-only selected avatar vtable/field trace added to existing camera/hand trace. No native image patch or gameplay transform change. Headset owner sample NOT RUN at installation.
+- **Subsequent read-only result**: selected avatar table is `01001630`, not `00FDF170`; a one-shot live scan found two avatar instances sharing a `00FDF170` object through `avatar+0x5E0`. Idle noise outputs were zero. No shake suppression is active or physically accepted.
 - **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/camera-shake-owner-trace-20261101T181538632/rollback/Restore.ps1`. Independent audit: 9/9 backups, 8/8 unchanged protected targets, exact DLL/INI/stock EXE hashes and no running game. The agent did not launch the game.
 
 ## Current after procedural shake trial rollback (2026-11-01)
