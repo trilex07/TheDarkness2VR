@@ -15,7 +15,7 @@ The next gameplay candidate should let the left hand support an equipped shotgun
 
 ## Status
 
-In Progress. The model-only headset trial failed and was rolled back 9/9. A new shotgun aim/support candidate is installed with `Diagnostics/ShotgunCandidate=1` and awaits headset feedback. Camera shake suppression remains open.
+In Progress. The model-only headset trial failed and was rolled back 9/9. A new shotgun aim/support candidate remains enabled, and a read-only camera-shake trace is now installed for the next headset run. Neither the new shotgun candidate nor camera-shake suppression has a headset result; shake suppression remains open.
 
 ## Context Loaded
 
@@ -62,6 +62,13 @@ In Progress. The model-only headset trial failed and was rolled back 9/9. A new 
 - Gated aim/support source trial: `build.ps1 -DiagnosticCapture` x86 PASS; profile gate `protected-native` PASS; DLL SHA256 `00F659DF51A7D3ED43084A837D190F2E288BB05861A464E31721FA32DDA99139`. Headset result NOT RUN. Native camera-shake suppression is not in this DLL.
 - Protected installer preflight PASS; MAIN installed the gated candidate only after the user closed the game. Independent audit: nine backup hashes match, seven unchanged protected targets match, installed DLL and diagnostic INI match staged hashes, stock EXE unchanged, game not launched by the agent.
 - Shake trace build: `build.ps1 -DiagnosticCapture` x86 PASS; profile gate `protected-native` PASS; DLL SHA256 `B92C42F4A84161BFF7F4597B1C412C7B6B784764DB9798F95393A10637A2301E`. Installer preflight PASS. Headset/trace result NOT RUN; no shake suppression yet.
+- MAIN installed the read-only trace after verifying the game was closed. Independent audit: nine backup hashes match, seven other protected targets unchanged, installed DLL and diagnostic INI match staged hashes, stock EXE unchanged, no game process.
+
+## Installed read-only shake trace receipt
+
+- Package: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/camera-shake-trace-20261101T173845860`.
+- DLL SHA256 `B92C42F4A84161BFF7F4597B1C412C7B6B784764DB9798F95393A10637A2301E`; diagnostic INI SHA256 `30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD`, `CameraShakeTrace=1`, `ShotgunCandidate=1` retained.
+- Rollback: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/camera-shake-trace-20261101T173845860/rollback/Restore.ps1`; headset/trace result NOT RUN. No shake suppression in this DLL.
 
 ## Installed gated shotgun aim/support trial receipt
 

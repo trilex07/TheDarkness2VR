@@ -3,6 +3,12 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed read-only camera shake trace (2026-11-01)
+
+- **Installed DLL SHA256**: `B92C42F4A84161BFF7F4597B1C412C7B6B784764DB9798F95393A10637A2301E`, source `8523e2ca` on `codex/gaze-nis-main-integration`. Game diagnostic INI SHA256 `30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD` enables `CameraShakeTrace=1` and retains `ShotgunCandidate=1`; stock EXE hash unchanged.
+- **Change**: selected player camera and avatar root transforms are read at 20 Hz for the first 30 gameplay seconds. No camera, hand or gun transform is changed by this trace. Camera shake suppression and headset results remain NOT RUN.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/camera-shake-trace-20261101T173845860/rollback/Restore.ps1`. Independent audit verified nine backups, seven unchanged protected targets, exact DLL and diagnostic INI hashes, stock EXE and no running game.
+
 ## Installed gated shotgun aim/support trial (2026-11-01 15:10 Europe/Warsaw)
 
 - **Installed DLL SHA256**: `00F659DF51A7D3ED43084A837D190F2E288BB05861A464E31721FA32DDA99139`, source `a4188551` on `codex/gaze-nis-main-integration`. Game diagnostic INI SHA256 `2B6D94F228A156ACAFCF9043FE44E65DF64AAB1706DAF5CEC8540D3F8319DA49` enables `ShotgunCandidate=1`; stock EXE hash remains `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.
