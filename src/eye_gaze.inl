@@ -139,19 +139,23 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction) {
 // game's own pad handling. Cursor setter MouseDeviceWin vtable FC00C8 +0x70 ->
 // C4B690 (thiscall x,y client pixels: ClientToScreen, SetCursorPos when
 // acquired, stores +21C/+220). Runs only on the native window thread.
-static std::atomic<bool> g_menuConfirmActive{false}; // window thread writes, input thread reads
 struct MenuSurface { bool valid=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; };
 static SRWLOCK g_menuSurfaceLock=SRWLOCK_INIT;
 static MenuSurface g_menuSurface;
 static bool MenuConfirmActive() {
-    // The window-thread gate is sampled every 100 ms. On unpause it can still
-    // report the previous menu while the input thread receives a fresh R2.
+    // R2/Cross input must use the verified RegionMgr -> GameRules pause graph.
+    // RegionMgr itself has no +198/+EC pause fields (post-load false positives).
     if(!g_in3DGameplayMode) return true;
-    if(!g_menuConfirmActive.load(std::memory_order_acquire)) return false;
     const auto manager=uint32_t(g_nativeRegionManager);
     if(!manager) return false;
-    __try { return *(BYTE*)(manager+0x198)==0 && **(DWORD**)(manager+0xEC)!=0; }
-    __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+    const auto read=[](uint32_t address,uint32_t& value) {
+        SIZE_T copied=0;
+        return ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(address),
+            &value,sizeof(value),&copied) && copied==sizeof(value);
+    };
+    d2vr_menu_native::PauseSnapshot first,second;
+    return d2vr_menu_native::ObservePause(manager,read,first) &&
+        d2vr_menu_native::ObservePause(manager,read,second) && first==second && first.showing;
 }
 static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
@@ -197,7 +201,14 @@ static void ApplyGazeMenuCursor() {
         paused=false;
         const auto manager=uint32_t(g_nativeRegionManager);
         if(predicateOk==1 && manager) {
-            __try { paused=*(BYTE*)(manager+0x198)==0 && **(DWORD**)(manager+0xEC)!=0; } __except(EXCEPTION_EXECUTE_HANDLER) { paused=false; }
+            const auto read=[](uint32_t address,uint32_t& value) {
+                SIZE_T copied=0;
+                return ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(address),
+                    &value,sizeof(value),&copied) && copied==sizeof(value);
+            };
+            d2vr_menu_native::PauseSnapshot first,second;
+            paused=d2vr_menu_native::ObservePause(manager,read,first) &&
+                d2vr_menu_native::ObservePause(manager,read,second) && first==second && first.showing;
         }
         const auto readMovie=[](uint32_t address,uint32_t& value) {
             MEMORY_BASIC_INFORMATION region{};
@@ -246,8 +257,6 @@ static void ApplyGazeMenuCursor() {
         Log("[GazeMenu] menu cursor %s (pause=%d flashCursor=%d world=%d manager=%08X)",gate ? "ON" : "off",
             int(paused),int(cursorWanted),int(g_in3DGameplayMode),unsigned(g_nativeRegionManager));
     }
-    g_menuConfirmActive.store(d2vr_gaze_menu::PadConfirmContext(paused,g_in3DGameplayMode),
-                              std::memory_order_release);
     if(!gate || !cursorFeature) { filter.Reset(); RestoreMenuClamp(); return; }
     if(!contractChecked) {
         contractChecked=true;

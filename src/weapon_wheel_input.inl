@@ -530,12 +530,19 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
 
 // Menus with gaze: the right trigger confirms like A (look + pull).
 static void ApplyMenuTriggerConfirm(XINPUT_GAMEPAD& gp) {
-    const bool menu=MenuConfirmActive();
     const bool down=gp.bRightTrigger>150;
     static bool wasDown=false;
+    static bool menu=false;
+    static bool lastWorld=false;
+    static LONG lastManager=0;
+    const LONG manager=g_nativeRegionManager;
+    if(lastWorld!=g_in3DGameplayMode || lastManager!=manager) menu=false;
+    lastWorld=g_in3DGameplayMode; lastManager=manager;
+    if(down && !wasDown) menu=MenuConfirmActive(); // one verified snapshot per press
     if(down && !wasDown) Log("[R2Route] menu=%d world=%d inputContext=%d stickY=%d buttonsBefore=0x%04X",
         int(menu),int(g_in3DGameplayMode),int(g_inputContext),int(gp.sThumbRY),unsigned(gp.wButtons));
     wasDown=down;
+    if(!down) menu=false;
     if(menu && down) { gp.wButtons|=XINPUT_GAMEPAD_A; gp.bRightTrigger=0; }
 }
 

@@ -29,3 +29,9 @@ User requests a trial of native LODScale 2.0, no NIS outside gaze, and actual 2x
 
 - Source commit `bc8e57cc`; protected-native x86 build/profile preflight passed. Installed candidate DLL `A174A1199450BBE1C3D7933E81611EC0FFFA8165B3AFC54C651A4DB0EFCF5DD1` at `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/lod2-gaze-nis0-20261101T120551448`. Active game INI values, stock EXE hash and all nine rollback backup hashes verified. Game not launched by agent.
 - Prior runtime log showed NIS `source=2676x2728 output=2676x2728`; this proves the current sharpen path uses equal pixel counts and cannot meet a request for genuine 2x source resolution. A regional engine render remains unimplemented and requires its own evidence gate.
+
+## Headset rejection and rollback
+
+- User reported lower perceived FPS, sometimes near 80, and R2 jumping after death/load. Log showed XR cadence falling to 77–80 layers/s in parts of the run, but this is not native engine CPU time. NIS pair dispatch during gaze was usually about 0.13 ms and cannot by itself explain the full fall; the joint LOD/NIS test does not isolate cause.
+- The valid-gaze `FoveatedCopyBase=1` path already copied the full source outside gaze rectangles in the prior profile. Changing `FoveaPeriphery=0.35` to `0` primarily changed transition sharpness from about 0.68 to 0.50; `NisSharpness=0` affected fallback when gaze was absent. User was informed.
+- Full nine-target rollback `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/lod2-gaze-nis0-20261101T120551448/rollback/Restore.ps1` succeeded with exact SHA checks after user closed the game. Installed DLL returned to `999047FBE28943C29FE5C06B601B657B5122DC0B88915FC4AC18B65BB17C24F5`, game INI to `EngineLODScale=1.25`, `NisSharpness=0.80` and no explicit fovea overrides. R2 repair is tracked in `HANDOFF-r2-postload-20261101.md`.

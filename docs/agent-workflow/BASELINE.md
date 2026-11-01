@@ -3,6 +3,12 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## LOD 2.0/NIS trial rejected and restored (2026-11-01)
+
+- User perceived fewer frames, sometimes around 80 FPS, and R2 jumping after death/load. The combined trial does not isolate LOD from scene or NIS effects. Log showed periods of 77–80 XR layers/s; these are not native engine CPU milliseconds.
+- Full nine-target rollback from `%LOCALAPPDATA%/Darkness2VR/packages/lod2-gaze-nis0-20261101T120551448/rollback/Restore.ps1` passed. Installed DLL returned to `999047FBE28943C29FE5C06B601B657B5122DC0B88915FC4AC18B65BB17C24F5`, game INI to `EngineLODScale=1.25` and `NisSharpness=0.80` with no explicit fovea overrides. Caches restored as a matching set.
+- R2 post-load failure traced to reading pause fields from `RegionMgr` instead of the actual `GameRules` receiver. `HANDOFF-r2-postload-20261101.md` tracks the fix; headset verification pending.
+
 ## Installed LOD 2.0 and gaze NIS periphery trial (2026-11-01 12:05 Europe/Warsaw)
 
 - **Installed DLL SHA256**: `A174A1199450BBE1C3D7933E81611EC0FFFA8165B3AFC54C651A4DB0EFCF5DD1`, source `bc8e57cc` on `codex/gaze-nis-main-integration`. Stock EXE unchanged.
