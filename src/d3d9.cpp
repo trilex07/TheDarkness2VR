@@ -760,7 +760,7 @@ void LoadConfig() {
         char value[32]{};
         GetPrivateProfileStringA("Render", "EngineLODScale", "0", value, sizeof(value), chosenIni);
         ParseEngineLodScale(value);
-        Log("[EngineLOD] EngineLODScale=%s (0=untouched; 1.0-1.5 whole-scene trial)",value);
+        Log("[EngineLOD] EngineLODScale=%s (0=untouched; 1.0-2.0 whole-scene trial)",value);
     }
     g_hideNativeHud = GetPrivateProfileIntA("Render", "HideNativeHUD", 0, chosenIni)!=0;
     Log("[NativeHUD] requested=%d; protected owner callback required",int(g_hideNativeHud));

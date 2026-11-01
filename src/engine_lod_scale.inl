@@ -12,7 +12,7 @@ static void ParseEngineLodScale(const char* text) {
     const double value=strtod(text,&end);
     while(end && (*end==' ' || *end=='\t'))++end;
     if(end==text || !end || *end || !std::isfinite(value) ||
-       (value!=0.0 && (value<1.0 || value>1.5))) {
+       (value!=0.0 && (value<1.0 || value>2.0))) {
         Log("[EngineLOD] invalid EngineLODScale; override disabled");return;
     }
     if(value>0)g_engineLodScaleRequested=float(value);
