@@ -77,3 +77,20 @@ Read-only Ghidra follow-up: selector 8513A0 is called at 58290A inside
 the view-list on stack and uses its own renderer receiver for 8513A0;
 it is distinct from the existing selected-player observer's scene reference.
 Export: C:/Users/Trilex/darkness2-native-re-settings/gaze-lod-call-path-2.txt.
+
+## Selected owner probe (2026-11-01)
+
+Stock EXE Ghidra/Capstone evidence: 9922F0 is vtable FF8818 slot +94,
+constructed at 56CD8B. It loads object+274 and calls 776DC0 at 99230C;
+776DC0 later reaches AEA1A0 and the LOD selector. FF8818 slot +180
+forwards to the same +274 (477540). The selected 985D80 camera path
+owns a reference at its renderer+2A4 and calls its slot +180, making
+that reference a candidate owner, but identity in live play is unverified.
+
+An isolated protected-native build adds a throttled read-only probe inside
+the admitted selected-player callback. It logs the candidate owner vtable,
+its +274 renderer and renderer vtable. No LOD selection or quality changes.
+Source: src/gaze_lod_owner_diagnostic.inl; isolated integration in
+build/gaze-lod-diagnostic-final/src/d3d9.cpp and native_aim.inl.
+Candidate AC6D3568... passed build and protected-profile preflight.
+Full nine-target installer: tools/deploy-gaze-lod-owner.ps1.
