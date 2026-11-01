@@ -28,3 +28,7 @@ Keep R2 as a trigger after death/load without losing R2 confirmation in actual p
 ## Next step
 
 Install with game closed, verify nine backup hashes, then user tests R2 before and after death/load, plus pause-menu confirmation. Record log and headset verdict. No measured CPU/FPS claim.
+
+## Installation
+
+- Source `b9b1d190`, protected-native candidate DLL `CC7DD6C7B048158255D607649841BDE6305D284414CAD790A4CE99B14A941248`, installed at `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/r2-postload-lod125-20261101T121504038` with the game closed. Stock EXE, game settings and all nine rollback backup hashes verified. Game not launched by agent.

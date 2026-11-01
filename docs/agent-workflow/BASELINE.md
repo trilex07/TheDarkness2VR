@@ -3,6 +3,13 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed R2 post-load candidate with LOD 1.25 (2026-11-01 12:15 Europe/Warsaw)
+
+- **Installed DLL SHA256**: `CC7DD6C7B048158255D607649841BDE6305D284414CAD790A4CE99B14A941248`, source `b9b1d190` on `codex/gaze-nis-main-integration`. Stock EXE unchanged.
+- **Profile**: `EngineLODScale=1.25`, `NisMode=2`, `NisSharpness=0.80`, `FoveatedCopyBase=1`; no explicit fovea overrides. The rejected LOD 2.0/NIS trial remains off.
+- **R2 fix**: menu confirmation now checks two equal snapshots through the pinned `RegionMgr -> GameRules` pause graph, once per trigger press. Reset on world/manager changes. Post-death/load headset test and pause-menu confirmation are pending.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/r2-postload-lod125-20261101T121504038/rollback/Restore.ps1`; 9/9 backup hashes verified.
+
 ## LOD 2.0/NIS trial rejected and restored (2026-11-01)
 
 - User perceived fewer frames, sometimes around 80 FPS, and R2 jumping after death/load. The combined trial does not isolate LOD from scene or NIS effects. Log showed periods of 77–80 XR layers/s; these are not native engine CPU milliseconds.
