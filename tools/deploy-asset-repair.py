@@ -14,6 +14,7 @@ helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
 
 STEMS={'H.Texture','B.Texture','F.Texture','H.Font','B.Font','H.Texture_en','B.Texture_en'}
 NAMES={s+e for s in STEMS for e in ('.cache','.toc')}
+METRIC_NAMES={s+e for s in ('B.Font','B.Texture_en') for e in ('.cache','.toc')}
 
 
 def copy(source,dest,expected):
@@ -32,7 +33,7 @@ def main():
     if a.action=='rollback':
         state=json.loads(record.read_text(encoding='utf-8'))
         require(state['cache']==str(cache.resolve()),'Rollback target differs')
-        require(set(state['before'])==NAMES and set(state['after'])==NAMES,'Unexpected rollback set')
+        require(set(state['before'])==set(state['after']) and set(state['before']) in (NAMES,METRIC_NAMES),'Unexpected rollback set')
         for n,h in state['before'].items():
             require(sha(a.backup/n)==h,'Backup mismatch')
             require(sha(cache/n) in (h,state['after'][n]),'Current file changed: '+n)
@@ -41,26 +42,29 @@ def main():
         print('ROLLBACK_VERIFIED');return
     require(a.package,'Package required')
     m=json.loads((a.package/'manifest.json').read_text(encoding='utf-8'))
-    require(m['kind']=='texture-font-repair' and set(m['before'])==set(m['files'])==NAMES,'Unexpected package targets')
+    names=METRIC_NAMES if m['kind']=='font-metrics-repair' else NAMES
+    require(m['kind'] in ('texture-font-repair','font-metrics-repair') and set(m['before'])==set(m['files'])==names,'Unexpected package targets')
     require(all(sha(a.package/'payload'/n)==h for n,h in m['files'].items()),'Payload hash mismatch')
     require(all(sha(cache/n)==h for n,h in m['before'].items()),'Installed preimage differs')
     protected=[a.game/n for n in ('d3d9.dll','DarknessII.exe','Darkness2VR.ini','Darkness2VR-diagnostic.ini')]
     protected.append(Path('C:/Users/Trilex/AppData/Local/Darkness2VR/Darkness2VR.ini'))
     protected += [cache/(s+e) for s in ('H.Misc','B.Misc_en','H.Misc_en','F.Misc_en') for e in ('.cache','.toc')]
+    if names==METRIC_NAMES:
+        protected += [cache/n for n in sorted(NAMES-METRIC_NAMES)]
     hashes={str(p):sha(p) for p in protected}
     require(not a.backup.exists(),'Fresh backup path required');a.backup.mkdir(parents=True)
     state=dict(status='BACKING_UP',cache=str(cache.resolve()),before=m['before'],after=m['files'],
                protected=hashes,package=str(a.package.resolve()),manifest_sha256=sha(a.package/'manifest.json'))
     for n,h in m['before'].items():copy(cache/n,a.backup/n,h)
     state['status']='BACKUP_VERIFIED';record.write_text(json.dumps(state,indent=2),encoding='utf-8')
-    print('14 backups verified',flush=True)
+    print(len(names),'backups verified',flush=True)
     with tempfile.TemporaryDirectory(prefix='.d2-asset-repair-',dir=cache) as folder:
         staging=Path(folder)
         for n,h in m['files'].items():copy(a.package/'payload'/n,staging/n,h)
         helper.closed()
         require(all(sha(cache/n)==h for n,h in m['before'].items()),'Preimage changed during staging')
         try:
-            for n in sorted(NAMES):os.replace(staging/n,cache/n)
+            for n in sorted(names):os.replace(staging/n,cache/n)
             require(all(sha(cache/n)==h for n,h in m['files'].items()),'Installed readback mismatch')
             require(all(sha(Path(p))==h for p,h in hashes.items()),'Protected runtime/audio/text changed')
             state['status']='INSTALLED_VERIFIED'

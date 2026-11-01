@@ -9,6 +9,21 @@
 
 ## Scope and status
 
+LATEST USER: native-cells-v3 is "prawie" (almost). Title readable but accented
+letter geometry still differs. Further inspection found the **six previously
+shipped** Polish font families also used oversized PL UV spans and donor
+advance+1, independent of our19 omitted-font repairs. E.g.darknessheader32
+S UV width.01171875/height.2734375/advance15 versus Ś width.0146484375/
+height.28125/advance16. This is direct asset evidence, not a native hook guess.
+
+Built `build/font-metrics-six-v1` using `build-font-metrics-repair.py`: normalize
+all108 earlier PL glyphs to their native donors' full-cell span/half-texel phase
+and exact metrics. Reuse existing enlarged PL slots without resizing any atlas;
+verify every non-PL glyph UV and decoded pixels unchanged. Six-family build PASS.
+Only B.Font and B.Texture_en cache/toc files need updating (four files).
+Deployment helper now admits that exact smaller manifest set and protects all
+other runtime/audio/text/model/font-header files. Installation pending at source commit.
+
 CURRENT INSTALLED: native-cell-v3, sourcefcee7c8f, installed with closed game;
 independent14 backups/14 installed/13 protected hash audit PASS, six accepted
 model texture files identical. Receipt:
