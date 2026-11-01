@@ -11,7 +11,15 @@
 
 Fix the data-only regressions; preserve accepted camera/haptics/model DLL,
 configuration and new dialogue audio/text. Built private14-file repair under
-`build/texture-font-repair-v3`; installation pending at initial source commit.
+`build/texture-font-repair-v3`, installed source `ef56b259` with closed-game checks.
+Independent audit PASS:14 backup hashes,14 installed hashes,13 protected files
+(DLL,EXE,three INIs,eight audio/text archives) unchanged. Backup/receipt:
+`C:/Users/Trilex/AppData/Local/Darkness2VR/backups/texture-font-repair-20261101-v3/deployment.json`.
+Repair manifest SHA256 `560a7052651824c844ad06a9d1b6ec9e7f919f44ac859c4ddc9810c882dc23be`.
+Steam startup requested22:57:12 Warsaw after audit; no input injected.
+Startup smoke PASS: PID40000 created22:57:14, stereo pair240 with successful
+transfers and zero replay upload exceptions. No headset appearance claim.
+Physical repair acceptance remains pending; retain this distinction.
 
 Read BASELINE, previous per-task asset handoff, relevant failure index and real
 archive/payload bytes. No guessed native offsets or executable changes.
@@ -40,7 +48,7 @@ archive/payload bytes. No guessed native offsets or executable changes.
 
 ## Next steps
 
-Install with game closed and verify rollback backups and installed hashes.
-Startup smoke and user headset acceptance are separate from offline proof.
+Installation and independent hash verification completed. Startup smoke and
+user headset acceptance are separate from offline proof.
 User should inspect hands/tentacles/weapons and gameplay captions containing
 Polish letters. Audio/camera/haptics must remain unchanged.

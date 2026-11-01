@@ -1,5 +1,13 @@
 # Baseline and current MAIN candidate
 
+## Installed texture/font repair candidate (2026-11-01 22:57 Warsaw)
+
+- Previous asset update failed physical acceptance: rainbow artifacts on hands/tentacles and absent Polish gameplay-caption glyphs. Camera/haptics/model DLL9AF9A51E remains accepted and unchanged.
+- Installed data-only source `ef56b259`: correct standard block storage for64 uncompressed comic textures and add342 Polish glyphs across19 omitted Latin fonts (including Corbel). Original six already-patched fonts retained. Independent Pillow decode comparison64/64 PASS (maximum mean RGB error7.837/255), original font atlas region/metrics/other languages preserved. Physical repair acceptance pending.
+- Closed-game install and independent audit PASS:14/14 preimage backups,14/14 installed archive hashes,13/13 protected runtime/audio/text files unchanged. Repair manifest SHA256 `560a7052651824c844ad06a9d1b6ec9e7f919f44ac859c4ddc9810c882dc23be`.
+- Backup/receipt `C:/Users/Trilex/AppData/Local/Darkness2VR/backups/texture-font-repair-20261101-v3/deployment.json`. With game closed: `python -B tools/deploy-asset-repair.py rollback --backup <that-directory> --game "C:/Program Files (x86)/Steam/steamapps/common/Darkness II"` restores the preceding rejected asset version. The earlier22-file backup can instead restore pre-update assets.
+- Details: `handoffs/HANDOFF-texture-font-repair-20261101.md`. Steam startup requested after audit; no input injected.
+
 ## Installed Polish update and comic textures (2026-11-01 22:40 Warsaw)
 
 - Following user acceptance and integration of the camera/model fix into `main` (`370897d3`), MAIN installed the prepared private Polish complete release (16 archive files) and 64 comic weapon/tentacle textures. Runtime DLL remains accepted `9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D`; EXE and all three INIs unchanged.
