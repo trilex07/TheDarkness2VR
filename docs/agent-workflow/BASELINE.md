@@ -1,7 +1,16 @@
 # Baseline and current MAIN candidate
 
-Recorded by MAIN on 2026-10-31. This file is a provenance snapshot, not a live
+Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
+
+## Current installed MAIN candidate: gaze dot and R2 fix (2026-11-01)
+
+- **Installed DLL SHA256**: `E6F49A7E9E520D24502B9F5ABAFB4E0DAE6A9D7DDC0ACDE86486DAD4128DB1BD` (protected-native x86).
+- **Source**: `70f4e28e7fea44c97ff7a478cfb93b15d2318d04`; main promotion recorded in `HANDOFF-gaze-dot-r2-jump-20261101.md`.
+- **Package/rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/gaze-dot-r2-20261101T031753160/rollback/Restore.ps1` (nine targets; all backup hashes verified).
+- **Change**: active game `GazeDot=0`; R2 maps to pad A only during pause or when no 3D world is visible. Active-world Flash cursor no longer makes R2 jump.
+- **Offline evidence**: eye tracking 29/29 and dual weapon wheel 137/137; protected profile PASS; installed DLL and stock EXE hashes verified.
+- **Headset acceptance**: pending user test of no gaze dot, R2 firing without jump, and pause-menu confirmation.
 
 ## Current user-approved MAIN integration (2026-11-01)
 
