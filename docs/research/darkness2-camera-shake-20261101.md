@@ -66,3 +66,9 @@ Candidate `Diagnostics/CameraAnimStabilize` (`src/camera_anim_stabilizer.inl`, d
 v1 (DLL `0EF68235...`, commit `59f7ca31`): user reports sprint no longer shakes; removed up to 0.3 units / 1-4 deg while running. Remaining: weapons jitter, and camera still moves on tentacle swings, damage and the passing train. Cause of weapon jitter: hands/gun received the previous update's absolute C_stab, lagging one frame of locomotion. Tentacle/damage/train motion is applied to the avatar parent itself, so parent-relative removal cannot see it.
 
 v2: hands/gun/shot use `E * C_anim(current)` with cached `E = C_stab * C_anim^-1`; C_stab passes through a One Euro filter (position cutoff 1.5 Hz + 1.5 x speed, rotation 1.5 Hz + 0.06 x deg/s, derivative cutoff 1 Hz) shared by view, hands and gun. Residual removed while nearly still drives controller rumble (`Diagnostics/CameraShakeRumble`, default 1), as the user asked for the train. Headset result NOT RUN.
+
+## Stabilizer v2 result and v3 (2026-11-01, 20:25)
+
+v2 log: walking speed 0.5-0.8 units/s gave filter lag 0.03-0.05 units that the rumble gate (still below 2 units/s) counted as shake, so pads vibrated while walking. Weapons flickered: the view used the delta from one update while hands/gun applied the correction from another within the same frame. Tentacle swings tilt the parent itself (peaks 4-10 deg) with transient angular speed 15-20 deg/s, which opened the rotation filter.
+
+v3: the stable camera keeps only the parent heading (level, world +Y up) because the headset owns pitch/roll; parent tilt is measured, not followed. View delta and hand/gun correction come from one snapshot published at the start of each tracked frame (`UpdateHeadGeometry`). Rumble requires speed < 0.25 units/s and turn < 12 deg/s and uses high-passed parent tilt plus heading residual. Headset result NOT RUN.

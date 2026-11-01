@@ -24,6 +24,11 @@ struct CameraAnimStabilizerState {
     bool filterValid=false;
     float filterPos[3]{},filterQuat[4]{0,0,0,1},rawPos[3]{},rawQuat[4]{0,0,0,1};
     float speed=0.f,angularSpeed=0.f,rumble=0.f,peakRumble=0.f,peakResidualDeg=0.f;
+    float tiltAverage=0.f,peakTilt=0.f;
+    // Snapshot taken once per tracked frame (UpdateHeadGeometry) so the view delta and the
+    // hand/gun correction always come from the same update, whatever the call order.
+    bool pubValid=false;DWORD pubCamera=0;ULONGLONG pubTime=0;
+    float pubDelta[16]{},pubCorrection[16]{};
     float weight=0.f;
     ULONGLONG time=0,start=0,nextLog=0;
     unsigned long long frame=0,updates=0;
@@ -108,19 +113,30 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
     for(float v:anim)if(!std::isfinite(v))return;
     for(float v:root)if(!std::isfinite(v))return;
     if(!s::Basis(anim,ra) || !s::Basis(root,rr))return;
+    // VR: the headset owns pitch and roll. Keep only the parent heading so tentacle swings,
+    // hits and the train cannot tilt the horizon; the parent tilt is measured for rumble.
+    float rl[3][3];
+    {
+        float f[3]={rr[2][0],0.f,rr[2][2]},u[3]={0.f,rr[1][1]<0?-1.f:1.f,0.f},x[3];
+        if(!s::Normalize3(f))return;
+        s::Cross3(u,f,x);
+        if(s::Dot3(x,rr[0])<0){for(float& c:x)c=-c;}
+        for(int i=0;i<3;++i){rl[0][i]=x[i];rl[1][i]=u[i];rl[2][i]=f[i];}
+    }
+    const float tilt=s::AngleDegrees(rr,rl);
     const auto now=GetTickCount64();
     const float dt=st.time ? (std::min)(.1f,float(now-st.time)*.001f) : 0.f;
     const bool gap=!st.time || now-st.time>500 || st.camera!=camera;
     st.time=now;
     // Camera position in parent axes.
     float rel[3]={anim[12]-root[12],anim[13]-root[13],anim[14]-root[14]},local[3];
-    for(int i=0;i<3;++i)local[i]=s::Dot3(rel,rr[i]);
+    for(int i=0;i<3;++i)local[i]=s::Dot3(rel,rl[i]);
     if(gap || !st.restValid){std::memcpy(st.restLocal,local,sizeof(local));st.restValid=true;st.weight=0.f;}
     // Stable candidate (full correction).
     float stablePos[3];
-    for(int c=0;c<3;++c)stablePos[c]=root[12+c]+st.restLocal[0]*rr[0][c]+st.restLocal[1]*rr[1][c]+st.restLocal[2]*rr[2][c];
+    for(int c=0;c<3;++c)stablePos[c]=root[12+c]+st.restLocal[0]*rl[0][c]+st.restLocal[1]*rl[1][c]+st.restLocal[2]*rl[2][c];
     float off[3]={anim[12]-stablePos[0],anim[13]-stablePos[1],anim[14]-stablePos[2]};
-    const float translation=std::sqrt(s::Dot3(off,off)),angle=s::AngleDegrees(ra,rr);
+    const float translation=std::sqrt(s::Dot3(off,off)),angle=s::AngleDegrees(ra,rl);
     // Ordinary locomotion/attack animation is removed; finisher-scale or scripted moves fade out.
     float target=1.f;
     target=(std::min)(target,std::clamp((1.0f-translation)/0.5f,0.f,1.f));
@@ -132,7 +148,7 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
     if(target>=1.f && dt>0){const float a=1.f-std::exp(-dt/1.5f);for(int i=0;i<3;++i)st.restLocal[i]+=a*(local[i]-st.restLocal[i]);}
     // Blend: weight 1 = parent orientation + rest offset, 0 = native animated camera.
     float qa[4],qr[4],qt[4],pt[3];
-    s::ToQuat(ra,qa);s::ToQuat(rr,qr);s::Slerp(qa,qr,st.weight,qt);
+    s::ToQuat(ra,qa);s::ToQuat(rl,qr);s::Slerp(qa,qr,st.weight,qt);
     for(int c=0;c<3;++c)pt[c]=anim[12+c]+st.weight*(stablePos[c]-anim[12+c]);
     // One Euro filter (cutoff rises with filtered speed): shake is high-frequency with a
     // near-zero mean velocity, locomotion and turning have a sustained velocity.
@@ -173,12 +189,17 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
     if(!d2vr_math::Invert(stable,inverse) || !d2vr_math::Invert(anim,inverseAnim))return;
     d2vr_math::Multiply(anim,inverse,delta);
     d2vr_math::Multiply(stable,inverseAnim,correction);
-    // Rumble: shake removed while the player is (nearly) still, e.g. passing train, hits.
+    // Rumble only while standing: high-frequency parent tilt plus filtered heading jitter.
+    // Walking/turning never rumbles (filter lag is not shake).
     {
-        const float still=std::clamp((2.f-st.speed)/1.5f,0.f,1.f)*std::clamp((60.f-st.angularSpeed)/40.f,0.f,1.f);
-        const float raw=st.weight*still*std::clamp((residualDeg-0.25f)/2.0f+(residualPos-0.01f)/0.06f,0.f,1.f);
+        if(gap || dt<=0.f)st.tiltAverage=tilt;
+        else st.tiltAverage+=(1.f-std::exp(-dt/0.4f))*(tilt-st.tiltAverage);
+        const float shake=std::fabs(tilt-st.tiltAverage)+residualDeg;
+        const float still=std::clamp((0.25f-st.speed)/0.15f,0.f,1.f)*std::clamp((12.f-st.angularSpeed)/8.f,0.f,1.f);
+        const float raw=st.weight*still*std::clamp((shake-0.4f)/2.0f,0.f,1.f);
         st.rumble=raw>st.rumble ? raw : st.rumble+(raw-st.rumble)*(std::min)(1.f,dt*6.f);
         st.peakRumble=(std::max)(st.peakRumble,st.rumble);st.peakResidualDeg=(std::max)(st.peakResidualDeg,residualDeg);
+        st.peakTilt=(std::max)(st.peakTilt,tilt);
         InterlockedExchange(&g_cameraShakeRumbleMilli,g_cameraShakeRumble?LONG(st.rumble*1000.f):0);
         InterlockedExchange(&g_cameraShakeRumbleTick,LONG(now&0x7fffffff));
     }
@@ -192,11 +213,11 @@ static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar) {
     if(now>=st.nextLog && now-st.start<180000) {
         st.nextLog=now+500;
         // Counter-prediction: removed* must be ~0 standing still and grow while running/attacking.
-        Log("[CameraStabilize] ms=%llu updates=%llu weight=%.2f removedPos=%.4f removedDeg=%.2f peakPos=%.4f peakDeg=%.2f filterResidualPeakDeg=%.2f speed=%.2f turn=%.1f rumblePeak=%.2f rest=(%.4f,%.4f,%.4f) cinematic=%d",
+        Log("[CameraStabilize] ms=%llu updates=%llu weight=%.2f removedPos=%.4f removedDeg=%.2f peakPos=%.4f peakDeg=%.2f filterResidualPeakDeg=%.2f parentTiltPeak=%.2f speed=%.2f turn=%.1f rumblePeak=%.2f rest=(%.4f,%.4f,%.4f) cinematic=%d",
             static_cast<unsigned long long>(now-st.start),st.updates,st.weight,translation*st.weight,angle*st.weight,
-            st.peakTranslation,st.peakAngle,st.peakResidualDeg,st.speed,st.angularSpeed,st.peakRumble,
+            st.peakTranslation,st.peakAngle,st.peakResidualDeg,st.peakTilt,st.speed,st.angularSpeed,st.peakRumble,
             st.restLocal[0],st.restLocal[1],st.restLocal[2],int(NativeCinematicPlaying()));
-        st.peakTranslation=st.peakAngle=st.peakRumble=st.peakResidualDeg=0.f;
+        st.peakTranslation=st.peakAngle=st.peakRumble=st.peakResidualDeg=st.peakTilt=0.f;
     }
 #else
     (void)camera;(void)avatar;
@@ -210,8 +231,8 @@ static const float* StabilizedCameraWorld(const void* camera,float (&scratch)[16
     float correction[16];bool use=false;
     AcquireSRWLockShared(&g_cameraAnimStabilizerLock);
     const auto& st=g_cameraAnimStabilizer;
-    if(st.valid && st.camera==DWORD(reinterpret_cast<uintptr_t>(camera)) && GetTickCount64()-st.time<100) {
-        std::memcpy(correction,st.correction,sizeof(correction));use=true;
+    if(st.pubValid && st.pubCamera==DWORD(reinterpret_cast<uintptr_t>(camera)) && GetTickCount64()-st.pubTime<100) {
+        std::memcpy(correction,st.pubCorrection,sizeof(correction));use=true;
     }
     ReleaseSRWLockShared(&g_cameraAnimStabilizerLock);
     if(!use)return native;
@@ -232,7 +253,17 @@ static bool CameraStabilizerDelta(float out[16]) {
     bool use=false;
     AcquireSRWLockShared(&g_cameraAnimStabilizerLock);
     const auto& st=g_cameraAnimStabilizer;
-    if(st.valid && GetTickCount64()-st.time<100){std::memcpy(out,st.delta,16*sizeof(float));use=true;}
+    if(st.pubValid && GetTickCount64()-st.pubTime<100){std::memcpy(out,st.pubDelta,16*sizeof(float));use=true;}
     ReleaseSRWLockShared(&g_cameraAnimStabilizerLock);
     return use;
+}
+// Once per tracked frame, before the frame's head delta is frozen.
+static void PublishCameraStabilizerFrame() {
+    if(!g_cameraAnimStabilize)return;
+    AcquireSRWLockExclusive(&g_cameraAnimStabilizerLock);
+    auto& st=g_cameraAnimStabilizer;
+    st.pubValid=st.valid;st.pubCamera=st.camera;st.pubTime=st.time;
+    std::memcpy(st.pubDelta,st.delta,sizeof(st.pubDelta));
+    std::memcpy(st.pubCorrection,st.correction,sizeof(st.pubCorrection));
+    ReleaseSRWLockExclusive(&g_cameraAnimStabilizerLock);
 }
