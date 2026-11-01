@@ -53,3 +53,17 @@ Candidate installed; user runtime measurement pending.
 Native engine CPU LOD selection remains unhooked. This candidate reduces
 postprocess GPU work and proxy command submission only, with no claim of
 engine CPU improvement or verified FPS gain yet.
+
+## First runtime measurement (2026-11-01 ~02:23)
+User launched game and wore headset. Bridge initially started late, then
+reported flags=07 and 293–314 valid gaze samples per five seconds. The
+copyBaseEyes counter grew by 240 over 120-frame windows with stable gaze,
+proving both eyes used the fast path. NIS GPU pair samples in those windows
+were about 0.129–0.133 ms, compared with roughly 0.28–0.30 ms in the prior
+foveated three-pass runtime log. That is about 0.16 ms lower for this filter,
+not a measured engine CPU or whole-frame FPS improvement. Invalid gaze used
+the original uniform path at about 0.237–0.243 ms. Recent XRCadence was
+89.6–90.2 world-bearing layers/s at 90 Hz but explicitly is not simulation
+FPS; frame-boundary p95 was 16 ms. No NIS dispatch failure found. A separate
+stale-camera refusal window occurred earlier during this long game run and
+is not attributed to this change.
