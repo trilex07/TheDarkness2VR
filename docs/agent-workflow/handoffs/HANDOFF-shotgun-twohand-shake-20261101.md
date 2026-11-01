@@ -1,5 +1,12 @@
 # Handoff: shotgun support grip, alignment, and camera shake
 
+## Brief for next agent (2026-11-01, latest)
+
+- Current MAIN branch `codex/gaze-nis-main-integration`, HEAD at this brief follows `e729452b`. Installed Steam DLL `7414984FF998FABDF154AEB5EE443D75805378DDB2359F7EC6F20E83E8A6FA55`, read-only owner trace; rollback `%LOCALAPPDATA%/Darkness2VR/packages/camera-shake-owner-trace-20261101T181538632/rollback/Restore.ps1`. Diagnostic INI `30EDBFD53636856E57312375983749D9FB5D8ABB8548E43EE837F0D4782988FD` retains `ShotgunCandidate=1`, `CameraShakeTrace=1`. User says shotgun works. Game has been exited by user. Do not call shake fixed.
+- Failed shake trial `d1ed1aa9` required EXE call-site patches, but protected profile has `BlockNativeImagePatches=1` and `RestoreTrackedGameplay=0`; log showed `requested=1` without `active=1`. User still saw shake. Protected rollback restored 9/9 hashes; code removed from active branch. See `FAILED-APPROACHES.md`.
+- Selected avatar vtable is `01001630`, not `00FDF170`. Read-only pinned live scan found two avatar instances; both had `avatar+0x5E0` -> the same reference wrapper -> one `00FDF170` object. This table has 90 methods; slot 23 is native update `00631470`, containing four calls to procedural generator `00628420`. Table/header SHA256 `d13a6d5ccdfff5871c8583600a0ac2bcf48cdbda46932c4fa8ee0a460b671f66` over 91 dwords beginning `00FDF16C`. At idle, noise outputs at owner `+0x8C0`, `+0x910`, `+0x960`, `+0xCA0` were zero. These are evidence for a possible per-instance route, not proof of a safe write.
+- First next gate: obtain a 10-second action sample with the game in the same scene. `tools/camera_shake_owner_scan.py PID` rechecks live addresses; `tools/camera_shake_live_sample.py PID AVATAR_HEX` reads strengths and outputs at 50 Hz while the user waves a tentacle/sprints. User exited before this sample. The scan is read-only, SHA-pins the stock EXE and changes no game state. Then design any heap-owned intervention with selected-owner/lifetime checks, default OFF and rollback; preserve camera, arms and gun together. No active shake suppression is installed.
+
 **Date**: 2026-11-01
 **Task ID**: shotgun-twohand-shake-20261101
 **Role**: MAIN
