@@ -7,6 +7,8 @@ enum DenialSource : uint32_t {
     RecorderCallback=1, SoftwareHookFailure=2, MissingMutationThread=4
 };
 inline std::atomic<uint32_t> denialSources{0};
+inline std::atomic<uint32_t> pausedCallbacks{0};
+inline std::atomic<uint32_t> firstUnpausedCallback{0};
 inline std::atomic<uint32_t> softwareTransitions{0};
 inline std::atomic<uint32_t> firstSoftwareThread{0};
 inline std::atomic<uint32_t> firstSoftwareValue{0};

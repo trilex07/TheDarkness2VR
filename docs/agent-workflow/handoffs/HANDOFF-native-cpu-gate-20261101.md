@@ -51,3 +51,24 @@ admission pending user headset test.
 
 No current worst-scene CPU trace. Actual skipped call count and FPS gain are
 unknown. Native engine LOD remains unimplemented.
+
+## First headset run
+
+The user ran the installed F5BEFA82 DLL. The new log reports
+`[NativeSubmissionGate] sources=0x1 softwareTransitions=0`, with
+`enabled=0 denied=0x10` and zero skipped native float/binding calls.
+The earlier software-processing fix therefore saved zero CPU in this scene.
+World-bearing XR cadence was near 90/s; it does not establish engine FPS or
+solve reported worst-scene drops.
+
+The next candidate leaves a paused replay/driver callback as an epoch
+invalidation, retaining permanent denial for unpaused callbacks. It records
+the first unpaused callback context: bit 1 nativeDepth, bit 2 replaying,
+bit 4 nativeCalls, bit 8 neither. A broad bypass around every DriverScope
+was rejected during review because AddRef occurs on resource retention and
+would invalidate cache entries at nearly every binding.
+
+The second protected x86 DLL is 63C72AE1A4253ED448A71742E5073A410B6600769C5846F5DAEE54E64B151630.
+Native boundary and recorder tests passed; the protected profile gate passed.
+Install/test through `tools/deploy-native-cpu-callback.ps1`; neither admission
+nor saving is established until the next headset run.

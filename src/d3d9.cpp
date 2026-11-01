@@ -3996,8 +3996,10 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
             Log("[NativeSubmission] enabled=%d denied=0x%X VS forwarded=%llu skipped=%llu uncaptured=%llu PS forwarded=%llu skipped=%llu uncaptured=%llu",
                 int(d2vr_submission::gate.Enabled()),d2vr_submission::gate.Reasons(),
                 calls.forwarded[0],calls.skipped[0],calls.uncaptured[0],calls.forwarded[1],calls.skipped[1],calls.uncaptured[1]);
-            Log("[NativeSubmissionGate] sources=0x%X softwareTransitions=%u firstThread=%u firstValue=%u firstHr=0x%08lX",
+            Log("[NativeSubmissionGate] sources=0x%X pausedCallbacks=%u firstUnpaused=0x%X softwareTransitions=%u firstThread=%u firstValue=%u firstHr=0x%08lX",
                 d2vr_submission::denialSources.load(std::memory_order_relaxed),
+                d2vr_submission::pausedCallbacks.load(std::memory_order_relaxed),
+                d2vr_submission::firstUnpausedCallback.load(std::memory_order_relaxed),
                 d2vr_submission::softwareTransitions.load(std::memory_order_relaxed),
                 d2vr_submission::firstSoftwareThread.load(std::memory_order_relaxed),
                 d2vr_submission::firstSoftwareValue.load(std::memory_order_relaxed),

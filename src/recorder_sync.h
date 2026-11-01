@@ -17,15 +17,29 @@ inline bool Busy(){return nativeDepth!=0 || nativeCalls.load(std::memory_order_a
 // Hooks may forward while recording is off (notably during replay). They must
 // still invalidate a pair whose native state changed outside its command stream.
 inline bool NativeMutation(){
+    const bool callback=Callback() || nativeCalls.load(std::memory_order_acquire)!=0;
     if(d2vr_submission::requested){
         d2vr_submission::gate.ObserveMutation(GetCurrentThreadId());
-        if(Callback() || nativeCalls.load(std::memory_order_acquire)!=0){
-            d2vr_submission::denialSources.fetch_or(
-                d2vr_submission::RecorderCallback,std::memory_order_relaxed);
-            d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
+        if(callback){
+            if(d2vr_submission::gate.Paused()){
+                // VrFrame already excludes raw replay from cache reuse. Revoke
+                // any ticket without permanently denying the next live frame.
+                d2vr_submission::pausedCallbacks.fetch_add(1,std::memory_order_relaxed);
+                d2vr_submission::gate.Invalidate();
+            }else{
+                const uint32_t context=(nativeDepth?1u:0u) |
+                    (replaying.load(std::memory_order_acquire)?2u:0u) |
+                    (nativeCalls.load(std::memory_order_acquire)!=0?4u:0u);
+                uint32_t expected=0;
+                d2vr_submission::firstUnpausedCallback.compare_exchange_strong(
+                    expected,context?context:8u,std::memory_order_relaxed);
+                d2vr_submission::denialSources.fetch_or(
+                    d2vr_submission::RecorderCallback,std::memory_order_relaxed);
+                d2vr_submission::gate.Deny(d2vr_submission::Epoch::UncontrolledMutation);
+            }
         }
     }
-    if(Callback() || nativeCalls.load(std::memory_order_acquire)!=0){conflict.store(true,std::memory_order_release);return false;}
+    if(callback){conflict.store(true,std::memory_order_release);return false;}
     return true;
 }
 // Replay catches SEH per command. /EHsc does not unwind native-faulted CPU

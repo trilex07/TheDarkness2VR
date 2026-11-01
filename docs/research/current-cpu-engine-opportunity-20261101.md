@@ -72,3 +72,11 @@ the user runs it and `skipped` counters rise. The usual PDB-enabled build
 failed at link with a Visual Studio `MSPDB140.DLL` version mismatch in both
 installed toolsets. The candidate was compiled from the same source with
 `D2VR_MATCHED_CAPTURE=1`, x86 `/O2`, and a linker MAP, without PDB generation.
+
+The first headset run of that candidate identified the actual denial source
+as a recorder callback (`sources=0x1`), with no software-processing calls and
+no native skipped calls. A second candidate permits callback mutation only
+while the submission gate is already paused for raw VR replay, invalidating
+the epoch. Unpaused callbacks remain a permanent denial. The first unpaused
+context is now logged separately. This remains a test candidate, not a proven
+CPU performance improvement.
