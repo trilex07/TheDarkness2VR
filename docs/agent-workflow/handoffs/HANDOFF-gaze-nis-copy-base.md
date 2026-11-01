@@ -7,7 +7,7 @@
 **Branch**: codex/hud-head-tentacles
 **Worktree**: current
 **Baseline**: accepted source 4a26aabd; installed owner diagnostic AC6D3568.
-**Integration commit**: pending
+**Integration commit**: f7c6a400
 
 ## Goal
 Reduce postprocess work when valid gaze exists, using the latest installed
@@ -15,7 +15,7 @@ weapon-wheel/eye-tracking/frame-cap source. Preserve the native scene and
 full-quality fallback when gaze is absent.
 
 ## Status
-Candidate built; installation and user runtime measurement pending.
+Candidate installed; user runtime measurement pending.
 
 ## Context Loaded
 - [x] AGENTS.md, BASELINE.md, FAILED-APPROACHES.md, previous gaze LOD handoff.
@@ -39,12 +39,15 @@ Candidate built; installation and user runtime measurement pending.
 - D3D11 WARP: outsideDiff=0, insideDiff=48 at 256x256 test pattern.
 - Protected-native x86 DLL build PASS; profile gate PASS.
 - Candidate DLL SHA256: 916B9A5151CC25F694A0B967862F3CEFFCC21CE23E8C6D857BF654B164DB7FDF.
+- Installed 02:17; package C:/Users/Trilex/AppData/Local/Darkness2VR/packages/gaze-nis-copy-base-20261101T021726069.
+  Independent verification: DLL hash matched, stock EXE matched, nine backup
+  hashes matched, both active INIs set FoveatedCopyBase=1 and
+  GazeLodDiagnostic=0, game closed. User launches manually.
 
 ## Next Steps
-1. Install with tools/deploy-gaze-nis-copy-base.ps1 -Install when game closed.
-2. User runs same scene; compare `[NIS] GPU pair dispatch` samples with prior
+1. User runs same scene; compare `[NIS] GPU pair dispatch` samples with prior
    roughly 0.29 ms and check copyBaseEyes increasing.
-3. Keep or restore using matching rollback based on visual/FPS evidence.
+2. Keep or restore using matching rollback based on visual/FPS evidence.
 
 ## Blockers
 Native engine CPU LOD selection remains unhooked. This candidate reduces
