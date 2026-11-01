@@ -3,6 +3,13 @@
 Recorded by MAIN through 2026-11-01. This file is a provenance snapshot, not a live
 Steam check or permission to deploy. Do not assume Git main is installed.
 
+## Installed R2 follow-up with native LODScale trial (2026-11-01 11:53 Europe/Warsaw)
+
+- **Installed DLL SHA256**: `999047FBE28943C29FE5C06B601B657B5122DC0B88915FC4AC18B65BB17C24F5`, source `7313549d` on `codex/gaze-nis-main-integration`; stock EXE unchanged.
+- **Change**: current native pause recheck before R2 can become menu A; `[R2Route]` logs one line per R2 press. This addresses a possible stale pause gate. Headset verification pending; root cause is not yet confirmed.
+- **LOD**: `EngineLODScale=1.25` retained. Prior headset trial: user reported smoother play and correct image. Runtime logged `active=1`, `enabled=1`, `mode=-1`, `lowest=0`; CPU milliseconds saved are unmeasured.
+- **Rollback**: `%LOCALAPPDATA%/Darkness2VR/packages/engine-lod-r2-20261101T115339035/rollback/Restore.ps1`; all nine backup hashes verified. Previous LOD candidate DLL `9AFA35F2A4B3B74EFA79FBF2C10BCEA296F6A159126B407E1783B8E84F57A358` retained in rollback.
+
 ## Installed native LODScale trial (2026-11-01 11:33 Europe/Warsaw)
 
 - **Installed DLL SHA256**: `9AFA35F2A4B3B74EFA79FBF2C10BCEA296F6A159126B407E1783B8E84F57A358`, source `97fd19cd` on `codex/gaze-nis-main-integration`. Stock EXE SHA256 unchanged: `D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1`.
