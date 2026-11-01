@@ -24,7 +24,7 @@ struct CameraAnimStabilizerState {
     bool filterValid=false;
     float filterPos[3]{},filterQuat[4]{0,0,0,1},rawPos[3]{},rawQuat[4]{0,0,0,1};
     float speed=0.f,angularSpeed=0.f,rumble=0.f,peakRumble=0.f,peakResidualDeg=0.f;
-    float tiltAverage=0.f,peakTilt=0.f;
+    float tiltAverage=0.f,peakTilt=0.f,residualAverage=0.f,residualPosAverage=0.f;
     // Snapshot taken once per tracked frame (UpdateHeadGeometry) so the view delta and the
     // hand/gun correction always come from the same update, whatever the call order.
     bool pubValid=false;DWORD pubCamera=0;ULONGLONG pubTime=0;
@@ -105,7 +105,6 @@ static void ComputeCameraStabilizer(DWORD camera,DWORD avatar) {
     auto& st=g_cameraAnimStabilizer;
     float anim[16]{},root[16]{};
     __try {
-        if(*reinterpret_cast<const DWORD*>(camera)!=0xFFC7C0)return; // selected camera class
         auto parent=**reinterpret_cast<BYTE***>(reinterpret_cast<BYTE*>(avatar)+0x1F8C);
         if(!parent || *reinterpret_cast<DWORD*>(parent)!=0xFFC300) {
             if(!st.refusedLogged){st.refusedLogged=true;Log("[CameraStabilize] REFUSED parent class; game camera unchanged");}
@@ -198,10 +197,17 @@ static void ComputeCameraStabilizer(DWORD camera,DWORD avatar) {
     // Rumble only while standing: high-frequency parent tilt plus filtered heading jitter.
     // Walking/turning never rumbles (filter lag is not shake).
     {
-        if(gap || dt<=0.f)st.tiltAverage=tilt;
-        else st.tiltAverage+=(1.f-std::exp(-dt/0.4f))*(tilt-st.tiltAverage);
-        const float shake=std::fabs(tilt-st.tiltAverage); // heading residual excluded: stick turns lag
-        const float still=std::clamp((0.25f-st.speed)/0.15f,0.f,1.f)*std::clamp((12.f-st.angularSpeed)/8.f,0.f,1.f);
+        if(gap || dt<=0.f){st.tiltAverage=tilt;st.residualAverage=residualDeg;st.residualPosAverage=residualPos;}
+        else {
+            st.tiltAverage+=(1.f-std::exp(-dt/0.4f))*(tilt-st.tiltAverage);
+            const float a=1.f-std::exp(-dt/0.12f);
+            st.residualAverage+=a*(residualDeg-st.residualAverage);
+            st.residualPosAverage+=a*(residualPos-st.residualPosAverage);
+        }
+        // High-passed only: stick turns and walking give a smooth filter lag, hits/blasts oscillate.
+        const float shake=std::fabs(tilt-st.tiltAverage)+std::fabs(residualDeg-st.residualAverage)+
+            20.f*std::fabs(residualPos-st.residualPosAverage);
+        const float still=std::clamp((0.6f-st.speed)/0.3f,0.f,1.f)*std::clamp((40.f-st.angularSpeed)/20.f,0.f,1.f);
         const float raw=st.weight*still*std::clamp((shake-0.4f)/2.0f,0.f,1.f);
         st.rumble=raw>st.rumble ? raw : st.rumble+(raw-st.rumble)*(std::min)(1.f,dt*6.f);
         st.peakRumble=(std::max)(st.peakRumble,st.rumble);st.peakResidualDeg=(std::max)(st.peakResidualDeg,residualDeg);

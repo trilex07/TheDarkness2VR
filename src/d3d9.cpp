@@ -4899,8 +4899,22 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         if(swallowLeftGrip)grips &= ~XINPUT_GAMEPAD_LEFT_SHOULDER;
         gp.wButtons |= grips;
     }
+    // Native menus (e.g. the talent trees) page with LB/RB. Gesture recognizers strip raw
+    // squeeze for tentacles, so in a verified menu L1/R1 grips pass through as LB/RB.
+    const bool menuShoulderPassthrough=g_imagePreservingInput && MenuConfirmActive();
+    const WORD menuShoulders=menuShoulderPassthrough ?
+        WORD(gp.wButtons & (XINPUT_GAMEPAD_LEFT_SHOULDER|XINPUT_GAMEPAD_RIGHT_SHOULDER)) : 0;
+    static bool loggedMenuShoulders=false;
+    if(menuShoulderPassthrough!=loggedMenuShoulders) {
+        loggedMenuShoulders=menuShoulderPassthrough;
+        Log("[MenuShoulders] native menu L1/R1 -> LB/RB passthrough=%d",int(menuShoulderPassthrough));
+    }
     if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
     ApplyProtectedLeftThrow(gp);
+    if(menuShoulderPassthrough) {
+        gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_SHOULDER|XINPUT_GAMEPAD_RIGHT_SHOULDER);
+        gp.wButtons |= menuShoulders;
+    }
     PublishProtectedLeftAim(gp);
     PublishProtectedHandPoses();
 #endif
