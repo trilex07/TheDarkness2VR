@@ -18,21 +18,23 @@ def graft(body,header,texheader,standard,proof,name):
     mask=alpha>0
     for i in range(n):
         u0,v0,u1,v1=struct.unpack_from('<4f',body,i*16)
-        x0,y0=max(0,int(np.floor(u0*w))-1),max(0,int(np.floor(v0*h))-1)
-        x1,y1=min(w,int(np.ceil(u1*w))+1),min(h,int(np.ceil(v1*h))+1)
+        x0,y0=max(0,int(np.floor(u0*w))),max(0,int(np.floor(v0*h)))
+        x1,y1=min(w,int(np.ceil(u1*w))),min(h,int(np.ceil(v1*h)))
         mask[y0:y1,x0:x1]=True
     records={c:(body[i*16:(i+1)*16],body[n*16+i*28:n*16+(i+1)*28]) for i,c in enumerate(codes)}
     tiles=[]
     for ch,donor,kind in r.LETTERS:
         i=codes.index(ord(donor));uv=struct.unpack_from('<4f',body,i*16)
         crop=original.crop(tuple(round(v*s) for v,s in zip(uv,(w,h,w,h))))
-        bbox=crop.getbbox();r.require(bbox,'Empty donor');ink=crop.crop(bbox)
-        tile=Image.new('L',(ink.width+4,ink.height+7));tile.paste(ink,(2,4))
-        draw=ImageDraw.Draw(tile);mid=tile.width//2;bottom=4+ink.height
-        if kind=='acute':draw.line((mid-1,3,mid+2,0),fill=255,width=1)
-        elif kind=='dot':draw.rectangle((mid-1,0,mid+1,2),fill=255)
-        elif kind=='ogonek':draw.line((tile.width-5,bottom-1,tile.width-6,bottom+2,tile.width-3,bottom+3),fill=255,width=1)
-        else:draw.line((0,4+ink.height//2+2,tile.width-1,4+ink.height//2-2),fill=255,width=1)
+        bbox=crop.getbbox();r.require(bbox,'Empty donor')
+        # Native metrics describe the full donor cell, including baseline space.
+        # Keep that cell and its half-texel UV span; do not crop/repad the ink.
+        tile=crop.copy();left,top,right,bottom=bbox
+        draw=ImageDraw.Draw(tile);mid=(left+right)//2
+        if kind=='acute':draw.line((mid-1,max(0,top-2),mid+2,max(0,top-5)),fill=255,width=1)
+        elif kind=='dot':draw.rectangle((mid-1,max(0,top-4),mid+1,max(0,top-2)),fill=255)
+        elif kind=='ogonek':draw.line((max(0,right-2),bottom-1,max(0,right-3),min(tile.height-1,bottom+2),min(tile.width-1,right),min(tile.height-1,bottom+3)),fill=255,width=1)
+        else:draw.line((max(0,left-1),(top+bottom)//2+2,min(tile.width-1,right+1),(top+bottom)//2-2),fill=255,width=1)
         tw,th=tile.size
         integral=np.pad(mask.astype(np.int32),((1,0),(1,0))).cumsum(0).cumsum(1)
         sums=integral[th:,tw:]-integral[:-th,tw:]-integral[th:,:-tw]+integral[:-th,:-tw]
@@ -42,8 +44,11 @@ def graft(body,header,texheader,standard,proof,name):
             continue  # Debug-only fallback; preserve its compact original atlas.
         r.require(len(xs)>0,'No safe unchanged-size atlas space: '+name+' '+ch)
         x,y=int(xs[0]),int(ys[0]);alpha[y:y+th,x:x+tw]=np.array(tile)
-        mask[max(0,y-1):min(h,y+th+1),max(0,x-1):min(w,x+tw+1)]=True
-        records[ord(ch)]=(struct.pack('<4f',x/w,y/h,(x+tw)/w,(y+th)/h),body[n*16+i*28:n*16+(i+1)*28])
+        mask[y:y+th,x:x+tw]=True
+        dx=x-round(uv[0]*w);dy=y-round(uv[1]*h)
+        newuv=(uv[0]+dx/w,uv[1]+dy/h,uv[2]+dx/w,uv[3]+dy/h)
+        records[ord(ch)]=(struct.pack('<4f',*newuv),body[n*16+i*28:n*16+(i+1)*28])
+        r.require(newuv[2]-newuv[0]==uv[2]-uv[0] and newuv[3]-newuv[1]==uv[3]-uv[1],'Donor cell span changed')
         tiles.append(tile)
     keys=sorted(records);nn=len(keys)
     newbody=b''.join(records[k][0] for k in keys)+b''.join(records[k][1] for k in keys)+struct.pack('<'+str(nn)+'H',*keys)+body[n*46:]

@@ -9,6 +9,22 @@
 
 ## Scope and status
 
+LATEST FONT ITERATIONS: in-place-v2 (source103ebf14) installed23:07 with verified
+14 backups/14 installed archives/13 protected files and six accepted model
+texture archives identical. Receipt at
+`C:/Users/Trilex/AppData/Local/Darkness2VR/backups/font-in-place-20261101-v2/deployment.json`.
+User's next title screenshot still has uneven letters; this is not acceptance.
+CUA screenshot attempt failed (`foreground window did not report a process id`);
+the user's actual screenshot is the runtime evidence.
+
+Follow-up native-cell candidate `build/font-native-cells-v3` retains original
+donor UV width/height spans, half-texel phase and full glyph cell/blank baseline
+space. v2 cropped donor ink and added padding while reusing donor metrics;
+those geometries were inconsistent. All old UV/metric/glyph pixels remain exact;
+all newly drawn letters retain donor span and metrics. This is a new candidate,
+not a proven native renderer fix. Offline build/proof PASS; pending installation
+at the source commit. Keep corrected model textures unchanged.
+
 LATEST USER FEEDBACK: corrected64 comic textures accepted (user asks whether
 these are the new textures: yes, same new artwork with corrected storage).
 Font v3 rejected: gameplay and title lettering now fragment, despite offline

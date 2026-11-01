@@ -151,4 +151,3 @@ source, BASELINE.md and the task handoff before applying them.
 
 - `texture-font-repair-v3` fixed comic texture artifacts (user accepted) but made gameplay/title text fragment. Its font strategy enlarged19 atlases and rescaled original English V coordinates. Offline glyph proofs and metrics checks were insufficient to validate native rendering. Exact native mismatch is not yet proven.
 - Replacement candidate must preserve original atlas dimensions, UV bytes, metrics and original glyph pixels; place new glyphs only in unused space. Do not roll back the now-accepted comic texture archives with the fonts. See `HANDOFF-texture-font-repair-20261101.md`.
-
