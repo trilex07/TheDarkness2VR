@@ -65,3 +65,12 @@ Closed-game rollback: `tools/deploy-cinematic-theater.ps1 -Restore <package>`.
 Refuses modified candidate files; exact accepted preimages restored. No Steam
 launch or injected input is part of installation. New font/audio/texture archives
 are outside this installer.
+
+### Installed candidate receipt
+
+Source `f247d108`, DLL SHA256
+`3126053204B354D99B0CB0D8BEBC8A0178C2031E5D5C34CA7CC3F17BA46F4374`.
+Package `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T084535813`.
+Independent audit:2 backups,2 installed hashes,4 protected hashes PASS;
+configuration semantic diff contains only `Render/CinematicTheater=1`.
+Game closed at installation and audit. Steam/headset run NOT RUN.

@@ -1,5 +1,11 @@
 # Baseline and current MAIN candidate
 
+## Installed cinematic theater candidate (2026-11-02)
+
+- MAIN installed source `f247d108` on `codex/cinematic-theater-20261102`: DLL SHA256 `3126053204B354D99B0CB0D8BEBC8A0178C2031E5D5C34CA7CC3F17BA46F4374`, game INI `Render/CinematicTheater=1`. Native cinematic signal selects room-anchored stereo screens; codec Wait/Close observer selects mono Bink screen. Default in source remains OFF.
+- Offline build/tests PASS; independent installation audit PASS:2 preimage backups,2 installed hashes,4 protected runtime hashes, exactly one INI key changed. Game closed throughout; no Steam launch/input. Accepted camera/haptics/model code and font/audio/texture assets retained. Physical cinematic/intro detection, framing and transitions NOT RUN; this is a candidate, not accepted main.
+- Receipt: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T084535813/deployment.json`. Closed-game rollback: `tools/deploy-cinematic-theater.ps1 -Restore <that-package-directory>` restores accepted DLL9AF9A51E and exact prior game INI. See `handoffs/HANDOFF-cinematic-theater-20261102.md` for evidence and bounded coverage.
+
 ## Accepted texture and Polish font repair (2026-11-01)
 
 - User accepted the final installed font geometry correction: "dobra moze byc daj na main". This supersedes the pending font acceptance entries below. Corrected64 comic model textures were accepted separately during the same test sequence; final font source is `44cb00b9`, on top of native-cell source `fcee7c8f`.
