@@ -4,6 +4,15 @@
 
 namespace d2vr_cinema {
 enum class Mode { Gameplay, Scene3D, Video2D };
+enum class Override { Auto, Gameplay, Scene3D };
+// One atomic word publishes the requested mode and its monotonic expiry together.
+inline Override TemporaryOverride(uint64_t request,uint64_t nowMs) {
+    return nowMs >= (request >> 1) ? Override::Auto :
+        (request & 1) ? Override::Scene3D : Override::Gameplay;
+}
+inline uint64_t RequestOpposite(Mode current,uint64_t nowMs) {
+    return ((nowMs+60000) << 1) | (current==Mode::Gameplay ? 1 : 0);
+}
 struct Playback {
     uintptr_t handles[16]{};
     void Observe(uintptr_t handle,bool playing) {
@@ -18,8 +27,11 @@ struct Playback {
     bool Active()const {for(auto h:handles)if(h)return true;return false;}
 };
 // Missing observations are UNKNOWN, never a sticky cinematic from a previous frame.
-inline Mode Select(bool enabled,bool sameFrame,bool cinematic,bool video) {
-    return !enabled ? Mode::Gameplay : video ? Mode::Video2D :
+inline Mode Select(bool enabled,bool sameFrame,bool cinematic,bool video,Override manual=Override::Auto) {
+    if(!enabled)return Mode::Gameplay;
+    if(manual==Override::Gameplay)return Mode::Gameplay;
+    if(manual==Override::Scene3D)return sameFrame ? Mode::Scene3D : Mode::Gameplay;
+    return video ? Mode::Video2D :
         sameFrame && cinematic ? Mode::Scene3D : Mode::Gameplay;
 }
 // Crop both rendered projections to the same angular rectangle before placing

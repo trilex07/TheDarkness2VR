@@ -78,7 +78,7 @@ static void __fastcall ProtectedHandsPackHook(void* resource,void*,void* rendere
             __try {if(rendererRef)renderer=*static_cast<void**>(rendererRef);}
             __except(EXCEPTION_EXECUTE_HANDLER){renderer=nullptr;}
             if(renderer) {
-                if(NativeCinematicPlaying())RestoreNativeHandsPalette(renderer,resource);
+                if(CinemaSceneThisFrame())RestoreNativeHandsPalette(renderer,resource);
                 else if(ProtectedHandsAvailable())ApplyNativeHandsChecked(renderer,0xFFC7C0,resource,true);
             }
             _fxrstor(floating);SetLastError(error);

@@ -1,4 +1,5 @@
 #include "native_hands_math.h"
+#include "native_hands_layout.h"
 static bool ProtectedHandsAvailable();
 static bool ProtectedHandsResourceOwned(void* resource);
 static bool CopyProtectedHandPoses(DWORD camera,NativeWeaponPose (&poses)[2]);
@@ -50,8 +51,14 @@ static void RestoreNativeHandsPalette(void* receiver,void* resource) {
         if(pose>=3 || skin>=2)return;
         auto vector=renderer+0x3F4+16*pose;
         auto palette=*reinterpret_cast<float**>(vector);
-        if(!palette || *reinterpret_cast<float**>(vector+4)-palette!=130*16)return;
+        if(!palette)return;
         auto skeleton=**reinterpret_cast<void***>(static_cast<BYTE*>(resource)+0x5E0);
+        if(!skeleton || *static_cast<DWORD*>(skeleton)!=0xFC2338)return;
+        auto records=*reinterpret_cast<BYTE**>(static_cast<BYTE*>(skeleton)+0x90);
+        auto end=*reinterpret_cast<BYTE**>(static_cast<BYTE*>(skeleton)+0x94);
+        const auto recordBytes=end-records;
+        if(recordBytes<0 || recordBytes%12 ||
+           !d2vr_hands::HumanPaletteLayout(recordBytes/12,*reinterpret_cast<float**>(vector+4)-palette))return;
         if(!TryAcquireSRWLockExclusive(&g_nativeHandsLock))return;
         locked=true;auto& cache=g_nativeHandsCache[pose];
         if(cache.renderer==renderer && cache.resource==resource && cache.palette==palette && cache.skeleton==skeleton) {
@@ -135,14 +142,17 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         auto skeleton=**(BYTE***)(resource+0x5E0);
         if(!skeleton || *(DWORD*)skeleton!=0xFC2338) return false;
         auto records=*(BYTE**)(skeleton+0x90);
-        if(*(BYTE**)(skeleton+0x94)-records!=130*12) return false;
+        const auto recordBytes=*(BYTE**)(skeleton+0x94)-records;
+        if(recordBytes<0 || recordBytes%12)return false;
+        const auto boneCount=recordBytes/12;
+        if(boneCount!=47 && boneCount!=130)return false;
         if(strcmp(*(char**)(records+12*5),"GAME_L1_ARM3") ||
            strcmp(*(char**)(records+12*27),"GAME_R1_ARM3") ||
            strcmp(*(char**)(records+12*21),"GAME_L1_WEAPON1") ||
            strcmp(*(char**)(records+12*43),"GAME_R1_WEAPON1")) return false;
         auto palette=*(float**)outputVector;
-        if(*(float**)((BYTE*)outputVector+4)-palette!=130*16) return false;
-        alignas(16) float bones[130][16]; memcpy(bones,palette,sizeof(bones));
+        if(!palette || !d2vr_hands::HumanPaletteLayout(boneCount,*(float**)((BYTE*)outputVector+4)-palette)) return false;
+        alignas(16) float bones[130][16]{}; memcpy(bones,palette,boneCount*64);
         float inverseParent[16],rightTarget[16],leftTarget[16];
         if(!d2vr_math::Invert((float*)(parent+0x140),inverseParent)) return false;
         if(rightValid)d2vr_math::Multiply(gunWorld,inverseParent,rightTarget);

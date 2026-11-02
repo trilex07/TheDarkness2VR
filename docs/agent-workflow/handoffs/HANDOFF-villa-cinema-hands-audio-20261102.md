@@ -130,3 +130,42 @@ unpause+move controllers capture, requested asynchronously. Publication currentl
 runs in XInput poll, whereas consumption requires render-thread/frame admission;
 timing/thread is a hypothesis, NOT a proven reason or authorization to bypass.
 No replacement DLL/assets installed in this follow-up; game left running.
+
+## Continuous user walk capture and bounded manual fallback
+
+User walked, watched the train/NPC area and moved both hands during a 180-second
+read-only capture: test-output/villa-live-20261102/user-walk-live.json/jsonl.
+World VR briefly returned (frame179226), then mode2 returned frame179466 with
+native0/video1. Automatic Bink classification remains unresolved, not fixed by
+the following user-requested fallback.
+
+During focused XR state5, both controllers published valid poses to camera
+27B0FCC0; native hands write sequence remained0. The selected owned resource
+2E53B4F0 has FC2338 skeleton, exactly47 bone records and3008-byte palettes,
+with the same human arm/socket names at indices3..45 as combat130. Production
+previously required130. Added strict47/130 count+palette admission while keeping
+existing named bone and native ownership checks, IK and writes2..45. No generic
+unknown skeleton admission; cached retirement supports both observed layouts.
+
+Latest user instruction: automatic mode ALWAYS returns. Hold L3+R3 continuously
+1.5seconds to request the opposite of the displayed mode for60seconds. No
+persistent manual/Auto cycle. Another release+hold toggles and renews60seconds.
+Monotonic GetTickCount64 expiry is atomic with requested mode; both XR and
+physical pad paths supported. Initial click still recenters. One toggle per
+hold; partial release, polling gap or focus loss cannot re-trigger a hold.
+Auto native/Bink policy stays intact after expiry or process restart. Forced
+cinema uses the stereo scene screen; forced VR overrides the false Bink flag.
+Head geometry, controller retirement and final XR submission use the override.
+README.txt documents the recovery shortcut. No new INI option required.
+
+Offline: x86 cinema policy/expiry/chord tests PASS; actual x86 pack/restore47/130
+fixture PASS; protected-head117021 checks PASS. DiagnosticCapture DLL build PASS.
+Physical mode switching/expiry/peaceful hands NOT RUN. No main merge authorized
+for this untested replacement; previous rejected FD6470F6 remains installed
+until the game is closed and the exact-receipt installer succeeds.
+
+Native video follow-up (not patched): IsLoadingVideoPlaying stringFB3730 binds
+D9ABE0, RegionMgrImpl classFBD224. D9AC60 calls vtable+11C; FC7D00+11C resolves
+8CF3F0, bytes read AL from[ECX+2E8], return. Constructor81D3F6 initializes+2E8;
+81D40C/81D412 stores its address in+2DC. Fullscreen/boot coverage and object
+lifetime still need proof before replacing Bink ownership policy.

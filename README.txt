@@ -4,6 +4,16 @@ Darkness2VR v0.1.8 (alpha)
 Steam VR build: D3D9 proxy + OpenXR for The Darkness II.
 Mono cinema screen / projection + VR controller to XInput mapping.
 
+VR / kino: awaryjne przelaczanie (CinematicTheater=1, SubmitMode=4)
+--------------------------------------------------------------
+  Przytrzymaj L3+R3 przez 1,5 sekundy: zwykly VR <-> kino 3D.
+  Reczne ustawienie dziala przez 60 sekund, potem automatyka wraca sama.
+  Kolejne przytrzymanie przelacza tryb i rozpoczyna nowa minute.
+  Pusc oba przyciski przed kolejnym przelaczeniem. Krotkie nacisniecie
+  nadal centruje widok (takze na poczatku przytrzymania).
+  Uzyj tego, gdy kino wlaczy sie podczas zwyklego chodzenia lub rozmowy.
+  Po restarcie gry od razu dziala automatyczne wykrywanie cutscenek/video.
+
 Controls & Diagnostics (live hotkeys in game):
 ---------------------------------------------
   F9  : Cycle Test Pattern (0 = Real Game Capture [default], 1 = Solid Bright Green, 2 = Checkerboard)

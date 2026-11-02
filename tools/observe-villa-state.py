@@ -6,7 +6,9 @@ p.add_argument('--pid',type=int,required=True)
 p.add_argument('--base',type=lambda s:int(s,0),required=True)
 p.add_argument('--out',type=Path,required=True)
 p.add_argument('--avatar',type=lambda s:int(s,0))
+p.add_argument('--seconds',type=float,default=3)
 a=p.parse_args()
+assert 1<=a.seconds<=180
 root=Path(__file__).resolve().parent.parent
 expected='FD6470F6B135A49DD77E30A023A5A931683025C719455EC3EAAA7220A01443AF'
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest().upper()
@@ -58,10 +60,46 @@ try:
             result['inventory_table']=word(inv)
             assert result['inventory_table']==0xffca10
             result['slots']={label:reference(inv+offset) for label,offset in [('main',0xb0),('off',0xbc),('demon',0x20c+6*4)]}
+        parent=result['model'].get('object')
+        if parent:
+            result['model_table']=word(parent)
+            actor=reference(parent+0xf8).get('object')
+            result['actor']=actor
+            if actor:
+                result['actor_table']=word(actor)
+                renderer=reference(actor+8).get('object')
+                result['renderer']=renderer
+                if renderer:
+                    resource=reference(renderer+0x5bc).get('object')
+                    result['renderer_resource']=resource
+                    result['pose_index']=word(renderer+0x424)
+                    result['skin_index']=word(renderer+0x448)
+                    result['pose_vectors']=[list(struct.unpack('<4I',read(renderer+0x3f4+16*j,16))) for j in range(3)]
+                    if resource:
+                        result['resource_table']=word(resource)
+                        skeleton=reference(resource+0x5e0).get('object')
+                        result['skeleton']=skeleton
+                        if skeleton:
+                            result['skeleton_table']=word(skeleton)
+                            records,end=struct.unpack('<2I',read(skeleton+0x90,8))
+                            result['bone_records']=[records,end]
+                            if end>=records and (end-records)%12==0:
+                                count=(end-records)//12
+                                result['bone_count']=count
+                                result['bone_names']={}
+                                for index in (3,4,5,21,22,23,25,26,27,43,44,45):
+                                    if index<count:
+                                        name=word(records+12*index)
+                                        result['bone_names'][index]=read(name,40).split(b'\0')[0].decode('ascii',errors='replace')
         return result
-    for i in range(30):
+    a.out.parent.mkdir(parents=True,exist_ok=True)
+    journal=a.out.with_suffix('.jsonl')
+    journal.write_text('',encoding='utf-8')
+    for i in range(round(a.seconds*10)):
         flags={s:read(symbols[s],1)[0] for s in ('g_binkVideo','g_nativeCinematicPlaying','g_in3DGameplayMode','g_haveViews','g_headGeometry','g_headGeometryReferenceValid','g_protectedHandsPrivateReady','g_imagePreservingInput','g_protectedGestureActions','g_protectedAimPrivateReady','g_protectedTrackedHands')}
         row=dict(time=time.time(),flags=flags,bink_handles=list(struct.unpack('<16I',read(symbols['g_binkPlaying'],64))),
+                 xr_session_state=word(symbols['g_xrSessionState']),
+                 hands_write_sequence=word(symbols['g_nativeHandsWriteSeq']),hands_write_stamp_raw=raw('g_nativeHandsLastWrite',192),
                  selected_resource=word(symbols['g_nativeHandsSelectedResource']),pose_camera=word(symbols['g_protectedHandsPoseCamera']),
                  native_gameplay_raw=raw('g_nativeGameplay',64),hand_poses_raw=raw('g_protectedHandPoses',160),
                  right_pause=read(symbols['g_protectedRightTentacle']+6,1)[0],left_pause=read(symbols['g_protectedLeftTentacle']+6,1)[0],avatar=avatar_snapshot(),
@@ -71,7 +109,9 @@ try:
             if handle:
                 try:row['bink_headers'][hex(handle)]=read(handle,32).hex()
                 except AssertionError:row['bink_headers'][hex(handle)]='UNREADABLE'
-        rows.append(row);time.sleep(.1)
+        rows.append(row)
+        with journal.open('a',encoding='utf-8') as f:f.write(json.dumps(row)+'\n')
+        time.sleep(.1)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     a.out.write_text(json.dumps(dict(pid=a.pid,base=a.base,dll_sha256=expected,asynchronous=True,samples=rows),indent=2),encoding='utf-8')
     print(json.dumps(rows[-1],indent=2))

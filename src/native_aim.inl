@@ -314,7 +314,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
         }
         g_nativeCinematicPlaying=cinematic;g_nativeCinematicFrame=g_trackedFrame.id;
         if(g_cinematicTheater) {
-            if(cinematic)ResetProtectedHandPoses();
+            if(CinemaSceneThisFrame())ResetProtectedHandPoses();
             // Owner callback precedes world draws. Update BOTH live/replay params,
             // retaining native stereo/FOV while removing the HMD camera delta.
             const bool previousHead=g_frameEyeParams[0].headGeometry;

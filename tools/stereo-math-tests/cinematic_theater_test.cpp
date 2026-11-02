@@ -1,5 +1,6 @@
 #include "../../src/cinematic_theater.h"
 #include "../../src/native_player_camera_owner.h"
+#include "../../src/vr_input.h"
 #include <cassert>
 #include <cstdio>
 #include <unordered_map>
@@ -11,6 +12,37 @@ int main() {
     assert(Select(true,true,true,false)==Mode::Scene3D);
     assert(Select(true,false,false,true)==Mode::Video2D);
     assert(Select(true,true,true,true)==Mode::Video2D);
+    auto request=RequestOpposite(Mode::Video2D,1000);
+    assert(TemporaryOverride(request,1000)==Override::Gameplay);
+    assert(TemporaryOverride(request,60999)==Override::Gameplay);
+    assert(TemporaryOverride(request,61000)==Override::Auto);
+    assert(Select(true,true,true,true,TemporaryOverride(request,2000))==Mode::Gameplay);
+    request=RequestOpposite(Mode::Gameplay,2000);
+    assert(Select(true,true,false,true,TemporaryOverride(request,2000))==Mode::Scene3D);
+    assert(Select(true,true,false,true,TemporaryOverride(request,62000))==Mode::Video2D);
+    request=RequestOpposite(Mode::Scene3D,61000);
+    assert(TemporaryOverride(request,62000)==Override::Gameplay); // renewed full minute
+    assert(TemporaryOverride(request,121000)==Override::Auto);
+    assert(Select(false,true,true,true,Override::Scene3D)==Mode::Gameplay);
+    d2vr_input::RecenterModeChord chord;
+    assert(chord.Update(true,true,0)); // existing click recenter
+    int toggles=0;
+    for(int i=1;i<=40;++i) {assert(!chord.Update(true,true,i*.1));toggles+=chord.modeToggle;}
+    assert(toggles==1); // prolonged hold never repeats
+    chord.Update(false,true,4.1);chord.Update(true,true,4.2);assert(!chord.modeToggle);
+    chord.Update(false,false,4.3);
+    assert(chord.Update(true,true,4.4));
+    chord.Update(false,true,4.5);
+    for(int i=46;i<=65;++i) {chord.Update(true,true,i*.1);assert(!chord.modeToggle);}
+    chord.Update(false,false,6.6);chord.Update(true,true,6.7);
+    chord.Update(true,true,8);assert(!chord.modeToggle); // polling gap cancels hold
+    chord.Update(false,false,8.1);chord.Update(true,true,8.2);
+    chord.Update(true,true,8.3,false);
+    for(int i=84;i<=105;++i) {chord.Update(true,true,i*.1);assert(!chord.modeToggle);}
+    chord.Update(false,false,10.6);chord.Update(true,true,10.7);
+    toggles=0;
+    for(int i=108;i<=126;++i) {chord.Update(true,true,i*.1);toggles+=chord.modeToggle;}
+    assert(toggles==1);
     Playback p;p.Observe(0,true);assert(!p.Active());
     p.Observe(11,true);p.Observe(11,true);p.Observe(22,true);
     p.Observe(11,false);assert(p.Active());

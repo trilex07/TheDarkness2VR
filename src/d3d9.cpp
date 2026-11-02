@@ -61,6 +61,7 @@
 #include "nis_upscale.h"
 #include "frame_boundary.h"
 #include "cinematic_theater.h"
+static std::atomic<uint64_t> g_cinemaOverrideRequest{0};
 static bool g_cinematicTheater=false; // Render/CinematicTheater, candidate OFF
 static bool g_dialogueCameraComfort=false; // Render/DialogueCameraComfort, candidate OFF
 static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibility separate
@@ -4125,7 +4126,7 @@ struct TrackedHand {
 TrackedHand g_hands[2];
 static d2vr_settings::Panel g_vrSettings;
 static d2vr_settings::ToggleAction g_vrSettingsToggle;
-d2vr_input::RecenterChord g_recenterChord;
+d2vr_input::RecenterModeChord g_recenterChord;
 d2vr_input::ContextTriangle g_triangleRecenter;
 struct GestureState {
     d2vr_input::DwellZone objective,reload[2];
@@ -4201,8 +4202,26 @@ static void ResetPoseInput() {
 #include "gaze_lod_owner_diagnostic.inl"
 #include "gaze_lod_runtime_observer.inl"
 #include "native_aim.inl"
-static bool CinemaSceneThisFrame() {return g_cinematicTheater && g_submitMode==4 && g_stereoMode==1 && NativeCinematicPlaying();}
+static d2vr_cinema::Override CinemaOverride() {
+    return d2vr_cinema::TemporaryOverride(g_cinemaOverrideRequest.load(std::memory_order_acquire),GetTickCount64());
+}
+static bool CinemaSceneThisFrame() {
+    if(!g_cinematicTheater || g_submitMode!=4 || g_stereoMode!=1)return false;
+    const auto manual=CinemaOverride();
+    if(manual==d2vr_cinema::Override::Gameplay)return false;
+    if(manual==d2vr_cinema::Override::Scene3D)
+        return g_trackedFrame.open && GetCurrentThreadId()==g_renderThreadId;
+    return NativeCinematicPlaying();
+}
 #include "bink_playback.inl"
+static std::atomic<d2vr_cinema::Mode> g_presentedCinemaMode{d2vr_cinema::Mode::Gameplay};
+static void ToggleCinemaForMinute(const char* source) {
+    if(!g_cinematicTheater || g_submitMode!=4 || g_stereoMode!=1)return;
+    const auto request=d2vr_cinema::RequestOpposite(g_presentedCinemaMode.load(std::memory_order_acquire),GetTickCount64());
+    g_cinemaOverrideRequest.store(request,std::memory_order_release);
+    Log("[CinemaOverride] %s mode=%s duration=60s; automatic detection resumes on expiry",source,
+        (request&1)?"cinema3D":"VR");
+}
 #include "camera_anim_stabilizer.inl"
 #include "camera_native_no_shake.inl"
 #include "camera_shake_source.inl"
@@ -4897,10 +4916,11 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     }
 
     if (g_recenterChord.Update((gp.wButtons & XINPUT_GAMEPAD_LEFT_THUMB)!=0,
-        (gp.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)!=0,GetTickCount64()*.001)) {
+        (gp.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)!=0,GetTickCount64()*.001,focused && leftActive && rightActive)) {
         if(g_objectDrawPadToggle || g_submissionPadToggle) InterlockedIncrement(&g_objectDrawToggleRequests);
         else RequestRecenter("VR PAD L3+R3 click");
     }
+    if(g_recenterChord.modeToggle)ToggleCinemaForMinute("VR L3+R3 hold");
     if (g_recenterChord.suppress) gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
     ApplyWeaponWheel(gp); // wheel owns triggers/right stick while open; crouch flick; equip pulses
     ApplyUnarmedTriggerDpad(gp); // before gestures/throw/haptics so they see the rewritten triggers
@@ -5184,19 +5204,21 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
         }
     }
 
-    static d2vr_input::RecenterChord physicalChord;
+    static d2vr_input::RecenterModeChord physicalChord;
     if(userIndex==0) {
         // The external export can also be polled by Steam Input/overlay threads.
         static SRWLOCK physicalChordLock=SRWLOCK_INIT;
-        bool recenter=false;
+        bool recenter=false,modeToggle=false;
         AcquireSRWLockExclusive(&physicalChordLock);
         if(r!=ERROR_SUCCESS) physicalChord={};
         else {
             recenter=physicalChord.Update((real.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_THUMB)!=0,
                 (real.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)!=0,GetTickCount64()*.001);
+            modeToggle=physicalChord.modeToggle;
             if(physicalChord.suppress) real.Gamepad.wButtons &= ~(XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
         }
         ReleaseSRWLockExclusive(&physicalChordLock);
+        if(modeToggle)ToggleCinemaForMinute("PHYSICAL L3+R3 hold");
         if(recenter) {
             if(g_objectDrawPadToggle || g_submissionPadToggle) InterlockedIncrement(&g_objectDrawToggleRequests);
             else {
@@ -6040,7 +6062,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const XrPosef head = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
         const XrPosef layerHead = g_submitMode==4 ? g_trackedFrame.layerPose : LockedViewPose(head);
         const auto cinemaMode=d2vr_cinema::Select(g_cinematicTheater && g_submitMode==4 && g_stereoMode==1,true,CinemaSceneThisFrame(),
-            g_binkVideo.load(std::memory_order_acquire));
+            g_binkVideo.load(std::memory_order_acquire),CinemaOverride());
+        g_presentedCinemaMode.store(cinemaMode,std::memory_order_release);
         static auto previousCinema=d2vr_cinema::Mode::Gameplay;
         if(cinemaMode!=previousCinema) {
             Log("[CinematicTheater] mode=%u frame=%llu native=%d video=%d",unsigned(cinemaMode),

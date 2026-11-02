@@ -120,6 +120,30 @@ struct RecenterChord {
         return false;
     }
 };
+// Preserve the click recenter and add one continuous 1.5-second hold action.
+struct RecenterModeChord : RecenterChord {
+    double last=-1;
+    bool modeToggle=false, cancelled=false, longFired=false;
+    bool Update(bool left,bool right,double time,bool active=true) {
+        modeToggle=false;
+        if(!active || !std::isfinite(time) || (last>=0 && (time<last || time-last>.25))) {
+            cancelled=true;
+            last=std::isfinite(time)?time:-1;
+            return false;
+        }
+        last=time;
+        if(!left && !right) {
+            cancelled=longFired=false;
+            return RecenterChord::Update(false,false,time);
+        }
+        if(holding && (!left || !right))cancelled=true;
+        const bool recenter=RecenterChord::Update(left,right,time);
+        if(left && right && holding && !cancelled && !longFired && time-began>=1.5) {
+            longFired=modeToggle=true;
+        }
+        return recenter;
+    }
+};
 struct Motion {
     Vec3 last{}, velocity{};
     double lastTime=0;
