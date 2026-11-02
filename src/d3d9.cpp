@@ -4128,6 +4128,7 @@ static d2vr_settings::Panel g_vrSettings;
 static d2vr_settings::ToggleAction g_vrSettingsToggle;
 d2vr_input::RecenterModeChord g_recenterChord;
 d2vr_input::ContextTriangle g_triangleRecenter;
+d2vr_input::ObjectiveButton g_objectiveButton;
 struct GestureState {
     d2vr_input::DwellZone objective,reload[2];
     d2vr_input::Slash slash;
@@ -4194,7 +4195,7 @@ static void ResetPoseInput() {
     g_protectedGrips={};
     g_protectedRightTentacle={};
 #endif
-    g_gestures={}; g_recenterChord={}; g_triangleRecenter={}; g_tentacles={};
+    g_gestures={}; g_recenterChord={}; g_triangleRecenter={}; g_objectiveButton={}; g_tentacles={};
     g_tentacleAimVisible=false; g_aimMarkerValid[0]=g_aimMarkerValid[1]=false;
     ResetNativeAim();
     for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.flags=0; hand.squeeze=0; hand.motion={}; }
@@ -4866,7 +4867,9 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         priorPhysicalARoute=route;
     }
     priorPhysicalA=physicalA;
-    if (ReadBool(g_actB, g_pathHandRight)) gp.wButtons |= XINPUT_GAMEPAD_B;
+    bool circleActive=false;
+    const bool circleDown=ReadBool(g_actB,g_pathHandRight,&circleActive);
+    if(circleDown)gp.wButtons|=XINPUT_GAMEPAD_B; // settings owns raw back before gameplay routing
     if (ReadBool(g_actX, g_pathHandLeft))  gp.wButtons |= XINPUT_GAMEPAD_X;
     bool triangleActive=false;
     const bool triangleDown=ReadBool(g_actY,g_pathHandLeft,&triangleActive);
@@ -4894,6 +4897,11 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         rawButtons?1u:0u,lt,rt,lx,ly,rx,ry,g_hands[0].squeeze,g_hands[1].squeeze))) {
         ResetWeaponWheelInput();ResetPoseInput();out->Gamepad={};return true;
     }
+    const auto objectiveButton=g_objectiveButton.Update(focused && circleActive,circleDown,
+        g_in3DGameplayMode && !MenuConfirmActive(),GetTickCount64()*.001);
+    gp.wButtons &= ~XINPUT_GAMEPAD_B;
+    if(objectiveButton.nativeB)gp.wButtons|=XINPUT_GAMEPAD_B;
+    if(objectiveButton.showObjective)gp.wButtons|=XINPUT_GAMEPAD_BACK;
     // A native-confirmed character/retained-target hold already supplies the
     // action context. Do not require a second grip press (stock LB) just to Y.
     const bool triangleModifier=NativeHeldActionContext() ||
@@ -5616,7 +5624,7 @@ void PumpXR() {
             g_vrRefValid=false; g_anchorValid=false; g_cinematicScreenValid=false; g_lockedHeadValid=false;
             g_headGeometryReferenceValid=false; ResetPoseInput();
             g_lastWorldHeadContextValid=false;
-            g_recenterChord={};g_triangleRecenter={};
+            g_recenterChord={};g_triangleRecenter={};g_objectiveButton={};
             for(auto& hand:g_hands) hand.motion.valid=false;
             Log("[Tracking] reference space change: reset anchors and gesture velocities");
         }

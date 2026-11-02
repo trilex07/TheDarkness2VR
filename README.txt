@@ -4,6 +4,12 @@ Darkness2VR v0.1.8 (alpha)
 Steam VR build: D3D9 proxy + OpenXR for The Darkness II.
 Mono cinema screen / projection + VR controller to XInput mapping.
 
+Cele misji (prawy kontroler VR)
+------------------------------
+  Przytrzymaj kolko (prawy gorny przycisk) przez 1 sekunde, aby pokazac
+  cel misji i znaczniki. Krotkie nacisniecie wykonuje zwykla akcje kolka
+  po puszczeniu. W menu kolko nadal dziala od razu jako Wstecz.
+
 VR / kino: awaryjne przelaczanie (CinematicTheater=1, SubmitMode=4)
 --------------------------------------------------------------
   Przytrzymaj L3+R3 przez 1,5 sekundy: zwykly VR <-> kino 3D.

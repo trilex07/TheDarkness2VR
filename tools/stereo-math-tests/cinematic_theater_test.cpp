@@ -43,6 +43,27 @@ int main() {
     toggles=0;
     for(int i=108;i<=126;++i) {chord.Update(true,true,i*.1);toggles+=chord.modeToggle;}
     assert(toggles==1);
+    d2vr_input::ObjectiveButton objective;
+    objective.Update(true,false,true,0);
+    auto action=objective.Update(true,true,true,.1);
+    assert(!action.nativeB && !action.showObjective);
+    action=objective.Update(true,false,true,.2);assert(action.nativeB && !action.showObjective);
+    objective.Update(true,false,true,.4);
+    objective.Update(true,true,true,.5);
+    int pulses=0;
+    for(int i=6;i<=25;++i) {
+        action=objective.Update(true,true,true,i*.1);
+        assert(!action.nativeB);
+        if(action.showObjective)++pulses;
+    }
+    assert(pulses>0 && pulses<=2);
+    action=objective.Update(true,false,true,2.6);assert(!action.nativeB && !action.showObjective);
+    objective.Update(true,true,true,2.7);
+    action=objective.Update(true,true,false,2.8);assert(!action.nativeB && !action.showObjective);
+    action=objective.Update(true,false,false,2.9);assert(!action.nativeB);
+    action=objective.Update(true,true,false,3);assert(action.nativeB && !action.showObjective);
+    action=objective.Update(false,true,true,3.1);assert(!action.nativeB && !action.showObjective);
+    action=objective.Update(true,true,true,3.2);assert(!action.nativeB && !action.showObjective);
     Playback p;p.Observe(0,true);assert(!p.Active());
     p.Observe(11,true);p.Observe(11,true);p.Observe(22,true);
     p.Observe(11,false);assert(p.Active());

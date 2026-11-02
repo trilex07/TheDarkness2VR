@@ -1,5 +1,17 @@
 # Baseline and current MAIN candidate
 
+## Latest installed runtime accepted for continued play (2026-11-02)
+
+User reports 'ta okej' on source f5bdb1e8, installed DLL
+99DAF70040D3EC328D31FA3483B0C43B57DBBE7DC035EA4AAE1E50F209B295F7;
+receipt cinematic-theater-20261102T182344252. This supersedes the rejected
+FD6470F6 candidate below. Includes 47-bone peaceful hands and long L3+R3
+minute-only VR/cinema override. Automatic Bink fullscreen classification remains
+a known unresolved issue with the requested manual workaround. No new main
+merge requested. Separate new issue: objective destination markers follow head.
+See HANDOFF-world-objective-marker-20261102.md for the new task and button
+candidate. Historical installed candidates below are retained for rollback.
+
 ## Installed villa cinema/hands and six natural dialogue lines (2026-11-02)
 
 User follow-up FAIL: false cinema and rigid hands persist. Candidate is NOT

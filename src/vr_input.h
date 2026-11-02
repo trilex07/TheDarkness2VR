@@ -78,6 +78,38 @@ struct RecenterHoldTap {
         return {};
     }
 };
+// Right upper face button: native B in menus; gameplay tap B / hold ShowObjective.
+// Lock the route on press and suppress the tap after a hold or context loss.
+struct ObjectiveButton {
+    struct Result {bool nativeB=false,showObjective=false;};
+    enum class Route {None,Native,Gameplay,Cancelled};
+    Route route=Route::None;
+    bool armed=false,fired=false;
+    double began=0,last=-1,tapUntil=0,objectiveUntil=0;
+    Result Update(bool active,bool down,bool gameplay,double time) {
+        if(!active || !std::isfinite(time) || (last>=0 && (time<last || time-last>.25))) {
+            *this={};return {};
+        }
+        last=time;
+        if(!down) {
+            if(route==Route::Gameplay && !fired && gameplay)tapUntil=time+.12;
+            route=Route::None;armed=true;fired=false;
+        } else {
+            if(route==Route::None && (armed || !gameplay)) {
+                route=gameplay?Route::Gameplay:Route::Native;
+                began=time;fired=false;
+            }
+            if(route==Route::Gameplay && !gameplay) {
+                route=Route::Cancelled;tapUntil=objectiveUntil=0;
+            }
+            if(route==Route::Gameplay && !fired && time-began>=1) {
+                fired=true;objectiveUntil=time+.12;
+            }
+        }
+        return {(route==Route::Native && down) || (gameplay && time<tapUntil),
+            gameplay && time<objectiveUntil};
+    }
+};
 // Left grip is an explicit modifier for the missing stock Y action. Choose
 // action/menu ownership once on the triangle press, so releasing grip cannot
 // turn an execution-button hold into pause/recenter. Tracking loss requires
