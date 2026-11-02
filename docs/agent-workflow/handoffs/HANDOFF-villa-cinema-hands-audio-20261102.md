@@ -169,3 +169,15 @@ D9ABE0, RegionMgrImpl classFBD224. D9AC60 calls vtable+11C; FC7D00+11C resolves
 8CF3F0, bytes read AL from[ECX+2E8], return. Constructor81D3F6 initializes+2E8;
 81D40C/81D412 stores its address in+2DC. Fullscreen/boot coverage and object
 lifetime still need proof before replacing Bink ownership policy.
+
+## Installed for user headset test
+
+User explicitly confirmed game closed and requested installation. Exact-receipt
+installer succeeded with source f5bdb1e8, DLL SHA256
+99DAF70040D3EC328D31FA3483B0C43B57DBBE7DC035EA4AAE1E50F209B295F7.
+Receipt/rollback package:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T182344252.
+Verified both installed targets, four protected files and both rollback backups.
+CinematicTheater=1 and DialogueCameraComfort=1 retained. No game launch.
+Headset results for long L3+R3 toggle, automatic return after60seconds and
+47-bone peaceful hands remain NOT RUN. Do not merge until user accepts.
