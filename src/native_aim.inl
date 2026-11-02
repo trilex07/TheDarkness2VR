@@ -295,9 +295,6 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
     if(g_nativePlayerOwnerAdmitted && g_nativeImageGuard.enabled && g_imagePreservingPresent)
         ObserveNativePauseState(manager);
     g_nativePlayerViewFrame=0;g_nativePlayerViewRenderer=0;g_nativePlayerViewCamera=0;
-    if(!g_nativePlayerOwnerAdmitted || !g_imagePreservingInput || !g_protectedGestureActions ||
-       !g_nativeImageGuard.enabled || !g_trackedFrame.open || !g_trackedFrame.id || !g_haveViews || !g_in3DGameplayMode ||
-       g_submitMode!=4 || g_stereoMode!=1 || !reference)return;
     const auto read=[](uint32_t address,uint32_t& value)->bool {
         __try {value=*reinterpret_cast<const uint32_t*>(address);return true;}
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}
@@ -309,7 +306,19 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
            uint32_t(reinterpret_cast<uintptr_t>(reference)),read)==d2vr_player_camera::Status::Matched &&
        d2vr_player_camera::PlayingCinematic(uint32_t(reinterpret_cast<uintptr_t>(manager)),read,cinematic)) {
         g_nativeCinematicPlaying=cinematic;g_nativeCinematicFrame=g_trackedFrame.id;
+        if(g_cinematicTheater) {
+            // Owner callback precedes world draws. Update BOTH live/replay params,
+            // retaining native stereo/FOV while removing the HMD camera delta.
+            const bool previousHead=g_frameEyeParams[0].headGeometry;
+            g_frameEyeParamsValid=false;
+            for(int e=0;e<2;++e)g_frameEyeParams[e]=BuildEyeParams(e);
+            g_frameEyeParamsValid=true;
+            if(previousHead!=g_frameEyeParams[0].headGeometry)NativeCameraCaptureChanged();
+        }
     }
+    if(!g_nativePlayerOwnerAdmitted || !g_imagePreservingInput || !g_protectedGestureActions ||
+       !g_nativeImageGuard.enabled || !g_trackedFrame.open || !g_trackedFrame.id || !g_haveViews || !g_in3DGameplayMode ||
+       g_submitMode!=4 || g_stereoMode!=1 || !reference)return;
     uint32_t selectedReference=0,selected=0,avatar=0;
     NativeCameraFields fields{};
     if(!r || r>UINT32_MAX-0x3f4 || !read(r+0x3f4,selectedReference) || !selectedReference ||

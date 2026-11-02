@@ -15,7 +15,7 @@ static bool ProtectedWeaponFireOwned(void* fire) {
 }
 static bool ProtectedWeaponAvailable() {
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
-    return g_protectedTrackedHands && g_protectedWeaponReady && g_nativeImageGuard.enabled &&
+    return !CinemaSceneThisFrame() && g_protectedTrackedHands && g_protectedWeaponReady && g_nativeImageGuard.enabled &&
         g_nativePlayerOwnerAdmitted && g_imagePreservingInput && g_protectedGestureActions &&
         g_haveViews && g_in3DGameplayMode && g_trackedFrame.open && g_trackedFrame.id &&
         GetCurrentThreadId()==g_renderThreadId && (g_trackedFrame.flags&tracked)==tracked &&

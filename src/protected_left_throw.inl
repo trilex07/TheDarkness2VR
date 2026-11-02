@@ -8,7 +8,7 @@ static bool ProtectedThrowFireOwned(void* fire) {
     return g_protectedThrowPrivateReady && g_protectedThrowTable.Owns(fire);
 }
 static bool ProtectedThrowAvailable() {
-    return g_protectedLeftThrow && g_protectedLeftAim && g_protectedGestureActions &&
+    return !CinemaSceneThisFrame() && g_protectedLeftThrow && g_protectedLeftAim && g_protectedGestureActions &&
         g_imagePreservingInput && g_nativeImageGuard.enabled && g_protectedThrowPrivateReady;
 }
 static bool ProtectedLeftAimHeld() {

@@ -60,6 +60,8 @@
 #include "composite_shader_patch.h"
 #include "nis_upscale.h"
 #include "frame_boundary.h"
+#include "cinematic_theater.h"
+static bool g_cinematicTheater=false; // Render/CinematicTheater, candidate OFF
 static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibility separate
 static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
 static bool g_cameraShakeRumble=true; // Diagnostics/CameraShakeRumble (default ON with the stabilizer)
@@ -135,6 +137,7 @@ static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
 #include <thread>
 
 namespace {
+static bool CinemaSceneThisFrame();
 
 CRITICAL_SECTION g_logLock;
 d2vr_log::File g_logFile;
@@ -362,6 +365,8 @@ float g_stereoDepthScale = 0.0220f; // Depth-modulated per-eye shift in UV (+47%
 float g_stereoMaxDisp = 0.038f;  // Hard safety clamp on per-eye UV shift
 int g_depthViz = 0;              // F5 toggles live depth map visualization
 float g_cinemaDistanceM = 2.0f;
+static XrPosef g_cinematicScreenPose{};
+static bool g_cinematicScreenValid=false;
 float g_cinemaWidthM = 2.1f;
 int g_enableVRGamepad = 1;
 static int g_vrSettingsToggleKey=VK_INSERT; // [Input] VRSettingsKey; 0 disables
@@ -893,6 +898,8 @@ void LoadConfig() {
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
     g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
     g_headGeometry = GetPrivateProfileIntA("Render", "HeadGeometry", 1, chosenIni) != 0;
+    g_cinematicTheater=GetPrivateProfileIntA("Render","CinematicTheater",0,chosenIni)!=0;
+    Log("[CinematicTheater] requested=%d; native cinematic stereo screens / Bink mono screen",int(g_cinematicTheater));
     Log("[Tentacle] bridge=%d axisMarker=%d; native grab observer and tracked pistol configured separately",(int)g_tentacleBridge,(int)g_tentacleAimMarker);
     g_clipScaledUi = GetPrivateProfileIntA("Render", "ClipScaledUI", 1, chosenIni) != 0;
     Log("[Sharpness] DisableFXAA=%d ClipScaledUI=%d", (int)g_disableFxaa, (int)g_clipScaledUi);
@@ -1155,7 +1162,7 @@ void RequestRecenter(const char* source) {
     CaptureClickRecenterReference();
     g_lastWorldHeadContextValid = false;
     g_recenterHeadLock = true;
-    g_anchorValid = false;
+    g_anchorValid = false;g_cinematicScreenValid=false;
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     g_headLookReset = true;
@@ -1429,7 +1436,7 @@ void PollHotkeys() {
     if ((GetAsyncKeyState(VK_F10) & 0x8000) && (now - s_lastF10 > 400)) {
         s_lastF10 = now;
         g_submitMode = (g_submitMode + 1) % 5;
-        g_anchorValid = false;
+        g_anchorValid = false;g_cinematicScreenValid=false;
         Beep(600 + g_submitMode * 150, 50);
         const char* names[] = {
             "0 (VR_STEREO_3D - Method 2 Same-Frame Stereo Shift)",
@@ -1509,7 +1516,7 @@ void PollHotkeys() {
             Log(">>> [HOTKEY F11] Stereo Shift Strength changed to: %.2fx <<<", g_stereoStrength);
         } else {
             g_cinemaDistanceM = (g_cinemaDistanceM >= 3.0f) ? 1.5f : (g_cinemaDistanceM + 0.5f);
-            g_anchorValid = false;
+            g_anchorValid = false;g_cinematicScreenValid=false;
             Beep(900, 50);
             Log(">>> [HOTKEY F11] Cinema Distance changed to: %.1fm <<<", g_cinemaDistanceM);
         }
@@ -2014,7 +2021,7 @@ static d2vr_replay::StereoParams BuildEyeParams(int eye) {
 #endif
     const bool allowHeadClip = g_nativeStereoHeadGeometry ||
                                (g_submitMode != 4 && g_headGeometry);
-    if (g_headDeltaValid && g_stereoMode == 1 && allowHeadClip) {
+    if (g_headDeltaValid && g_stereoMode == 1 && allowHeadClip && !CinemaSceneThisFrame()) {
         float wideInverse[16];
         memcpy(wideInverse,d2vr_replay::g_cameraInverseProjection,sizeof(wideInverse));
         for(int c=0;c<4;++c) { wideInverse[c]/=sp.fovScaleX; wideInverse[4+c]/=sp.fovScaleY; }
@@ -4191,6 +4198,8 @@ static void ResetPoseInput() {
 #include "gaze_lod_owner_diagnostic.inl"
 #include "gaze_lod_runtime_observer.inl"
 #include "native_aim.inl"
+static bool CinemaSceneThisFrame() {return g_cinematicTheater && g_submitMode==4 && g_stereoMode==1 && NativeCinematicPlaying();}
+#include "bink_playback.inl"
 #include "camera_anim_stabilizer.inl"
 #include "camera_native_no_shake.inl"
 #include "camera_shake_source.inl"
@@ -5547,7 +5556,7 @@ void PumpXR() {
                         double(g_displayRefresh.Hz()),int(g_displayRefresh.Enabled()));
                     if(g_displayRefresh.FallbackActive())
                         Log("[DisplayRefresh] source=OpenVR HMD DisplayFrequency; read-only background client, no pacing/settings control");
-                    g_anchorValid = false;
+                    g_anchorValid = false;g_cinematicScreenValid=false;
                     g_vrRefValid = false;
                     Log("XR session running (TestMode=%d SubmitMode=%d TrackingSubMode=%d)",
                         g_testMode, g_submitMode, g_trackingSubMode);
@@ -5579,7 +5588,7 @@ void PumpXR() {
         } else if(ev.type==XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
             g_vrSettings.Close();
             g_vrSettingsToggle.Update(false,false);
-            g_vrRefValid=false; g_anchorValid=false; g_lockedHeadValid=false;
+            g_vrRefValid=false; g_anchorValid=false; g_cinematicScreenValid=false; g_lockedHeadValid=false;
             g_headGeometryReferenceValid=false; ResetPoseInput();
             g_lastWorldHeadContextValid=false;
             g_recenterChord={};g_triangleRecenter={};
@@ -5982,6 +5991,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
     const XrCompositionLayerBaseHeader* layers[8] = { nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr };
     XrCompositionLayerQuad wheelQuads[5]{};
+    XrCompositionLayerQuad cinemaEyes[2]{};
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
     uint32_t layerCount = 0;
@@ -6026,11 +6036,26 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const float aspect = (g_srcW && g_srcH) ? ((float)g_srcW / (float)g_srcH) : (16.f / 9.f);
         const XrPosef head = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
         const XrPosef layerHead = g_submitMode==4 ? g_trackedFrame.layerPose : LockedViewPose(head);
+        const auto cinemaMode=d2vr_cinema::Select(g_cinematicTheater && g_submitMode==4 && g_stereoMode==1,true,CinemaSceneThisFrame(),
+            g_binkVideo.load(std::memory_order_acquire));
+        static auto previousCinema=d2vr_cinema::Mode::Gameplay;
+        if(cinemaMode!=previousCinema) {
+            Log("[CinematicTheater] mode=%u frame=%llu native=%d video=%d",unsigned(cinemaMode),
+                g_trackedFrame.id,int(NativeCinematicPlaying()),int(g_binkVideo.load()));
+            g_headGeometryReferenceValid=false;g_headLookReset=true;
+            previousCinema=cinemaMode;
+        }
+        const bool cinema=cinemaMode!=d2vr_cinema::Mode::Gameplay;
+        if(!cinema)g_cinematicScreenValid=false;
+        else if(!g_cinematicScreenValid) {
+            g_cinematicScreenPose=ComputeLevelWorldAnchorPose(head);
+            g_cinematicScreenValid=true;
+        }
 
         // ---------------- Head-Look Camera Rotation (Turning Head Rotates In-Game Camera) ----------------
         // NOTE: active whenever HeadLookMode > 0 (the old 3D-mode gate silently disabled head
         // tracking outside the detector path - the user reported "no head tracking").
-        if (!g_headGeometry && g_headLookMode > 0) {
+        if (!g_headGeometry && g_headLookMode > 0 && !cinema) {
             static float s_lastHeadYaw = 0.0f;
             static float s_lastHeadPitch = 0.0f;
             static DWORD s_lastHeadTime = 0;
@@ -6167,8 +6192,35 @@ void SubmitXR(IDirect3DDevice9* dev) {
                 proj.space = g_xrSpace;
                 proj.viewCount = 2;
                 proj.views = projViews;
-                layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
-                layerCount = 1;
+                if(cinema) {
+                    // Copy both current-frame images, keep stereo as distinct eye quads.
+                    // Bink pixels are authored mono; use the left image for both eyes.
+                    const auto& lf=projViews[0].fov;const auto& rf=projViews[1].fov;
+                    const float hx=std::min(-lf.angleLeft,-rf.angleLeft);
+                    const float hy=std::min(lf.angleUp,rf.angleUp);
+                    const bool video=cinemaMode==d2vr_cinema::Mode::Video2D;
+                    const float screenAspect=video?aspect:std::tan(hx)/std::tan(hy);
+                    if(std::isfinite(screenAspect) && screenAspect>.1f && screenAspect<10.f) {
+                        for(int e=0;e<2;++e) {
+                            auto& q=cinemaEyes[e];q={XR_TYPE_COMPOSITION_LAYER_QUAD};
+                            q.space=g_xrSpace;q.pose=g_cinematicScreenPose;
+                            q.eyeVisibility=e?XR_EYE_VISIBILITY_RIGHT:XR_EYE_VISIBILITY_LEFT;
+                            const int image=cinemaMode==d2vr_cinema::Mode::Video2D?0:e;
+                            q.subImage=projViews[image].subImage;
+                            const auto& f=projViews[image].fov;
+                            const float cx=video?1.f:d2vr_cinema::CommonCrop(-f.angleLeft,hx);
+                            const float cy=video?1.f:d2vr_cinema::CommonCrop(f.angleUp,hy);
+                            const int w=std::max(1,int(g_scW*cx)),h=std::max(1,int(g_scH*cy));
+                            q.subImage.imageRect={{(int(g_scW)-w)/2,(int(g_scH)-h)/2},{w,h}};
+                            q.size={g_cinemaWidthM,g_cinemaWidthM/screenAspect};
+                            layers[e]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
+                        }
+                        layerCount=2;
+                    }
+                } else {
+                    layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
+                    layerCount = 1;
+                }
             }
         } else
         // Method 2 Stereo Projection is used whenever SubmitMode is 0 or 1.
@@ -6640,7 +6692,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
     g_zeroCopyFailures = 0;
     if (g_liveColorBackup) { g_liveColorBackup->Release(); g_liveColorBackup = nullptr; }
     ReleaseDepthResources9();
-    g_anchorValid = false;
+    g_anchorValid = false;g_cinematicScreenValid=false;
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origReset(dev, pp);
@@ -6709,7 +6761,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
     g_zeroCopyFailures = 0;
     if (g_liveColorBackup) { g_liveColorBackup->Release(); g_liveColorBackup = nullptr; }
     ReleaseDepthResources9();
-    g_anchorValid = false;
+    g_anchorValid = false;g_cinematicScreenValid=false;
     g_vrWorldAnchorValid = false;
     g_vrRefValid = false;
     HRESULT hr = g_origResetEx ? g_origResetEx(dev, pp, dm) : D3D_OK;
@@ -6760,6 +6812,7 @@ static void VrFrameBody(IDirect3DDevice9* dev, const char* caller) {
     g_renderThreadId = GetCurrentThreadId();
     PollHotkeys();
     TryInstallXInputHook();
+    TryInstallCinemaBink();
 
     LONG id = g_frameId;
     if (id == 0) {

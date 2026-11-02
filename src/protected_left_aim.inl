@@ -18,7 +18,7 @@ static bool ProtectedAimCameraOwned(void* camera) {
 }
 static bool ResolveProtectedLeftAim(void* self,const float* base,float* output) {
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
-    if(!g_protectedLeftAim || !g_imagePreservingInput || !g_protectedGestureActions ||
+    if(CinemaSceneThisFrame() || !g_protectedLeftAim || !g_imagePreservingInput || !g_protectedGestureActions ||
        !g_nativeImageGuard.enabled || GetCurrentThreadId()!=g_renderThreadId ||
        !g_trackedFrame.open || !g_haveViews || !g_in3DGameplayMode || g_protectedRightTentacle.paused ||
        (g_trackedFrame.flags&tracked)!=tracked || !g_hands[0].valid ||

@@ -30,7 +30,7 @@ static bool CopyProtectedHandPoses(DWORD camera,NativeWeaponPose (&poses)[2]) {
 static void PublishProtectedHandPoses() {
     NativeWeaponPose poses[2]{};DWORD camera=0;
     NativeGameplaySample owner;
-    if(ProtectedHandsAvailable() && g_headGeometry && g_headGeometryReferenceValid &&
+    if(!CinemaSceneThisFrame() && ProtectedHandsAvailable() && g_headGeometry && g_headGeometryReferenceValid &&
        CopyNativeGameplay(owner) && ProtectedAimCameraOwned(reinterpret_cast<void*>(owner.camera))) {
         const auto& ref=g_headGeometryReference;
         const float q[4]={ref.orientation.x,ref.orientation.y,ref.orientation.z,ref.orientation.w};
