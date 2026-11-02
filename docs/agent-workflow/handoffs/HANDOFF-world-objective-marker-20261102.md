@@ -148,3 +148,21 @@ Receipt C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-202
 Game closed before installation; WorldObjectiveMarkers=1 and DialogueCameraComfort=1.
 Verified two targets, four protected files, two rollback backups and retained exact
 candidate.map. Game not launched. Runtime/headset marker correction NOT RUN.
+
+## Marker hidden instead of reprojected (user direction)
+
+User rejected marker projection candidate and requested hiding destination marker,
+retaining objective text and purple native world guidance. Exact stock H.Script
+ObjectivePopUp.lua (SHA5096a35e4809f6c255a72a301444ca79925e3176d6eab9255937663a1fd5e153)
+UpdateDisplayArrow passes separate vis and arrowVis to SetArrowNamePos. Builder
+replaces one comment before screen-position cache/visibility checks with:
+if arrowType == ARROWTYPE_Objective then vis=false;arrowVis=false end
+Padded to exact original length; serialized header/tail and every other byte
+unchanged. Objective list / AddObjective, NPC/team markers and world FX untouched.
+Stock compressed resource pin30d88a89d0c5bfd99a9ce2c92a66d7bfe5daa2cae2b4293eed695cd89f1d5eab.
+Existing Cache writer appends one raw resource and redirects only its TOC entry;
+identity/readback/unrelated TOC checks PASS. Private package:
+test-output/hide-objective-marker-20261102. New deploy asset kind allows exactly
+H.Script.cache/toc with backups/closed-game checks. Runtime projection disabled
+through explicit installer -DisableWorldObjectiveMarkers (DLL unchanged).
+Headset NOT RUN. Game process absent at preparation completion.

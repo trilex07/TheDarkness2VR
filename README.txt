@@ -48,3 +48,7 @@ Install:
 Log:
 ----
   %LOCALAPPDATA%\Darkness2VR\d3d9.log
+
+Mission guidance: hold the upper button on the right controller (Circle) for
+one second to show the objective text. The screen-space destination marker is
+hidden in the local HUD asset patch; follow the native purple world guidance.

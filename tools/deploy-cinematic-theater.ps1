@@ -1,5 +1,5 @@
 # MAIN only. Exact accepted baseline, closed game, DLL + game INI only.
-param([switch]$Install,[string]$Restore,[string]$PreviousPackage,[switch]$DialogueCameraComfort,[switch]$WorldObjectiveMarkers)
+param([switch]$Install,[string]$Restore,[string]$PreviousPackage,[switch]$DialogueCameraComfort,[switch]$WorldObjectiveMarkers,[switch]$DisableWorldObjectiveMarkers)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
@@ -7,6 +7,7 @@ $local='C:\Users\Trilex\AppData\Local\Darkness2VR'
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}
 function Closed {if(Get-CimInstance Win32_Process -Filter "Name='DarknessII.exe'"){throw 'Close Darkness II first'}}
 Closed
+if($WorldObjectiveMarkers -and $DisableWorldObjectiveMarkers){throw 'Conflicting marker options'}
 if($Restore) {
  $m=Get-Content -LiteralPath (Join-Path $Restore 'deployment.json') -Raw | ConvertFrom-Json
  foreach($e in $m.after){if((Hash $e.target) -ne $e.sha256){throw 'Current installation differs from candidate; refusing overwrite'}}
@@ -57,9 +58,11 @@ try {
  if(![D2vrCinemaIni]::WritePrivateProfileString('Render','CinematicTheater','1',$ini)){throw 'INI write failed'}
  if($DialogueCameraComfort -and ![D2vrCinemaIni]::WritePrivateProfileString('Render','DialogueCameraComfort','1',$ini)){throw 'Dialogue INI write failed'}
  if($WorldObjectiveMarkers -and ![D2vrCinemaIni]::WritePrivateProfileString('Render','WorldObjectiveMarkers','1',$ini)){throw 'Marker INI write failed'}
+ if($DisableWorldObjectiveMarkers -and ![D2vrCinemaIni]::WritePrivateProfileString('Render','WorldObjectiveMarkers','0',$ini)){throw 'Marker disable write failed'}
  if((Hash $dll) -ne $receipt.dll_sha256 -or [D2vrProfileGate]::GetPrivateProfileInt('Render','CinematicTheater',0,$ini) -ne 1){throw 'Install mismatch'}
  if($DialogueCameraComfort -and [D2vrProfileGate]::GetPrivateProfileInt('Render','DialogueCameraComfort',0,$ini) -ne 1){throw 'Dialogue install mismatch'}
  if($WorldObjectiveMarkers -and [D2vrProfileGate]::GetPrivateProfileInt('Render','WorldObjectiveMarkers',0,$ini) -ne 1){throw 'Marker install mismatch'}
+ if($DisableWorldObjectiveMarkers -and [D2vrProfileGate]::GetPrivateProfileInt('Render','WorldObjectiveMarkers',1,$ini) -ne 0){throw 'Marker disable mismatch'}
  foreach($e in $protected){if((Hash $e.target) -ne $e.sha256){throw 'Protected file changed'}}
  $receipt.after=@(@{target=$dll;sha256=(Hash $dll)},@{target=$ini;sha256=(Hash $ini)})
  $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $package 'deployment.json') -Encoding UTF8
