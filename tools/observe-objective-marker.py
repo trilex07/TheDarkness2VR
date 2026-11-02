@@ -65,10 +65,22 @@ try:
         rules=word(word(manager+0xbc))
         assert word(rules)==0x1008248
         state=word(word(rules+0x3d0));table=word(state)
-        # Opaque forensic bytes only: not a guessed tracked-object layout.
+        count_method,item_method=word(table+0x78),word(table+0x7c)
+        targets=[]
+        # Live FD8568 type and the two complete consumer instructions corroborate
+        # vector+68/+6C, stride24, reference at entry+4. Never call the methods.
+        if table==0xfd8568 and count_method==0xcba9d0 and item_method==0xb69750:
+            assert read(0xcba9d0,6)==bytes.fromhex('8b516c2b5168')
+            assert read(0xb69754,10)==bytes.fromhex('8b49688d04408b4cc104')
+            begin,end=struct.unpack('<2I',read(state+0x68,8))
+            assert end>=begin and (end-begin)%24==0 and end-begin<=24*64
+            for entry in range(begin,end,24):
+                ref=word(entry+4);obj=word(ref)
+                targets.append(dict(entry=entry,reference=ref,object=obj,
+                    table=word(obj) if obj else None,prefix=read(obj,512).hex() if obj else None))
         return dict(manager=manager,rules=rules,state=state,table=table,
-                    prefix=read(state,1024).hex(),count_method=word(table+0x78),
-                    item_method=word(table+0x7c))
+                    prefix=read(state,1024).hex(),count_method=count_method,
+                    item_method=item_method,targets=targets)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     with a.out.open('w',encoding='utf-8') as out:
         out.write(json.dumps(dict(kind='identity',pid=a.pid,base=a.base,sha256=a.sha256,asynchronous=True))+'\n')

@@ -97,3 +97,46 @@ Receipt C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-202
 Both targets, four protected hashes, two rollback backups verified; exact
 candidate.map retained beside candidate.dll for a later read-only capture.
 Game closed; no launch/input. Spatial marker correction remains OPEN.
+
+## World marker candidate after live capture (2026-11-02)
+
+Supersedes the earlier NOT RUN / no implementation status above. Read-only
+captures head-motion.jsonl and tracked-target.jsonl are retained privately in
+test-output/objective-marker-20261102. During focused samples head matrix
+changed (element span 1.72836), while native camera world/VP remained constant.
+Tracked GameState FD8568 methods CBA9D0/B69750 prove vector +68/+6C, stride24,
+smartref +4; one target 0A80BB40 type1003348. Raw +30 is not a universal
+GetTrackedPosition replacement. Native Lua typed position resolution remains.
+
+Movie manager 10B389C -> FDA948 owns movie strong refs in +58/+5C (native
+BB87C0 destructor); movie FDA6E8 has 89 executable slots, ProjectPosition at
+slot68 / 9F5220, thiscall two arguments, ret8. Context FE3EE8 active +90,
+smartref +34 resolves camera; B2CAA0 returns camera+500. Exact method/table
+ranges are SHA256 pinned in world_marker_projection.inl.
+
+Implementation uses existing process-lifetime InstanceTable to replace only
+ProjectPosition on admitted heap movie instances, retains/releases native
+strong references on the admitted window/render owner thread, preserves
+original method once and original Z, all other movie methods and destructor.
+Reprojects original world target with the actual same-frame headset transform
+and compensates existing UI scaling. Shared UI shader is unchanged. Configuration
+Render/WorldObjectiveMarkers defaults OFF; installer switch enables candidate.
+
+Boundary: one native movie layout is shared by both eyes. This is cyclopean
+world-direction correction with target depth, not per-eye marker disparity.
+Native script visibility / avatar-direction edge clamp remains. Behind-camera
+or invalid inputs are unchanged. Same-frame/open-frame/camera-ownership gates
+are mandatory: actual Flash call ordering still needs runtime proof. Inspect
+[WorldMarker] contract and corrected/refused diagnostics before claiming fix;
+if all refused, determine real call ordering, never reuse stale frame matrices.
+
+Validation: 2100 synthetic rotation/lean/depth cases against actual scene
+transform PASS; actual production x86 hook ABI/native-once/null/Z and private
+vtable/header/destructor preservation PASS; DiagnosticCapture full DLL build
+PASS; git diff --check PASS. DLL SHA256:
+B97B44775EAC979221FBAF9476F9A6D568B01B48681935B1A1A1CCE7DE926BC2.
+Headset / runtime correction NOT RUN. PID33840 still active at build finish.
+Next: close game, install using previous receipt cinematic-theater-20261102T185326718
+and -DialogueCameraComfort -WorldObjectiveMarkers; retain exact MAP alongside
+DLL. Verify targets/protected/backups, then user checks target while rotating
+and leaning, edge cases and unchanged menus/hands/cinema/objective hold.

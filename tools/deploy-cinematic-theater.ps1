@@ -1,5 +1,5 @@
 # MAIN only. Exact accepted baseline, closed game, DLL + game INI only.
-param([switch]$Install,[string]$Restore,[string]$PreviousPackage,[switch]$DialogueCameraComfort)
+param([switch]$Install,[string]$Restore,[string]$PreviousPackage,[switch]$DialogueCameraComfort,[switch]$WorldObjectiveMarkers)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
@@ -41,7 +41,7 @@ foreach($p in @((Join-Path $game 'DarknessII.exe'),$diag,(Join-Path $game 'openx
  $protected+=@{target=$p;sha256=(Hash $p)}
 }
 Copy-Item -LiteralPath $candidate -Destination (Join-Path $package 'candidate.dll')
-$receipt=@{source_commit=$source;dll_sha256=(Hash $candidate);before=$before;protected=$protected;headset='NOT RUN';game_launched=$false;dialogue_camera_comfort=[bool]$DialogueCameraComfort}
+$receipt=@{source_commit=$source;dll_sha256=(Hash $candidate);before=$before;protected=$protected;headset='NOT RUN';game_launched=$false;dialogue_camera_comfort=[bool]$DialogueCameraComfort;world_objective_markers=[bool]$WorldObjectiveMarkers}
 $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $package 'deployment.json') -Encoding UTF8
 if(!('D2vrCinemaIni' -as [type])){Add-Type -TypeDefinition @"
 using System.Runtime.InteropServices;
@@ -56,8 +56,10 @@ try {
  Copy-Item -LiteralPath (Join-Path $package 'candidate.dll') -Destination $dll -Force
  if(![D2vrCinemaIni]::WritePrivateProfileString('Render','CinematicTheater','1',$ini)){throw 'INI write failed'}
  if($DialogueCameraComfort -and ![D2vrCinemaIni]::WritePrivateProfileString('Render','DialogueCameraComfort','1',$ini)){throw 'Dialogue INI write failed'}
+ if($WorldObjectiveMarkers -and ![D2vrCinemaIni]::WritePrivateProfileString('Render','WorldObjectiveMarkers','1',$ini)){throw 'Marker INI write failed'}
  if((Hash $dll) -ne $receipt.dll_sha256 -or [D2vrProfileGate]::GetPrivateProfileInt('Render','CinematicTheater',0,$ini) -ne 1){throw 'Install mismatch'}
  if($DialogueCameraComfort -and [D2vrProfileGate]::GetPrivateProfileInt('Render','DialogueCameraComfort',0,$ini) -ne 1){throw 'Dialogue install mismatch'}
+ if($WorldObjectiveMarkers -and [D2vrProfileGate]::GetPrivateProfileInt('Render','WorldObjectiveMarkers',0,$ini) -ne 1){throw 'Marker install mismatch'}
  foreach($e in $protected){if((Hash $e.target) -ne $e.sha256){throw 'Protected file changed'}}
  $receipt.after=@(@{target=$dll;sha256=(Hash $dll)},@{target=$ini;sha256=(Hash $ini)})
  $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $package 'deployment.json') -Encoding UTF8

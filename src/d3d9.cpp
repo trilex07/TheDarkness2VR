@@ -62,6 +62,7 @@
 #include "frame_boundary.h"
 #include "cinematic_theater.h"
 static std::atomic<uint64_t> g_cinemaOverrideRequest{0};
+static bool g_worldObjectiveMarkers=false; // Candidate: native spatial UI projection only
 static bool g_cinematicTheater=false; // Render/CinematicTheater, candidate OFF
 static bool g_dialogueCameraComfort=false; // Render/DialogueCameraComfort, candidate OFF
 static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibility separate
@@ -140,6 +141,7 @@ static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
 
 namespace {
 static bool CinemaSceneThisFrame();
+static void PrepareWorldMarkerMovies();
 
 CRITICAL_SECTION g_logLock;
 d2vr_log::File g_logFile;
@@ -900,6 +902,8 @@ void LoadConfig() {
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
     g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
     g_headGeometry = GetPrivateProfileIntA("Render", "HeadGeometry", 1, chosenIni) != 0;
+    g_worldObjectiveMarkers=GetPrivateProfileIntA("Render","WorldObjectiveMarkers",0,chosenIni)!=0;
+    Log("[WorldMarker] requested=%d",int(g_worldObjectiveMarkers));
     g_cinematicTheater=GetPrivateProfileIntA("Render","CinematicTheater",0,chosenIni)!=0;
     g_dialogueCameraComfort=GetPrivateProfileIntA("Render","DialogueCameraComfort",0,chosenIni)!=0;
     Log("[DialogueCamera] requested=%d; exact native conversation setter callers only",int(g_dialogueCameraComfort));
@@ -4237,6 +4241,7 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction);
 #include "protected_hands.inl"
 #include "protected_weapon.inl"
 #include "native_recenter.inl"
+#include "world_marker_projection.inl"
 #ifdef D2VR_MATCHED_CAPTURE
 static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
     if(!g_cameraShakeTrace || !camera || !avatar || !g_trackedFrame.open ||

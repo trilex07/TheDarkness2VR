@@ -37,7 +37,7 @@ if(Test-Path -LiteralPath $DiagnosticIni -PathType Leaf) {
 foreach($path in $RenderIni) {
  if(!(Test-Path -LiteralPath $path -PathType Leaf)){throw "Missing profile: $path"}
  $full=(Resolve-Path -LiteralPath $path).Path
- foreach($key in 'NativeViewBoundary','NativeOwnedConstantCopy','NativeOwnedMaterialCopy','QueryPreloadCount','DeferStereoTransferReader','HideNativeHUD','CinematicTheater') {
+ foreach($key in 'NativeViewBoundary','NativeOwnedConstantCopy','NativeOwnedMaterialCopy','QueryPreloadCount','DeferStereoTransferReader','HideNativeHUD','CinematicTheater','WorldObjectiveMarkers') {
   if([D2vrProfileGate]::GetPrivateProfileInt('Render',$key,0,$full)){$required.Add("Render/$key")}
  }
 }

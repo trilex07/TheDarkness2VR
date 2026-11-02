@@ -290,6 +290,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
 #ifdef D2VR_MATCHED_CAPTURE
     if(GetCurrentThreadId()!=g_renderThreadId)return;
     UpdateNativeHudForView(renderer,reference,manager);
+    PrepareWorldMarkerMovies();
     InterlockedExchange(&g_nativeRegionManager,LONG(reinterpret_cast<uintptr_t>(manager))); // gaze menu pause gate
     g_nativeCinematicFrame=0;
     if(g_nativePlayerOwnerAdmitted && g_nativeImageGuard.enabled && g_imagePreservingPresent)
