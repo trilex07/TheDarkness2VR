@@ -85,3 +85,10 @@ User gate: repeat Johnny conversation with head level, then leave dialogue and
 turn using stick. Verify no forced down/pitch/roll and no persistent tilt; inspect
 [DialogueCamera] blocked lines. Also preserve cinema transitions and hands.
 Do not merge this candidate to main before user acceptance.
+
+Installed source755270d0, DLL SHA256
+E03CB97E0E99D753E52DF5440465A66949D2AB9D0DE4700C4F2FCB277C3E8DBE.
+Receipt C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T094859859.
+Independent audit PASS2 backups/2 installed/4 protected; only game INI addition
+DialogueCameraComfort=1. ProtectedLeftAim=1 remains enabled in diagnostic INI.
+Game closed throughout installation/audit; not launched. Headset NOT RUN.

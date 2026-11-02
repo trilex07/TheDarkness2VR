@@ -1,5 +1,12 @@
 # Baseline and current MAIN candidate
 
+## Installed NPC dialogue camera candidate (2026-11-02)
+
+- Accepted cinema/controller retirement integrated and pushed to main/origin/main `897c5c44`. New dialogue candidate remains separate on `codex/dialogue-camera-comfort-20261102`, source `755270d0`, DLL SHA256 `E03CB97E0E99D753E52DF5440465A66949D2AB9D0DE4700C4F2FCB277C3E8DBE`.
+- `Render/DialogueCameraComfort=1` blocks only the verified ConversationViewControlNode rotation setter chain on the selected local camera, before native composition. Retains cinema, native body/position, no-shake model snapshot, haptics and other setter callers. Defaults OFF; does not zero a pre-existing native angle or change recenter.
+- Build and actual x86 caller-chain/regression tests PASS; physical dialogue/exit/stick-turn/cinema NOT RUN. Independent installation audit PASS:2 backups,2 target hashes,4 protected hashes; only INI addition `DialogueCameraComfort=1`; game closed and not launched.
+- Receipt/rollback: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T094859859`. `tools/deploy-cinematic-theater.ps1 -Restore <package>` restores accepted DLL3F575CB4 and exact prior INI with game closed. Evidence: `handoffs/HANDOFF-dialogue-camera-comfort-20261102.md`.
+
 ## Accepted cinematic theater and controller retirement (2026-11-02)
 
 - User physically accepted the installed cinema/controller-retirement candidate and requested main integration: "jest okej wrzuc na main". Accepted DLL `3F575CB4BD277064510CA6AD9A528FA70FFACE91387055351D340EBB0EDA75B1`, source `c1ac5b8d`; Render/CinematicTheater=1. This supersedes pending acceptance below. Repo profile now enables the accepted feature.
