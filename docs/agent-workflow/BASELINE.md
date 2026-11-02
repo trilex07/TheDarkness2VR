@@ -2,6 +2,11 @@
 
 ## Installed villa cinema/hands and six natural dialogue lines (2026-11-02)
 
+User follow-up FAIL: false cinema and rigid hands persist. Candidate is NOT
+accepted for main. Live read-only diagnosis identifies Bink mode2/native0 as
+the false-cinema route; hands publication empty, controller-motion capture
+pending. See follow-up section in the per-task handoff. DLL/assets unchanged.
+
 MAIN source44d9e7ba on codex/villa-cinema-hands-audio-20261102; DLL SHA256
 FD6470F6B135A49DD77E30A023A5A931683025C719455EC3EAAA7220A01443AF.
 Retains CinematicTheater=1 and DialogueCameraComfort=1. Theater now requires

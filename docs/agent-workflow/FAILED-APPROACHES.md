@@ -16,6 +16,16 @@ source, BASELINE.md and the task handoff before applying them.
   Native fields and candidate evidence in HANDOFF-villa-cinema-hands-audio-20261102.md;
   physical villa acceptance remains pending. Do not substitute movement heuristics.
 
+### BinkWait registry is not fullscreen movie ownership
+- **Date**: 2026-11-02
+- **Branch/Commit**: codex/villa-cinema-hands-audio-20261102 /44d9e7ba
+- **Failure**: User still gets cinema while free-walking in villa. Live log mode2
+  frame4322 native0/video1 and read-only registry confirm Bink path. FreeCam fix
+  does not cover this. Wait/Close lifetime identifies codec users, not presentation.
+- **Next**: Find native full-screen movie owner/presentation path. Do not use
+  arbitrary dimensions, missing-frame timeout or blanket world-camera exclusion.
+  Read HANDOFF-villa-cinema-hands-audio-20261102.md follow-up for callsites/handles.
+
 ## Format
 ```
 ### [Title]

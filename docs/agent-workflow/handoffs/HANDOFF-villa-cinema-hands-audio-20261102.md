@@ -95,3 +95,38 @@ Rollback, game closed: deploy-asset-repair.py rollback --backup <audio receipt
 directory> --game <Steam game>, then deploy-cinematic-theater.ps1 -Restore
 <runtime receipt directory>. Audio restoration retains current DLL; runtime
 restore returns previous dialogue candidate E03CB97E and exact previous game INI.
+
+## User rejection and live read-only diagnosis (2026-11-02 follow-up)
+
+User: villa theater still activates; hands still rigid. Do NOT merge candidate.
+User identifies elevator line as 'co tylko bedziesz potrzebowal, Dzeki': strong
+manifest match Sd02170Vinnie, EN 'Yeah. Sure. Whatever you need, Jackie.'
+SIDE prompt: docs/agent-workflow/TASKS/PROMPT-SIDE-polish-dialogue-audit-20261102.md.
+No SIDE agent launched; user requested a prompt.
+
+Process35172, loaded proxy54A50000; installed DLL hash matches FD6470F6.
+Read-only snapshots via tools/observe-villa-state.py; no injection/input/write.
+Private files test-output/villa-live-20261102/{state,owner-state,tracking-state,
+bink-state}.json and copied d3d9.log. Asynchronous samples are not ordering proof.
+Log switches to mode2 at frame4322 native0/video1. FreeCam native detector stays
+running0, so this false positive is the separate Bink path, not native cinematic.
+Two sticky Bink handles47A6DA00 and01A96040 remain in registry. Last headers
+start512/256; frame count/current (offsets8/C, consumed at4782AD/B0) 480/327
+and450/301. Width/height interpretation is suggestive, fullscreen ownership not
+proved. Do NOT fix with arbitrary video dimensions, timer expiry or disabling
+all video when a world camera exists. Need native movie-presentation ownership.
+Static Wait callsites478177/478347 both receive object+ D8; CloseCE5EFC clears
+that same resource field. Wait alone does not distinguish full-screen playback
+from other video users. Import slots Wait10DBF2C, NextFrame10DBF28, Close10DBF04.
+
+Hands: private resource ready1, tracked-hands/input/gesture enabled1, native
+cinema0, world1, head geometry/reference valid1, tentacle pause flags0.
+Native owner chain valid, main/off slots point to native empty sentinel, demon
+slot exists. During fresh gameplay selected_resource2E53B4F0 and native sample
+camera27B0FCC0 valid; pose_camera0 and both published poses zero. Other samples
+native gameplay clears. Latest controller buffers have flags/valid zero, so
+cannot attribute empty poses to one specific admission check yet. Need user
+unpause+move controllers capture, requested asynchronously. Publication currently
+runs in XInput poll, whereas consumption requires render-thread/frame admission;
+timing/thread is a hypothesis, NOT a proven reason or authorization to bypass.
+No replacement DLL/assets installed in this follow-up; game left running.
