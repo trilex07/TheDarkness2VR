@@ -98,3 +98,11 @@ PASS. Physical full-body/weapon appearance remains NOT RUN.
 
 Installer `-PreviousPackage` accepts only exact after/protected identities of a
 previous candidate receipt, enabling a closed-game follow-up with its own backup.
+
+Installed follow-up source `c1ac5b8d`, DLL
+`3F575CB4BD277064510CA6AD9A528FA70FFACE91387055351D340EBB0EDA75B1`.
+Receipt `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T085451951/deployment.json`.
+Independent audit PASS:2 backups,2 installed hashes,4 protected hashes; INI
+byte-identical. Game closed; not launched. Physical full-body hand/gun behavior
+NOT RUN. Rollback returns preceding cinema candidate; initial package can then
+restore accepted DLL9AF9A51E.

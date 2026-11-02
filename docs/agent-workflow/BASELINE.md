@@ -1,5 +1,10 @@
 # Baseline and current MAIN candidate
 
+## Installed cinematic controller retirement follow-up (2026-11-02)
+
+- Source `c1ac5b8d`, DLL `3F575CB4BD277064510CA6AD9A528FA70FFACE91387055351D340EBB0EDA75B1`. During native cinema, clear/reject controller arm poses and restore only our arm-palette edits independently of tracking/pause. Native full-body animation/weapon transforms retained. Actual production x86 pack/restore regression PASS; physical appearance NOT RUN.
+- Receipt/rollback: `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T085451951`. Independent audit PASS:2 backups,2 installed hashes,4 protected hashes; INI byte-identical to previous cinema candidate. Game closed during install; not launched. Restore this package returns preceding cinema candidate; restoring preceding package returns accepted DLL9AF9A51E.
+
 ## Installed cinematic theater candidate (2026-11-02)
 
 - MAIN installed source `f247d108` on `codex/cinematic-theater-20261102`: DLL SHA256 `3126053204B354D99B0CB0D8BEBC8A0178C2031E5D5C34CA7CC3F17BA46F4374`, game INI `Render/CinematicTheater=1`. Native cinematic signal selects room-anchored stereo screens; codec Wait/Close observer selects mono Bink screen. Default in source remains OFF.
