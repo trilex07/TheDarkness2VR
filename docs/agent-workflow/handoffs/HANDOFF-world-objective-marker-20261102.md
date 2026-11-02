@@ -89,3 +89,11 @@ Decode the exact tracked-object consumer and establish presentation ownership
 before replacing/reprojecting only spatial markers. Preserve script clipping,
 text distance, subtitles, normal UI, both eyes and accepted cinema/hands.
 Physical button, marker location and native movie update ordering NOT RUN.
+
+## Button candidate installed
+
+Source b27698a2, DLL DEA8D981B59C9C44745AAE4503E7D6F3A2A5F1D0314FFC4861D4ECC76201063B.
+Receipt C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T185326718.
+Both targets, four protected hashes, two rollback backups verified; exact
+candidate.map retained beside candidate.dll for a later read-only capture.
+Game closed; no launch/input. Spatial marker correction remains OPEN.
