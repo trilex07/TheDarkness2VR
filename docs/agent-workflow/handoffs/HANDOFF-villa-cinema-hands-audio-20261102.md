@@ -75,3 +75,23 @@ Then tools/deploy-asset-repair.py install --package <private natural package>
 Update installed receipts below after installation. Never infer runtime success
 from offline tests. Test villa free walking/hands, real cutscene and boss-crazy
 conversation; identify elevator line using a specific phrase if still rushed.
+
+## Installed candidate (MAIN, game closed, no launch)
+
+Source44d9e7baff15aea1b58d8678b90cdf2fe981ff42. DLL FD6470F6B135A49DD77E30A023A5A931683025C719455EC3EAAA7220A01443AF.
+Runtime receipt:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T170623530/deployment.json.
+Audio receipt:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/villa-natural-dialogue-20261102T1707/deployment.json.
+Private audio package remains test-output/dialogue-timing/package-final;
+manifest SHA recorded in receipt. New short takes have ASR evidence; final
+decoded ASR matches A nie/Co/Dobrze wygladasz/Czego trzeba, near matches other
+two (Czefowi/Oszalau). ASR is supporting evidence, not human listening acceptance.
+Independent post-install audit PASS: DLL2 backups/2 installed/4 protected;
+audio8 backups/8 installed/19 protected including all current font/texture files.
+No source main integration, game launch or headset acceptance performed.
+
+Rollback, game closed: deploy-asset-repair.py rollback --backup <audio receipt
+directory> --game <Steam game>, then deploy-cinematic-theater.ps1 -Restore
+<runtime receipt directory>. Audio restoration retains current DLL; runtime
+restore returns previous dialogue candidate E03CB97E and exact previous game INI.

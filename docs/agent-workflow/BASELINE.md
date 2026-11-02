@@ -1,5 +1,22 @@
 # Baseline and current MAIN candidate
 
+## Installed villa cinema/hands and six natural dialogue lines (2026-11-02)
+
+MAIN source44d9e7ba on codex/villa-cinema-hands-audio-20261102; DLL SHA256
+FD6470F6B135A49DD77E30A023A5A931683025C719455EC3EAAA7220A01443AF.
+Retains CinematicTheater=1 and DialogueCameraComfort=1. Theater now requires
+running native cinematic without FreeCam; protected human hands tolerate absent
+demon grab equipment. Six S03MansionI boss-crazy lines shortened/regenerated at
+natural speed with corresponding subtitles. Elevator voice not identified.
+Receipts under C:/Users/Trilex/AppData/Local/Darkness2VR/packages/:
+cinematic-theater-20261102T170623530 and villa-natural-dialogue-20261102T1707.
+Independent audit PASS: DLL2 backups/2 installed/4 protected; audio8 backups/
+8 installed/19 protected (includes current fonts/textures). Closed-game install,
+no launch. Offline build/cinema/hands/head/codec PASS; existing dialogue fixture
+fixed-address mapping BLOCKED. Headset and listening acceptance NOT RUN.
+Accepted main unchanged. Exact rollback/evidence in
+handoffs/HANDOFF-villa-cinema-hands-audio-20261102.md.
+
 ## Installed NPC dialogue camera candidate (2026-11-02)
 
 - Accepted cinema/controller retirement integrated and pushed to main/origin/main `897c5c44`. New dialogue candidate remains separate on `codex/dialogue-camera-comfort-20261102`, source `755270d0`, DLL SHA256 `E03CB97E0E99D753E52DF5440465A66949D2AB9D0DE4700C4F2FCB277C3E8DBE`.
