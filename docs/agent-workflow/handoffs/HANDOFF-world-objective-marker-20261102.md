@@ -166,3 +166,10 @@ test-output/hide-objective-marker-20261102. New deploy asset kind allows exactly
 H.Script.cache/toc with backups/closed-game checks. Runtime projection disabled
 through explicit installer -DisableWorldObjectiveMarkers (DLL unchanged).
 Headset NOT RUN. Game process absent at preparation completion.
+
+Installed source daa34730 with game closed. Runtime setting receipt:
+C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T193328001
+(DLL unchanged; WorldObjectiveMarkers=0; candidate.map retained).
+Asset receipt: C:/Users/Trilex/AppData/Local/Darkness2VR/packages/hide-objective-marker-20261102T1940/deployment.json.
+Both H.Script files and runtime receipt verified after install; protected files
+and two asset backups verified by installer. No game launch. Headset NOT RUN.
