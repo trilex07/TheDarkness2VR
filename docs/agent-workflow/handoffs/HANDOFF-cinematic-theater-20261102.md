@@ -106,3 +106,10 @@ Independent audit PASS:2 backups,2 installed hashes,4 protected hashes; INI
 byte-identical. Game closed; not launched. Physical full-body hand/gun behavior
 NOT RUN. Rollback returns preceding cinema candidate; initial package can then
 restore accepted DLL9AF9A51E.
+
+### Physical acceptance
+
+User: "jest okej wrzuc na main" accepts installed candidate and authorizes main
+integration. Repo profile enables CinematicTheater=1. New NPC-conversation camera
+pitch/roll issue is separate: forced downward movement, residual tilt, recenter
+ineffective. Preserve accepted cinema/hands while investigating that producer.

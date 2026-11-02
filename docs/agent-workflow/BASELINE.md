@@ -1,5 +1,10 @@
 # Baseline and current MAIN candidate
 
+## Accepted cinematic theater and controller retirement (2026-11-02)
+
+- User physically accepted the installed cinema/controller-retirement candidate and requested main integration: "jest okej wrzuc na main". Accepted DLL `3F575CB4BD277064510CA6AD9A528FA70FFACE91387055351D340EBB0EDA75B1`, source `c1ac5b8d`; Render/CinematicTheater=1. This supersedes pending acceptance below. Repo profile now enables the accepted feature.
+- Separate new issue: NPC conversation forces downward/tilted camera and leaves that orientation after dialogue; L3+R3 does not straighten it. User screenshot and report open a separate dialogue-camera task. Do not treat theater acceptance as resolution of dialogue control.
+
 ## Installed cinematic controller retirement follow-up (2026-11-02)
 
 - Source `c1ac5b8d`, DLL `3F575CB4BD277064510CA6AD9A528FA70FFACE91387055351D340EBB0EDA75B1`. During native cinema, clear/reject controller arm poses and restore only our arm-palette edits independently of tracking/pause. Native full-body animation/weapon transforms retained. Actual production x86 pack/restore regression PASS; physical appearance NOT RUN.
