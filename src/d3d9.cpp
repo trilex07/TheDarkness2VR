@@ -62,6 +62,7 @@
 #include "frame_boundary.h"
 #include "cinematic_theater.h"
 static bool g_cinematicTheater=false; // Render/CinematicTheater, candidate OFF
+static bool g_dialogueCameraComfort=false; // Render/DialogueCameraComfort, candidate OFF
 static bool g_protectedHeadTracking=false; // OFF; GPU view only, native visibility separate
 static bool g_cameraAnimStabilize=false; // Diagnostics/CameraAnimStabilize, default OFF
 static bool g_cameraShakeRumble=true; // Diagnostics/CameraShakeRumble (default ON with the stabilizer)
@@ -899,6 +900,8 @@ void LoadConfig() {
     g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
     g_headGeometry = GetPrivateProfileIntA("Render", "HeadGeometry", 1, chosenIni) != 0;
     g_cinematicTheater=GetPrivateProfileIntA("Render","CinematicTheater",0,chosenIni)!=0;
+    g_dialogueCameraComfort=GetPrivateProfileIntA("Render","DialogueCameraComfort",0,chosenIni)!=0;
+    Log("[DialogueCamera] requested=%d; exact native conversation setter callers only",int(g_dialogueCameraComfort));
     Log("[CinematicTheater] requested=%d; native cinematic stereo screens / Bink mono screen",int(g_cinematicTheater));
     Log("[Tentacle] bridge=%d axisMarker=%d; native grab observer and tracked pistol configured separately",(int)g_tentacleBridge,(int)g_tentacleAimMarker);
     g_clipScaledUi = GetPrivateProfileIntA("Render", "ClipScaledUI", 1, chosenIni) != 0;

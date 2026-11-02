@@ -12,12 +12,16 @@ class InstanceTable {
     void** clone_=nullptr;
     size_t count_=0,slot_=0;
     void* replacement_=nullptr;
+    size_t extraSlot_=0;
+    void* extraReplacement_=nullptr;
 public:
     void** Table()const {return clone_;}
     bool Prepare(void** source,size_t count,size_t slot,void* replacement,
-                 const d2vr_native_image::Guard& guard) {
-        if(clone_)return source_==source && count_==count && slot_==slot && replacement_==replacement;
+                 const d2vr_native_image::Guard& guard,size_t extraSlot=0,void* extraReplacement=nullptr) {
+        if(clone_)return source_==source && count_==count && slot_==slot && replacement_==replacement &&
+            extraSlot_==extraSlot && extraReplacement_==extraReplacement;
         if(!guard.enabled || !source || !replacement || slot>=count || count>256)return false;
+        if(extraReplacement && (extraSlot>=count || extraSlot==slot))return false;
         auto storage=static_cast<void**>(VirtualAlloc(nullptr,(count+1)*sizeof(void*),
                                                      MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));
         if(!storage)return false;
@@ -27,11 +31,13 @@ public:
         // Preserve the word preceding the table too (RTTI/header convention).
         std::memcpy(storage,source-1,(count+1)*sizeof(void*));
         storage[slot+1]=replacement;
+        if(extraReplacement)storage[extraSlot+1]=extraReplacement;
         DWORD old=0;
         if(!VirtualProtect(storage,(count+1)*sizeof(void*),PAGE_READONLY,&old)) {
             VirtualFree(storage,0,MEM_RELEASE);return false;
         }
-        source_=source;clone_=storage+1;count_=count;slot_=slot;replacement_=replacement;return true;
+        source_=source;clone_=storage+1;count_=count;slot_=slot;replacement_=replacement;
+        extraSlot_=extraSlot;extraReplacement_=extraReplacement;return true;
     }
     bool Owns(void* instance)const {
         if(!instance || !clone_)return false;

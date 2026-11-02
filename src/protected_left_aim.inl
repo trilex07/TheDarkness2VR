@@ -3,6 +3,7 @@
 #include "native_aim_getter.h"
 static d2vr_native_view::InstanceTable g_protectedAimTable;
 static bool g_protectedAimPrivateReady=false;
+#include "dialogue_camera.inl"
 struct ProtectedLeftRay {NativeAimSnapshot ray;DWORD camera=0;};
 static ProtectedLeftRay g_protectedAimRay;
 static SRWLOCK g_protectedAimRayLock=SRWLOCK_INIT;
@@ -92,7 +93,7 @@ static bool PrepareProtectedAimCamera(void* camera) {
     if(!g_protectedAimPrivateReady) {
         // Every byte of the native consumer and all71 original methods/header
         // are pinned. Only the heap instance's getter slot may be redirected.
-        if(!d2vr_native_clone::MatchesDigest(reinterpret_cast<void*>(0xC62F50),0x2be,
+        if(!PrepareDialogueCamera() || !d2vr_native_clone::MatchesDigest(reinterpret_cast<void*>(0xC62F50),0x2be,
             "f0be0d6ab8a610b998561d68ff4f004efdad6709bc455247f93b9064e17705c8") ||
            !d2vr_native_clone::MatchesDigest(reinterpret_cast<void*>(0xFFC7BC),72*4,
             "b359543d54ab6c337fadf529c733d42628acffcdf8dd848a9980c4aa926fae0b"))return false;
@@ -102,10 +103,12 @@ static bool PrepareProtectedAimCamera(void* camera) {
            !d2vr_aim_getter::Bridge::Prepare(reinterpret_cast<d2vr_aim_getter::Getter>(0x504810),
                0xC63011,ResolveProtectedLeftAim,g_nativeImageGuard) ||
            !g_protectedAimTable.Prepare(reinterpret_cast<void**>(0xFFC7C0),71,0x9c/4,
-               d2vr_aim_getter::Bridge::Entry(),g_nativeImageGuard))return false;
+               d2vr_aim_getter::Bridge::Entry(),g_nativeImageGuard,0x8c/4,
+               g_dialogueCameraComfort?reinterpret_cast<void*>(DialogueCameraAngles):nullptr))return false;
         g_protectedAimPrivateReady=true;
     }
     const bool published=g_protectedAimTable.Publish(camera,g_nativeImageGuard);
+    if(published)g_dialogueCamera.store(DWORD(reinterpret_cast<uintptr_t>(camera)),std::memory_order_release);
     if(published)Log("[ProtectedLeftAim] private camera getter published camera=%p exactCaller=00C63011; native target/query lifetime retained, release physics handled separately",camera);
     return published;
 }
