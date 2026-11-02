@@ -140,3 +140,11 @@ Next: close game, install using previous receipt cinematic-theater-20261102T1853
 and -DialogueCameraComfort -WorldObjectiveMarkers; retain exact MAP alongside
 DLL. Verify targets/protected/backups, then user checks target while rotating
 and leaning, edge cases and unchanged menus/hands/cinema/objective hold.
+
+## World marker candidate installed
+
+Source d901c9c0; DLL B97B44775EAC979221FBAF9476F9A6D568B01B48681935B1A1A1CCE7DE926BC2.
+Receipt C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20261102T192817000/deployment.json.
+Game closed before installation; WorldObjectiveMarkers=1 and DialogueCameraComfort=1.
+Verified two targets, four protected files, two rollback backups and retained exact
+candidate.map. Game not launched. Runtime/headset marker correction NOT RUN.
