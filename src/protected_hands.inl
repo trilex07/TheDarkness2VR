@@ -21,6 +21,7 @@ static void ResetProtectedHandPoses() {
     ReleaseSRWLockExclusive(&g_protectedHandsPoseLock);
 }
 static bool CopyProtectedHandPoses(DWORD camera,NativeWeaponPose (&poses)[2]) {
+    if(CinemaSceneThisFrame())return false;
     if(!TryAcquireSRWLockShared(&g_protectedHandsPoseLock))return false;
     const bool same=camera && camera==g_protectedHandsPoseCamera;
     if(same)std::memcpy(poses,g_protectedHandPoses,sizeof(poses));
@@ -65,7 +66,7 @@ static void __fastcall ProtectedHandsPackHook(void* resource,void*,void* rendere
     const bool outermost=!g_insideProtectedHandsPack;
     if(outermost)g_insideProtectedHandsPack=true;
     __try {
-        if(outermost && ProtectedHandsAvailable() && ProtectedHandsResourceOwned(resource) &&
+        if(outermost && ProtectedHandsResourceOwned(resource) &&
            resource==g_nativeHandsSelectedResource) {
             // Preserve the native packer's incoming floating environment and
             // LastError around our IK. The native reference is consumed once,
@@ -78,7 +79,7 @@ static void __fastcall ProtectedHandsPackHook(void* resource,void*,void* rendere
             __except(EXCEPTION_EXECUTE_HANDLER){renderer=nullptr;}
             if(renderer) {
                 if(NativeCinematicPlaying())RestoreNativeHandsPalette(renderer,resource);
-                else ApplyNativeHandsChecked(renderer,0xFFC7C0,resource,true);
+                else if(ProtectedHandsAvailable())ApplyNativeHandsChecked(renderer,0xFFC7C0,resource,true);
             }
             _fxrstor(floating);SetLastError(error);
         }

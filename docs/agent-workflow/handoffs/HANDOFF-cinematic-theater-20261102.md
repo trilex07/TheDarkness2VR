@@ -74,3 +74,27 @@ Package `C:/Users/Trilex/AppData/Local/Darkness2VR/packages/cinematic-theater-20
 Independent audit:2 backups,2 installed hashes,4 protected hashes PASS;
 configuration semantic diff contains only `Render/CinematicTheater=1`.
 Game closed at installation and audit. Steam/headset run NOT RUN.
+
+### Cutscene controller hands/weapon retirement follow-up
+
+User clarifies: hide OUR controller hands/guns during cutscenes because the game
+substitutes a complete animated body. This mod transforms native meshes, rather
+than drawing a duplicate controller-hand/gun overlay. Therefore retire our IK,
+aim and weapon placement; preserve native cinematic body and authored weapon
+animation. Do not indiscriminately skip avatar/gun draw calls or move bones offscreen.
+
+Existing cinema gates already return weapon model/fire and left aim/throw to
+native behavior. Follow-up clears controller hand-pose cache in the same native
+cinematic callback, rejects cached pose consumption/IK during cinema, and moves
+palette restoration outside the tracking/pause availability gate. The original
+native packer still executes exactly once. Restore only our still-present arm
+edits; a newer native arm pose and all other body bones remain intact.
+
+Actual x86 production pack/restore fixture PASS: tracking unavailable while
+cinematic, both old arms restored, native-updated arm preserved independently,
+remaining body bones unchanged, gameplay pose application resumes. Theater
+policy/lifetime/crop/native reader regression and production diagnostic build
+PASS. Physical full-body/weapon appearance remains NOT RUN.
+
+Installer `-PreviousPackage` accepts only exact after/protected identities of a
+previous candidate receipt, enabling a closed-game follow-up with its own backup.

@@ -1,5 +1,5 @@
 # MAIN only. Exact accepted baseline, closed game, DLL + game INI only.
-param([switch]$Install,[string]$Restore)
+param([switch]$Install,[string]$Restore,[string]$PreviousPackage)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
@@ -18,7 +18,11 @@ if(!$Install){throw 'Use -Install or -Restore <package>'}
 $dll=Join-Path $game 'd3d9.dll';$ini=Join-Path $game 'Darkness2VR.ini'
 $diag=Join-Path $game 'Darkness2VR-diagnostic.ini'
 $candidate=Join-Path $root 'd3d9.dll'
-if((Hash $dll) -ne '9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D'){throw 'Accepted DLL baseline differs'}
+if($PreviousPackage) {
+ $previous=Get-Content -LiteralPath (Join-Path $PreviousPackage 'deployment.json') -Raw | ConvertFrom-Json
+ if(!$previous.after -or $previous.after.Count -ne 2 -or $previous.after[0].target -ne $dll -or $previous.after[1].target -ne $ini){throw 'Previous package target set differs'}
+ foreach($e in @($previous.after)+@($previous.protected)){if((Hash $e.target) -ne $e.sha256){throw 'Previous installed candidate differs'}}
+} elseif((Hash $dll) -ne '9AF9A51E7E517621C1C667E192D17B158C2F4DBCE1256F98AA9DEFD79C441A5D'){throw 'Accepted DLL baseline differs'}
 if((Hash (Join-Path $game 'DarknessII.exe')) -ne 'D46BB6CB762732B72AB9D34428237D2AFA89F5792BDBED957D78793EE8134EC1'){throw 'EXE differs'}
 & (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll $candidate -RenderIni @($ini) -DiagnosticIni $diag | Out-Host
 $source=(git -C $root rev-parse HEAD).Trim()

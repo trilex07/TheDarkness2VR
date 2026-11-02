@@ -69,6 +69,7 @@ static void RestoreNativeHandsPalette(void* receiver,void* resource) {
     } __except(EXCEPTION_EXECUTE_HANDLER) {if(locked)ReleaseSRWLockExclusive(&g_nativeHandsLock);}
 }
 static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expectedResource=nullptr,bool protectedRoute=false) {
+    if(CinemaSceneThisFrame())return false;
     if(protectedRoute ? !ProtectedHandsAvailable() : (!g_nativeHandsEnabled || !g_nativeHandsInstalled)) return false;
     NativeGameplaySample sample;
     if(!CopyNativeGameplay(sample) || (!expectedResource && !sample.entities[0])) return false;

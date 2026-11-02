@@ -307,6 +307,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
        d2vr_player_camera::PlayingCinematic(uint32_t(reinterpret_cast<uintptr_t>(manager)),read,cinematic)) {
         g_nativeCinematicPlaying=cinematic;g_nativeCinematicFrame=g_trackedFrame.id;
         if(g_cinematicTheater) {
+            if(cinematic)ResetProtectedHandPoses();
             // Owner callback precedes world draws. Update BOTH live/replay params,
             // retaining native stereo/FOV while removing the HMD camera delta.
             const bool previousHead=g_frameEyeParams[0].headGeometry;
