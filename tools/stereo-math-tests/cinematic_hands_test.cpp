@@ -3,6 +3,12 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+namespace d2vr_input {enum class GrabFeedback {Unknown,Empty,Busy};}
+struct GrabSample {d2vr_input::GrabFeedback grab;bool alternateHeldTarget;};
+static bool GrabAdmitted(bool protectedRoute,GrabSample sample) {
+#include "hands_grab_actual.inl"
+    return true;
+}
 static bool cinematic=true,available=false;
 static void* g_nativeHandsSelectedResource=nullptr;
 static SRWLOCK g_nativeHandsLock=SRWLOCK_INIT;
@@ -34,6 +40,13 @@ static void Prepare() {
     renderer[0x580]=renderer[0x581]=0;
 }
 int main() {
+    using G=d2vr_input::GrabFeedback;
+    assert(GrabAdmitted(true,{G::Unknown,false})); // peaceful human arms
+    assert(GrabAdmitted(true,{G::Busy,true})); // owned human bones only
+    assert(!GrabAdmitted(false,{G::Unknown,false}));
+    assert(!GrabAdmitted(false,{G::Busy,false}));
+    assert(!GrabAdmitted(false,{G::Empty,true}));
+    assert(GrabAdmitted(false,{G::Empty,false}));
     g_nativeHandsSelectedResource=resource;
     g_protectedHandsPackOriginal=reinterpret_cast<ProtectedHandsPackMethod>(&NativePack);
     void* rendererRef=renderer;

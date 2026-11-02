@@ -77,8 +77,11 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
     // and before skin packing. Its owned human bones 2..45 can follow the
     // controllers during a demon hold; tentacle/attachment bones stay native.
     // The older pistol-triggered route has no such ordering guarantee.
-    if(sample.grab==d2vr_input::GrabFeedback::Unknown ||
-       (!protectedRoute && (sample.grab==d2vr_input::GrabFeedback::Busy || sample.alternateHeldTarget)))return false;
+    // The protected route owns the selected human palette independently of
+    // demon-arm equipment. Peaceful segments can have no grab classifier.
+    // Only the legacy weapon-triggered route needs that classifier's authority.
+    if(!protectedRoute && (sample.grab==d2vr_input::GrabFeedback::Unknown ||
+       sample.grab==d2vr_input::GrabFeedback::Busy || sample.alternateHeldTarget))return false;
     float gunWorld[16]{};
     if(!expectedResource &&
        !TryNativeWeaponMatrix((void*)sample.entities[0],gunWorld,cameraVtable)) return false;

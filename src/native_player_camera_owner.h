@@ -4,8 +4,8 @@
 namespace d2vr_player_camera {
 // RegionMgr::GetPlayingCinematic, FC7D00+1AC -> 6CF490, returns
 // &manager[268]. D9B590 copies this smart reference through 59AB10.
-// Inspect only its nullness while the native view callback owns the manager;
-// never retain or dereference the cinematic object itself.
+// This primitive inspects nullness only. InspectCinematicView below reads the
+// pinned object's flags synchronously in the native view callback; no retention.
 template<class Read> bool PlayingCinematic(uint32_t manager,Read read,bool& playing) {
     uint32_t table=0,reference=0,object=0;
     if(!manager || (manager&3) || manager>UINT32_MAX-0x268 ||
@@ -13,6 +13,21 @@ template<class Read> bool PlayingCinematic(uint32_t manager,Read read,bool& play
        !read(manager+0x268,reference) || !reference || (reference&3) ||
        !read(reference,object))return false;
     playing=object!=0;return true;
+}
+// 480148/480156 serializes descriptor10A9174 (mFreeCam) at +7BC;
+// 480169/480177 serializes10A9168 (mOnRails) at +7BD. A running
+// cinematic can animate NPCs while explicitly leaving the player's camera free.
+struct CinematicView {uint32_t object=0,table=0;bool running=false,freeCamera=false,onRails=false;};
+template<class Read> bool InspectCinematicView(uint32_t manager,Read read,CinematicView& out) {
+    out={};bool running=false;
+    if(!PlayingCinematic(manager,read,running))return false;
+    if(!running)return true;
+    uint32_t reference=0,object=0,table=0,flags=0;
+    if(!read(manager+0x268,reference) || !read(reference,object) || !object || (object&3) ||
+       object>UINT32_MAX-0x7bf || !read(object,table) ||
+       (table!=0xfdd0b0 && table!=0xfdd318) || !read(object+0x7bc,flags) ||
+       (flags&255)>1 || ((flags>>8)&255)>1)return false;
+    out={object,table,true,(flags&255)!=0,((flags>>8)&255)!=0};return true;
 }
 // The owned 985D80 callback preserves the selected RegionMgr receiver. Its
 // separate local-player getter supplies a scoped native avatar reference.

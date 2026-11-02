@@ -33,5 +33,18 @@ int main() {
     memory[0x2000]=0;assert(d2vr_player_camera::PlayingCinematic(0x1000,read,playing) && !playing);
     memory.erase(0x2000);assert(!d2vr_player_camera::PlayingCinematic(0x1000,read,playing));
     memory[0x1000]=0;assert(!d2vr_player_camera::PlayingCinematic(0x1000,read,playing));
+    memory[0x1000]=0xfc7d00;memory[0x2000]=0x3000;
+    memory[0x3000]=0xfdd0b0;memory[0x37bc]=0;
+    d2vr_player_camera::CinematicView scene;
+    assert(d2vr_player_camera::InspectCinematicView(0x1000,read,scene) && scene.running && !scene.freeCamera);
+    memory[0x37bc]=1; // Villa NPC staging: running sequence, player camera free.
+    assert(d2vr_player_camera::InspectCinematicView(0x1000,read,scene) && scene.running && scene.freeCamera);
+    assert(Select(true,true,scene.running&&!scene.freeCamera,false)==Mode::Gameplay);
+    memory[0x3000]=0xfdd318;memory[0x37bc]=0x100;
+    assert(d2vr_player_camera::InspectCinematicView(0x1000,read,scene) && scene.onRails && !scene.freeCamera);
+    memory[0x37bc]=2;assert(!d2vr_player_camera::InspectCinematicView(0x1000,read,scene));
+    memory[0x37bc]=0;memory[0x3000]=0xdeadbeef;
+    assert(!d2vr_player_camera::InspectCinematicView(0x1000,read,scene));
+    memory[0x2000]=0;assert(d2vr_player_camera::InspectCinematicView(0x1000,read,scene) && !scene.running);
     puts("PASS cinematic modes, stale-state rejection, Bink lifetime, binocular angular crop, native owner reader");
 }

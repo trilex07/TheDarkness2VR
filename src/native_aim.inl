@@ -300,11 +300,18 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}
     };
     const auto r=uint32_t(reinterpret_cast<uintptr_t>(renderer));
-    bool cinematic=false;
+    d2vr_player_camera::CinematicView cinematicView;
     if(g_nativeCinematicAdmitted &&
        d2vr_player_camera::InspectViewContext(r,uint32_t(reinterpret_cast<uintptr_t>(manager)),
            uint32_t(reinterpret_cast<uintptr_t>(reference)),read)==d2vr_player_camera::Status::Matched &&
-       d2vr_player_camera::PlayingCinematic(uint32_t(reinterpret_cast<uintptr_t>(manager)),read,cinematic)) {
+       d2vr_player_camera::InspectCinematicView(uint32_t(reinterpret_cast<uintptr_t>(manager)),read,cinematicView)) {
+        const bool cinematic=cinematicView.running && !cinematicView.freeCamera;
+        static DWORD lastObject=0;static int lastFlags=-1;
+        const int flags=int(cinematicView.running)|(int(cinematicView.freeCamera)<<1)|(int(cinematicView.onRails)<<2);
+        if(lastObject!=cinematicView.object || lastFlags!=flags) {
+            lastObject=cinematicView.object;lastFlags=flags;
+            Log("[CinematicView] object=%08X table=%08X running=%d freeCamera=%d onRails=%d takesCamera=%d",cinematicView.object,cinematicView.table,int(cinematicView.running),int(cinematicView.freeCamera),int(cinematicView.onRails),int(cinematic));
+        }
         g_nativeCinematicPlaying=cinematic;g_nativeCinematicFrame=g_trackedFrame.id;
         if(g_cinematicTheater) {
             if(cinematic)ResetProtectedHandPoses();

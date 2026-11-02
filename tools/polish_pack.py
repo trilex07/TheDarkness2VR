@@ -193,15 +193,10 @@ def build_audio(stage, voices, ffmpeg, encoder, workers):
         with wave.open(str(voice)) as v:
             duration = v.getnframes()/v.getframerate()
         def prepare_pcm(frames):
-            # Preserve scene timing; speed up long utterances, pad short ones.
-            tempo = max(1.0, duration/(frames/rate))
-            filters = []
-            while tempo > 2:
-                filters.append("atempo=2")
-                tempo /= 2
-            if tempo > 1.000001:
-                filters.append("atempo=" + str(tempo))
-            filters += ["apad", "atrim=end_sample="+str(frames)]
+            # Scene timing is a text/synthesis budget, never permission to rush
+            # or cut a spoken word. Shorten the Polish rewrite and regenerate.
+            require(duration <= frames/rate, "Dialogue rewrite required (no speedup/cut): " + path)
+            filters = ["apad", "atrim=end_sample="+str(frames)]
             command([ffmpeg, "-v", "error", "-y", "-i", voice, "-ar", rate, "-ac", channels,
                      "-af", "aresample="+str(rate)+","+",".join(filters), "-c:a", "pcm_s16le", wav])
             with wave.open(str(wav)) as v:
