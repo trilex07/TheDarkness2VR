@@ -305,3 +305,15 @@ history accidentally. Baseline remains unchanged.
   actual WVP and exact c8 restoration including failed-set attempt. Actual-scope
   fixture PASS, diagnostic build PASS, video observer PASS, capture42 PASS.
   No runtime/visual test yet. Frozen combined package remains unchanged.
+- Reflection runtime follow-up: fresh isolated lab reflection-eye-runtime-20261104,
+  DLL CCFFEB19..., source3f620c01; diagnostic and production builds PASS.
+  Actual villa capture951/33677 has12 matching draws across two eyes, max c8 vs
+  rendered-WVP-center error1.62e-6. Capture952/37484 after15cm head translation,
+  yaw-0.5/pitch-0.15 has10 matching draws, max1.49e-6. Strict capture validation
+  PASS. This proves this narrow correction reaches both eyes, not a broad floor
+  or shadow visual fix. Actual native special contexts and HMD still NOT RUN.
+- Closed own PID36772 after path/start check and unsuccessful polite close;
+  restored exact Steam E56BF027/AC8290E4 and all four original user files with
+  hash checks. No game left running. New package tooling exposes optional
+  ReflectionExperiment, all experiments OFF in default Combined. Old frozen
+  combined-scenes-final-20261103 package remains untouched.

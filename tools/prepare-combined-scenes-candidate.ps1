@@ -30,12 +30,13 @@ public static class D2vrCombinedProfile {
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] public static extern bool WritePrivateProfileString(string section,string key,string value,string path);
 }
 '@}
-foreach($name in 'candidate-diagnostic.ini','shadow-experiment.ini'){
+foreach($name in 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini'){
  $p=Join-Path $out $name;Copy-Item -LiteralPath $diag -Destination $p
  foreach($key in 'MatchedFrameCapture','CommandHistory','CameraShakeTrace','VideoDrawProbe','CpuSyncTiming','CapturePassStages','MatchedCaptureSerial'){
   if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics',$key,'0',$p)){throw 'Profile write failed'}
  }
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ShadowClipCoordinates',$(if($name -eq 'shadow-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
+ if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ReflectionEyeExperiment',$(if($name -eq 'reflection-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Simulator','Enabled','0',$p)){throw 'Profile write failed'}
  & (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll (Join-Path $out 'd3d9.dll') -RenderIni @((Join-Path $game 'Darkness2VR.ini')) -DiagnosticIni $p|Out-Null
 }
@@ -50,6 +51,8 @@ remains available. Resolution and main rendering INI are unchanged.
 Install.ps1 -VerifyOnly checks without writes. Install.ps1 installs Combined.
 Install.ps1 -Restore restores the exact accepted DLL/diagnostic INI.
 Install.ps1 -Mode ShadowExperiment enables ONLY the pinned shadow experiment.
+Install.ps1 -Mode ReflectionExperiment enables ONLY the exact shader-pair eye
+coordinate experiment. Both experiments are OFF in default Combined mode.
 Close the game before each operation. No automatic launch or runtime switch.
 
 PASS: source/build/fixture checks, simulator intro transitions, villa hands and
@@ -58,16 +61,19 @@ pause. Actual native QTE/execution/story/Darkling/carnival scenes NOT RUN.
 Headset acceptance NOT RUN. No demonstrated recovery of user25ms/40FPS.
 Floor reflections remain unresolved. Shadow reconstruction algebra is improved
 but no demonstrated OFF/ON visual improvement; its default remains OFF.
+Reflection experiment: actual two-eye draw constants agree with rendered eye
+after rotation and15cm head translation; visual floor-artifact acceptance is
+NOT established. Its extra driver queries/setters are not an FPS optimization.
 This package is a reviewable partial candidate, not a declaration all requested
 rendering/performance issues are solved. Private captures/saves are excluded.
 '@
 [IO.File]::WriteAllText((Join-Path $out 'README.txt'),$readme,[Text.Encoding]::UTF8)
 $names=@('d3d9.dll','d3d9.pdb','d3d9.map','baseline.dll','baseline-diagnostic.ini',
- 'candidate-diagnostic.ini','shadow-experiment.ini','Install.ps1','README.txt')
+ 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','Install.ps1','README.txt')
 $files=@(foreach($name in $names){@{name=$name;sha256=(Hash (Join-Path $out $name))}})
 @{source_commit=(git -C $root rev-parse HEAD).Trim();build_flavor='protected-native /O2 x86';
  default_mode='Combined';files=$files;before=$before;protected=$protected;installed=$false;
- headset='NOT RUN';performance='unresolved';floor_reflections='unresolved';shadow_default='OFF'}|
+ headset='NOT RUN';performance='unresolved';floor_reflections='unresolved';shadow_default='OFF';reflection_default='OFF'}|
  ConvertTo-Json -Depth 7|Set-Content -LiteralPath (Join-Path $out 'candidate.json') -Encoding UTF8
 & (Join-Path $out 'Install.ps1') -VerifyOnly
 Write-Output "PREPARED $out; Steam accepted baseline retained"

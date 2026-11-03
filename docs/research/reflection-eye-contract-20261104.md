@@ -60,3 +60,32 @@ restoration. Diagnostic build PASS, video observer fixture PASS, capture42 PASS.
 Runtime experiment and visual acceptance still pending at this checkpoint.
 The frozen combined-scenes-final package is unchanged and does not include
 this new experimental code yet. No performance or floor-shadow fix claimed.
+
+## Runtime witness and recovery
+
+New MAIN lab reflection-eye-runtime-20261104, own PID36772 started
+2026-11-04 00:24:27 local. Diagnostic CCFFEB197F85D0C9CE0C0C1D1E13B9EF9AD0EF016856EEC1454CBF2DC453A0EF,
+source3f620c01. Both diagnostic and production builds PASS. Initial A presses
+only left attract video; a bounded LEFT menu/Start click reached MainMenu,
+then right A loaded the original villa Continue. Do not label repeated attract
+screens as a reflection failure. Native villa walking remained gameplay.
+
+Capture951/frame33677: 12 matching VS/PS draws across both eyes, actual c8.xyz
+vs rendered WVP center max error1.62e-6 game units. Capture952/frame37484:
+after head x0.15,y1.7,z0,yaw-0.5,pitch-0.15, 10 matching draws across both eyes,
+max error1.49e-6. Both pass strict matched files/Present validation. No stale
+selected-camera VP used to infer the per-draw eye. Animation time w is retained
+by code and the actual-body restoration fixture; capture data record its value.
+This is actual two-eye constant delivery, NOT pixel ownership of the reported
+floor reflection or demonstrated visual OFF/ON improvement. No FPS A/B claim:
+the temporary lab inherited CPU timing, and screenshot/readback intervals are
+instrumented. Other named collectors were not armed except the two requests.
+
+Closed only the exact owned PID after polite close did not exit. Saved runtime
+log privately; restored original diagnostic preimage then exact accepted Steam
+DLL/diagnostic using lab rollback. Restored all four initial user save/settings
+files and verified every SHA. No game left running; OpenXR remained process-only.
+
+The next consolidated package may include this code with a separate
+ReflectionExperiment profile, default OFF. It must keep the previous frozen
+package intact and still report unresolved performance/floor/shadow acceptance.

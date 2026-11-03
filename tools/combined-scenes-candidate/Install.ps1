@@ -1,6 +1,6 @@
 # Frozen MAIN candidate. Never launches the game or changes the OpenXR runtime.
 param([switch]$Restore,[switch]$VerifyOnly,
- [ValidateSet('Combined','ShadowExperiment')][string]$Mode='Combined')
+ [ValidateSet('Combined','ShadowExperiment','ReflectionExperiment')][string]$Mode='Combined')
 $ErrorActionPreference='Stop'
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}
 function Closed {if(Get-Process DarknessII -ErrorAction SilentlyContinue){throw 'Close Darkness II first'}}
@@ -31,7 +31,11 @@ for($i=0;$i -lt 2;$i++){
  if($expected[$i].target -ne $targets[$i] -or (Hash $targets[$i]) -ne $expected[$i].sha256){throw 'Installed preimage changed'}
 }
 if($VerifyOnly){Write-Output 'VERIFIED package, current preimage, exact rollback and protected files; no writes';return}
-$profile=if($Mode -eq 'ShadowExperiment'){'shadow-experiment.ini'}else{'candidate-diagnostic.ini'}
+$profile=switch($Mode){
+ 'ShadowExperiment' {'shadow-experiment.ini'}
+ 'ReflectionExperiment' {'reflection-experiment.ini'}
+ default {'candidate-diagnostic.ini'}
+}
 $sources=if($Restore){$backups}else{@('d3d9.dll',$profile)}
 $wanted=if($Restore){@($m.before|ForEach-Object sha256)}else{@(
  ($m.files|Where-Object name -eq 'd3d9.dll').sha256,
