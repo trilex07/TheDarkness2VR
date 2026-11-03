@@ -137,6 +137,35 @@ struct ContextTriangle {
         return {false,result.tap,result.recenter};
     }
 };
+// Native Y is immediate, including holds. A second short press within 350 ms
+// requests pause instead of Y. Native action contexts disable the pause route.
+// The first Y has already reached the game when a double click is recognized.
+struct ChoicePauseButton {
+    struct Result {bool action=false,tap=false,recenter=false;};
+    bool armed=false,holding=false,pause=false,protectedPress=false;
+    double last=-1,began=0,previousRelease=-1;
+    Result Update(bool active,bool down,bool protect,double time,bool=true) {
+        if(!active || !std::isfinite(time) || (last>=0 && (time<last || time-last>.25))) {
+            *this={};return {};
+        }
+        last=time;
+        if(protect)previousRelease=-1;
+        if(!down) {
+            if(holding && !pause && !protectedPress && !protect && time-began<=.35)
+                previousRelease=time;
+            holding=pause=protectedPress=false;armed=true;
+            return {};
+        }
+        if(!armed)return {};
+        if(!holding) {
+            holding=true;began=time;protectedPress=protect;
+            pause=!protect && previousRelease>=0 && time-previousRelease<=.35;
+            previousRelease=-1;
+            return {!pause,pause,false};
+        }
+        return {!pause,false,false};
+    }
+};
 struct RecenterChord {
     double began=0;
     bool holding=false, fired=false;

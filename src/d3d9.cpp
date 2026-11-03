@@ -848,7 +848,7 @@ void LoadConfig() {
     g_wideRecordCopy = GetPrivateProfileIntA("Render", "WideRecordCopy", 0, chosenIni)!=0;
     if(g_wideRecordCopy) Log("[WideRecordCopy] requested=1 limit=65536; requires SmallRecordCopy guard admission; exact-count RPM, legacy fallback; no permission cache");
     g_triangleHoldRecenter = GetPrivateProfileIntA("Render", "TriangleHoldRecenter", 0, chosenIni)!=0;
-    if(g_triangleHoldRecenter) Log("[RecenterInput] triangle hold 1s=recenter; short release=menu");
+    Log("[RecenterInput] triangle=immediate native Y; double click=pause outside protected choices; legacy TriangleHoldRecenter=%d ignored",int(g_triangleHoldRecenter));
     if(g_submissionPadToggle) {
         g_objectDrawPadToggle=false;g_skipObjectDraws=false;g_skipShadowAtlasDraws=false;
         Log("[SubmissionAB] L3+R3 armed; geometry retained, F8 recenter; draw omission disabled");
@@ -3929,6 +3929,9 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         warnEarly("liveEnd.Capture failed");
         g_blitPass = 0; g_eyePairReady = false; return;
     }
+#ifdef D2VR_MATCHED_CAPTURE
+    ObserveVideoPresentation(liveEnd.targets[0]);
+#endif
     EyeOutputLease isolatedLease;
     bool isolatedOutput=false;
     bool allowIsolated=g_isolatedEyeOutput && zeroCopy && transferWorker && splitCapture &&
@@ -4220,7 +4223,7 @@ TrackedHand g_hands[2];
 static d2vr_settings::Panel g_vrSettings;
 static d2vr_settings::ToggleAction g_vrSettingsToggle;
 d2vr_input::RecenterModeChord g_recenterChord;
-d2vr_input::ContextTriangle g_triangleRecenter;
+d2vr_input::ChoicePauseButton g_triangleRecenter;
 d2vr_input::ObjectiveButton g_objectiveButton;
 struct GestureState {
     d2vr_input::DwellZone objective,reload[2];
@@ -4331,6 +4334,7 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction);
 #include "protected_weapon.inl"
 #include "native_recenter.inl"
 #include "world_marker_projection.inl"
+#include "native_action_movies.inl"
 #ifdef D2VR_MATCHED_CAPTURE
 static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
     if(!g_cameraShakeTrace || !camera || !avatar || !g_trackedFrame.open ||
@@ -4821,6 +4825,9 @@ static d2vr_input::DoubleTapDpad g_doubleTapDpadState;
 // Uses only the existing native gameplay sample (no new hook). Without a fresh
 // sample the hand state is Unknown and triggers pass through unchanged.
 static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
+    if(NativeActionMovies()) {
+        g_unarmedTriggerDpadState.Reset();g_doubleTapDpadState.Reset();return;
+    }
     using d2vr_input::HandSlot;
     HandSlot offHand=HandSlot::Unknown,mainHand=HandSlot::Unknown;
     NativeGameplaySample sample;
@@ -4881,7 +4888,8 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
     }
     prevX=xNow;
     uint16_t tapped=0;
-    g_doubleTapDpadState.Update(gp.wButtons,target,g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START),nowMs,&tapped);
+    g_doubleTapDpadState.Update(gp.wButtons,target,g_in3DGameplayMode && !MenuConfirmActive() &&
+        !g_nativeCinematicPlaying && !NativeHeldActionContext() && !NativeActionMovies() && !(gp.wButtons & XINPUT_GAMEPAD_START),nowMs,&tapped);
     if(tapped) {
         lastToggle=tapped;
         Log("[DoubleTapDpad] X double tap (DoubleTapX=%s, firearm right=%u left=%u, main hand %s, held %s) -> buttons=0x%04X",targetName,
@@ -4992,13 +5000,15 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         ResetWeaponWheelInput();ResetPoseInput();out->Gamepad={};return true;
     }
     const auto objectiveButton=g_objectiveButton.Update(focused && circleActive,circleDown,
-        g_in3DGameplayMode && !MenuConfirmActive(),GetTickCount64()*.001);
+        g_in3DGameplayMode && !MenuConfirmActive() && !NativeHeldActionContext() &&
+        !g_nativeCinematicPlaying && !NativeActionMovies(),GetTickCount64()*.001);
     gp.wButtons &= ~XINPUT_GAMEPAD_B;
     if(objectiveButton.nativeB)gp.wButtons|=XINPUT_GAMEPAD_B;
     if(objectiveButton.showObjective)gp.wButtons|=XINPUT_GAMEPAD_BACK;
     // A native-confirmed character/retained-target hold already supplies the
     // action context. Do not require a second grip press (stock LB) just to Y.
     const bool triangleModifier=NativeHeldActionContext() ||
+        d2vr_action_movies::ProtectRapidChoices(NativeActionMovies()) ||
         (g_in3DGameplayMode && g_hands[0].gripValid && g_hands[0].squeeze>.65f);
     const auto triangle=g_triangleRecenter.Update(triangleActive,triangleDown,triangleModifier,
         GetTickCount64()*.001,g_triangleHoldRecenter);
@@ -5060,8 +5070,13 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         loggedMenuShoulders=menuShoulderPassthrough;
         Log("[MenuShoulders] native menu L1/R1 -> LB/RB passthrough=%d",int(menuShoulderPassthrough));
     }
-    if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
-    ApplyProtectedLeftThrow(gp);
+    if(!NativeActionMovies()) {
+        if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
+        ApplyProtectedLeftThrow(gp);
+    } else {
+        // Do not carry a queued stroke/throw into or out of native choices.
+        g_protectedRightTentacle={};ResetProtectedLeftThrow();ResetNativeThrow();
+    }
     if(menuShoulderPassthrough) {
         gp.wButtons &= ~(XINPUT_GAMEPAD_LEFT_SHOULDER|XINPUT_GAMEPAD_RIGHT_SHOULDER);
         gp.wButtons |= menuShoulders;
@@ -5108,7 +5123,7 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
     const XrPosef head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
     const XrViewStateFlags trackedHead=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     const bool enabled=g_haveViews && (g_trackedFrame.flags & trackedHead)==trackedHead &&
-        g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START) && !protectedPaused;
+        g_in3DGameplayMode && !NativeActionMovies() && !(gp.wButtons & XINPUT_GAMEPAD_START) && !protectedPaused;
     for(int h=0;h<2;++h) {
         const auto& hand=g_hands[h];
         const auto& p=hand.grip.position;

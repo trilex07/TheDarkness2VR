@@ -1,8 +1,9 @@
 param([ValidateSet('Install','Update','Restore')][string]$Action,
- [string]$GameDir='C:\Program Files (x86)\Steam\steamapps\common\Darkness II')
+ [string]$GameDir='C:\Program Files (x86)\Steam\steamapps\common\Darkness II',
+ [string]$LabDirectory='')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-$lab=Join-Path $root 'test-output/simulator-lab-20261103'
+$lab=if($LabDirectory){[IO.Path]::GetFullPath($LabDirectory)}else{Join-Path $root 'test-output/simulator-lab-20261103'}
 $receipt=Join-Path $lab 'payload.json'
 if(Get-Process DarknessII -ErrorAction SilentlyContinue){throw 'Close game before changing lab payload'}
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}

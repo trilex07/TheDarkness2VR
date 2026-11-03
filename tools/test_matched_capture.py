@@ -342,6 +342,20 @@ class MatchedCaptureTests(unittest.TestCase):
         self.save()
         self.assertEqual(validate(self.folder)["frame"],7)
 
+    def test_exact_shadow_input_requires_only_sampler_zero(self):
+        row=dict(kind="post_input",frame=7,eye=0,draw=0,ps_hash=0xC4D1FB10,
+                 sampler=0,surface_available=True,texture_hr=0,surface_hr=0,desc_hr=0,
+                 texture_type=3,width=512,height=512,format=0x5A544E49,
+                 readback_status="unsupported_format")
+        self.records.insert(3,row);self.save()
+        self.assertEqual(validate(self.folder)["frame"],7)
+        row["sampler"]=2;self.save()
+        with self.assertRaisesRegex(ValueError,"incomplete postprocess input"):
+            validate(self.folder)
+        row["sampler"]=0;self.records.insert(4,dict(row));self.save()
+        with self.assertRaisesRegex(ValueError,"incomplete postprocess input"):
+            validate(self.folder)
+
     def test_incomplete_or_inconsistent_post_inputs_rejected(self):
         rows = self.add_post_inputs()
         self.records.remove(rows[1]); self.save()

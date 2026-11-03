@@ -7,8 +7,17 @@ Mono cinema screen / projection + VR controller to XInput mapping.
 Cele misji (prawy kontroler VR)
 ------------------------------
   Przytrzymaj kolko (prawy gorny przycisk) przez 1 sekunde, aby pokazac
-  cel misji i znaczniki. Krotkie nacisniecie wykonuje zwykla akcje kolka
+  tekst celu misji. Przestrzenny znacznik jest ukryty; prowadzi natywna
+  fioletowa mgla. Krotkie nacisniecie wykonuje zwykla akcje kolka
   po puszczeniu. W menu kolko nadal dziala od razu jako Wstecz.
+
+Trojkat i wybory
+---------------
+  Pojedyncze nacisniecie trojkata od razu wysyla natywne Y, takze w rozmowie.
+  Dwa krotkie nacisniecia (drugie do 350 ms po puszczeniu pierwszego)
+  otwieraja pauze. Pierwsze nacisniecie nadal moze wykonac akcje w grze.
+  Podczas rozpoznanego QTE, wyboru egzekucji lub decyzji fabularnej
+  szybkie nacisniecia pozostaja natywne; pauza jest na przycisku menu.
 
 VR / kino: awaryjne przelaczanie (CinematicTheater=1, SubmitMode=4)
 --------------------------------------------------------------

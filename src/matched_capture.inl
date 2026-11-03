@@ -17,7 +17,7 @@ static uintptr_t sourceIdentities[2];
 static unsigned projectionObserved;
 static std::vector<uintptr_t> geometrySaved;
 // Optional one-frame pass localization. No reads or allocations when disabled.
-static bool passStages, postStagesOnly, postInputsSaved;
+static bool passStages, postStagesOnly, postInputsSaved, shadowStagesOnly, shadowInputsSaved;
 static IDirect3DSurface9* stageTarget;
 static unsigned stagesSaved, stageLastDraw, stageVs, stagePs;
 static uint64_t stageBytes;
@@ -202,7 +202,8 @@ static void Begin() {
     ReleaseStage(); stagesSaved=0; stageBytes=0; shadersSaved.clear();
     passStages=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)!=0;
     postStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==2;
-    postInputsSaved=false;
+    shadowStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==3;
+    postInputsSaved=shadowInputsSaved=false;
     frame=g_trackedFrame.id; active=true; failed=false; headerPending=true; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     skinUploadsSeen=skinUploadsSaved=0;
     pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;
@@ -314,12 +315,70 @@ static bool IsPostStage(unsigned ps) {
            ps==0x120C78F8u || ps==0x5104FEF7u;
 }
 static void FlushStage(IDirect3DDevice9* dev) {
+    if(shadowStagesOnly)return; // reserve readback budget for the actual depth input
     if(postStagesOnly && !IsPostStage(stagePs)) return;
     SaveStageSurface(dev,stageTarget,stageLastDraw,stageVs,stagePs,"after_draw");
 }
+// Explicit single-frame diagnostic only. INTZ cannot be GetRenderTargetData'd:
+// sample the exact retained input into full-resolution R32F with point filtering.
+// Use original draw/setter entry points so the copy never enters replay/history.
+static const char* SaveShadowDepth(IDirect3DDevice9* dev,IDirect3DBaseTexture9* source,
+                                  IDirect3DSurface9* input,unsigned draw,unsigned vs,unsigned ps) {
+    D3DSURFACE_DESC desc{};
+    if(!source || !input || FAILED(input->GetDesc(&desc)) ||
+       desc.Format!=static_cast<D3DFORMAT>(0x5a544e49u) || desc.MultiSampleType!=D3DMULTISAMPLE_NONE)
+        return "unsupported_depth_copy";
+    struct RecGuard {bool saved=d2vr_replay::g_recActive;RecGuard(){d2vr_replay::g_recActive=false;}
+        ~RecGuard(){d2vr_replay::g_recActive=saved;}} recording;
+    IDirect3DTexture9* texture=nullptr;IDirect3DSurface9* target=nullptr;
+    IDirect3DVertexShader9* vertex=nullptr;IDirect3DPixelShader9* pixel=nullptr;
+    ID3DBlob *vertexCode=CompileShaderBlob("float4 main(float4 p:POSITION):POSITION{return p;}","main","vs_3_0"),
+        *pixelCode=CompileShaderBlob("sampler2D s:register(s0);float4 size:register(c0);float4 main(float2 p:VPOS):COLOR0{return tex2D(s,p*size.xy+size.zw).rrrr;}","main","ps_3_0");
+    HRESULT hr=vertexCode && pixelCode?S_OK:E_FAIL;
+    if(SUCCEEDED(hr))hr=d2vr_replay::g_orig.CreateVertexShader(dev,(const DWORD*)vertexCode->GetBufferPointer(),&vertex);
+    if(SUCCEEDED(hr))hr=d2vr_replay::g_orig.CreatePixelShader(dev,(const DWORD*)pixelCode->GetBufferPointer(),&pixel);
+    if(SUCCEEDED(hr))hr=dev->CreateTexture(desc.Width,desc.Height,1,D3DUSAGE_RENDERTARGET,D3DFMT_R32F,D3DPOOL_DEFAULT,&texture,nullptr);
+    if(SUCCEEDED(hr))hr=texture->GetSurfaceLevel(0,&target);
+    const char* status="depth_copy_failed";
+    if(SUCCEEDED(hr)) {
+        d2vr_replay::DeviceSnapshot saved;
+        if(saved.Capture(dev)) {
+            const auto check=[&](HRESULT result){if(FAILED(result) && SUCCEEDED(hr))hr=result;};
+            check(dev->SetDepthStencilSurface(nullptr));
+            for(DWORD i=1;i<saved.targetCount;++i)check(d2vr_replay::g_orig.SetRenderTarget(dev,i,nullptr));
+            check(d2vr_replay::g_orig.SetRenderTarget(dev,0,target));
+            D3DVIEWPORT9 viewport{0,0,desc.Width,desc.Height,0,1};
+            check(d2vr_replay::g_orig.SetViewport(dev,&viewport));
+            check(g_origSetTexture(dev,0,source));
+            for(auto state:{D3DSAMP_MINFILTER,D3DSAMP_MAGFILTER})check(d2vr_replay::g_orig.SetSamplerState(dev,0,state,D3DTEXF_POINT));
+            check(d2vr_replay::g_orig.SetSamplerState(dev,0,D3DSAMP_MIPFILTER,D3DTEXF_NONE));
+            check(d2vr_replay::g_orig.SetSamplerState(dev,0,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP));
+            check(d2vr_replay::g_orig.SetSamplerState(dev,0,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP));
+            check(d2vr_replay::g_orig.SetSamplerState(dev,0,D3DSAMP_SRGBTEXTURE,FALSE));
+            check(d2vr_replay::g_orig.SetVertexShader(dev,vertex));check(d2vr_replay::g_orig.SetPixelShader(dev,pixel));
+            const float size[]={1.f/desc.Width,1.f/desc.Height,.5f/desc.Width,.5f/desc.Height};
+            check(d2vr_replay::g_orig.SetPixelShaderConstantF(dev,0,size,1));check(d2vr_replay::g_orig.SetFVF(dev,D3DFVF_XYZW));
+            for(auto state:{D3DRS_SCISSORTESTENABLE,D3DRS_ZENABLE,D3DRS_ZWRITEENABLE,D3DRS_ALPHABLENDENABLE,
+                D3DRS_ALPHATESTENABLE,D3DRS_STENCILENABLE,D3DRS_FOGENABLE,D3DRS_SRGBWRITEENABLE,D3DRS_CLIPPLANEENABLE})
+                check(d2vr_replay::g_orig.SetRenderState(dev,state,FALSE));
+            check(d2vr_replay::g_orig.SetRenderState(dev,D3DRS_FILLMODE,D3DFILL_SOLID));
+            check(d2vr_replay::g_orig.SetRenderState(dev,D3DRS_CULLMODE,D3DCULL_NONE));
+            check(d2vr_replay::g_orig.SetRenderState(dev,D3DRS_COLORWRITEENABLE,15));
+            const float quad[][4]={{-1,1,0,1},{1,1,0,1},{-1,-1,0,1},{1,-1,0,1}};
+            if(SUCCEEDED(hr))hr=d2vr_replay::g_orig.DrawPrimitiveUP(dev,D3DPT_TRIANGLESTRIP,2,quad,sizeof(quad[0]));
+            if(!saved.Apply(dev)){Reject("shadow depth copy state restore failed");hr=E_FAIL;}
+            if(SUCCEEDED(hr))status=SaveStageSurface(dev,target,draw,vs,ps,"before_draw_input",0);
+        }
+    }
+    fprintf(meta,"{\"kind\":\"shadow_depth_copy\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"source\":\"%p\",\"target\":\"%p\",\"hr\":%ld,\"status\":\"%s\"}\n",frame,draw,input,target,hr,status);
+    if(pixelCode)pixelCode->Release();if(vertexCode)vertexCode->Release();
+    if(pixel)pixel->Release();if(vertex)vertex->Release();if(target)target->Release();if(texture)texture->Release();
+    return status;
+}
 static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,unsigned ps) {
-    if(!postStagesOnly || postInputsSaved || (ps!=0x33DE98C1u && ps!=0x75F88E11u)) return;
-    postInputsSaved=true;
+    const bool shadow=shadowStagesOnly && !shadowInputsSaved && ps==0xC4D1FB10u;
+    if(!shadow && (!postStagesOnly || postInputsSaved || (ps!=0x33DE98C1u && ps!=0x75F88E11u))) return;
+    if(shadow)shadowInputsSaved=true;else postInputsSaved=true;
     float values[16*4]{};
     const HRESULT hr=dev->GetPixelShaderConstantF(0,values,16);
     fprintf(meta,"{\"kind\":\"post_constants\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"ps_hash\":%u,\"hr\":%ld,\"c0_to_c15\":",frame,draw,ps,hr);
@@ -327,6 +386,7 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
     // Exact composite's CTAB: Frame=s0, Depth=s2, DOFScene=s3. Read its inputs
     // before the draw; never infer them from an opaque texture pointer alone.
     for(unsigned slot:{0u,2u,3u}) {
+        if(shadow && slot!=0)continue; // exact shadow CTAB: DepthBuffer=s0
         IDirect3DBaseTexture9* base=nullptr;IDirect3DSurface9* surface=nullptr;
         D3DSURFACE_DESC desc{};
         const HRESULT textureHr=dev->GetTexture(slot,&base);
@@ -337,7 +397,7 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
             surfaceHr=static_cast<IDirect3DTexture9*>(base)->GetSurfaceLevel(0,&surface);
             if(SUCCEEDED(surfaceHr) && surface) {
                 descHr=surface->GetDesc(&desc);
-                status=FAILED(descHr)?"get_desc_failed":SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
+                status=FAILED(descHr)?"get_desc_failed":shadow?SaveShadowDepth(dev,base,surface,draw,vs,ps):SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
             }
         }
         // Even unsupported depth formats must leave an identity/status record.
@@ -429,8 +489,55 @@ static void Submission(const XrCompositionLayerProjectionView* views) {
     }
 }
 } // namespace matched_capture
+// Explicit lab-only observer: distinguish decoder-to-texture draws from actual
+// backbuffer presentation. A decoded Bink handle alone cannot establish this.
+static IDirect3DSurface9* g_videoProbeTargets[16]{};
+static unsigned g_videoProbeTargetCount=0;
+static void ObserveVideoPresentation(IDirect3DSurface9* finalTarget) {
+    if(!g_videoProbeTargetCount)return;
+    bool matched=false;
+    for(unsigned i=0;i<g_videoProbeTargetCount;++i) {
+        matched=matched || g_videoProbeTargets[i]==finalTarget;
+        g_videoProbeTargets[i]->Release();g_videoProbeTargets[i]=nullptr;
+    }
+    static unsigned logged=0;
+    if(logged++<32)Log("[VideoPresentationProbe] finalTarget=%p videoTargets=%u matched=%d; observation only",finalTarget,g_videoProbeTargetCount,int(matched));
+    g_videoProbeTargetCount=0;
+}
+static void ObserveVideoDraw(IDirect3DDevice9* dev) {
+    static const bool enabled=GetPrivateProfileIntA("Diagnostics","VideoDrawProbe",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    if(!enabled || d2vr_replay::g_replayEye>=0)return;
+    const auto ps=d2vr_replay::g_activePsHash;
+    if(ps!=0xC1DC2D91u && ps!=0xD59D80ACu)return;
+    IDirect3DSurface9 *rt=nullptr,*back=nullptr;IDirect3DVertexShader9* vs=nullptr;
+    D3DSURFACE_DESC desc{};D3DVIEWPORT9 vp{};DWORD depth=0,fvf=0;
+    const bool valid=SUCCEEDED(dev->GetRenderTarget(0,&rt)) && rt &&
+        SUCCEEDED(dev->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&back)) &&
+        SUCCEEDED(rt->GetDesc(&desc)) && SUCCEEDED(dev->GetViewport(&vp)) &&
+        SUCCEEDED(dev->GetVertexShader(&vs)) && SUCCEEDED(dev->GetRenderState(D3DRS_ZENABLE,&depth)) &&
+        SUCCEEDED(dev->GetFVF(&fvf));
+    const auto metadata=d2vr_replay::g_vsInfo.Lookup(vs);
+    const auto vh=metadata?metadata->hash:0;
+    if(valid && vh==0x7ACDFC64u && depth==0) {
+        bool retained=false;
+        for(unsigned i=0;i<g_videoProbeTargetCount;++i)retained=retained || g_videoProbeTargets[i]==rt;
+        if(!retained && g_videoProbeTargetCount<16) {
+            rt->AddRef();g_videoProbeTargets[g_videoProbeTargetCount++]=rt;
+        }
+    }
+    static uint64_t seen[32]{};static unsigned count=0;
+    const uint64_t key=(uint64_t(ps)<<32)^vh^(uint64_t(rt==back)<<63)^(uint64_t(depth)<<62);
+    bool found=false;for(unsigned i=0;i<count;++i)found=found||seen[i]==key;
+    if(valid && !found && count<32) {
+        seen[count++]=key;
+        Log("[VideoDrawProbe] ps=%08X vs=%08X rt=%p back=%p directBackbuffer=%d depth=%lu fvf=%08lX size=%ux%u viewport=%u,%u,%u,%u wvp=%d; observation only",
+            ps,vh,rt,back,int(rt==back),depth,fvf,desc.Width,desc.Height,vp.X,vp.Y,vp.Width,vp.Height,metadata?metadata->wvpBase:-1);
+    }
+    if(vs)vs->Release();if(back)back->Release();if(rt)rt->Release();
+}
 static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseApplied) {
     using namespace matched_capture;
+    ObserveVideoDraw(dev);
     if (d2vr_replay::g_replayEye<0 && !d2vr_replay::g_recActive) return;
     if (!Current()) return;
     if (eye<0 || eye>1 || draws[eye]>=16384) { Reject("draw budget or eye invalid"); return; }
@@ -444,6 +551,14 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
     if (vertexMetadata) { wvp=vertexMetadata->wvpBase; stp=vertexMetadata->stpBase; hash=vertexMetadata->hash; }
     fprintf(meta,"{\"kind\":\"draw\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"rt\":\"%p\",\"vs\":\"%p\",\"shader_hash\":%u,\"wvp_register\":%d,\"stp_register\":%d,\"bank_offset\":%ld,\"viewport\":[%u,%u,%u,%u,%.9g,%.9g]}\n",
         frame,eye,draws[eye]++,rt,vs,hash,wvp,stp,offset,vp.X,vp.Y,vp.Width,vp.Height,vp.MinZ,vp.MaxZ);
+    if(shadowStagesOnly && eye==0) {
+        IDirect3DSurface9* depth=nullptr;DWORD enable=0,write=0;D3DSURFACE_DESC desc{};
+        const HRESULT depthHr=dev->GetDepthStencilSurface(&depth);
+        const HRESULT descHr=depth?depth->GetDesc(&desc):E_FAIL;
+        const HRESULT enableHr=dev->GetRenderState(D3DRS_ZENABLE,&enable),writeHr=dev->GetRenderState(D3DRS_ZWRITEENABLE,&write);
+        fprintf(meta,"{\"kind\":\"depth_attachment\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"surface\":\"%p\",\"format\":%u,\"depth_hr\":%ld,\"desc_hr\":%ld,\"enable_hr\":%ld,\"write_hr\":%ld,\"enabled\":%lu,\"write\":%lu}\n",frame,draws[eye]-1,depth,unsigned(desc.Format),depthHr,descHr,enableHr,writeHr,enable,write);
+        if(depth)depth->Release();
+    }
     IDirect3DVertexBuffer9* vb=nullptr;IDirect3DIndexBuffer9* ib=nullptr;IDirect3DPixelShader9* ps=nullptr;
     IDirect3DBaseTexture9* texture=nullptr;UINT streamOffset=0,stride=0;
     const bool geometry=SUCCEEDED(dev->GetStreamSource(0,&vb,&streamOffset,&stride)) &&

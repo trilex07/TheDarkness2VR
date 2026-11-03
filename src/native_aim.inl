@@ -7,6 +7,7 @@ static bool NativeCinematicPlaying() {
         g_trackedFrame.open && g_trackedFrame.id && g_nativeCinematicFrame==g_trackedFrame.id && g_nativeCinematicPlaying;
 }
 static void ObserveNativePauseState(void* manager);
+static void ObserveNativeActionMovies();
 static void TraceNativeCameraShake(DWORD camera,DWORD avatar);
 static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar);
 static bool ProtectedAimCameraOwned(void* camera);
@@ -77,8 +78,8 @@ static bool NativeTentacleHeadAttachmentAllowed() {
 static bool NativeHeldActionContext() {
 #ifdef D2VR_MATCHED_CAPTURE
     NativeGameplaySample owner;
-    return g_imagePreservingInput && g_protectedGestureActions && g_haveViews && g_in3DGameplayMode &&
-        CopyNativeGameplay(owner) && owner.alternateHeldTarget &&
+    return g_imagePreservingInput && g_haveViews && g_in3DGameplayMode &&
+        CopyNativeGameplay(owner) && (owner.demonHold==2 || owner.alternateHeldTarget) &&
         ProtectedAimCameraOwned(reinterpret_cast<void*>(owner.camera));
 #else
     return false;
@@ -291,6 +292,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
     if(GetCurrentThreadId()!=g_renderThreadId)return;
     UpdateNativeHudForView(renderer,reference,manager);
     PrepareWorldMarkerMovies();
+    ObserveNativeActionMovies();
     InterlockedExchange(&g_nativeRegionManager,LONG(reinterpret_cast<uintptr_t>(manager))); // gaze menu pause gate
     g_nativeCinematicFrame=0;
     if(g_nativePlayerOwnerAdmitted && g_nativeImageGuard.enabled && g_imagePreservingPresent)

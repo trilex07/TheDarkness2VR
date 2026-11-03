@@ -8,6 +8,8 @@
 #include <cstdlib>
 #include <cstring>
 #include "../../src/vr_input.h"
+#include "../../src/native_action_movies.h"
+#include "../../src/unarmed_trigger_dpad.h"
 #include "../../src/native_aim_math.h"
 #ifdef D2VR_MATCHED_CAPTURE
 #include "../../src/protected_xinput.h"
@@ -34,6 +36,10 @@ static void Check(bool value) {
 static void Log(const char*, ...) {}
 static void ResetNativeAim() { ++resetAimCalls; }
 static void RequestRecenter(const char*) {++recenterCalls;}
+static void ToggleCinemaForMinute(const char*) {}
+static const float* StabilizedCameraWorld(const void* camera,float (&)[16]) {
+    return reinterpret_cast<const float*>(static_cast<const BYTE*>(camera)+0x80);
+}
 static DWORD WINAPI PhysicalState(DWORD port, XINPUT_STATE* state) {
     if(port>=4 || !connected[port]) return ERROR_DEVICE_NOT_CONNECTED;
     *state=physical[port]; return ERROR_SUCCESS;
@@ -119,6 +125,65 @@ static void ResetInstall() {
 #endif
 }
 int main() {
+    {
+        BYTE definition[8]{},metadata[8]{};char name[64]="QuickTimePopup.swf";
+        *reinterpret_cast<DWORD*>(definition)=0xFDAFB8;
+        *reinterpret_cast<DWORD*>(definition+4)=0x20000;
+        *reinterpret_cast<DWORD*>(metadata)=0xF6B40C;
+        *reinterpret_cast<DWORD*>(metadata+4)=0x30000;
+        const auto read=[&](uint32_t a,void* dst,size_t n) {
+            const BYTE* src=nullptr;
+            if(a>=0x10000 && a+n<=0x10008)src=definition+a-0x10000;
+            if(a>=0x20000 && a+n<=0x20008)src=metadata+a-0x20000;
+            if(a>=0x30000 && a+n<=0x30040)src=reinterpret_cast<BYTE*>(name)+a-0x30000;
+            if(!src)return false;memcpy(dst,src,n);return true;
+        };
+        Check(d2vr_action_movies::InspectDefinition(0x10000,read)==d2vr_action_movies::Qte);
+        strcpy_s(name,"HUD.swf");Check(!d2vr_action_movies::InspectDefinition(0x10000,read));
+        strcpy_s(name,"ConversationPopUp.swf");Check(d2vr_action_movies::InspectDefinition(0x10000,read)==4);
+        memset(name,'X',sizeof(name));Check(!d2vr_action_movies::InspectDefinition(0x10000,read));
+        strcpy_s(name,"ExecutionPopup.swf");metadata[0]=0;
+        Check(!d2vr_action_movies::InspectDefinition(0x10000,read)); // unrelated metadata refuses
+        Check(!d2vr_action_movies::InspectDefinition(0xfffffffcu,read));
+        d2vr_input::DoubleTapDpad taps;
+        for(unsigned i=0;i<20;++i) {
+            uint16_t buttons=0x4000,fired=123;
+            taps.Update(buttons,8,false,100+i*40,&fired);
+            Check(buttons==0x4000 && !fired); // every rapid QTE edge survives
+            buttons=0;taps.Update(buttons,8,false,120+i*40,&fired);Check(!buttons);
+        }
+        d2vr_input::ObjectiveButton circle;
+        Check(circle.Update(true,true,false,0).nativeB); // execution held B immediately
+        for(unsigned i=1;i<=15;++i) {
+            const auto r=circle.Update(true,true,false,i*.1);Check(r.nativeB&&!r.showObjective);
+        }
+    }
+    {
+        d2vr_input::ChoicePauseButton b;
+        Check(!d2vr_action_movies::ProtectRapidChoices(d2vr_action_movies::Conversation));
+        Check(d2vr_action_movies::ProtectRapidChoices(d2vr_action_movies::Qte));
+        Check(d2vr_action_movies::ProtectRapidChoices(d2vr_action_movies::Execution));
+        Check(d2vr_action_movies::ProtectRapidChoices(d2vr_action_movies::Story | d2vr_action_movies::Conversation));
+        Check(!b.Update(true,true,false,0).action); // startup held
+        b.Update(true,false,false,.01);
+        Check(b.Update(true,true,false,.02).action); // immediate native Y
+        Check(b.Update(true,true,false,.1).action); // preserve held Y
+        Check(!b.Update(true,false,false,.11).tap);
+        auto r=b.Update(true,true,false,.2);Check(r.tap&&!r.action);
+        r=b.Update(true,true,false,.21);Check(!r.tap&&!r.action); // pause once
+        b.Update(true,false,false,.22);
+        Check(b.Update(true,true,true,.3).action); // native execution Y
+        b.Update(true,false,true,.31);
+        Check(b.Update(true,true,true,.32).action); // rapid choices never pause
+        b.Update(true,false,false,.33);
+        Check(b.Update(true,true,false,.34).action); // no leaked action-context tap
+        b.Update(false,true,false,.35);
+        Check(!b.Update(true,true,false,.36).action); // reacquire requires release
+        b.Update(true,false,false,.37);
+        Check(b.Update(true,true,false,.38).action);
+        Check(!b.Update(true,true,false,1).action); // gap cancels
+        Check(!b.Update(true,true,false,NAN).tap);
+    }
     {
         d2vr_input::ContextTriangle triangle;
         auto neutral=[](const d2vr_input::ContextTriangle::Result& r){return !r.action&&!r.tap&&!r.recenter;};

@@ -44,7 +44,7 @@ def percentile(values: list[float], percent: float) -> float:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (index - lower)
 
 
-def summarize(rows: list[dict[str, str]]) -> dict:
+def summarize(rows: list[dict[str, str]], split_chains: bool = True) -> dict:
     output: dict = {"rows": len(rows), "metrics_ms": {}}
     for key in FIELDS:
         values = []
@@ -74,6 +74,14 @@ def summarize(rows: list[dict[str, str]]) -> dict:
         except (KeyError, ValueError, TypeError):
             pass
     output['frames_over_ms'] = {str(t): sum(v > t for v in times) for t in (11.11, 22.22, 33.33)}
+    if split_chains:
+        chains = sorted({r.get('SwapChainAddress', 'unknown') for r in rows})
+        output['swapchains'] = {chain: summarize(
+            [r for r in rows if r.get('SwapChainAddress', 'unknown') == chain], False)
+            for chain in chains}
+        output['mixed_swapchain_intervals'] = len(chains) > 1
+        if len(chains) > 1:
+            output['interval_warning'] = 'Aggregate intervals mix independent swapchains; use per-swapchain metrics, not an aggregate FPS.'
     return output
 
 

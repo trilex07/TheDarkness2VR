@@ -38,13 +38,14 @@ def validate(folder):
         raise ValueError("runtime rejected capture")
     post_inputs = [r for r in records if r["kind"] == "post_input"]
     if post_inputs:
+        shadow_inputs = len(post_inputs)==1 and post_inputs[0].get("ps_hash")==0xC4D1FB10 and post_inputs[0].get("sampler")==0
         # Older receipts have no identity rows. New ones must explicitly report
         # every requested slot, including an unsupported/missing depth image.
-        if (len(post_inputs) != 3 or {r.get("sampler") for r in post_inputs} != {0, 2, 3} or
+        if (not shadow_inputs and (len(post_inputs) != 3 or {r.get("sampler") for r in post_inputs} != {0, 2, 3}) or
                 len({(r.get("draw"), r.get("ps_hash")) for r in post_inputs}) != 1):
             raise ValueError("incomplete postprocess input identities")
         for r in post_inputs:
-            if (r.get("eye") != 0 or r.get("ps_hash") not in (0x33DE98C1, 0x75F88E11) or
+            if (r.get("eye") != 0 or r.get("ps_hash") not in (0x33DE98C1, 0x75F88E11, 0xC4D1FB10) or
                     not r.get("readback_status")):
                 raise ValueError("invalid postprocess input identity")
             if r.get("surface_available"):
@@ -73,7 +74,8 @@ def validate(folder):
             if (phase not in ("after_draw", "before_draw_input") or
                 (phase == "before_draw_input" and
                  (record.get("sampler") not in (0, 2, 3) or
-                  record.get("ps_hash") not in (0x33DE98C1, 0x75F88E11)))):
+                  record.get("ps_hash") not in (0x33DE98C1, 0x75F88E11, 0xC4D1FB10) or
+                  (record.get("ps_hash")==0xC4D1FB10 and record.get("sampler")!=0)))):
                 raise ValueError("invalid postprocess input identity")
             w, h, fmt = record["width"], record["height"], record["format"]
             if w < 512 or h < 512 or w*h > 16*1024*1024:

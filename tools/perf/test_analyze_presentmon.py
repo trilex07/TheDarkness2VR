@@ -4,10 +4,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from analyze_presentmon import analyze, percentile, normalize_row
+from analyze_presentmon import analyze, percentile, normalize_row, summarize
 
 
 class PresentMonAnalysisTest(unittest.TestCase):
+    def test_independent_present_intervals_are_reported_per_swapchain(self):
+        rows=[{'SwapChainAddress':chain,'FrameTime':str(ms)}
+              for chain,ms in [('native',10),('native',12),('preview',33)]]
+        result=summarize(rows)
+        self.assertTrue(result['mixed_swapchain_intervals'])
+        self.assertEqual(result['swapchains']['native']['metrics_ms']['FrameTime']['mean'],11)
+        self.assertEqual(result['swapchains']['preview']['metrics_ms']['FrameTime']['mean'],33)
+        self.assertIn('not an aggregate FPS',result['interval_warning'])
     def test_legacy_names_keep_cpu_and_present_intervals_distinct(self):
         row = normalize_row({"CPUStartQPCTimeInMs": "91072068.9035",
                              "MsBetweenAppStart": "12", "MsBetweenPresents": "99",
