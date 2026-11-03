@@ -50,3 +50,24 @@ final package uses the successful protected-native flavor.
 Installed game remains unchanged during preparation; no new capture or launch.
 Repository defaults ShaderDemandCache=0 and ReplayPrepareWorker=0. Frozen
 test profile Cache sets only1/0. Other profiles are explicit experiment controls.
+
+## Frozen candidate (prepared, NOT installed)
+
+- Implementation commit c1cff287; installer permission fix ee4a2d0e.
+- Frozen source ee4a2d0e5c3eae3b4f34bb38b30dd2dc74005087.
+- Package: `C:/Users/Trilex/Darkness2VR/.main-camera-shake/build/performance-candidate-20261103-v2`.
+- DLL SHA256 C393E422BC750D80EC753B978430A7074160437DA0080748BF279C5A0EE92F10.
+- MAP SHA256 F19CD59EFC0F5D8DCAF415A587BC23BEED2FAFCF3365AE4AFCB2E0928ED4549E.
+- PDB SHA256 2F03D9CB56E3154614A6D3342CAB76639E74799774F99C9DEBC6C9CAAA34E817.
+- Cache INI SHA256 96BEA48305B4135A5B23169FFF11E12D8642CFE83B423445384511A480C45695.
+- Frozen package VerifyOnly PASS; all four profiles independently checked to
+  differ from exact baseline only in the two new switches. All installed DLL,
+  INI and protected hashes still match baseline. No Steam/game launch or install.
+- Use v2: original private package used CIM process enumeration, which this
+  sandbox denied. v2 uses ordinary Get-Process enumeration and passes real
+  read-only verification plus the offline busy-game refusal fixture.
+- Install when authorized/closed: `powershell -ExecutionPolicy Bypass -File "C:\Users\Trilex\Darkness2VR\.main-camera-shake\build\performance-candidate-20261103-v2\Install.ps1"`.
+- Same script `-Mode Off` selects original feature switches with this DLL;
+  `-Restore` restores the exact prior baseline DLL/INI. No automatic rollback.
+- Build/test logs and binaries remain private/untracked; source/tests/docs are
+  committed on the task branch. Do not stage build/ or test-output/ wholesale.
