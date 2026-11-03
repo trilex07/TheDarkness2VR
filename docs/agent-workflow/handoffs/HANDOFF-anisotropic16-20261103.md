@@ -29,3 +29,16 @@ Standalone test first tried legacy HAL software-VP: device creation returned
 historical424-check HAL result is documented in the research file, not newly
 measured here. D3D9Ex rerun result / frozen receipt / installation follows.
 No game launch or physical shimmer/clarity acceptance yet.
+
+## Installed configuration trial
+
+Existing material fixture rerun with -Ex outside restricted GPU sandbox:
+PASS479 checks, real D3D9Ex HAL sampler/rollback/stateblock, no Steam/XR.
+Frozen build/anisotropic-16x-20261103 from b4ed0fa8; VerifyOnly PASS, then
+closed-game ModeCombined install PASS. DLL remains byte-identical D178DF2D;
+new INI4F781C01614947EBF01247897938BA0678FE3A36B1106622F974AE667172F772.
+Independent hashes and profile comparison PASS: only AF settings changed.
+GazeFXAA0, center fallback1, NisMode2 and2676x2728 retained. No launch.
+Runtime material coverage, visual quality, shimmer and cost are NOT RUN.
+Rollback: this frozen package Install.ps1 -Restore restores previous FXAA-Off
+DLL/INI exactly (INI5A5BFDE9). Changes/receipt committed locally.
