@@ -5,6 +5,10 @@
 #include <atomic>
 static std::atomic<bool> g_bufferUnsafeAlias{false};
 static bool g_bufferWritesApplied=false;
+// Numeric worker has its own actual-source fixture. This fixture validates the
+// unchanged D3D9 ordering/history contract with worker disabled.
+static thread_local size_t g_prepareRecord=0;
+static void FinishReplayPreparation(){}
 [[maybe_unused]] static void BeginReplayBufferLookups(){}
 static void ClearReplayBufferLookups(){}
 static bool g_replayBufferVersions=true,g_replayStateFilter=true,g_replayBindingFilter=true;

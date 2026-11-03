@@ -14,7 +14,7 @@ struct State {
     std::atomic<bool> writing{false};
     std::atomic<bool> usable{true};
     ULONGLONG nextTick=0;
-    State(IDirect3DDevice9* dev,std::wstring file,unsigned copies=1):device(dev),pool(dev,copies),path(std::move(file)) {}
+    State(IDirect3DDevice9* dev,std::wstring file,unsigned copies=1):device(dev),pool(dev,copies,g_shaderDemandCache),path(std::move(file)) {}
 };
 static std::atomic<State*> state{nullptr}; // process lifetime; never release COM under loader lock
 struct ReleaseShader {void operator()(IUnknown* object)const {if(object)object->Release();}};
@@ -93,20 +93,23 @@ static std::unique_ptr<State> PrepareState(IDirect3DDevice9* device,
         unsigned ready=0,failed=0;bool budgetStop=false;
         const auto start=GetTickCount64();
         if(!archive.empty()) {
-            // Cover every known bytecode once before spending the remaining
-            // startup budget on a spare. Slower drivers retain broad coverage.
-            const bool demand=archive[0]==DemandMagic;
-            for(unsigned copy=0;copy<MaxCopies;++copy) {
-            size_t offset=2;
+            struct Known {std::vector<uint32_t> code;unsigned quota;};
+            std::vector<Known> known;
+            size_t offset=2;const bool demand=archive[0]==DemandMagic;
             for(uint32_t i=0;i<archive[1];++i) {
                 const unsigned quota=std::max(copies,demand?archive[offset++]:1u);
                 const uint32_t words=archive[offset++];
-                std::vector<uint32_t> code(archive.begin()+offset,archive.begin()+offset+words);offset+=words;
-                if(!copy) s->pool.Remember(device,code,quota);
-                if(copy>=quota) continue;
-                if(failed) continue; // no repeated driver creation after rejection/device loss
-                if(ready>=MaxObjects) {budgetStop=true;continue;}
+                known.push_back({std::vector<uint32_t>(archive.begin()+offset,archive.begin()+offset+words),quota});offset+=words;
+                if(!s->pool.Remember(device,known.back().code,quota))known.pop_back();
+            }
+            std::vector<unsigned> quotas;for(const auto& entry:known)quotas.push_back(entry.quota);
+            const auto inventory=Inventory(quotas,g_shaderDemandCache);
+            unsigned desired=0;for(auto q:quotas)desired+=q;
+            budgetStop=inventory.size()<desired;
+            for(auto index:inventory) {
+                if(failed)continue;
                 if(GetTickCount64()-start>=10000) {budgetStop=true;continue;}
+                const auto& code=known[index].code;
                 IUnknown* object=nullptr;HRESULT hr;
                 if(code[0]==0xfffe0300u) {
                     IDirect3DVertexShader9* shader=nullptr;
@@ -119,12 +122,12 @@ static std::unique_ptr<State> PrepareState(IDirect3DDevice9* device,
                 if(SUCCEEDED(hr) && object && s->pool.Adopt(device,code,object,hr)) {owned.release();++ready;}
                 else ++failed;
             }
-            }
         }
         // A menu/load/readiness delay must not discard precreated shaders before
         // the level requests them. Keep the bounded one-use inventory available.
         s->nextTick=GetTickCount64()+2000;
         if(alreadyPersisted) s->saved.store(s->pool.Version());
+        Log("[ShaderDemandCache] enabled=%d learningLimit=%zu objectBudget=%u; exact-code indexed lookup, recency archive order",int(g_shaderDemandCache),g_shaderDemandCache?MaxShaders:LegacyMaxShaders,MaxObjects);
         Log("[ShaderPreload] startup ready=%u entries=%zu failed=%u budgetStop=%d elapsedMs=%llu; one-use owned objects, exact bytecode+device match",
             ready,s->pool.Size(),failed,int(budgetStop),GetTickCount64()-start);
         Log("[ShaderPreload] minimumCopies=%u learnedMaximum=%u maximumObjects=%u; independent creation references, no live refill",copies,MaxCopies,MaxObjects);
@@ -140,8 +143,8 @@ static void Initialize(IDirect3DDevice9* device) {
     try {
         const std::wstring directory=std::wstring(base)+L"\\Darkness2VR\\";
         // Keep the old archive intact for immediate rollback to older DLLs.
-        state.store(PrepareState(device,directory+L"shader-demand.bin",directory+L"startup-shaders.bin",g_startupShaderCopies,
-            directory+L"shader-preload.bin").release());
+        state.store(PrepareState(device,directory+(g_shaderDemandCache?L"shader-demand-indexed.bin":L"shader-demand.bin"),directory+L"startup-shaders.bin",g_startupShaderCopies,
+            directory+(g_shaderDemandCache?L"shader-demand.bin":L"shader-preload.bin")).release());
     } catch(...) {Log("[ShaderPreload] initialization failed; native creation retained");}
 }
 

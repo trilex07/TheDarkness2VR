@@ -52,3 +52,14 @@ Log:
 Mission guidance: hold the upper button on the right controller (Circle) for
 one second to show the objective text. The screen-space destination marker is
 hidden in the local HUD asset patch; follow the native purple world guidance.
+
+Experimental performance candidate (2026-11-03):
+Render/ShaderDemandCache=1 enables indexed, demand-prioritized shader learning
+in a separate shader-demand-indexed.bin archive (4096 codes, 4 MiB; startup
+inventory remains 2048 one-use objects). Render/ReplayPrepareWorker=1 enables
+an experimental same-frame numeric stereo worker. Both default to 0 in the
+repository. The prepared test package defaults to Cache only: the worker has
+not passed the performance-benefit gate. Neither setting changes resolution.
+Use the frozen package Install.ps1 with the game closed; -Mode Cache, Worker,
+Both or Off selects an independent profile, and -Restore restores the exact
+previous DLL and INI. Restart the game between modes. FPS gains are unverified.

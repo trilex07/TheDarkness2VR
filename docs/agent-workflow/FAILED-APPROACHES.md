@@ -172,3 +172,9 @@ source, BASELINE.md and the task handoff before applying them.
 
 - `texture-font-repair-v3` fixed comic texture artifacts (user accepted) but made gameplay/title text fragment. Its font strategy enlarged19 atlases and rescaled original English V coordinates. Offline glyph proofs and metrics checks were insufficient to validate native rendering. Exact native mismatch is not yet proven.
 - Replacement candidate must preserve original atlas dimensions, UV bytes, metrics and original glyph pixels; place new glyphs only in unused space. Do not roll back the now-accepted comic texture archives with the fonts. See `HANDOFF-texture-font-repair-20261101.md`.
+
+### Tiny stereo-matrix preparation worker: benefit gate not passed (2026-11-03)
+- **Approach**: one persistent CPU worker prepares owned same-frame WVP/STP matrices; exact input/parameter/FP keys admit ready output, otherwise serial fallback.
+- **Evidence**: actual-source correctness fixtures PASS, but optimistic ready-output-only consumption cost was approximately70.6ns serial/72.4ns cached and41.9ns/50.5ns in separate synthetic runs, before any prepass, queue or join cost. These are not gameplay frame times or FPS results.
+- **Decision**: default OFF; test candidate uses shader cache alone. Do not present thread utilization or correct output as a performance win. Keep explicit Worker/Both modes only for bounded experiments; a larger proven independent producer or materially lower preparation cost is needed before default admission.
+- **Details**: `docs/research/performance-candidate-20261103.md`, `handoffs/HANDOFF-performance-candidate-20261103.md`.

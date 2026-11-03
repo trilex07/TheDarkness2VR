@@ -17,6 +17,8 @@
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
+#include <numeric>
+#include "replay_prepare_worker.h"
 #include <string>
 
 #define XR_USE_PLATFORM_WIN32
@@ -638,6 +640,7 @@ static float g_foveaPeriphery = .35f, g_foveaSharpness = 1.f, g_foveaSize = .22f
 static bool g_headAttachedTentacles = false;
 static bool g_hideNativeHud = false;
 static bool g_gpuSplitTiming = false;
+static bool g_shaderDemandCache=false,g_replayPrepareWorker=false;
 static bool g_smallRecordCopyRequested = false; // OFF; bounded <=192-byte RPM experiment
 static bool g_smallRecordCopyAdmitted = false;
 static d2vr_record_copy::Admission g_smallRecordCopyAdmission;
@@ -805,6 +808,9 @@ void LoadConfig() {
     g_smallRecordCopyRequested = GetPrivateProfileIntA("Render", "SmallRecordCopy", 0, chosenIni)!=0;
     g_startupShaderWarmup = GetPrivateProfileIntA("Render", "StartupShaderWarmup", 0, chosenIni)!=0;
     g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
+    g_shaderDemandCache=GetPrivateProfileIntA("Render","ShaderDemandCache",0,chosenIni)!=0;
+    g_replayPrepareWorker=GetPrivateProfileIntA("Render","ReplayPrepareWorker",0,chosenIni)!=0;
+    Log("[PerformanceCandidate] ShaderDemandCache=%d ReplayPrepareWorker=%d; startup settings, image size unchanged",int(g_shaderDemandCache),int(g_replayPrepareWorker));
     g_startupShaderCopies=GetPrivateProfileIntA("Render","StartupShaderCopies",1,chosenIni)==2?2:1;
     g_pipelineWarmup=GetPrivateProfileIntA("Render","PipelineWarmup",0,chosenIni)!=0;
     g_pipelineWarmupMs=std::min<unsigned>(30000,GetPrivateProfileIntA("Render","PipelineWarmupMs",30000,chosenIni));

@@ -334,6 +334,10 @@ static void ObserveInverseProjection(const float* src, UINT start, UINT count, i
 
 // Folds the per-eye transform into a row-major 4x4 matrix block (4 registers).
 // Row-vector convention (verified from engine HLSL): clip = x*c0 + y*c1 + z*c2 + c3
+#include "replay_prepare_worker.h"
+static thread_local d2vr_prepare::Job* g_prepareCurrent=nullptr;
+static thread_local size_t g_prepareRecord=0;
+static uint64_t g_prepareHits=0,g_prepareMisses=0;
 static void ApplyEyeShiftToMatrix(float* p, int n, const StereoParams& sp, bool estimate = true) {
     if (n < 4) return;
     const bool cameraKnown = sp.projectionSnapshot
@@ -352,6 +356,11 @@ static void ApplyEyeShiftToMatrix(float* p, int n, const StereoParams& sp, bool 
     ep.fovScaleX = sp.fovScaleX;
     ep.fovScaleY = sp.fovScaleY;
     ep.headGeometry = sp.headGeometry;
+    memcpy(ep.headClip,sp.headClip,sizeof(ep.headClip));
+    if(g_prepareCurrent) {
+        if(n==4 && g_prepareCurrent->Try(g_prepareRecord,p,ep,cameraKnown,cameraPx,cameraPy)) {++g_prepareHits;return;}
+        ++g_prepareMisses;
+    }
     d2vr_stereo::ApplyEyeShiftToMatrix(p, n, ep, cameraKnown, cameraPx, cameraPy,
                                        sp.headGeometry ? sp.headClip : nullptr);
 }
@@ -2188,6 +2197,82 @@ static bool MoreFloatBeforeBarrier(size_t at) {
     return false;
 }
 
+struct ReplayPreparationState {
+    d2vr_prepare::Queue queue;
+    std::shared_ptr<d2vr_prepare::Job> job;
+    std::shared_ptr<d2vr_prepare::Job> spare;
+    uint64_t ticket=0;
+    double prepareMs=0;
+};
+static ReplayPreparationState* g_prepareState=nullptr; // pinned, process lifetime
+static void FinishReplayPreparation() {
+    g_prepareCurrent=nullptr;
+    if(!g_prepareState || !g_prepareState->ticket)return;
+    auto& state=*g_prepareState;
+    state.job->cancel.store(true,std::memory_order_relaxed);
+    LARGE_INTEGER before{},after{},frequency{};QueryPerformanceCounter(&before);
+    const auto result=state.queue.Wait(state.ticket);
+    QueryPerformanceCounter(&after);QueryPerformanceFrequency(&frequency);
+    const double joinMs=1000.0*(after.QuadPart-before.QuadPart)/frequency.QuadPart;
+    if(!result.complete || result.firstFailure)g_replayPrepareWorker=false;
+    static unsigned frames=0;
+    static double prepareSum=0,joinSum=0,joinMax=0;
+    prepareSum+=state.prepareMs;joinSum+=joinMs;joinMax=(std::max)(joinMax,joinMs);
+    if(++frames==1 || frames%300==0)Log("[ReplayPrepare] frames=%u hits=%llu fallback=%llu tasks=%zu ready=%zu prepareAvgMs=%.4f joinAvgMs=%.4f joinMaxMs=%.4f; pure owned matrices, same-frame consumption",
+        frames,g_prepareHits,g_prepareMisses,state.job->tasks.size(),state.job->ready.load(),prepareSum/frames,joinSum/frames,joinMax);
+    state.ticket=0;state.spare=std::move(state.job);
+}
+static void StartReplayPreparation(const StereoParams& sp) {
+    FinishReplayPreparation();
+    if(!g_replayPrepareWorker || g_recOverflow || g_rec.size()>50000)return;
+#ifdef D2VR_MATCHED_CAPTURE
+    if(MatchedCaptureRecordingActive())return;
+#endif
+    LARGE_INTEGER before{};QueryPerformanceCounter(&before);
+    try {
+        auto job=g_prepareState && g_prepareState->spare ? std::move(g_prepareState->spare) : std::make_shared<d2vr_prepare::Job>();
+        job->Reset();job->CaptureFp();
+        // An unmasked arithmetic trap on the device owner must not move to a worker.
+        if((job->fp&_MCW_EM)!=_MCW_EM)return;
+        job->tasks.reserve((std::min)(g_rec.size(),size_t(2048)));
+        auto shader=g_activeVsOwner;
+        for(size_t i=0;i<g_rec.size() && job->tasks.size()+3<=d2vr_prepare::MaxTasks;++i) {
+            const auto& r=g_rec[i];
+            if(r.op==OP_SetVertexShader){shader=g_vsInfo.Lookup(reinterpret_cast<void*>(uintptr_t(r.a[0])));continue;}
+            if(r.op==OP_ApplyStateBlock){shader.reset();continue;}
+            if(r.op!=OP_SetVSConstF || !shader || !r.a[1] || r.a[1]>68 || r.a[0]>256 || r.a[1]>256-r.a[0] ||
+               uint64_t(r.a[4])+uint64_t(r.a[1])*16>g_recData.size())continue;
+            const int bases[]={ActiveWvpRegister(shader.get()),ActiveStpRegister(shader.get())};
+            for(unsigned block=0;block<2;++block) {
+                const int b=bases[block];
+                if(b<0 || UINT(b)<r.a[0] || UINT(b)+4>r.a[0]+r.a[1] || (block && b==bases[0]))continue;
+                d2vr_prepare::Task task;task.record=i;
+                memcpy(task.input,g_recData.data()+r.a[4]+(UINT(b)-r.a[0])*16,sizeof(task.input));
+                auto& ep=task.params;
+                ep.separation=sp.separation;ep.convergence=sp.convergence;ep.mode=sp.mode;
+                ep.transX=sp.transX;ep.transY=sp.transY;ep.fovScaleX=sp.fovScaleX;ep.fovScaleY=sp.fovScaleY;
+                ep.headGeometry=sp.headGeometry;memcpy(ep.headClip,sp.headClip,sizeof(ep.headClip));
+                memcpy(&task.px,&r.a[2],4);memcpy(&task.py,&r.a[3],4);task.cameraKnown=task.px>0 && task.py>0;
+                job->tasks.push_back(task);
+                if(block){d2vr_math::UnbiasScreenTextureProjection(task.input);job->tasks.push_back(task);}
+            }
+        }
+        if(job->tasks.size()<256){if(g_prepareState)g_prepareState->spare=std::move(job);return;} // amortize prepass/scheduling
+        if(!g_prepareState) {
+            HMODULE pinned=nullptr;
+            if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
+                reinterpret_cast<LPCWSTR>(&StartReplayPreparation),&pinned))return;
+            g_prepareState=new ReplayPreparationState;
+        }
+        auto& state=*g_prepareState;state.job=job;
+        const auto submitted=state.queue.Submit(job);
+        LARGE_INTEGER after{},frequency{};QueryPerformanceCounter(&after);QueryPerformanceFrequency(&frequency);
+        state.prepareMs=1000.0*(after.QuadPart-before.QuadPart)/frequency.QuadPart;
+        if(submitted.accepted){state.ticket=submitted.ticket;g_prepareCurrent=job.get();}
+        else state.job.reset();
+    } catch(...) {FinishReplayPreparation();}
+}
+
 static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp) {
     g_replayEye = eye;
     const void* replayTex[16] = {};
@@ -2195,6 +2280,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     const bool dump = (s_dumpFrames < 3);
     if (dump) ++s_dumpFrames;
     if(!BeginReplayRecording()){g_replayEye=-1;return false;}
+    StartReplayPreparation(sp);
     BeginReplayBufferLookups();
     const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)
     g_vsConstantHistory.BeginReplay();
@@ -2268,6 +2354,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     }
     for (size_t i = 0; i < g_rec.size(); ++i) {
         const Rec& r = g_rec[i];
+        g_prepareRecord=i;
         if (dump) {
             Log("  rec[%zu] op=%u n=%u a=[%u %u %u %u %u %u]", i, r.op, r.n,
                 r.a[0], r.a[1], r.a[2], r.a[3], r.a[4], r.a[5]);
@@ -2608,6 +2695,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
         g_constantUploadWindow.captureBypass += g_replayConstantBatch && MatchedCaptureRecordingActive();
     }
 #endif
+    FinishReplayPreparation();
     d2vr_record_sync::Acquire();
     if(g_replayBufferVersions && g_bufferUnsafeAlias.load(std::memory_order_acquire))replayComplete=false;
     replayComplete=EndReplayRecording(replayComplete);

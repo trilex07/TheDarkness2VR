@@ -29,6 +29,8 @@ if(@($begin,$cases,$vs,$vsEnd,$ps,$psEnd,$bindVS,$bindPS,$footer,$end) | Where-O
 # receipt aggregation. Non-float commands become observers of the driver banks.
 $helperBegin=$src.IndexOf('static bool IsConstantRenderStateBinding(',[StringComparison]::Ordinal)
 $helperEnd=$src.IndexOf('static bool ReplayStream(', $helperBegin,[StringComparison]::Ordinal)
+$prepareBegin=$src.IndexOf('struct ReplayPreparationState {',$helperBegin,[StringComparison]::Ordinal)
+if($prepareBegin -ge 0 -and $prepareBegin -lt $helperEnd){$helperEnd=$prepareBegin}
 if($helperBegin -lt 0 -or $helperEnd -lt 0){throw 'Actual binding classifier missing'}
 [IO.File]::WriteAllText((Join-Path $out 'actual_constant_binding_helpers.inl'),$src.Substring($helperBegin,$helperEnd-$helperBegin))
 $enumBegin=$src.IndexOf('enum RecOp : uint16_t {',[StringComparison]::Ordinal)
