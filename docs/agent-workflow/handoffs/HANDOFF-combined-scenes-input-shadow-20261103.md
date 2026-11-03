@@ -239,3 +239,39 @@ history accidentally. Baseline remains unchanged.
 - Current game returned from pause to main menu for controlled new-campaign
   passive/interactive cinema transition testing. Original villa backup retained;
   restore closed-game again after New Game. No actual QTE scene pass yet.
+
+## Runtime completion and recovery checkpoint
+- Native restaurant PASS: passive Scene3D71398/76078/94560, gameplay return
+  76055/78594/95169. Actual objects0F27F5C0 and2B2295C0 OnRails1 remained
+  gameplay with visible hands during scripted walking. Presented movie101252
+  selected Video2D; passive102074 and interactive103391 selected correctly.
+  See cinema-control-flags research doc. Physical theater/HMD comfort NOT RUN.
+- Production build PASS after corrected native flags. Final diagnostic rebuild
+  33845A5F4D983E46D4BF589B2BD22AE6174C4435BF1DDCB81EDB2637D0D179A3
+  from code5cd2de66; later commits only docs/package tooling. Runtime tested
+  diagnostic6BE0361A... has the same code, independently rebuilt symbols are
+  not interchangeable. Keep final DLL/PDB/MAP together in frozen package.
+- Final cinematic fixture PASS, actual shared-video fixture PASS, matched
+  capture42 PASS. Shadow driver bytecode fixture PASS outside sandbox with
+  game closed. Earlier sandbox CreateDevice failure was environmental.
+- Closed ownedPID46660 after exact path/start-time check. Runtime log retained
+  privately as fixed-cinema-runtime-final.log. Test campaign checkpoint retained
+  separately under restaurant-test-checkpoint; NOT the user's Continue.
+- Restored four pre-combat files, then all four INITIAL pre-lab backups to
+  recover original user settings as well as Continue. Initial Editor/settings
+  differed from the later pre-combat backup; final identities recorded privately
+  in original-user-save-restored.json. Continue0386D944..., EE C82548DD...,
+  Editor4F23D3BC..., account settingsB163AFFF... . All target hashes verified.
+- Restored exact accepted Steam DLL E56BF027... and diagnosticAC8290E4...;
+  EXE/main render INI/loader protected hashes match. Simulator is no longer
+  installed. No game left running. Global OpenXR runtime was never switched.
+- New frozen-package tooling prepares ONE protected-native Combined candidate
+  against this exact baseline, preserves main render INI/resolution and exposes
+  optional ShadowExperiment separately. Default shadow OFF: mathematical depth
+  evidence is not demonstrated visual improvement. All collectors/simulator OFF.
+  Actual installer body passes isolated verify-only, both modes, exact restore,
+  package/protected tamper rejection and foreign-preimage rejection.
+- UNRESOLVED: user25ms/40FPS cause and recovery, floor reflection producer,
+  demonstrated shadow OFF/ON improvement; actual QTE/execution/story and
+  Darkling/carnival gameplay acceptance. Do not describe these as fixed, and
+  do not merge this partial candidate to main or install it automatically.

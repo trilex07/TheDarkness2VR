@@ -34,7 +34,28 @@ special avatar has been verified follows from this classification.
 Regression fixture exercises the actual reader: damage permission cannot turn
 cinema off, the correct FreeCam byte does, OnRails stays interactive, a retained
 nonplaying object cannot enable cinema, malformed bools/foreign tables reject.
-Actual runtime transitions after this correction must be recorded separately.
+Actual runtime transitions after this correction are recorded below.
 
 The inherited entity method598C00 and its+2CC condition are not evidence of
 camera takeover; their use for classification was investigated and rejected.
+
+## Simulator runtime witness
+
+Own process46660, diagnostic DLL6BE0361A503FE2617A7E0D5C5B4404F2E23BFB3BDD1B4681BFFF6BE8DDB0F90E:
+native contract admitted. Villa Continue, elevator/NPC view and walking stayed
+in gameplay; two controller poses visibly moved the right hand/sleeve.
+Fresh New Game restaurant: object2A818DA0, exactFCA7E0, running1,
+FreeCam0/OnRails0 selected Scene3D at frame71398. It returned to gameplay at
+76055; another passive clip selected Scene3D at76078, returned at78594.
+Look tutorial advanced with two native left-stick-look steps. Passive clip
+at94560 ended at95169, then object0F27F5C0 ran with OnRails1 and takesCamera0.
+The restaurant walk remained full gameplay with both hands visible. Later
+object2B2295C0 also had OnRails1. Presented video at101252 selected Video2D;
+passive clip at102074 selected Scene3D, then OnRails1 object37D4DC80 returned
+to gameplay at103391. These are actual native flags and runtime decisions,
+not synthetic state fixtures. The simulator screenshot of a passive fade was
+mostly black and does not independently establish theater screen dimensions
+or physical HMD comfort. Private log/screenshots retained in the task lab.
+
+No claim of native QTE, execution, story, Darkling or carnival scene completion
+follows from this restaurant run. No game EXE/native object patch was used.
