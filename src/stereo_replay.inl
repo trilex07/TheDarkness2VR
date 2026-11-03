@@ -2273,6 +2273,7 @@ static void StartReplayPreparation(const StereoParams& sp) {
     } catch(...) {FinishReplayPreparation();}
 }
 
+#include "replay_packet_prepare.inl"
 static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp) {
     g_replayEye = eye;
     const void* replayTex[16] = {};
@@ -2280,7 +2281,8 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     const bool dump = (s_dumpFrames < 3);
     if (dump) ++s_dumpFrames;
     if(!BeginReplayRecording()){g_replayEye=-1;return false;}
-    StartReplayPreparation(sp);
+    StartPacketPreparation(sp);
+    if(!g_fullPacketPrepareWorker)StartReplayPreparation(sp);
     BeginReplayBufferLookups();
     const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)
     g_vsConstantHistory.BeginReplay();
@@ -2495,8 +2497,6 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
 #endif
             const float* src = (const float*)(dataBase + r.a[4]);
             g_vsConstantHistory.replay.Write(r.a[0],r.a[1],src,size_t(r.a[1])*16);
-            const d2vr_shader_registers::Reference rawReference(g_vsConstantHistory.replay,ActiveWvpRegister(g_activeVs),
-                ActiveStpRegister(g_activeVs),r.a[0],r.a[1]);
             StereoParams uploadParams = sp;
             uploadParams.projectionSnapshot = true;
             memcpy(&uploadParams.projectionPx,&r.a[2],sizeof(float));
@@ -2509,8 +2509,16 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             if (g_skipLightVsShift && g_activeVs && g_activeVs->hash == 0x68EEE79Cu)
                 lightVs = true;   // candidate fix (Shift+F2): light volume in engine/world space
             if (eye >= 0 && r.a[1] <= 68 && !lightVs && !IsShadowAtlasPass(dev)) {
-                if (ApplyVertexStereoUpload(tmp, src, uploadStart, uploadCount, g_activeVs, uploadParams,
-                                       &rawReference)) src = tmp;
+                if(const auto* prepared=PreparedVertexPacket(i,replayComplete)) {
+                    if(prepared->effects.publish)PublishProjectionEstimate(prepared->effects.px,prepared->effects.py);
+                    g_shiftCount+=prepared->effects.shiftCount;
+                    if(prepared->modified){uploadStart=prepared->first;uploadCount=prepared->count;src=prepared->values;}
+                } else {
+                    const d2vr_shader_registers::Reference rawReference(g_vsConstantHistory.replay,
+                        ActiveWvpRegister(g_activeVs),ActiveStpRegister(g_activeVs),r.a[0],r.a[1]);
+                    if (ApplyVertexStereoUpload(tmp, src, uploadStart, uploadCount, g_activeVs, uploadParams,
+                                           &rawReference)) src = tmp;
+                }
             }
             g_vsConstantHistory.eyeNext.Write(uploadStart,uploadCount,src,size_t(uploadCount)*16);
             if (windowEnabled) constantWindow.Upload(d2vr_replay_batch::Stage::Vertex,
@@ -2696,6 +2704,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     }
 #endif
     FinishReplayPreparation();
+    FinishPacketPreparation();
     d2vr_record_sync::Acquire();
     if(g_replayBufferVersions && g_bufferUnsafeAlias.load(std::memory_order_acquire))replayComplete=false;
     replayComplete=EndReplayRecording(replayComplete);

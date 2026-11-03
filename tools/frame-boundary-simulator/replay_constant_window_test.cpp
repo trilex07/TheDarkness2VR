@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "../../src/replay_state_cache.h"
+#include "../../src/replay_packet_worker.h"
 #include "../../src/recorder_sync.h"
 #include <atomic>
 static std::atomic<bool> g_bufferUnsafeAlias{false};
@@ -9,6 +10,12 @@ static bool g_bufferWritesApplied=false;
 // unchanged D3D9 ordering/history contract with worker disabled.
 static thread_local size_t g_prepareRecord=0;
 static void FinishReplayPreparation(){}
+static void FinishPacketPreparation(){}
+static const d2vr_packet_prepare::Output* PreparedVertexPacket(size_t,bool);
+static bool preparedFixture=false;
+static unsigned preparedFixtureHits=0;
+static unsigned g_shiftCount=0;
+static void PublishProjectionEstimate(float,float){}
 [[maybe_unused]] static void BeginReplayBufferLookups(){}
 static void ClearReplayBufferLookups(){}
 static bool g_replayBufferVersions=true,g_replayStateFilter=true,g_replayBindingFilter=true;
@@ -104,6 +111,18 @@ static bool ApplyShiftToUpload(float* dst,const float* src,UINT,UINT n,Vs* vi,co
     memcpy(dst,&bits,4);return true;
 }
 #include "actual_partial_wvp.inl"
+// Exercise the actual consumer branch with already materialized packets;
+// full threaded math/lifecycle has its independent actual-source oracle test.
+static const d2vr_packet_prepare::Output* PreparedVertexPacket(size_t record,bool complete){
+    if(!preparedFixture || !complete || record%3==0)return nullptr;
+    const auto& r=g_rec[record];static d2vr_packet_prepare::Output out;
+    out.first=r.a[0];out.count=r.a[1];out.effects={};
+    const d2vr_shader_registers::Reference reference(g_vsConstantHistory.replay,
+        ActiveWvpRegister(g_activeVs),ActiveStpRegister(g_activeVs),r.a[0],r.a[1]);
+    out.modified=ApplyVertexStereoUpload(out.values,reinterpret_cast<const float*>(arena.data()+r.a[4]),
+        out.first,out.count,g_activeVs,Params{},&reference);
+    ++preparedFixtureHits;return &out;
+}
 static int g_activePsInverse=-1,g_activePsViewExtents=-1;
 static bool g_lightPosShift=false;
 static const void* g_replayPs=nullptr;
@@ -557,9 +576,10 @@ static void RenderStateReduction(){
 }
 int main(){
     HeaderCases();ActualReduction();BindingReduction();ShaderBindingReduction();IndependentBindingReduction();PartialReplay();InheritedAcrossFrames();PixelInheritedAcrossFrames();RenderStateReduction();unsigned streams=0,records=0;
-    for(bool reuse:{false,true})for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
+    for(bool prepared:{false,true})for(bool reuse:{false,true})for(bool diagnostics:{false,true})for(bool captured:{false,true})for(bool psComp:{false,true})
     for(unsigned caps:{0u,96u,256u})for(unsigned mode:{0u,1u,2u,3u}){
         g_replayConstantReuse=reuse;
+        preparedFixture=prepared;
         d2vr_cpu_sync::timing.enabled=diagnostics;capture=captured;compensate=psComp;
         g_replayConstantBatch=mode!=0;g_replayConstantWindow=mode>=2;g_replayConstantBindWindow=mode==3;
         g_frameStart.vertexFloatLimit=caps;g_frameStart.pixelFloatLimit=caps==96?32:224;
@@ -579,6 +599,7 @@ int main(){
 #endif
         ++streams;records+=unsigned(g_rec.size());
     }
+    assert(preparedFixtureHits>0);preparedFixture=false;
     g_replayConstantReuse=false;
     // Diagnostic forwarding records entry before an SEH fault and never retries it.
     g_rec.clear();arena.assign(16*4,0);Rec one;one.op=OP_SetVSConstF;one.a[1]=4;g_rec.push_back(one);

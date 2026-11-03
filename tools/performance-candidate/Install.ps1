@@ -1,10 +1,11 @@
 # Frozen MAIN candidate. Run only after closing Darkness II. No launch.
-param([switch]$Restore,[ValidateSet('Both','Cache','Worker','Off')][string]$Mode='Cache',[switch]$VerifyOnly)
+param([switch]$Restore,[ValidateSet('Both','Cache','Worker','Packets','Off')][string]$Mode,[switch]$VerifyOnly)
 $ErrorActionPreference='Stop'
 function Hash([string]$path){(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}
 function Closed{if(Get-Process | Where-Object ProcessName -eq 'DarknessII'){throw 'Close Darkness II before installing/restoring'}}
 Closed
 $m=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'candidate.json') -Raw | ConvertFrom-Json
+if(!$Mode){$Mode=if($m.default_mode){[string]$m.default_mode}else{'Cache'}}
 $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
 $dll=Join-Path $game 'd3d9.dll';$ini=Join-Path $game 'Darkness2VR.ini'
 if($m.before.Count -ne 2 -or $m.before[0].target -ne $dll -or $m.before[1].target -ne $ini){throw 'Unexpected target set'}

@@ -641,6 +641,7 @@ static bool g_headAttachedTentacles = false;
 static bool g_hideNativeHud = false;
 static bool g_gpuSplitTiming = false;
 static bool g_shaderDemandCache=false,g_replayPrepareWorker=false;
+static bool g_fullPacketPrepareWorker=false;
 static bool g_smallRecordCopyRequested = false; // OFF; bounded <=192-byte RPM experiment
 static bool g_smallRecordCopyAdmitted = false;
 static d2vr_record_copy::Admission g_smallRecordCopyAdmission;
@@ -810,6 +811,8 @@ void LoadConfig() {
     g_startupShaderPool = GetPrivateProfileIntA("Render", "StartupShaderPool", 0, chosenIni)!=0;
     g_shaderDemandCache=GetPrivateProfileIntA("Render","ShaderDemandCache",0,chosenIni)!=0;
     g_replayPrepareWorker=GetPrivateProfileIntA("Render","ReplayPrepareWorker",0,chosenIni)!=0;
+    g_fullPacketPrepareWorker=GetPrivateProfileIntA("Render","FullPacketPrepareWorker",0,chosenIni)!=0;
+    Log("[ReplayPackets] FullPacketPrepareWorker=%d; experimental owned CPU packets",int(g_fullPacketPrepareWorker));
     Log("[PerformanceCandidate] ShaderDemandCache=%d ReplayPrepareWorker=%d; startup settings, image size unchanged",int(g_shaderDemandCache),int(g_replayPrepareWorker));
     g_startupShaderCopies=GetPrivateProfileIntA("Render","StartupShaderCopies",1,chosenIni)==2?2:1;
     g_pipelineWarmup=GetPrivateProfileIntA("Render","PipelineWarmup",0,chosenIni)!=0;
