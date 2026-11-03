@@ -42,3 +42,14 @@ GazeFXAA0, center fallback1, NisMode2 and2676x2728 retained. No launch.
 Runtime material coverage, visual quality, shimmer and cost are NOT RUN.
 Rollback: this frozen package Install.ps1 -Restore restores previous FXAA-Off
 DLL/INI exactly (INI5A5BFDE9). Changes/receipt committed locally.
+
+## Runtime FAIL and completed rollback
+
+User: no visual benefit, FPS90->40. MAIN saved the runtime log privately at
+test-output/anisotropic16-rejected-20261103/d3d9.log before further launches.
+Later XRCadence windows show38.8-53 world-bearing submissions/s at physical90Hz;
+GPUFrame spans and per-draw setter/getter costs do not isolate causality.
+Game already closed: frozen Install.ps1 -Restore PASS; independently verified
+every before/protected hash. Current DLL D178DF2D, INI5A5BFDE9 (exact previous
+FXAA-Off state). No launch. FPS recovery after restart NOT RUN. Trial rejected,
+added FAILED-APPROACHES; do not enable this scope again without new evidence.

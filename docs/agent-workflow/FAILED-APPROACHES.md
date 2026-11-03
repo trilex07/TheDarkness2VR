@@ -5,6 +5,22 @@ Legacy lessons describe their original experiments, not current renderer
 contracts or permission to modify native registers. Revalidate against current
 source, BASELINE.md and the task handoff before applying them.
 
+### Scoped world diffuse AF16: no visual benefit, severe user performance regression
+- **Date**: 2026-11-03
+- **Branch/Commit**: codex/anisotropic-16x-20261103 /b4ed0fa8,c2162522
+- **Approach**: Existing WorldDiffuseAnisotropy1 promotes LINEAR diffuse sampler0
+  only for VS293F456B/PSCA08BDC4, with TextureAnisotropy16. DLL unchanged.
+- **Failure**: User reports shimmer unchanged and90->40FPS. Captured log records
+  world-bearing submission cadence roughly38.8-53/s in later windows; that is
+  not an independent simulation-FPS measurement or isolated GPU-cost proof.
+- **Action**: MAIN closed-game exact Restore PASS, DLL D178DF2D and pre-trial
+  INI5A5BFDE9; FXAA remains0, NIS/center/resolution retained. Protected hashes
+  independently verified. Do not re-enable automatically. Existing479-check
+  sampler/state-restore fixture PASS was correctness evidence, not FPS proof.
+- **Evidence**: HANDOFF-anisotropic16-20261103.md; private preserved runtime log
+  test-output/anisotropic16-rejected-20261103/d3d9.log. Next performance inquiry
+  must separate per-draw driver queries/state churn from filtering GPU cost.
+
 ### Running cinematic pointer alone falsely enables villa theater
 - **Date**: 2026-11-02
 - **Branch/Commit**: codex/villa-cinema-hands-audio-20261102 (candidate)
