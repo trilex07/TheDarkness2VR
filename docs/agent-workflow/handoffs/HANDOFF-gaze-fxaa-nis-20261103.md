@@ -82,4 +82,18 @@ build/gaze-fxaa-nis-20261103, source7edce2cf; protected-native x86/O2.
 - candidate.json1DB3E9835C553A4E2D9C565A04F572C94449BD9BEFE12D1BDE13B3F265B97A26.
 - Frozen Install.ps1 -VerifyOnly PASS, game closed: all payloads, exact accepted
   DLL/INI backups and protected installed targets verified. Steam unchanged.
-- A/B AA-only profile comparison required before deployment. No launch/install.
+- A/B profile byte comparison PASS: only GazeFXAA=1 versus0 differs.
+
+## Installed for user test
+
+User explicitly authorized closed-game installation AND publication of this
+branch to public trilex07/TheDarkness2VR. Initial automatic approval review
+rejected push for missing public-export authorization; after explicit user
+approval push succeeded. No main merge requested.
+Frozen Install.ps1 -VerifyOnly PASS again, then -Mode Combined installed
+D178DF2D DLL /680B77D2 INI. Independent installed.json target hashes PASS.
+No launch/input; resolution2676x2728, all previous accepted optimizations and
+protected assets retained. Current trial has GazeFXAA1,FoveaCenterFallback1,
+FoveaPeriphery0. HMD acceptance and GPU cost remain NOT RUN.
+Rollback: this package's Install.ps1 -Restore, game closed, returns exact
+E56BF027 DLL /68EE5685 INI. Accepted baseline remains E56BF027 until feedback.
