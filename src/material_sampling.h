@@ -47,13 +47,15 @@ public:
         device_ = dev; setter_ = setter;
         return true;
     }
-    ~ScopedDiffuseFilter() {
+    void Restore() {
         if (device_) {
+            auto* device=device_;device_=nullptr;
             // Bypass the recording hook: replay gets the same scoped correction,
             // not extra sampler events left in the game's command stream.
-            setter_(device_, 0, D3DSAMP_MINFILTER, min_);
-            setter_(device_, 0, D3DSAMP_MAXANISOTROPY, max_);
+            setter_(device, 0, D3DSAMP_MINFILTER, min_);
+            setter_(device, 0, D3DSAMP_MAXANISOTROPY, max_);
         }
     }
+    ~ScopedDiffuseFilter() {Restore();}
 };
 } // namespace d2vr_sampling

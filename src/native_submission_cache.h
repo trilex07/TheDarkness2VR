@@ -123,6 +123,52 @@ public:
     }
 };
 inline thread_local FrameBindings bindings;
+
+// Opt-in material scalars, certified only after both D3D_OK and recorder
+// publication in the exact owner epoch. Unknown/vendor commands invalidate
+// the domain and are always forwarded. No COM lifetime or GPU work here.
+inline bool materialsRequested=false;
+class MaterialScalars {
+    static constexpr unsigned Count=550;
+    uint32_t values_[Count]{};
+    uint64_t valid_[(Count+63)/64]{},epoch_=0;
+    bool busy_=false;
+    void Sync(Epoch& domain){if(epoch_!=domain.Generation()){
+        std::memset(valid_,0,sizeof(valid_));epoch_=domain.Generation();}}
+public:
+    uint64_t forwarded=0,skipped=0,unowned=0;
+    static int Render(unsigned state){return state<256?int(state):-1;}
+    static int Sampler(unsigned slot,unsigned type){
+        const int index=slot<16?int(slot):slot>=256 && slot<=260?int(16+slot-256):-1;
+        return index>=0 && type>0 && type<14?256+index*14+int(type):-1;
+    }
+    template<class Send,class Receipt> long Forward(Epoch& domain,Epoch::Ticket ticket,
+        int key,uint32_t value,Send send,Receipt published){
+        Sync(domain);
+        if(!ticket || key<0 || key>=int(Count) || busy_ || !domain.CanReuse(ticket)){
+            domain.Invalidate();++forwarded;
+            const long result=send();domain.Invalidate();Sync(domain);return result;
+        }
+        const unsigned word=unsigned(key)/64;
+        const uint64_t bit=uint64_t(1)<<(unsigned(key)%64);
+        if((valid_[word]&bit) && values_[key]==value){++skipped;return 0;}
+        valid_[word]&=~bit;busy_=true;++forwarded;
+        const long result=send();busy_=false;
+        if(result==0 && domain.CanReuse(ticket) && published()){
+            values_[key]=value;valid_[word]|=bit;
+        }else{++unowned;domain.Invalidate();Sync(domain);}
+        return result;
+    }
+};
+inline thread_local MaterialScalars materialScalars;
+template<class Send,class Receipt> long ForwardMaterialScalar(const void* device,uint32_t thread,
+    bool recording,int key,uint32_t value,Send send,Receipt published){
+    if(!requested || !materialsRequested)return send();
+    CheckDevice(device);
+    if(!gate.Enabled() || gate.Paused())return send();
+    if(!recording){gate.Invalidate();const long result=send();gate.Invalidate();return result;}
+    return materialScalars.Forward(gate,gate.Begin(thread),key,value,send,published);
+}
 template<class Send,class Receipt> long ForwardBinding(const void* device,uint32_t thread,bool recording,
     int key,uintptr_t a,uintptr_t b,uintptr_t c,Send send,Receipt published){
     if(!requested || !bindingsRequested)return send();

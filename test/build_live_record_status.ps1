@@ -12,6 +12,7 @@ function Extract([string]$signature){
  throw 'Unclosed function'
 }
 $body=Extract 'static inline HRESULT RecordLiveResult('
+$body+="`n"+(Extract 'static bool IsConstantRenderStateBinding(unsigned state,unsigned value) {')
 foreach($name in 'DrawPrimitive','DrawIndexedPrimitive','DrawPrimitiveUP','DrawIndexedPrimitiveUP'){
  $body+="`n"+(Extract "static HRESULT ${name}WithDiffuse(")
 }

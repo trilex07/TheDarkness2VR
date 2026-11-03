@@ -313,6 +313,7 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
     }
 }
 #else
+static bool ProtectedShotgunSupportOwner(DWORD,void** gun) {if(gun)*gun=nullptr;return false;}
 static bool ProtectedWeaponFireOwned(void*) {return false;}
 static bool ProtectedWeaponModelOwned(void*) {return false;}
 static bool CopyProtectedWeaponHandPose(DWORD,unsigned,XrPosef&) {return false;}

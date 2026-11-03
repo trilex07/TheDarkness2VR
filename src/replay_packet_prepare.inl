@@ -6,6 +6,7 @@ struct PacketPreparationState {
     std::shared_ptr<d2vr_packet_prepare::Job> job,spare;
     uint64_t ticket=0,hits=0,misses=0;
     double prepareMs=0;
+    bool early=false;
 };
 static PacketPreparationState* g_packetPreparation=nullptr; // pinned process lifetime
 static d2vr_packet_prepare::Shader SnapshotPacketShader(const VsInfo* vi) {
@@ -39,9 +40,9 @@ static void FinishPacketPreparation() {
         frames,state.hits,state.misses,state.job->packets.size(),state.job->ready.load(),
         state.job->input.size()*sizeof(float),prepareSum/frames,joinSum/frames);
     if(!completed.complete || completed.firstFailure)g_fullPacketPrepareWorker=false;
-    state.ticket=0;state.spare=std::move(state.job);
+    state.ticket=0;state.early=false;state.spare=std::move(state.job);
 }
-static void StartPacketPreparation(const StereoParams& sp) {
+static void StartPacketPreparation(const StereoParams& sp,bool knownInitialShader=true) {
     FinishPacketPreparation();
     if(!g_fullPacketPrepareWorker || g_recOverflow || g_rec.size()>50000)return;
 #ifdef D2VR_MATCHED_CAPTURE
@@ -65,6 +66,9 @@ static void StartPacketPreparation(const StereoParams& sp) {
         NativeCameraUiScale(p.uiX,p.uiY);
 #endif
         auto shader=g_activeVsOwner;
+        // Before frame-start Apply the active shader belongs to live END.
+        // Only explicit shader commands can certify early-prepared packets.
+        if(!knownInitialShader)shader.reset();
         auto snapshot=SnapshotPacketShader(shader.get());
         unsigned useful=0;
         for(size_t i=0;i<g_rec.size();++i) {
@@ -98,9 +102,22 @@ static void StartPacketPreparation(const StereoParams& sp) {
         const auto submitted=state.queue.Submit(state.job);
         LARGE_INTEGER after{},frequency{};QueryPerformanceCounter(&after);QueryPerformanceFrequency(&frequency);
         state.prepareMs=1000.0*(after.QuadPart-before.QuadPart)/frequency.QuadPart;
-        if(submitted.accepted)state.ticket=submitted.ticket;else state.job.reset();
+        if(submitted.accepted){state.ticket=submitted.ticket;state.early=!knownInitialShader;}
+        else state.job.reset();
     } catch(...) {FinishPacketPreparation();}
 }
+static bool EarlyPacketParametersMatch(const StereoParams& sp) {
+    if(!g_packetPreparation || !g_packetPreparation->ticket || !g_packetPreparation->early)return false;
+    const auto& p=g_packetPreparation->job->params;
+    return p.mode==sp.mode && p.headGeometry==sp.headGeometry &&
+        d2vr_prepare::Bits(p.separation,sp.separation) && d2vr_prepare::Bits(p.convergence,sp.convergence) &&
+        d2vr_prepare::Bits(p.transX,sp.transX) && d2vr_prepare::Bits(p.transY,sp.transY) &&
+        d2vr_prepare::Bits(p.fovScaleX,sp.fovScaleX) && d2vr_prepare::Bits(p.fovScaleY,sp.fovScaleY) &&
+        !memcmp(p.headClip,sp.headClip,sizeof(p.headClip));
+}
+// Covers every error/early return after the sealed-frame prepass is launched.
+// The worker owns its input; no D3D9/COM pointers or native object lists escape.
+struct PacketPreparationLease {~PacketPreparationLease(){FinishPacketPreparation();}};
 static const d2vr_packet_prepare::Output* PreparedVertexPacket(size_t record,bool complete) {
     if(!complete || !g_packetPreparation || !g_packetPreparation->ticket)return nullptr;
     auto& s=*g_packetPreparation;const auto& p=s.job->params;

@@ -1,5 +1,5 @@
 # Frozen MAIN candidate. Run only after closing Darkness II. No launch.
-param([switch]$Restore,[ValidateSet('Both','Cache','Worker','Packets','Off')][string]$Mode,[switch]$VerifyOnly)
+param([switch]$Restore,[ValidateSet('Both','Cache','Worker','Packets','Material','Overlap','Combined','Off')][string]$Mode,[switch]$VerifyOnly)
 $ErrorActionPreference='Stop'
 function Hash([string]$path){(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}
 function Closed{if(Get-Process | Where-Object ProcessName -eq 'DarknessII'){throw 'Close Darkness II before installing/restoring'}}

@@ -657,6 +657,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 static bool g_deferStereoTransferReader = false; // startup-only; exact reader fence before shared reuse
 static bool g_overlapNativePresent = false; // startup-only; protected mode 4: mirror Present inside right-eye GPU wait
+static bool g_earlyPacketPreparation = false; // owned prepass overlaps capture/backup before replay
 static bool g_pipelineVariantLearning=false; // actual-state sampler; startup-only, default OFF
 static bool g_reuseSharedCaptureColor = false; // startup-only; split eye slots double as pair color backups
 static int g_stereoTransferMode = 0; // 0 baseline,1 D3D9/11 worker,2 serial MT control,3 owner-wait D3D11 worker,4 single-owner overlap
@@ -812,7 +813,8 @@ void LoadConfig() {
     g_shaderDemandCache=GetPrivateProfileIntA("Render","ShaderDemandCache",0,chosenIni)!=0;
     g_replayPrepareWorker=GetPrivateProfileIntA("Render","ReplayPrepareWorker",0,chosenIni)!=0;
     g_fullPacketPrepareWorker=GetPrivateProfileIntA("Render","FullPacketPrepareWorker",0,chosenIni)!=0;
-    Log("[ReplayPackets] FullPacketPrepareWorker=%d; experimental owned CPU packets",int(g_fullPacketPrepareWorker));
+    g_earlyPacketPreparation=GetPrivateProfileIntA("Render","EarlyPacketPreparation",0,chosenIni)!=0;
+    Log("[ReplayPackets] FullPacketPrepareWorker=%d EarlyPacketPreparation=%d; experimental owned CPU packets",int(g_fullPacketPrepareWorker),int(g_earlyPacketPreparation));
     Log("[PerformanceCandidate] ShaderDemandCache=%d ReplayPrepareWorker=%d; startup settings, image size unchanged",int(g_shaderDemandCache),int(g_replayPrepareWorker));
     g_startupShaderCopies=GetPrivateProfileIntA("Render","StartupShaderCopies",1,chosenIni)==2?2:1;
     g_pipelineWarmup=GetPrivateProfileIntA("Render","PipelineWarmup",0,chosenIni)!=0;
@@ -857,6 +859,8 @@ void LoadConfig() {
     d2vr_submission::requested=GetPrivateProfileIntA("Render","NativeSubmissionFilter",0,chosenIni)!=0;
     d2vr_submission::gate.Configure(d2vr_submission::requested);
     d2vr_submission::bindingsRequested=GetPrivateProfileIntA("Render","NativeBindingFilter",0,chosenIni)!=0;
+    d2vr_submission::materialsRequested=GetPrivateProfileIntA("Render","NativeMaterialFilter",0,chosenIni)!=0;
+    Log("[NativeMaterial] requested=%d; owner-epoch public scalar states only; vendor/unknown always forwarded",int(d2vr_submission::materialsRequested));
     g_pipelineVariantLearning=GetPrivateProfileIntA("Render","PipelineVariantLearning",0,chosenIni)!=0;
     Log("[PipelineVariants] learning=%d; one actual-device capture/frame; no exhaustive coverage or hitch-removal claim",int(g_pipelineVariantLearning));
     Log("[NativeSubmission] requested=%d; owned final float packets only; opaque state fails closed",int(d2vr_submission::requested));
@@ -3893,6 +3897,12 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         sp1.transX = 0.0f;
         sp1.transY = 0.0f;
     }
+    d2vr_replay::PacketPreparationLease packetLease;
+    if(g_earlyPacketPreparation && g_fullPacketPrepareWorker){
+        d2vr_replay::RecLockGuard sealed;
+        if(!d2vr_replay::g_recActive && !d2vr_record_sync::Busy() && !d2vr_record_sync::conflict.load())
+            d2vr_replay::StartPacketPreparation(sp1,false);
+    }
     d2vr_replay::DeviceSnapshot localLiveEnd;
     if(g_reuseStateSnapshots && !g_liveEndSnapshot)
         g_liveEndSnapshot=new(std::nothrow) d2vr_replay::DeviceSnapshot;
@@ -4073,6 +4083,8 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         if(d2vr_submission::requested && d2vr_submission::bindingsRequested)
             Log("[NativeBinding] forwarded=%llu skipped=%llu unowned=%llu; frame ledger only, no texture/depth elision",
                 d2vr_submission::bindings.forwarded,d2vr_submission::bindings.skipped,d2vr_submission::bindings.unowned);
+        if(d2vr_submission::materialsRequested)Log("[NativeMaterial] scalar forwarded=%llu skipped=%llu unowned=%llu; exact successful publication only",
+                d2vr_submission::materialScalars.forwarded,d2vr_submission::materialScalars.skipped,d2vr_submission::materialScalars.unowned);
         const uint64_t* c = d2vr_replay::g_recCounts;
         Log("[TrueStereo] ops: Begin=%llu End=%llu Clear=%llu RT=%llu DSS=%llu Draw=%llu DIP=%llu DPUP=%llu DIPUP=%llu VS=%llu VSCF=%llu Tex=%llu RS=%llu TSS=%llu Smp=%llu VP=%llu SB=%llu",
             c[3], c[4], c[5], c[1], c[2], c[13], c[14], c[15], c[16], c[19], c[20], c[9], c[8], c[10], c[11], c[7], c[36]);

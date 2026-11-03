@@ -68,6 +68,18 @@ void Lifecycle() {
     g_rec[1].op=OP_SetVertexShader;g_rec.resize(260,g_rec[2]);
     StartPacketPreparation(fixture->params);Check(g_packetPreparation->ticket!=0);
     FinishPacketPreparation();
+    // Early prepass must not interpret the live-END shader as frame-start.
+    StartPacketPreparation(fixture->params,false);
+    Check(EarlyPacketParametersMatch(fixture->params));
+    auto changed=fixture->params;changed.transX+=1.f;
+    Check(!EarlyPacketParametersMatch(changed));
+    const auto earlyWait=g_packetPreparation->queue.Wait(g_packetPreparation->ticket);
+    Check(earlyWait.complete);
+    Check(PreparedVertexPacket(0,true)==nullptr);
+    Check(PreparedVertexPacket(1,true)==nullptr); // shader command, not an upload
+    Check(PreparedVertexPacket(2,true)!=nullptr);
+    {PacketPreparationLease lease;}
+    Check(!g_packetPreparation->ticket && !g_packetPreparation->early);
     g_rec[2].a[4]=UINT32_MAX;StartPacketPreparation(fixture->params);Check(!g_packetPreparation->ticket);
     // Actual production prepass + exact ready consumer. Keep this cost visible:
     // worker compute alone excludes the copies and metadata scan on the owner.

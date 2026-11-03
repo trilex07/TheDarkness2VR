@@ -179,5 +179,39 @@ int main(){
     g_recActive=true;Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
     g_recOverflow=true;Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
     g_recOverflow=false;Expect(dev,indices);CHECK(Hook_SetIndices(dev,indices)==S_OK && calls==1);
-    printf("PASS actual live hooks: %u checks, 24 APIs x 40 versioning/recording/status cases; four draw paths including UP, clip cleanup, intentional suppression, exact arguments/HRESULT/one forward, sticky incomplete packet; CPU fixture, not game evidence\n",checks);
+    // Exercise production scalar hooks ON, including vendor commands which
+    // must execute again even when their value is identical (RESZ/ATOC paths).
+    d2vr_submission::materialsRequested=true;
+    for(bool recording:{false,true})for(HRESULT hr:{S_OK,S_FALSE,D3DERR_INVALIDCALL,D3DERR_DEVICELOST}){
+        for(bool sampler:{false,true})for(bool ordinary:{false,true}){
+            d2vr_submission::gate.Invalidate();g_recActive=recording;g_recOverflow=false;status=hr;
+            const auto call=[&](){
+                if(sampler){Expect(dev,ordinary?2u:99u,D3DSAMP_ADDRESSU,DWORD(D3DTADDRESS_CLAMP));
+                    return Hook_SetSamplerState(dev,ordinary?2u:99u,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP);}
+                const auto type=ordinary?D3DRS_ZWRITEENABLE:D3DRS_POINTSIZE;
+                const DWORD value=ordinary?1:MAKEFOURCC('R','E','S','Z');
+                Expect(dev,type,value);return Hook_SetRenderState(dev,type,value);
+            };
+            CHECK(call()==hr && calls==1);
+            CHECK(g_recOverflow==(recording && FAILED(hr)));
+            g_recOverflow=false;
+            const bool elide=recording && ordinary && hr==S_OK;
+            CHECK(call()==(elide?S_OK:hr) && calls==unsigned(!elide));
+            CHECK(records==unsigned(recording && SUCCEEDED(hr) && !elide));
+        }
+    }
+    g_recActive=true;g_recOverflow=false;status=S_OK;
+    d2vr_submission::gate.Invalidate();
+    unsigned scalarCalls=0;
+    // A synthetic repeated-material workload. Counts are fixture results only.
+    for(unsigned i=0;i<4096;++i){
+        Expect(dev,D3DRS_ZWRITEENABLE,DWORD(i/8%2));
+        CHECK(Hook_SetRenderState(dev,D3DRS_ZWRITEENABLE,i/8%2)==S_OK);scalarCalls+=calls;
+    }
+    CHECK(scalarCalls==512);
+    d2vr_stateblock::Began(dev,S_OK);
+    Expect(dev,D3DRS_ZWRITEENABLE,DWORD(1));
+    CHECK(Hook_SetRenderState(dev,D3DRS_ZWRITEENABLE,1)==S_OK && calls==1 && records==0);
+    d2vr_stateblock::Ended(dev,S_OK);
+    printf("PASS actual live hooks/materials: %u checks; material fixture 4096 -> %u forwards, vendor/HRESULT/recording/stateblock cases preserved; no game FPS claim\n",checks,scalarCalls);
 }

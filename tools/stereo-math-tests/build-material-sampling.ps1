@@ -1,3 +1,4 @@
+param([switch]$Hardware,[switch]$Ex)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -10,6 +11,6 @@ Push-Location $here
 try {
     cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 material_sampling_test.cpp /Fo:`"$testObj`" /Fe:`"$testExe`" /link d3d9.lib user32.lib"
     if ($LASTEXITCODE -ne 0) { throw 'build failed' }
-    & $testExe
+    if($Ex){& $testExe --ex}elseif($Hardware){& $testExe --hardware}else{& $testExe}
     if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
 } finally { Pop-Location }

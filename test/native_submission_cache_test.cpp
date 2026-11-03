@@ -5,6 +5,33 @@
 #define CHECK(x) do{if(!(x)){std::printf("FAIL line %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 using namespace d2vr_submission;
 int main(){
+ // Scalar material cache: publication and epoch are as important as equality.
+ {Epoch e;e.Configure(true);MaterialScalars m;unsigned n=0;bool receipt=true;
+  auto run=[&](int key,unsigned value,long hr=0){return m.Forward(e,e.Begin(17),key,value,
+      [&]()->long{++n;return hr;},[&](){return receipt;});};
+  CHECK(run(MaterialScalars::Render(7),1)==0 && n==1);
+  CHECK(run(MaterialScalars::Render(7),1)==0 && n==1);
+  CHECK(run(MaterialScalars::Render(7),0)==0 && n==2);
+  CHECK(run(MaterialScalars::Sampler(0,1),0)==0 && n==3);
+  CHECK(run(MaterialScalars::Sampler(256,1),0)==0 && n==4);
+  CHECK(run(MaterialScalars::Sampler(260,13),0)==0 && n==5);
+  CHECK(run(MaterialScalars::Sampler(260,13),0)==0 && n==5);
+  receipt=false;CHECK(run(9,2)==0 && n==6);receipt=true;
+  CHECK(run(9,2)==0 && n==7);CHECK(run(9,2)==0 && n==7);
+  CHECK(run(9,3,1)==1 && n==8);CHECK(run(9,3,-1)==-1 && n==9);
+  CHECK(run(9,3)==0 && n==10);
+  {Epoch::Bypass raw(e);CHECK(run(9,3)==0 && n==11);}
+  CHECK(run(9,3)==0 && n==12);
+  const auto before=n;auto ticket=e.Begin(17);
+  CHECK(m.Forward(e,ticket,9,4,[&]()->long{++n;CHECK(run(9,5)==0);return 0;},[]{return true;})==0);
+  CHECK(n==before+2);CHECK(run(9,4)==0 && n==before+3);
+  CHECK(run(-1,4)==0 && n==before+4);
+  CHECK(run(9,4)==0 && n==before+5);
+  CHECK(MaterialScalars::Sampler(16,1)==-1 && MaterialScalars::Sampler(0,0)==-1);
+  CHECK(MaterialScalars::Sampler(261,1)==-1 && MaterialScalars::Sampler(0,14)==-1);
+  e.Deny(Epoch::OpaqueStateBlock);const auto denied=n;
+  CHECK(run(9,4)==0 && run(9,4)==0 && n==denied+2);
+ }
  requested=true;
  {InternalStateBlockCreation known;CHECK(ConsumeInternalStateBlock());CHECK(!ConsumeInternalStateBlock());}
  CHECK(!ConsumeInternalStateBlock());requested=false;

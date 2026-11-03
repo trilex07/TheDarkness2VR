@@ -1428,9 +1428,23 @@ static HRESULT STDMETHODCALLTYPE Hook_SetClipPlane(IDirect3DDevice9* dev, DWORD 
     if (g_recActive && plane) RecEmitData(OP_SetClipPlane, plane, sizeof(float)*4, index);
     return RecordLiveResult(g_orig.SetClipPlane(dev, index, plane));
 }
+static bool IsConstantRenderStateBinding(unsigned state,unsigned value);
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderState(IDirect3DDevice9* dev, D3DRENDERSTATETYPE st, DWORD v) {
     if(d2vr_stateblock::Active(dev))return g_orig.SetRenderState(dev,st,v);
     d2vr_record_sync::NativeMutation();
+    if(d2vr_submission::requested && d2vr_submission::materialsRequested){
+        bool published=false;
+        const auto send=[&]()->HRESULT{
+            const HRESULT result=RecordLiveResult(g_orig.SetRenderState(dev,st,v));
+            if(SUCCEEDED(result) && g_recActive)
+                published=RecEmitBinding(OP_SetRenderState,0,st,v);
+            return result;
+        };
+        return d2vr_submission::ForwardMaterialScalar(dev,GetCurrentThreadId(),
+            g_recActive && !g_recOverflow,
+            IsConstantRenderStateBinding(unsigned(st),v)?d2vr_submission::MaterialScalars::Render(unsigned(st)):-1,
+            v,send,[&](){return published;});
+    }
     if (g_recActive) RecEmit(OP_SetRenderState, 0, st, v);
     return RecordLiveResult(g_orig.SetRenderState(dev, st, v));
 }
@@ -1456,6 +1470,18 @@ static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWO
     if(d2vr_stateblock::Active(dev))return g_orig.SetSamplerState(dev,smp,t,v);
     d2vr_record_sync::NativeMutation();
     v = ResolveSamplerValue(dev, t, v);
+    if(d2vr_submission::requested && d2vr_submission::materialsRequested){
+        bool published=false;
+        const auto send=[&]()->HRESULT{
+            const HRESULT result=RecordLiveResult(g_orig.SetSamplerState(dev,smp,t,v));
+            if(SUCCEEDED(result) && g_recActive)
+                published=RecEmitBinding(OP_SetSamplerState,0,smp,t,v);
+            return result;
+        };
+        return d2vr_submission::ForwardMaterialScalar(dev,GetCurrentThreadId(),
+            g_recActive && !g_recOverflow,d2vr_submission::MaterialScalars::Sampler(smp,unsigned(t)),
+            v,send,[&](){return published;});
+    }
     if (g_recActive) RecEmit(OP_SetSamplerState, 0, smp, t, v);
     return RecordLiveResult(g_orig.SetSamplerState(dev, smp, t, v));
 }
@@ -1473,10 +1499,22 @@ struct WorldDiffuseScope {
         const bool selected = d2vr_sampling::IsWorldDiffuseMaterial(g_activeVs->hash,
             g_pixelShaders.Lookup(ps).hash);
         ps->Release();
-        if (!selected || !filter.Apply(dev, g_orig.SetSamplerState, g_textureAnisotropy)) return;
+        if (!selected) return;
+        bool corrected=false;
+        if(d2vr_submission::materialsRequested){
+            d2vr_submission::Epoch::Bypass raw(d2vr_submission::gate);
+            corrected=filter.Apply(dev,g_orig.SetSamplerState,g_textureAnisotropy);
+        }else corrected=filter.Apply(dev,g_orig.SetSamplerState,g_textureAnisotropy);
+        if(!corrected)return;
         applied = true;
         static unsigned reported = 0;
         if (reported++ < 4) Log("[WorldDiffuse] applied eye=%d sampler=0 min=ANISOTROPIC; restored after draw", g_replayEye < 0 ? 0 : g_replayEye);
+    }
+    ~WorldDiffuseScope(){
+        if(applied && d2vr_submission::materialsRequested){
+            d2vr_submission::Epoch::Bypass raw(d2vr_submission::gate);
+            filter.Restore();
+        }
     }
 };
 // The player tentacle and world characters share all three skinned shaders.
@@ -2281,7 +2319,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
     const bool dump = (s_dumpFrames < 3);
     if (dump) ++s_dumpFrames;
     if(!BeginReplayRecording()){g_replayEye=-1;return false;}
-    StartPacketPreparation(sp);
+    if(!EarlyPacketParametersMatch(sp))StartPacketPreparation(sp);
     if(!g_fullPacketPrepareWorker)StartReplayPreparation(sp);
     BeginReplayBufferLookups();
     const uint8_t* dataBase = g_recData.data();   // captured AFTER the lock (arena stable)

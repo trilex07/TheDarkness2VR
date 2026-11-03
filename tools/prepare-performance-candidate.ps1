@@ -1,5 +1,5 @@
 # MAIN package preparation only. No game launch, registry or installed-file writes.
-param([string]$OutputDirectory,[string]$PreviousPackage='C:\Users\Trilex\AppData\Local\Darkness2VR\packages\cinematic-theater-20261102T193328001',[ValidateSet('Cache','Packets')][string]$DefaultMode='Cache')
+param([string]$OutputDirectory,[string]$PreviousPackage='C:\Users\Trilex\AppData\Local\Darkness2VR\packages\cinematic-theater-20261102T193328001',[ValidateSet('Cache','Packets','Combined')][string]$DefaultMode='Cache')
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 if(!$OutputDirectory){$OutputDirectory=Join-Path $root ('build/performance-candidate-'+(Get-Date -Format 'yyyyMMddTHHmmssfff'))}
@@ -29,29 +29,37 @@ public static class D2vrPerfProfile {
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] public static extern bool WritePrivateProfileString(string s,string k,string v,string p);
 }
 "@}
-foreach($key in @('ShaderDemandCache','ReplayPrepareWorker','FullPacketPrepareWorker')){
+foreach($key in @('ShaderDemandCache','ReplayPrepareWorker','FullPacketPrepareWorker','NativeMaterialFilter','EarlyPacketPreparation','OverlapNativePresent')){
  $value=if($key -eq 'ShaderDemandCache'){'1'}else{'0'}
  if(![D2vrPerfProfile]::WritePrivateProfileString('Render',$key,$value,(Join-Path $out 'candidate.ini'))){throw 'Candidate INI preparation failed'}
 }
 $original=[IO.File]::ReadAllText((Join-Path $out 'baseline.ini'))
 $prepared=[IO.File]::ReadAllText((Join-Path $out 'candidate.ini'))
-$remove='(?im)^\s*(ShaderDemandCache|ReplayPrepareWorker|FullPacketPrepareWorker)\s*=.*(?:\r?\n|$)'
-if([regex]::Replace($original,$remove,'').TrimEnd() -cne [regex]::Replace($prepared,$remove,'').TrimEnd()){throw 'Candidate changes settings beyond the three performance switches'}
+$remove='(?im)^\s*(ShaderDemandCache|ReplayPrepareWorker|FullPacketPrepareWorker|NativeMaterialFilter|EarlyPacketPreparation|OverlapNativePresent)\s*=.*(?:\r?\n|$)'
+if([regex]::Replace($original,$remove,'').TrimEnd() -cne [regex]::Replace($prepared,$remove,'').TrimEnd()){throw 'Candidate changes settings beyond the six performance switches'}
 & (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll (Join-Path $out 'd3d9.dll') -RenderIni @((Join-Path $out 'candidate.ini')) -DiagnosticIni (Join-Path $game 'Darkness2VR-diagnostic.ini') | Out-Host
 $files+=@{name='candidate.ini';sha256=(Hash (Join-Path $out 'candidate.ini'))}
-$profiles=@{Both='both.ini';Cache='candidate.ini';Worker='worker.ini';Packets='packets.ini';Off='off.ini'}
-foreach($mode in @('Both','Worker','Packets','Off')){
+$profiles=@{Both='both.ini';Cache='candidate.ini';Worker='worker.ini';Packets='packets.ini';Material='material.ini';Overlap='overlap.ini';Combined='combined.ini';Off='off.ini'}
+foreach($mode in @('Both','Worker','Packets','Material','Overlap','Combined','Off')){
  $path=Join-Path $out $profiles[$mode]
  Copy-Item -LiteralPath (Join-Path $out 'candidate.ini') -Destination $path
- $cache=if($mode -eq 'Both'){'1'}else{'0'};$worker=if($mode -in @('Worker','Both')){'1'}else{'0'}
+ $cache=if($mode -in @('Both','Combined')){'1'}else{'0'};$worker=if($mode -in @('Worker','Both')){'1'}else{'0'}
  if(![D2vrPerfProfile]::WritePrivateProfileString('Render','ShaderDemandCache',$cache,$path) -or ![D2vrPerfProfile]::WritePrivateProfileString('Render','ReplayPrepareWorker',$worker,$path)){throw 'A/B profile write failed'}
- $packets=if($mode -eq 'Packets'){'1'}else{'0'}
+ $packets=if($mode -in @('Packets','Combined')){'1'}else{'0'}
  if(![D2vrPerfProfile]::WritePrivateProfileString('Render','FullPacketPrepareWorker',$packets,$path)){throw 'Packet profile write failed'}
+ foreach($key in @('NativeMaterialFilter','EarlyPacketPreparation','OverlapNativePresent')){
+  $enabled=($mode -eq 'Combined') -or ($mode -eq 'Material' -and $key -eq 'NativeMaterialFilter') -or
+      ($mode -eq 'Packets' -and $key -eq 'EarlyPacketPreparation') -or ($mode -eq 'Overlap' -and $key -eq 'OverlapNativePresent')
+  if(![D2vrPerfProfile]::WritePrivateProfileString('Render',$key,$(if($enabled){'1'}else{'0'}),$path)){throw 'Combined profile write failed'}
+ }
+ $contents=[IO.File]::ReadAllText($path)
+ if([regex]::Replace($original,$remove,'').TrimEnd() -cne [regex]::Replace($contents,$remove,'').TrimEnd()){throw "Unexpected profile changes: $mode"}
+ & (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll (Join-Path $out 'd3d9.dll') -RenderIni @($path) -DiagnosticIni (Join-Path $game 'Darkness2VR-diagnostic.ini') | Out-Null
  $files+=@{name=$profiles[$mode];sha256=(Hash $path)}
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'performance-candidate/Install.ps1') -Destination (Join-Path $out 'Install.ps1')
 $files+=@{name='Install.ps1';sha256=(Hash (Join-Path $out 'Install.ps1'))}
-$manifest=@{source_commit=(git -C $root rev-parse HEAD).Trim();build_flavor='protected-native /O2 x86';headset='NOT RUN';installed=$false;default_mode=$DefaultMode;profiles=$profiles;files=$files;before=$previous.after;protected=$previous.protected;previous_package=$PreviousPackage}
+$manifest=@{source_commit=(git -C $root rev-parse HEAD).Trim();build_flavor='protected-native /O2 x86';headset='NOT RUN';installed=$false;default_mode=$DefaultMode;profiles=$profiles;files=$files;before=$previous.after;protected=$previous.protected;previous_package=$PreviousPackage;limits='Parallel work covers owned replay VS packets, not native object/material-list production. Worker ceiling remains small; runtime FPS NOT RUN.'}
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $out 'candidate.json') -Encoding UTF8
 # Preimages remain unchanged throughout preparation. No live cache is modified.
 foreach($entry in @($previous.after)+@($previous.protected)){if((Hash $entry.target) -ne $entry.sha256){throw 'Baseline changed during preparation'}}

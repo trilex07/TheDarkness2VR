@@ -27,7 +27,7 @@ $end=$src.IndexOf('    d2vr_record_sync::Release();',$footer,[StringComparison]:
 if(@($begin,$cases,$vs,$vsEnd,$ps,$psEnd,$bindVS,$bindPS,$footer,$end) | Where-Object {$_ -lt 0}){throw 'Actual replay source boundaries missing'}
 # Compile actual admission, forwarding lambda, float cases, look-ahead, SEH and
 # receipt aggregation. Non-float commands become observers of the driver banks.
-$helperBegin=$src.IndexOf('static bool IsConstantRenderStateBinding(',[StringComparison]::Ordinal)
+$helperBegin=$src.IndexOf('static bool IsConstantRenderStateBinding(unsigned state,unsigned value) {',[StringComparison]::Ordinal)
 $helperEnd=$src.IndexOf('static bool ReplayStream(', $helperBegin,[StringComparison]::Ordinal)
 $prepareBegin=$src.IndexOf('struct ReplayPreparationState {',$helperBegin,[StringComparison]::Ordinal)
 if($prepareBegin -ge 0 -and $prepareBegin -lt $helperEnd){$helperEnd=$prepareBegin}
