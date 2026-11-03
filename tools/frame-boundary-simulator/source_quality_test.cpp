@@ -28,6 +28,12 @@ int main(int argc,char** argv) {
     assert(!Choose(Mode::Quality,0xffffffff,0xffffffff).width);
     const auto exact=Choose(Mode::Exact,1920,1071,{2676,2728});
     assert(exact.width==2676 && exact.height==2728);
+    const auto larger=Choose(Mode::Exact,1920,1071,{3200,3264});
+    assert(larger.width==3200 && larger.height==3264);
+    assert(Choose(Mode::Exact,3200,3264,{3200,3264}).width==3200);
+    assert(!Choose(Mode::Native,3200,3264).width);
+    assert(!Choose(Mode::Exact,1920,1071,{3200,3265}).width);
+    assert(!Choose(Mode::Exact,3200,3265,{3200,3264}).width);
     assert(!Choose(Mode::Exact,1920,1071).width);
     assert(!Choose(Mode::Exact,1920,1071,{3840,3840}).width);
     assert(!Choose(Mode::Exact,1920,1071,{0xffffffff,2728}).width);
@@ -47,10 +53,11 @@ int main(int argc,char** argv) {
     assert(!Eligible(true,true,2,1,4,4) && !Eligible(true,true,1,1,5,4));
     assert(!Eligible(true,true,0,0,4,4) && !Eligible(true,true,1,1,0,0));
     assert(argc>=2 && argc<=4);
-    const bool exactMode=argc>=3 && !std::strcmp(argv[2],"exact");
+    const bool large=argc>=3 && !std::strcmp(argv[2],"exact3200");
+    const bool exactMode=large || (argc>=3 && !std::strcmp(argv[2],"exact"));
     const bool deferred=argc==4 && !std::strcmp(argv[3],"deferred");
     const auto selected=exactMode?Mode::Exact:Mode::Quality;
-    const LONG expectedW=exactMode?2676:2160,expectedH=exactMode?2728:1204;
+    const LONG expectedW=large?3200:(exactMode?2676:2160),expectedH=large?3264:(exactMode?2728:1204);
     HMODULE fixture=LoadLibraryA(argv[1]);assert(fixture);
     using Query=BOOL(WINAPI*)(HWND,LPRECT);
     auto query=reinterpret_cast<Query>(GetProcAddress(fixture,"_SizeQuery@8"));
@@ -73,7 +80,8 @@ int main(int argc,char** argv) {
     assert(!qualityHook.Start(query,guard,Mode::Off,window,nativeCaller));
     assert(!qualityHook.Start(query,guard,Mode::Exact,window,nativeCaller,nullptr,{3840,3840}));
     assert(!qualityHook.Start(query,guard,selected,nullptr,nativeCaller,nullptr,{2676,2728}));
-    assert(qualityHook.Start(query,guard,selected,deferred?nullptr:window,nativeCaller,nullptr,{2676,2728},deferred,resourceCaller));
+    assert(qualityHook.Start(query,guard,selected,deferred?nullptr:window,nativeCaller,nullptr,
+        {large?3200u:2676u,large?3264u:2728u},deferred,resourceCaller));
     if(deferred) {
         assert(invoke(window,&rect) && rect.right==1920 && qualityHook.requests==0); // invalid HWND
         window=CreateWindowExW(0,L"STATIC",L"source sizing fixture",WS_POPUP,0,0,640,480,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
@@ -102,5 +110,5 @@ int main(int argc,char** argv) {
     assert(resource(reinterpret_cast<HWND>(3),&rect) && rect.right==1920 && qualityHook.requests==1002);
     assert(Text()==originalText);
     if(deferred) assert(DestroyWindow(window));
-    std::printf("PASS source quality mode=%s: bounded/aspect/exact sizing, native ABI, exact caller/window, failure/null, one forward, last error, image denial\n",exactMode?"Exact2676x2728":"Quality");
+    std::printf("PASS source quality mode=%s: bounded/aspect/exact sizing, native ABI, exact caller/window, failure/null, one forward, last error, image denial\n",large?"Exact3200x3264":(exactMode?"Exact2676x2728":"Quality"));
 }
