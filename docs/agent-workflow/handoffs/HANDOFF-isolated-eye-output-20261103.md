@@ -47,3 +47,23 @@ PASS. Private artifacts/logs under test-output/isolated-eye and build/.
 4. HMD/pacing/FPS and in-game eligibility NOT RUN. Require natural combat,
    partial/UI/cinema/history transitions and same-scene A/B. Native whole-list
    threading remains unimplemented. Keep ReuseSharedCaptureColor OFF.
+
+## Frozen candidate receipt
+
+Prepared, not installed:
+C:/Users/Trilex/Darkness2VR/.main-camera-shake/build/isolated-eye-output-20261103
+
+- Source81bddf2b4ec734a8fab5d885e01099b17752606e.
+- Protected-native DLL E56BF027875A6FF3997E0B6A51A0DC43F52DD86C2EB39AE79D4C5EAB073FA5CA.
+- candidate.json B8630F371CC3A1C3F5F35E1D34C6464D6D724DCC76873EA431307C87E0A46FB4.
+- candidate.ini (Combined + IsolatedEyeOutput1)
+  68EE5685C7AE9FEC8F1AE2677D551DD90C7BCC21DD66737560815EEF4AB26EA9.
+- off.ini (accepted Combined switches + IsolatedEyeOutput0)
+  855C1D89227BCD2C7FD03B87EB6CE61DA41C8FF04C9D0DB5B2719C4FCD000EC5.
+- Exact baseline backups are accepted FE216AF4 DLL and2537EC1E INI.
+- VerifyOnly PASS with game closed; payloads, baseline backups and every
+  protected target verified. Independent A/B comparison differs by ONE switch.
+- Standard final artifact backup: build/isolated-eye-standard-final-20261103,
+  DLL9F3D5F959AC11A6DF249F423169CB48B2F667788C2E9146734B843A220FB698B.
+- Both-flavor packet lifecycle942915/942916 rerun PASS. No new installer action,
+  no game launch, no cache change; Steam DLL/INI rehashed unchanged.
