@@ -91,3 +91,20 @@ EngineLODScale already1.25; no blind increase or FPS guarantee.
 Collector preflight PASS; no recorder started (user asked existing data only).
 Raw captures/logs/archives remain private; installation unchanged. No tests
 needed for documentation-only audit. git diff --check required before commit.
+
+## Three-direction optimization plan (2026-11-03)
+
+User requires resolution unchanged and explicitly requests CPU threading, RAM
+reuse and GPU offload review. Completed source review and read-only archive
+inspection; plan docs/research/performance-optimization-plan-20261103.md.
+CPU: mode4 transfer worker already present; isolate immutable same-frame
+right-eye numeric preparation, serialize history resolution and D3D9 calls.
+Native per-enemy routines remain RE-gated without safe ownership contract.
+RAM:1024 exact unique demand codes,1,679,264bytes, quota floor2 yields2862
+historically requested copies; existing startup budget2048. Capacity/indexing/
+demand selection is first candidate, not blind precreation or live COM refill.
+Frame arena example~366KB does not establish RAM bandwidth saturation.
+GPU: verified VS-family correction prototype only after WVP/STP/lighting proof;
+no synchronous compute readback or arbitrary AI offload. No new measurements,
+no implementation/deployment or resolution changes. Current performance gain
+remains NOT RUN. Documentation validation git diff --check PASS.
