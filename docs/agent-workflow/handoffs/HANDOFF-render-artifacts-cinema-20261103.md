@@ -125,3 +125,23 @@ DarkeningFactor c2; receives light-space vector through v0, not an inverse-matri
 PS. The existing recorder explicitly includes its effective PS bank even without
 InverseProjection/ViewExtents metadata. Its vertex producer must be matched at
 the affected draw before changing coordinates. No shader patch applied.
+
+## CPU/FPS follow-up after rollback
+
+User reports CPU100% and about40FPS despite rollback. Rehashed installed DLL:
+E56BF027875A6FF3997E0B6A51A0DC43F52DD86C2EB39AE79D4C5EAB073FA5CA,
+so the accepted isolated-eye baseline really is installed. Game absent at check;
+no new runtime profiling or changes. Preserved runtime-after-second.log proves
+46.6 world-bearing layers/s BEFORE capture201. Clean five-second windows before
+and after show Present boundary work5.916/5.988ms mean, maxima9.059/9.644ms.
+The capture-containing window has one485.324ms boundary hitch: recorder overhead
+explains that transient, not sustained low cadence. Producer fence about0.409ms
+per eye, reader0.010-0.013ms, EndFrame0.54ms in clean adjacent windows. These
+nested scopes must not be summed or subtracted to claim an exact native cost.
+Full-packet preparation later averages0.237ms and join0.0011ms. No whole-system
+CPU utilization or current per-thread stack evidence is present in this log;
+the user's100% reading cannot be assigned to a subsystem from these records.
+Historical combat-critical-path and protected-outdoor reports support CPU-side
+render submission/execution as an investigation direction, not an exact cause
+for this session. GPU timestamp span is not GPU Busy. Existing captures only
+verify shadow constant delivery; no lighting fix or performance gain claimed.
