@@ -49,3 +49,14 @@ tools/prepare-source-resolution-candidate.ps1 freezes full DLL/PDB/MAP, exact
 current DLL/INI backup and existing protected target hashes. Combined requests
 3200x3264; Off uses2676x2728 on new DLL. Install.ps1 -Restore returns byte-exact
 D178DF2D DLL /5A5BFDE9 INI. No launch or headset acceptance yet.
+
+## Installed for requested trial
+
+Source6d696052, protected-native build PASS. Frozen package VerifyOnly PASS
+then closed-game ModeCombined installation PASS. Independent installed and
+protected hashes PASS; INI comparison confirms only RenderWidth/RenderHeight
+changed. DLL C16947091B10B09FE31492ECDE57B2E7513A2AA0D7E5835830A38DFAFFA2AC19,
+INI0F846993C35EB47535A7862E7A2B0E44B199D07EBEC9BF3DC11C626310CF5024.
+No game launch. New native allocation, viewport/internal pass inventory,
+clarity and FPS still NOT RUN; inspect next user-run log before claiming
+3200x3264 actually rendered. Previous log preserved by prior AF task.
