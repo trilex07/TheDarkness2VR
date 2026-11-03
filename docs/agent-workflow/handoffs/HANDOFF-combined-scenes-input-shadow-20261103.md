@@ -286,3 +286,12 @@ history accidentally. Baseline remains unchanged.
   machine powered off (other applications may veto it). This does NOT mark the
   unresolved rendering/performance work complete. Resume from the package and
   evidence boundaries above, not by assuming all user symptoms were fixed.
+- Continued offline AFTER package freeze: original historical combat ETL DOES
+  retain CSwitch/ReadyThread despite empty arrays in old JSON exporter. New
+  complete-frame parser/tests and combat-scheduler-waits-20261104.md record
+  two actual long waits:38ms frame15.672ms transfer/NVIDIA dependency,31ms frame
+  12.492ms native SteamNetworking availability poll. Readiness-to-RUN8/9us.
+  Do not confuse the nearby SteamUser GetSteamID call with the actual long
+  packet poll, or treat a signaling context as a lock owner. No risky Steam
+  caching/network-thread/required-fence patch introduced. Historical old DLL;
+  current user25ms/40FPS still unresolved. No new game launch or payload change.
