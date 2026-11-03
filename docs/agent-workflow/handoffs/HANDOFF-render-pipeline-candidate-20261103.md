@@ -48,3 +48,25 @@ Logs and retained binaries are private under test-output/ and build/.
    exact rollback is frozen Install.ps1 -Restore. No automatic launch or timer.
 4. Controlled natural combat A/B is required before any gain/main acceptance.
    Larger native threading remains a separate RE task, not a completed step.
+
+## Frozen package receipt
+
+Prepared (not installed):
+C:/Users/Trilex/Darkness2VR/.main-camera-shake/build/render-pipeline-candidate-20261103
+
+- Source commit: d58156b45d89673534db135ee09b0cadc72b38d6.
+- Protected-native DLL SHA256:
+  FE216AF4E8B310C9D7E68EB059428194BA49B1FDE1C448CD1547F7E0419FF219.
+- candidate.json SHA256:
+  5CE16F0703B66D2EE4EFF803E4F5494F202CD76116DD93530C5D44810C9916CD.
+- Standard build retained separately, DLL SHA256:
+  2186103805B0E0B2CC83DEB1E0447D398F10363CA1213E1DB0806A6BB94A31BE.
+- Frozen Install.ps1 -VerifyOnly PASS, no writes. All eight profiles checked:
+  exactly six allowed switches, Combined default, tiny worker OFF.
+- Installed B97 baseline DLL/INI and every receipt-protected target rehashed
+  unchanged after preparation. No game process at verification; no launch.
+- Stateblock actual-source fixture also PASS12016 checks/1000 cycles.
+- Package includes exact baseline DLL/INI copies; -Restore requires the
+  installation receipt and matching current files. Keep prior frozen packages.
+- MAIN can install this exact frozen Install.ps1 after explicit test-window
+  authorization, with game closed. No install was performed in this task.
