@@ -275,3 +275,14 @@ history accidentally. Baseline remains unchanged.
   demonstrated shadow OFF/ON improvement; actual QTE/execution/story and
   Darkling/carnival gameplay acceptance. Do not describe these as fixed, and
   do not merge this partial candidate to main or install it automatically.
+- Frozen reviewable package: build/combined-scenes-final-20261103/Install.ps1,
+  source1ff9395892e4b4c86acf7ca050ddb14426b72b62, diagnostic DLL33845A5F...
+  with its own matching PDB/MAP. VerifyOnly PASS against restored Steam.
+  Profiles differ only in named collector/shadow/simulator settings; main INI
+  unchanged68EE5685... . Combined not installed; accepted E56BF027... remains.
+  Explicit UNRESOLVED statuses are embedded in candidate.json/README.txt.
+- User requested shutdown after work; after saving this checkpoint the session
+  may request graceful shutdown without /f. A shutdown request is not proof the
+  machine powered off (other applications may veto it). This does NOT mark the
+  unresolved rendering/performance work complete. Resume from the package and
+  evidence boundaries above, not by assuming all user symptoms were fixed.
