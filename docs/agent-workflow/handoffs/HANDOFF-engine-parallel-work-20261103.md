@@ -69,3 +69,21 @@ cinematic-theater baseline; Git branch does not identify deployed binary.
   safe ownership boundary did not establish a worthwhile optimization target;
   the full-packet timing should have stopped further expansion of this path.
   Keep default OFF and do not recommend headset testing as a major FPS fix.
+
+## Follow-up: expensive-target search
+
+See `docs/research/combat-critical-path-search-20261103.md`. Existing complete
+combat ETW was correlated with1528 PresentMon intervals. Slow/fast quartile gap
+4.412ms is distributed: native engine+1.217, d3d9+1.086 nominal leaf exposure;
+PhysXCore changes only0.024. Historical instrumented DLL differs from installed.
+4813 native PCs queried read-only against exact EXE;476 unknowns preserved.
+Six growing native functions traced into geometry/material/buffer submission,
+not independent multi-ms math. Native00943F50 task is already on15 workers,
+3053 exclusive sample weights and zero main-thread leaf samples.009AA4D0
+dispatches them through indirect CALL at009AA571. No substantial new offload
+candidate proven; do not implement speculative native/D3D9 thread migration.
+New reusable `tools/perf/compare_sampled_frame_costs.py`, three parser tests PASS.
+Private exports stay TEMP, analysis JSON stays test-output. Steam DLL rehash
+still B97B4477; no install/launch or runtime code changes. Next target is an
+entire redundant renderer submission phase with ownership/state proof, not
+another tiny worker. Detailed reproducibility/limits/hashes are in the report.
