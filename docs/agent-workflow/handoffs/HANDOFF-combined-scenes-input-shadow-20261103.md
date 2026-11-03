@@ -161,3 +161,49 @@ history accidentally. Baseline remains unchanged.
   producer, shadow output OFF/ON, runtime choice tests, consolidated candidate.
   Intro transition briefly leaves video mode for2 frames between closed/open
   handles; no arbitrary hysteresis added. World-TV validation remains pending.
+
+## Resumed runtime checkpoint (2026-11-03, base Cinematic audit)
+- Own simulator PID9284 (start22:19:12 local) is paused during a NEW test campaign.
+  Before New Game, saved all four original villa/settings files with hashes in
+  test-output/combined-scenes-input-20261103/pre-combat-save/receipt.json.
+  MUST close owned game and restore these targets before leaving lab. Never
+  leave the user's Continue replaced with the test campaign. Steam payload
+  rollback is separately recorded in lab/payload.json.
+- Installed diagnostic59F2A41B6FC80D6C17C022AEA2A064D7CAE9BC83FB08387DC8048B817542266E
+  (3c682ffe); root DLL is a newer production build and is NOT installed.
+  New frozen diagnostic-video-evidence CE8F1FB713307C20C4CD6E7048150ED408DAF27D87449BA7498F5A8D809B5C4E
+  adds explicit presentedVideo transition evidence. Both build flavors pass;
+  cinema, matched capture42, protected gestures924, input203/257 pass offline.
+- Actual successful C4D1FB10 output captures941/942/943 fromPID9284 all pass
+  strict producer/depth/restore/Present validation. Output is colored RGBA16F,
+  not a pure shadow mask. Static villa wall/fern projection is stable for this
+  pair; moving NPC animation and out-of-bounds reprojection are not defects.
+  No complete floor reflection fix or demonstrated OFF/ON visual gain yet.
+- Actual simulator double-triangle again opened native PAUZA during the
+  restaurant sequence. Rapid native QTE/choice coverage remains untested.
+  Initial look tutorial needs native stick LEFT to progress, not forward walk;
+  absence of initial movement was scripted, not an input regression.
+- Found omitted BASE Cinematic (vtableFCA7E0, metadata10ED3B8, native class
+  registrationEAC3D0 stringF5BD18='Cinematic'). Restaurant scripted clips use
+  it, including currentobject35F3B370. Derived D2 flags7BC/7BD MUST NOT be read
+  from this base type. Native slot108/598C00 gates on byte2CC and drives a
+  context camera route; state getter238/B7E570 tests708==2. Meaning and
+  interactive-ride distinction still under investigation; no guessed patch.
+- Native Lua InputControl wrapperDE8000 uses avatar virtual324/4E59C0, then
+  virtual2F8/C7C710 returns avatar62C camera and copies camera+C smartref.
+  Runtime this currently references the camera itself (owned cloned table),
+  so it is NOT proof of a separate input-controller object or script identity.
+  Do not derive Darkling/carnival type labels from that getter alone.
+- Follow-up found the final-target video observer was compiled only in the
+  diagnostic flavor. Extracted it into video_presentation.inl shared by both
+  flavors, with all four successful draw routes and frame/reset cleanup.
+  Presentation evidence now decides video mode independently of decoder-handle
+  lifetime; raw Bink activity remains diagnostic context. Shader identity,
+  full-target viewport and same-frame final-target equality are still required.
+  No GPU readback/state mutations. Optional debug GetBackBuffer/FVF queries now
+  run only with VideoDrawProbe enabled. Actual-body fake-COM production fixture
+  passes failed-draw/replay/stale/world-TV-target/metadata/bounded ownership cases.
+  Production build, diagnostic build, cinematic fixture, matched-capture42 PASS.
+- Correction to preliminary base-Cinematic note: 598C00 is inherited by many
+  entity types. Its2CC condition is NOT established as a camera-control flag.
+  Do not use it in cinema classification. No base layout has been admitted yet.

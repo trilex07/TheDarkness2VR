@@ -1651,7 +1651,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
     d2vr_command_history::Scope command(dev,d2vr_command_history::Draw,g_replayEye,0,t,sv,pc);
     return ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawPrimitive(dev, t, sv, pc)));
 #else
-    return g_orig.DrawPrimitive(dev, t, sv, pc);
+    return ObserveVideoDrawResult(dev,g_orig.DrawPrimitive(dev, t, sv, pc));
 #endif
 }
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
@@ -1667,7 +1667,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawIndexed,g_replayEye,0,t,uint32_t(bvi),mvi,nv,si,pc);
     return ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc)));
 #else
-    return g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
+    return ObserveVideoDrawResult(dev,g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc));
 #endif
 }
 static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT pc, const void* vb, UINT stride) {
@@ -1684,7 +1684,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
     const HRESULT result=ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride)));
     d2vr_submission::InvalidateBindings();return result;
 #else
-    const HRESULT result=g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
+    const HRESULT result=ObserveVideoDrawResult(dev,g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride));
     d2vr_submission::InvalidateBindings();return result;
 #endif
 }
@@ -1702,7 +1702,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     const HRESULT result=ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride)));
     d2vr_submission::InvalidateBindings();return result;
 #else
-    const HRESULT result=g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);
+    const HRESULT result=ObserveVideoDrawResult(dev,g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride));
     d2vr_submission::InvalidateBindings();return result;
 #endif
 }

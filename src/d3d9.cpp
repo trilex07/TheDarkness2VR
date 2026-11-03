@@ -1880,13 +1880,14 @@ static XrPosef ComputeLevelWorldAnchorPose(const XrPosef& head) {
 
 // ---------------------------------------------------------------- True stereo core (analysis + record/replay)
 void* PatchVTable(void* obj, int index, void* repl);
+static HRESULT ObserveVideoDrawResult(IDirect3DDevice9*,HRESULT);
 namespace d2vr_replay { struct StereoParams; }
 static d2vr_replay::StereoParams MakeEyeParams(int eye);
 static const d2vr_replay::StereoParams& EyeParamsRef(int eye);
 #ifdef D2VR_MATCHED_CAPTURE
 extern volatile LONG g_frameId;
 static void MatchedCaptureDraw(IDirect3DDevice9*,int,bool);
-static HRESULT ObserveVideoDrawResult(IDirect3DDevice9*,HRESULT);
+static void MatchedCaptureDrawReturned(IDirect3DDevice9*,HRESULT);
 static void MatchedCaptureBlit(int,const StereoCBData&);
 static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT);
 static bool MatchedCaptureRecordingActive();
@@ -3692,6 +3693,7 @@ struct EyeOutputLease {
     }
 };
 
+#include "video_presentation.inl"
 #ifdef D2VR_MATCHED_CAPTURE
 static void MatchedCaptureHandsWitness(IDirect3DVertexBuffer9*,IDirect3DIndexBuffer9*,
     UINT,const D3DVIEWPORT9&,unsigned,const float*,int,unsigned);
@@ -3932,9 +3934,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         warnEarly("liveEnd.Capture failed");
         g_blitPass = 0; g_eyePairReady = false; return;
     }
-#ifdef D2VR_MATCHED_CAPTURE
     ObserveVideoPresentation(liveEnd.targets[0]);
-#endif
     EyeOutputLease isolatedLease;
     bool isolatedOutput=false;
     bool allowIsolated=g_isolatedEyeOutput && zeroCopy && transferWorker && splitCapture &&
@@ -6203,19 +6203,16 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const float aspect = (g_srcW && g_srcH) ? ((float)g_srcW / (float)g_srcH) : (16.f / 9.f);
         const XrPosef head = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
         const XrPosef layerHead = g_submitMode==4 ? g_trackedFrame.layerPose : LockedViewPose(head);
+        const bool decoderActive=g_binkVideo.load(std::memory_order_acquire);
+        const bool presentedVideo=PresentedVideoThisFrame();
         const auto cinemaMode=d2vr_cinema::Select(g_cinematicTheater && g_submitMode==4 && g_stereoMode==1,true,CinemaSceneThisFrame(),
-            g_binkVideo.load(std::memory_order_acquire) &&
-#ifdef D2VR_MATCHED_CAPTURE
-            PresentedVideoThisFrame(),
-#else
-            false,
-#endif
+            presentedVideo,
             CinemaOverride());
         g_presentedCinemaMode.store(cinemaMode,std::memory_order_release);
         static auto previousCinema=d2vr_cinema::Mode::Gameplay;
         if(cinemaMode!=previousCinema) {
-            Log("[CinematicTheater] mode=%u frame=%llu native=%d video=%d",unsigned(cinemaMode),
-                g_trackedFrame.id,int(NativeCinematicPlaying()),int(g_binkVideo.load()));
+            Log("[CinematicTheater] mode=%u frame=%llu native=%d video=%d presentedVideo=%d",unsigned(cinemaMode),
+                g_trackedFrame.id,int(NativeCinematicPlaying()),int(decoderActive),int(presentedVideo));
             g_headGeometryReferenceValid=false;g_headLookReset=true;
             previousCinema=cinemaMode;
         }
@@ -6637,9 +6634,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
 static void BeginTrackedFrame() {
     if (!g_xrReady || g_trackedFrame.open) return;
-#ifdef D2VR_MATCHED_CAPTURE
     ClearVideoProbeTargets();
-#endif
     PumpXR();
     if (!g_xrRunning) { g_haveViews = false; return; }
     PaceApplicationFrame();
@@ -6821,9 +6816,7 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
-#ifdef D2VR_MATCHED_CAPTURE
     ClearVideoProbeTargets();
-#endif
     d2vr_submission::Invalidate();
     // Reset must never destroy an eye's frozen stream or wait inside a driver
     // callback. Refuse a busy device before touching any dependent resources.
@@ -6897,9 +6890,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
-#ifdef D2VR_MATCHED_CAPTURE
     ClearVideoProbeTargets();
-#endif
     d2vr_submission::Invalidate();
     // Reset must never destroy an eye's frozen stream or wait inside a driver
     // callback. Refuse a busy device before touching any dependent resources.
