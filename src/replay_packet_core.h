@@ -203,4 +203,3 @@ static bool ApplyVertexStereoUpload(float* dst,const float* src,unsigned& start,
 
 
 }
-
