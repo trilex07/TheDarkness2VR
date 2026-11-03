@@ -19,7 +19,7 @@ void main(uint3 thread : SV_DispatchThreadID) {
     if(any(p>=dimensions)) return;
     float4 original=image.Load(int3(p,0));
     float distance=max(abs(float(p.x)+.5-center.x),abs(float(p.y)+.5-center.y));
-    float mask=1-smoothstep(innerHalf,outerHalf,distance);
+    float mask=1-smoothstep(innerHalf,max(outerHalf,innerHalf+1),distance);
     if(mask<=0) { outputImage[p]=original; return; }
     float2 inverseSize=1.0/float2(dimensions);
     float2 uv=(float2(p)+.5)*inverseSize;
