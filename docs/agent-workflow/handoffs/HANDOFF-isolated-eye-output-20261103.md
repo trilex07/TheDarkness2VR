@@ -67,3 +67,14 @@ C:/Users/Trilex/Darkness2VR/.main-camera-shake/build/isolated-eye-output-2026110
   DLL9F3D5F959AC11A6DF249F423169CB48B2F667788C2E9146734B843A220FB698B.
 - Both-flavor packet lifecycle942915/942916 rerun PASS. No new installer action,
   no game launch, no cache change; Steam DLL/INI rehashed unchanged.
+
+## Follow-up: installed for user test
+
+User explicitly requested "wgraj i sprawdzimy". MAIN verified DarknessII closed
+and frozen Install.ps1 -VerifyOnly PASS, then installed Mode Combined from this
+package. installed.json records source81bddf2b, DLL E56BF027875A6FF3997E0B6A51A0DC43F52DD86C2EB39AE79D4C5EAB073FA5CA
+and INI68EE5685C7AE9FEC8F1AE2677D551DD90C7BCC21DD66737560815EEF4AB26EA9.
+All protected targets verified unchanged; no launch. IsolatedEyeOutput1 active
+in the installed profile; prior Combined switches retained. Physical acceptance,
+runtime eligibility and FPS remain NOT RUN. Accepted baseline stays FE216AF4;
+closed-game rollback is this frozen Install.ps1 -Restore.
