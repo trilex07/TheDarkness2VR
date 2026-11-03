@@ -176,6 +176,7 @@ bool g_disableFxaa = true;
 // run on native worker threads and must not reopen configuration files.
 bool g_shadowScreenDepth = false;
 bool g_shadowClipCoordinates = false;
+bool g_reflectionEyeExperiment = false;
 bool g_shaderDebugDump = false;
 bool g_clipScaledUi = true;
 bool g_fixMotionVectorProjection = false;
@@ -683,6 +684,8 @@ void LoadConfig() {
     g_shadowScreenDepth=GetPrivateProfileIntA("Diagnostics","ShadowScreenDepth",0,
         ".\\Darkness2VR-diagnostic.ini")==1;
     g_shadowClipCoordinates=GetPrivateProfileIntA("Diagnostics","ShadowClipCoordinates",0,
+        ".\\Darkness2VR-diagnostic.ini")==1;
+    g_reflectionEyeExperiment=GetPrivateProfileIntA("Diagnostics","ReflectionEyeExperiment",0,
         ".\\Darkness2VR-diagnostic.ini")==1;
     g_shaderDebugDump=GetPrivateProfileIntA("Diagnostics","ShaderDebugDump",0,
         ".\\Darkness2VR-diagnostic.ini")==1;

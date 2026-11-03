@@ -295,3 +295,13 @@ history accidentally. Baseline remains unchanged.
   packet poll, or treat a signaling context as a lock owner. No risky Steam
   caching/network-thread/required-fence patch introduced. Historical old DLL;
   current user25ms/40FPS still unresolved. No new game launch or payload change.
+- Further reflection audit found c8 eye/geometry inconsistency on exact
+  VS12CCC8DB: native c8 vs raw-WVP center agrees <0.000414 game units, but actual
+  per-eye center differs by median0.0325 in four validated two-eye captures.
+  This is baseline/specular disparity evidence, NOT ownership of reported floor
+  pixels. See reflection-eye-contract-20261104.md and audit_reflection_eye.py.
+- New startup-only ReflectionEyeExperiment OFF by default, exact full-SHA VS/PS
+  admission; draw-scoped c8.xyz correction with native/raw-bank identity gate,
+  actual WVP and exact c8 restoration including failed-set attempt. Actual-scope
+  fixture PASS, diagnostic build PASS, video observer PASS, capture42 PASS.
+  No runtime/visual test yet. Frozen combined package remains unchanged.

@@ -36,6 +36,7 @@
 #include "vertex_shader_metadata.h"
 #include "up_geometry_capture.h"
 #include "shader_register_history.h"
+#include "reflection_eye.h"
 
 namespace d2vr_replay {
 
@@ -57,6 +58,7 @@ enum : uint32_t {
 
 struct VsInfo {
     uint32_t hash = 0;
+    bool reflectionEye=false;
     bool videoClip=false;
     std::vector<DWORD> bytecode; // exact identity when a released COM address is reused
     int wvpBase = -1;      // const base of the 4x4 that writes o0 (clip pos)
@@ -912,6 +914,9 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                 bytes<=code.size()*4 && !(bytes&3) &&
                 d2vr_shader_metadata::ValidPixelCode(code.data(),bytes/4)) {
                 const std::string shaderBytes((const char*)code.data(), bytes);
+                metadata.reflectionEye=metadata.hash==0x7DCA4CC4u && bytes==1596 &&
+                    d2vr_native_clone::MatchesDigest(code.data(),bytes,
+                        "df4b3b0c641a4bb21f4445d5193927d201a7f0e9aa0d9c42ea363299ea2911e9");
                 if((metadata.hash==0xC1DC2D91u && bytes==700) || (metadata.hash==0xD59D80ACu && bytes==764))
                     metadata.videoYuv=d2vr_native_clone::MatchesDigest(code.data(),bytes,
                         metadata.hash==0xC1DC2D91u ? "bc92e5e5d69fce40ff8c426a9ed2270d141560d867b2d51043000ecffc7ddc32" :
@@ -1032,6 +1037,8 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         uint32_t h = HashBytes(fn, (n + 1) * 4);
         VsInfo vi;
         vi.hash = h;
+        vi.reflectionEye=h==0x12CCC8DBu && (n+1)*4==1284 &&
+            d2vr_native_clone::MatchesDigest(fn,1284,"223298007ec4e1942d8e4ec600c508b9e677a2b3afa8f2090047579ea67bcca3");
         vi.videoClip=h==0x7ACDFC64u && (n+1)*4==204 &&
             d2vr_native_clone::MatchesDigest(fn,204,"25b6f6b9468d02ffbf2d3773d944e31b077133d00e43c88f5a35baac7a1c2b53");
         vi.bytecode.assign(fn,fn+n+1);
@@ -1604,6 +1611,42 @@ struct TentacleHeadScope {
         if(applied){d2vr_submission::Invalidate();g_orig.SetVertexShaderConstantF(dev,0,original,4);}
     }
 };
+// Opt-in, exact shader pair only. Use the actual DEVICE WVP at the draw,
+// including inherited/partial writes; raw bank supplies an independent native
+// c8 ownership check. No guessed c8 convention for other shader families.
+struct ReflectionEyeScope {
+    IDirect3DDevice9* dev=nullptr;
+    float original[4]{};
+    bool touched=false;
+    explicit ReflectionEyeScope(IDirect3DDevice9* device):dev(device) {
+        if(!g_reflectionEyeExperiment || !dev || g_submitMode!=4 || g_stereoMode!=1 ||
+           !g_activeVs || !g_activeVs->reflectionEye ||
+           !g_pixelShaders.Lookup(g_boundPs).reflectionEye)return;
+        const auto sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
+        if(!sp.headGeometry || IsShadowAtlasPass(dev))return;
+        const auto& raw=g_replayEye<0?g_vsConstantHistory.live:g_vsConstantHistory.replay;
+        float native[16];
+        if(!raw.Matrix(0,native) || !(raw.valid[0]&(uint64_t(1)<<8)))return;
+        float actual[36];
+        if(FAILED(dev->GetVertexShaderConstantF(0,actual,9)))return;
+        // The temporary setter must restore the actual device value, even if
+        // it differs from raw history. A disagreement is rejected, not hidden.
+        if(std::memcmp(actual+32,raw.values+32,sizeof(original)))return;
+        float corrected[4];
+        if(!d2vr_reflection_eye::Correct(native,actual,actual+32,corrected))return;
+        std::memcpy(original,actual+32,sizeof(original));
+        d2vr_submission::Invalidate();
+        touched=true;
+        const auto result=g_orig.SetVertexShaderConstantF(dev,8,corrected,1);
+        if(SUCCEEDED(result)) {
+            static unsigned reported=0;
+            if(reported++<4)Log("[ReflectionEyeExperiment] eye=%d exact VS12CCC8DB/PS7DCA4CC4 c8 corrected; scoped restore, not FPS proof",g_replayEye<0?0:g_replayEye);
+        }
+    }
+    ~ReflectionEyeScope() {
+        if(touched){d2vr_submission::Invalidate();g_orig.SetVertexShaderConstantF(dev,8,original,1);}
+    }
+};
 // Keep C++ restoration scopes outside Replay's existing SEH boundary.
 static bool SkipShadowDrawForTest(IDirect3DDevice9* dev) {
     if(!g_skipShadowAtlasDraws || !IsShadowAtlasPass(dev)) return false;
@@ -1644,6 +1687,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
+    const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1659,6 +1703,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
+    const ReflectionEyeScope reflection(dev);
     const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1675,6 +1720,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
+    const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1693,6 +1739,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
+    const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
