@@ -207,3 +207,35 @@ history accidentally. Baseline remains unchanged.
 - Correction to preliminary base-Cinematic note: 598C00 is inherited by many
   entity types. Its2CC condition is NOT established as a camera-control flag.
   Do not use it in cinema classification. No base layout has been admitted yet.
+
+## Corrected cinema contract and current test (2026-11-03)
+- User explicitly authorized automatic computer shutdown AFTER the work is
+  finished. Save/commit evidence and prepare candidate first; close owned game,
+  restore user's original saves/settings and leave Steam out of simulator mode
+  before shutdown. Do not force-close unrelated unsaved applications.
+- ClosedPID9284 and restored all four pre-combat villa/settings files, hashes
+  verified; receipt pre-combat-save/restored.json. New testPID46660 starts
+  23:20:53 local, installed6BE0361A503FE2617A7E0D5C5B4404F2E23BFB3BDD1B4681BFFF6BE8DDB0F90E.
+  This includes uncommitted corrected native cinema reader, not just7d143e67.
+  Lab receipt source is older than source edits: hash identifies actual payload.
+- Definitive correction: base Cinematic FCA7E0 serializer47FC00 contains the
+  480140..4801A3 range. Actual descriptor names independently read inPID38076:
+  CanDamagePlayer+7BC, FreeCam+7BD, OnRails+7BE. Old field labels were off by
+  one, and admitted tablesFDD0B0/FDD318 were wrong. Native IsPlaying B7E570
+  checks708==2. New reader pins exact type/getter/serializer and preserves
+  gameplay for FreeCam/OnRails. See docs/research/cinema-control-flags-20261103.md.
+- Exact-build read-only audit tools/native-camera/audit_cinematic_flags.py PASS;
+  actual native reader/cinema fixture PASS. Diagnostic build PASS; admission
+  cinematicContract=1 observed inPID46660. Production build still to recheck.
+- Restored villa loaded through native Continue. No cinema during ordinary
+  elevator/NPC view and walking. Two controlled right-hand pose snapshots move
+  the visible right hand/running sleeve; protocol geometry confirms two distinct
+  positions. Private fixed-cinema-hand-pose-0/1.png and hand-poses.json.
+- MatchedFrameCapture/CommandHistory/VideoDrawProbe/CameraShakeTrace/CPUSyncTiming
+  all0 for this run; no continuous readback collector. Simulator1 still lab-only.
+- Main-menu PressStart ignores the first confirm when cancelling attract mode;
+  two bounded confirms with release reach MainMenu.swf. This was native attract
+  behavior, not a broken input binding. Main menu first item Continue works.
+- Current game returned from pause to main menu for controlled new-campaign
+  passive/interactive cinema transition testing. Original villa backup retained;
+  restore closed-game again after New Game. No actual QTE scene pass yet.

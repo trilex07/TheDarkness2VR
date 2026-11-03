@@ -54,8 +54,10 @@ source, BASELINE.md and the task handoff before applying them.
 - **Failure**: RegionMgr+268 can remain nonnull during free walking/NPC animation;
   user reports unwanted theater and stiff hands in villa. Pointer nonnull alone
   does not establish native camera takeover.
-- **Evidence/next**: Pinned mFreeCam at cinematic+7BC explicitly leaves camera
-  control to player. Scope class/type/serializer checks and require !FreeCam.
+- **Correction 2026-11-03**: The earlier +7BC label was wrong: it is
+  mCanDamagePlayer. Pinned serializer identifies mFreeCam at +7BD and mOnRails
+  at +7BE, on Cinematic vtableFCA7E0. See cinema-control-flags-20261103.md.
+  Require IsPlaying and neither FreeCam nor OnRails for passive theater.
   Native fields and candidate evidence in HANDOFF-villa-cinema-hands-audio-20261102.md;
   physical villa acceptance remains pending. Do not substitute movement heuristics.
 

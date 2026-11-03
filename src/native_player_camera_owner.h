@@ -14,20 +14,25 @@ template<class Read> bool PlayingCinematic(uint32_t manager,Read read,bool& play
        !read(reference,object))return false;
     playing=object!=0;return true;
 }
-// 480148/480156 serializes descriptor10A9174 (mFreeCam) at +7BC;
-// 480169/480177 serializes10A9168 (mOnRails) at +7BD. A running
-// cinematic can animate NPCs while explicitly leaving the player's camera free.
-struct CinematicView {uint32_t object=0,table=0;bool running=false,freeCamera=false,onRails=false;};
+// Cinematic FCA7E0+30 -> 47FC00 serializer: 480148 descriptor10A9174
+// (mCanDamagePlayer) -> +7BC; 480169 descriptor10A9168 (mFreeCam)
+// -> +7BD; 48018A descriptor10A915C (mOnRails) -> +7BE. Descriptor
+// strings and descriptions corroborated in the pinned running executable.
+// FCA7E0+238/B7E570 implements IsPlaying as state+708==2.
+struct CinematicView {
+    uint32_t object=0,table=0;bool running=false,freeCamera=false,onRails=false;
+    bool TakesCamera()const{return running && !freeCamera && !onRails;}
+};
 template<class Read> bool InspectCinematicView(uint32_t manager,Read read,CinematicView& out) {
-    out={};bool running=false;
-    if(!PlayingCinematic(manager,read,running))return false;
-    if(!running)return true;
-    uint32_t reference=0,object=0,table=0,flags=0;
+    out={};bool referenced=false;
+    if(!PlayingCinematic(manager,read,referenced))return false;
+    if(!referenced)return true;
+    uint32_t reference=0,object=0,table=0,flags=0,state=0;
     if(!read(manager+0x268,reference) || !read(reference,object) || !object || (object&3) ||
-       object>UINT32_MAX-0x7bf || !read(object,table) ||
-       (table!=0xfdd0b0 && table!=0xfdd318) || !read(object+0x7bc,flags) ||
-       (flags&255)>1 || ((flags>>8)&255)>1)return false;
-    out={object,table,true,(flags&255)!=0,((flags>>8)&255)!=0};return true;
+       object>UINT32_MAX-0x7bf || !read(object,table) || table!=0xfca7e0 ||
+       !read(object+0x708,state) || !read(object+0x7bc,flags) ||
+       ((flags>>8)&255)>1 || ((flags>>16)&255)>1)return false;
+    out={object,table,state==2,((flags>>8)&255)!=0,((flags>>16)&255)!=0};return true;
 }
 // The owned 985D80 callback preserves the selected RegionMgr receiver. Its
 // separate local-player getter supplies a scoped native avatar reference.

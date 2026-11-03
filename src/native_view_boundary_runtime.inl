@@ -62,10 +62,12 @@ static void InstallNativeViewBoundary() {
     g_nativeCinematicAdmitted=g_nativePlayerOwnerAdmitted &&
         read(0xFC7EAC,data,4) && !memcmp(data,"\x90\xf4\x6c\x00",4) &&
         read(0x6CF490,data,7) && !memcmp(data,"\x8d\x81\x68\x02\x00\x00\xc3",7) &&
-        read(0x480140,data,0x42) && d2vr_native_clone::MatchesDigest(data,0x42,
-            "b3150c8e065076d6dd8c11671ba3bc2f776e70f4c4f6796106c81fddd5a15edb") &&
-        read(0xFDD1B8,data,4) && !memcmp(data,"\x30\x3f\x80\x00",4) &&
-        read(0xFDD420,data,4) && !memcmp(data,"\x30\x3f\x80\x00",4);
+        read(0x480140,data,0x63) && d2vr_native_clone::MatchesDigest(data,0x63,
+            "6bc9c063780409106d45797853b8c49f0d3333b75178f2c758777b610a82437c") &&
+        read(0xFCA810,data,4) && !memcmp(data,"\x00\xfc\x47\x00",4) &&
+        read(0xFCAA18,data,4) && !memcmp(data,"\x70\xe5\xb7\x00",4) &&
+        read(0xB7E570,data,13) && d2vr_native_clone::MatchesDigest(data,13,
+            "44efa516ae91b16dc7382ca5cad24c8864750aa44f05a788b83a8f79dd78cc48");
     Log("[ProtectedHands] cinematicContract=%d; native RegionMgr GetPlayingCinematic, same-frame view context; retire owned IK only",int(g_nativeCinematicAdmitted));
     Log("[ProtectedPlayerOwner] admission=%d; selected context+CC RegionMgr, +174 scene, +18C local player; balanced native reference, visibility admission independent",
         int(g_nativePlayerOwnerAdmitted));

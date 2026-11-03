@@ -315,7 +315,7 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
        d2vr_player_camera::InspectViewContext(r,uint32_t(reinterpret_cast<uintptr_t>(manager)),
            uint32_t(reinterpret_cast<uintptr_t>(reference)),read)==d2vr_player_camera::Status::Matched &&
        d2vr_player_camera::InspectCinematicView(uint32_t(reinterpret_cast<uintptr_t>(manager)),read,cinematicView)) {
-        const bool cinematic=cinematicView.running && !cinematicView.freeCamera;
+        const bool cinematic=cinematicView.TakesCamera();
         static DWORD lastObject=0;static int lastFlags=-1;
         const int flags=int(cinematicView.running)|(int(cinematicView.freeCamera)<<1)|(int(cinematicView.onRails)<<2);
         if(lastObject!=cinematicView.object || lastFlags!=flags) {
