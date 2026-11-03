@@ -317,3 +317,22 @@ history accidentally. Baseline remains unchanged.
   hash checks. No game left running. New package tooling exposes optional
   ReflectionExperiment, all experiments OFF in default Combined. Old frozen
   combined-scenes-final-20261103 package remains untouched.
+- New consolidated frozen candidate build/combined-scenes-final-20261104,
+  sourceb2065f0d, diagnostic CCFFEB197F85D0C9CE0C0C1D1E13B9EF9AD0EF016856EEC1454CBF2DC453A0EF,
+  with its exact PDB/MAP. Same binary as the actual reflection runtime test.
+  Default Combined, optional ShadowExperiment OR ReflectionExperiment; separate
+  profiles, both experiments OFF by default, all collectors/simulator OFF.
+  Exact Windows INI reads verify all three profiles. Actual installer fixture
+  PASS three modes/rollback/tamper/foreign preimage. VerifyOnly against Steam PASS.
+  No candidate install, main merge or push. Accepted Steam E56BF027 retained.
+- Final recovery checks: four initial user save/settings SHA identities match,
+  game absent, global runtime SteamVR steamxr_win64.json. Source tracked tree
+  clean after final checkpoint; private build/test-output intentionally untracked.
+  User-authorized graceful shutdown will be requested after saving this state,
+  without /f; private shutdown receipt distinguishes schedule/request/result.
+- Completion boundary: scene/control fixes and narrow reflection constant
+  delivery tested as above. Current25ms/40FPS recovery and reported floor/shadow
+  pixel acceptance remain UNRESOLVED; actual special-context gameplay/HMD NOT RUN.
+  This is a testable partial candidate, never a claim that all user goals were
+  completed. Resume these open investigations from saved evidence, not guessed
+  matrix/Steam-network changes or another resolution reduction.
