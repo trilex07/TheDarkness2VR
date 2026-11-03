@@ -7,7 +7,7 @@
 **Worktree**: C:/Users/Trilex/Darkness2VR/.main-camera-shake
 **Baseline**: source81bddf2b, installed E56BF027 DLL / 68EE5685 INI,
 user accepted "jest dobrze"; branch parent7c061cb3.
-**Integration commit**: pending; no main merge requested.
+**Implementation commits**: f0ba1517,7edce2cf; no main merge requested.
 
 ## Goal / scope
 
@@ -62,7 +62,7 @@ Offline PASS:
 - test/build_nis_eye_host_warp.ps1: legacy NIS modes/strength/cache/resize/
   Map failure/failure latch1000/recovery/full-resolution PASS. Fixture had
   drifted from foveated host dependencies; supplied actual defaults/math include.
-- protected-head regression117021 PASS. Protected-native build PASS.
+- protected-head regression117021 PASS. Standard and protected-native builds PASS.
 
 ## Candidate / next steps
 
@@ -73,3 +73,13 @@ Install.ps1 -Restore restores exact accepted DLL/INI. No resolution change.
 Freeze only after tracked commit. No Steam installation or launch yet. Runtime
 GPU cost, shimmer, softness, gaze loss/blink transitions and UI text require
 user HMD trial. WARP timings are NOT hardware/game performance evidence.
+
+## Frozen candidate receipt
+
+build/gaze-fxaa-nis-20261103, source7edce2cf; protected-native x86/O2.
+- DLL D178DF2D7362F24766B29747635FA2E84F6CE784E9E8CADC731302F8FD4570DE.
+- candidate.ini680B77D2A28D8585A939EA30E3AC81B57642939BE84E877BC11D7BE5AE4C47C6.
+- candidate.json1DB3E9835C553A4E2D9C565A04F572C94449BD9BEFE12D1BDE13B3F265B97A26.
+- Frozen Install.ps1 -VerifyOnly PASS, game closed: all payloads, exact accepted
+  DLL/INI backups and protected installed targets verified. Steam unchanged.
+- A/B AA-only profile comparison required before deployment. No launch/install.
