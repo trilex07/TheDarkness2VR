@@ -8,12 +8,17 @@
 #include <cstdlib>
 #include <algorithm>
 #include <dxgi.h>
+#include "../src/foveated_sharpen.h"
 #define CHECK(x) do{if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 static ID3D11Device* g_dev11=nullptr;
 static ID3D11DeviceContext* g_ctx11=nullptr;
 static int g_nisMode=2;
 static float g_nisSharpness=.8f;
 static UINT g_scW=0,g_scH=0;
+static bool g_foveatedSharpen=false,g_foveatedCopyBase=false;
+static bool g_gazeFxaaEnabled=false,g_foveaCenterFallback=false;
+static float g_foveaPeriphery=.35f,g_foveaSharpness=1.f,g_foveaSize=.22f;
+static bool FoveaGazePixel(int,uint32_t,uint32_t,float&,float&) {return false;}
 static unsigned failures=0;
 static void Log(const char* format,...) {
     char text[512];va_list args;va_start(args,format);vsnprintf(text,sizeof(text),format,args);va_end(args);

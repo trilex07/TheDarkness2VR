@@ -369,6 +369,12 @@ static bool NisDispatchEyeRect(NisRuntime* nis, ID3D11DeviceContext* ctx,
     memset(&cfg, 0, sizeof(cfg));
     if (!NVSharpenUpdateConfig(cfg, nis_upscale::ClampSharpness(sharpness),
             x, y, w, h, width, height, x, y)) return false;
+    // SDK NVSharpen tests dst > kOutputViewportWidth/Height, inclusive.
+    // Host rectangles use exclusive extents. Without this conversion, a
+    // non-32-aligned rectangle writes one extra row/column into the periphery.
+    // Set after UpdateConfig: leave its scale/normalization math untouched.
+    cfg.kOutputViewportWidth=w-1;
+    cfg.kOutputViewportHeight=h-1;
     nis->configUploaded = false; // the full-frame config is restored by the next NisDispatchEye
     D3D11_MAPPED_SUBRESOURCE ms = {};
     if (FAILED(ctx->Map(nis->cb, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) return false;

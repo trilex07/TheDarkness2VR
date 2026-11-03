@@ -1,5 +1,16 @@
 # Baseline and current MAIN candidate
 
+## Isolated eye output accepted for continued play (2026-11-03)
+
+User reports "jest dobrze" after the isolated-eye-output Steam trial. Current
+functional reference: source81bddf2b4ec734a8fab5d885e01099b17752606e,
+DLL E56BF027875A6FF3997E0B6A51A0DC43F52DD86C2EB39AE79D4C5EAB073FA5CA,
+INI68EE5685C7AE9FEC8F1AE2677D551DD90C7BCC21DD66737560815EEF4AB26EA9.
+Receipt: .main-camera-shake/build/isolated-eye-output-20261103/installed.json.
+This supersedes the Combined-only reference below for subsequent work; no
+quantified FPS improvement, exhaustive scene acceptance or main merge claimed.
+New gaze-FXAA/NIS work remains separate and undeployed.
+
 ## Combined accepted for continued optimization (2026-11-03)
 
 User says "okej jest kontynuuj z kolejnymi duzymi optymalizacjami" after the

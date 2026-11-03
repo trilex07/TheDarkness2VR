@@ -634,6 +634,8 @@ static float g_nisSharpness = .20f;
 // [Render] FoveatedSharpen: gaze-centred NIS (periphery/transition/fovea), mode 2 only.
 static bool g_foveatedSharpen = true;
 static bool g_foveatedCopyBase = false;
+static bool g_gazeFxaaEnabled = false;
+static bool g_foveaCenterFallback = false;
 static void ParseEngineMaxFrameRate(const char* text); // engine_frame_cap.inl
 static void ParseEngineLodScale(const char* text); // engine_lod_scale.inl
 static void LoadDlssConfig(const char* chosenIni); // dlss_eye.inl
@@ -781,6 +783,9 @@ void LoadConfig() {
         char value[32]{};
         g_foveatedSharpen = GetPrivateProfileIntA("Render", "FoveatedSharpen", 1, chosenIni) != 0;
         g_foveatedCopyBase = GetPrivateProfileIntA("Render", "FoveatedCopyBase", 0, chosenIni) != 0;
+        g_gazeFxaaEnabled = GetPrivateProfileIntA("Render", "GazeFXAA", 0, chosenIni) != 0;
+        g_foveaCenterFallback = GetPrivateProfileIntA("Render", "FoveaCenterFallback", 0, chosenIni) != 0;
+        Log("[NIS] GazeFXAA=%d FoveaCenterFallback=%d (AA before same-size gaze NIS; original periphery)",int(g_gazeFxaaEnabled),int(g_foveaCenterFallback));
         GetPrivateProfileStringA("Render", "FoveaPeriphery", "0.35", value, sizeof(value), chosenIni);
         g_foveaPeriphery = nis_upscale::ClampSharpness((float)atof(value));
         GetPrivateProfileStringA("Render", "FoveaSharpness", "1.0", value, sizeof(value), chosenIni);
@@ -788,7 +793,7 @@ void LoadConfig() {
         GetPrivateProfileStringA("Render", "FoveaSize", "0.22", value, sizeof(value), chosenIni);
         const float size=(float)atof(value);
         g_foveaSize = size>=.05f && size<=.8f ? size : .22f;
-        Log("[NIS] FoveatedSharpen=%d periphery=%.2f fovea=%.2f size=%.2f (needs NisMode=2 and eye tracking; else uniform NisSharpness)",
+        Log("[NIS] FoveatedSharpen=%d periphery=%.2f fovea=%.2f size=%.2f (NisMode=2; gaze or enabled center fallback; otherwise uniform NisSharpness)",
             (int)g_foveatedSharpen,g_foveaPeriphery,g_foveaSharpness,g_foveaSize);
         Log("[NIS] FoveatedCopyBase=%d (copy full eye; NIS only gaze rectangles)",int(g_foveatedCopyBase));
     }

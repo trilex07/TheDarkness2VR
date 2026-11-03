@@ -6,6 +6,7 @@
 #include "gaze_nis_copy_base.inl"
 
 static NisRuntime g_nisEye;
+#include "gaze_fxaa.inl"
 static ID3D11ShaderResourceView* g_nisEyeSource[2]{};
 static ID3D11Texture2D* g_nisEyeSourceOwner[2]{};
 static bool g_nisScalerFailed=false;
@@ -28,6 +29,7 @@ static void NisEyeReleaseSources() {
 }
 
 static void NisEyeShutdown() {
+    GazeFxaaShutdown();
     NisEyeReleaseSources();
     NisShutdown(&g_nisEye);
     g_nisScalerFailed=false;
@@ -77,18 +79,33 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
     NisTimingBegin(&g_nisEye,g_ctx11);
     // Foveated: whole image at the periphery level, then a transition square
     // and the fovea square around the gaze, each overwriting its rectangle.
-    // Same-size sharpen mode only; any missing gaze -> uniform NisSharpness.
+    // Same-size sharpen mode only; optional missing-gaze center fallback.
     const bool foveaMode=g_foveatedSharpen && !scaleMode && g_nisMode==2 && outW==desc[0].Width && outH==desc[0].Height;
     float gx[2]{}, gy[2]{}; bool gaze[2]{};
-    if(foveaMode) for(int eye=0;eye<2;++eye) gaze[eye]=FoveaGazePixel(eye,outW,outH,gx[eye],gy[eye]);
+    int trackedEyes=0;
+    if(foveaMode) for(int eye=0;eye<2;++eye) {
+        gaze[eye]=FoveaGazePixel(eye,outW,outH,gx[eye],gy[eye]);
+        trackedEyes+=int(gaze[eye]);
+        if(!gaze[eye] && g_foveaCenterFallback) {
+            gx[eye]=outW*.5f;gy[eye]=outH*.5f;gaze[eye]=true;
+        }
+    }
     const auto levels=d2vr_fovea::Grade(g_foveaPeriphery,g_foveaSharpness);
     for(int eye=0;eye<2;++eye) {
-        const bool copyBase=gaze[eye] && g_foveatedCopyBase &&
+        const bool copyBase=gaze[eye] && (g_foveatedCopyBase || g_gazeFxaaEnabled) &&
             desc[eye].SampleDesc.Count==1 && desc[eye].MipLevels==1 && desc[eye].ArraySize==1;
         if(copyBase) {
             const auto outer=d2vr_fovea::Around(gx[eye],gy[eye],outW,outH,g_foveaSize*1.7f);
             const auto inner=d2vr_fovea::Around(gx[eye],gy[eye],outW,outH,g_foveaSize);
-            if(!NisCopyBaseAndSharpenGaze(&g_nisEye,g_ctx11,originals[eye],g_nisEyeSource[eye],
+            auto source=g_nisEyeSource[eye];
+            if(g_gazeFxaaEnabled) {
+                if(!GazeFxaaPrepare(g_dev11,g_ctx11,originals[eye],source,eye,inner,outer,gx[eye],gy[eye])) {
+                    NisTimingEnd(&g_nisEye,g_ctx11);
+                    return NisEyeFailure("gaze FXAA preprocessing");
+                }
+                source=g_gazeFxaa.srv[eye];
+            }
+            if(!NisCopyBaseAndSharpenGaze(&g_nisEye,g_ctx11,originals[eye],source,
                                          outW,outH,eye,outer,inner,levels)) {
                 NisTimingEnd(&g_nisEye,g_ctx11);
                 return NisEyeFailure("gaze copy-base dispatch");
@@ -118,13 +135,13 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
     NisTimingEnd(&g_nisEye,g_ctx11);
     // Log a state only after it held for 1 s (blinks drop the gaze briefly).
     static int lastFovea=-1, pendingFovea=-1; static ULONGLONG pendingSince=0;
-    const int foveaState=int(gaze[0])+int(gaze[1]);
+    const int foveaState=trackedEyes;
     const ULONGLONG foveaNow=GetTickCount64();
     if(foveaState!=pendingFovea) { pendingFovea=foveaState; pendingSince=foveaNow; }
     if(foveaMode && foveaState!=lastFovea && foveaNow-pendingSince>=1000) {
         lastFovea=foveaState;
         Log("[NIS] foveated sharpening %s (periphery=%.2f transition=%.2f fovea=%.2f size=%.2f); gaze eyes=%d",
-            foveaState ? "active" : "waiting for gaze (uniform NisSharpness)",levels.periphery,levels.transition,levels.fovea,g_foveaSize,foveaState);
+            foveaState ? "active" : (g_foveaCenterFallback ? "fixed center fallback" : "waiting for gaze (uniform NisSharpness)"),levels.periphery,levels.transition,levels.fovea,g_foveaSize,foveaState);
     }
     if(!g_nisEyeReported) {
         Log("[NIS] pair dispatched mode=%d strength=%.2f source=%ux%u output=%ux%u; independent eyes, native projections retained",
