@@ -63,7 +63,11 @@ auxiliary-scene-suppression approaches rejected.
 
 ## Next steps / test gate
 
-User was asked whether issue persists on restored accepted payload; pending.
+User confirms the lighting issue also occurred before the resolution trial.
+Do not attribute it to3200x3264, AF16 or the latest NIS experiment. This is a
+historical occurrence report, not a new physical test on the restored payload.
+User will launch and signal readiness at a visible affected surface; wait for
+that signal before requesting any capture. No current game process at last check.
 No new physical result, no image-fix candidate and no FPS improvement claimed.
 If reproduced, use existing matched one-frame capture to obtain effective PS
 banks and matching shader/depth/light inputs at two head poses. Current recorder
@@ -73,3 +77,10 @@ launch or inject input without authorization. Never use capture FPS as baseline.
 For cinema continue native full-screen presentation ownership, not arbitrary
 resolution threshold, timeout, or absence of world camera. For next runtime
 candidate base rendering code on accepted81bddf2b; retain exact rollback above.
+
+Follow-up offline: tools/test_matched_capture.py PASS32. Private cached shader
+D82658F7 disassembly identifies OmniShadowMap/OmniShadowLookup, LightParams c1,
+DarkeningFactor c2; receives light-space vector through v0, not an inverse-matrix
+PS. The existing recorder explicitly includes its effective PS bank even without
+InverseProjection/ViewExtents metadata. Its vertex producer must be matched at
+the affected draw before changing coordinates. No shader patch applied.
