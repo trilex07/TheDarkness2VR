@@ -97,3 +97,15 @@ protected assets retained. Current trial has GazeFXAA1,FoveaCenterFallback1,
 FoveaPeriphery0. HMD acceptance and GPU cost remain NOT RUN.
 Rollback: this package's Install.ps1 -Restore, game closed, returns exact
 E56BF027 DLL /68EE5685 INI. Accepted baseline remains E56BF027 until feedback.
+
+## User trial FAIL / FXAA disabled
+
+User reports no shimmer improvement and a softer image; explicitly requested
+FXAA off. MAIN installed this frozen package's ModeOff with game closed.
+Independent hash and exact INI comparison PASS: only GazeFXAA1->0 changed
+from Combined. NIS, original periphery and fixed-center fallback retained;
+DLL unchanged. No launch, no resolution change. Do not enable FXAA again
+without a new explicit user request. Local FXAA is rejected, not accepted main.
+Next discussion: SMAA1x versus a correct temporal AA integration. Existing
+DLAA trial also failed (blur/roughly50FPS user report); see its own handoff,
+do not simply re-enable it. No new AA implementation requested yet.
