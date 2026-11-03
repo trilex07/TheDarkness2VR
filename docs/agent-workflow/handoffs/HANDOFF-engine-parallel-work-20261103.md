@@ -62,7 +62,10 @@ cinematic-theater baseline; Git branch does not identify deployed binary.
   still match. No install, launch, cache modification or physical acceptance.
 - Package Install.ps1 restores exact DLL/INI with -Restore after an authorized
   closed-game install. Do not use build.ps1 -Install as the rollback package.
-- Local commits complete. Remote push was rejected by automatic approval review:
-  external transfer of newly created branch/content to GitHub lacked clear
-  explicit user authorization. Do not retry or bypass; user approval of push to
-  `trilex07/thedarkness2vr`, branch`codex/engine-parallel-work-20261103`, is needed.
+- User explicitly approved remote push after the initial automatic-review
+  rejection. Push through6ae49498 succeeded to `trilex07/TheDarkness2VR`,
+  branch`codex/engine-parallel-work-20261103`. No merge or installation.
+- User challenged the small CPU ceiling. MAIN acknowledged that selecting a
+  safe ownership boundary did not establish a worthwhile optimization target;
+  the full-packet timing should have stopped further expansion of this path.
+  Keep default OFF and do not recommend headset testing as a major FPS fix.
