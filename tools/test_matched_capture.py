@@ -7,7 +7,55 @@ import sys
 import tempfile
 import unittest
 
-from check_matched_capture import FILES, validate
+from check_matched_capture import FILES, validate, validate_shadow_conversion
+
+
+class ShadowConversionTests(unittest.TestCase):
+    def setUp(self):
+        self.producer=dict(kind="depth_attachment",eye=0,draw=3,surface="depth",format=0x5A544E49,
+                           enabled=1,write=1,depth_hr=0,desc_hr=0,enable_hr=0,write_hr=0)
+        self.restore=dict(kind="shadow_copy_constants_restore",draw=9,valid=True,ps_equal=True,vs_equal=True)
+        self.stage=dict(kind="pass_stage",last_draw=9,phase="before_draw_input",ps_hash=0xC4D1FB10,
+                        sampler=0,saved=True,rt="copy",format=114,width=512,height=512)
+        self.copy=dict(kind="shadow_depth_copy",eye=0,draw=9,status="saved",hr=0,source="depth",target="copy")
+        self.identity=dict(kind="post_input",draw=9,ps_hash=0xC4D1FB10,sampler=0,surface="depth",
+                           format=0x5A544E49,readback_status="saved",width=512,height=512)
+        self.records=[self.producer,self.restore,self.stage,self.copy,self.identity]
+
+    def check(self):
+        positions={id(r):i for i,r in enumerate(self.records)}
+        validate_shadow_conversion(self.records,[self.identity],[self.stage],lambda r:positions[id(r)])
+
+    def test_exact_source_consumer_restore_and_producer(self):
+        self.check()
+
+    def test_foreign_source_or_target_rejected(self):
+        self.copy["source"]="foreign"
+        with self.assertRaisesRegex(ValueError,"mismatched"):self.check()
+        self.copy["source"]="depth";self.stage["rt"]="foreign"
+        with self.assertRaisesRegex(ValueError,"mismatched"):self.check()
+
+    def test_changed_constant_bank_rejected(self):
+        self.restore["ps_equal"]=False
+        with self.assertRaisesRegex(ValueError,"changed constants"):self.check()
+
+    def test_read_only_attachment_is_not_producer(self):
+        self.producer["write"]=0
+        with self.assertRaisesRegex(ValueError,"missing native"):self.check()
+
+    def test_producer_after_consumer_rejected(self):
+        self.producer["draw"]=10
+        with self.assertRaisesRegex(ValueError,"missing native"):self.check()
+
+    def test_wrong_copy_order_rejected(self):
+        self.records[1],self.records[2]=self.records[2],self.records[1]
+        with self.assertRaisesRegex(ValueError,"conversion order"):self.check()
+
+    def test_missing_restore_or_duplicate_copy_rejected(self):
+        self.records.remove(self.restore)
+        with self.assertRaisesRegex(ValueError,"incomplete"):self.check()
+        self.records.append(dict(self.copy))
+        with self.assertRaisesRegex(ValueError,"duplicate"):self.check()
 
 
 class MatchedCaptureTests(unittest.TestCase):

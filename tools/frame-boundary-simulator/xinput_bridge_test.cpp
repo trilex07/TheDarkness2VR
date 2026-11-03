@@ -9,6 +9,8 @@
 #include <cstring>
 #include "../../src/vr_input.h"
 #include "../../src/native_action_movies.h"
+#include "../../src/input_poll_snapshot.h"
+#include "../../src/stateblock_recording.h"
 #include "../../src/unarmed_trigger_dpad.h"
 #include "../../src/native_aim_math.h"
 #ifdef D2VR_MATCHED_CAPTURE
@@ -126,6 +128,22 @@ static void ResetInstall() {
 }
 int main() {
     {
+        int a=0,b=0;
+        Check(!d2vr_stateblock::Active(&a));
+        d2vr_stateblock::Began(&b,0);
+        {
+            d2vr_stateblock::InternalRestore outer(&a);
+            Check(d2vr_stateblock::Active(&a));Check(d2vr_stateblock::Active(&b));
+            {
+                d2vr_stateblock::InternalRestore inner(nullptr);
+                Check(!d2vr_stateblock::Active(&a));Check(d2vr_stateblock::Active(&b));
+            }
+            Check(d2vr_stateblock::Active(&a));
+        }
+        Check(!d2vr_stateblock::Active(&a));Check(d2vr_stateblock::Active(&b));
+        d2vr_stateblock::Ended(&b,0);Check(!d2vr_stateblock::Active(&b));
+    }
+    {
         BYTE definition[8]{},metadata[8]{};char name[64]="QuickTimePopup.swf";
         *reinterpret_cast<DWORD*>(definition)=0xFDAFB8;
         *reinterpret_cast<DWORD*>(definition+4)=0x20000;
@@ -159,6 +177,24 @@ int main() {
         }
     }
     {
+        int reads=0;
+        const auto observe=[&](){++reads;return reads%2!=0;};
+        Check(d2vr_input::PollBoolSnapshot::Read(1,observe));
+        Check(!d2vr_input::PollBoolSnapshot::Read(1,observe)); // no scope: never cached
+        {
+            d2vr_input::PollBoolSnapshot poll;
+            Check(d2vr_input::PollBoolSnapshot::Read(1,observe));
+            for(int i=0;i<8;++i)Check(d2vr_input::PollBoolSnapshot::Read(1,observe));
+            Check(reads==3); // expensive native graph observed once per poll
+            Check(!d2vr_input::PollBoolSnapshot::Read(2,observe)); // owner changed
+            {
+                d2vr_input::PollBoolSnapshot nested;
+                Check(d2vr_input::PollBoolSnapshot::Read(2,observe));
+            }
+            Check(!d2vr_input::PollBoolSnapshot::Read(2,observe));
+            Check(reads==5); // nested lifetime cannot replace outer observation
+        }
+        Check(!d2vr_input::PollBoolSnapshot::Read(2,observe));Check(reads==6);
         d2vr_input::ChoicePauseButton b;
         Check(!d2vr_action_movies::ProtectRapidChoices(d2vr_action_movies::Conversation));
         Check(d2vr_action_movies::ProtectRapidChoices(d2vr_action_movies::Qte));

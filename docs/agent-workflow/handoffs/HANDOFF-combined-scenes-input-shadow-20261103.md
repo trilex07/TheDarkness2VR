@@ -16,6 +16,40 @@ Resolution, accepted stereo, hands/tentacles, FOV and record ownership retained.
 ## Status
 In progress. User explicitly renewed continuation after accidental Escape.
 
+### Follow-up21:20 local
+- Checkpoint57e7a455 committed earlier; current follow-up continues on the same
+  dedicated branch. No final combined user candidate or main merge yet.
+- Input poll now caches its repeated pause observation only within one
+  SyncOpenXRGamepad call and exact manager/world key; no cached native pointers.
+  Legacy tentacle gestures also yield to native action movies.
+- Input fixtures203 production /257 diagnostic PASS; validator42 tests PASS.
+  Production and diagnostic builds PASS (latest production preprocessor fix
+  still needs a final diagnostic rebuild before freezing candidate).
+- Two rejected diagnostic captures proved stateblock Apply re-entered constant
+  setters and re-applied left-eye transforms. Capture-only exact-device raw
+  restore plus explicit full float-bank restore fixes the diagnostic itself.
+  New captures34008/931/9174 and34008/932/13691 pass strict validation, original
+  PresentD3D_OK, VS/PS banks byte-identical before/after the INTZ copy.
+- INTZ source170A0C80 is the actual depth attachment written by preceding
+  native geometry. R32F readback is exact-size/hash checked and tied to source,
+  consuming C4D1FB10 draw and explicit state-restoration witness. Old captures
+  without that witness must not be used as validated converted-depth evidence.
+- Actual-depth algebra at head yaw0/0.25: original median reconstruction error
+  about0.117 game units; candidate about0.00026. This includes real viewport
+  depth remap0.05..1; not an image/final shadow acceptance or FPS measurement.
+- Test-only lab ShadowClipCoordinates=1 now enabled for visual A/B. Production
+  default remains OFF. Current own game PID50972 start21:17:47; verify identity
+  before closure. Original lab payload rollback remains unchanged.
+- Video candidate now requires successful native draw, complete SHA-pinned
+  YUV PS + clip VS, depth off/full viewport and SAME-FRAME final live RT identity.
+  Resident Bink handle alone cannot select Video2D. No timeout/dimension guess.
+  Simulator intro entered mode2 at frame1; title returned mode0 at frame2018.
+  This fixes the sticky boot/movie classification witnessed here; actual villa
+  TV comparison and final visual validation still pending.
+- Diagnostic probe surface refs are released at a new frame and Reset/ResetEx.
+  Reflection semantics, system-performance fix, special avatar recognition and
+  actual QTE/execution/Darkling/carnival/ride scene tests still need completion.
+
 ## Changes
 - Exact native movie-definition classification: QTE, execution, conversation,
   story. Retained native manager/movie/definition references, bounded names,

@@ -16,6 +16,43 @@ FILES = {"manifest.jsonl", "vs-banks.bin", "effective-config.json",
          "source-eye0.bmp", "source-eye1.bmp", "final-eye0.bmp", "final-eye1.bmp"}
 
 
+def validate_shadow_conversion(records, post_inputs, auxiliary, position):
+    copies = [r for r in records if r["kind"] == "shadow_depth_copy"]
+    if len(copies) > 1:
+        raise ValueError("duplicate shadow depth conversion")
+    for copy in copies:
+        if copy.get("status") != "saved":
+            continue  # failed conversion is not readable image evidence
+        draw = copy.get("draw")
+        identities = [r for r in post_inputs if r.get("draw") == draw and
+                      r.get("ps_hash") == 0xC4D1FB10 and r.get("sampler") == 0]
+        stages = [r for r in auxiliary if r["kind"] == "pass_stage" and
+                  r.get("last_draw") == draw and r.get("phase") == "before_draw_input" and
+                  r.get("ps_hash") == 0xC4D1FB10 and r.get("sampler") == 0 and r.get("saved")]
+        restored = [r for r in records if r["kind"] == "shadow_copy_constants_restore" and r.get("draw") == draw]
+        if (copy.get("eye") != 0 or copy.get("hr") != 0 or len(identities) != 1 or
+                len(stages) != 1 or len(restored) != 1):
+            raise ValueError("incomplete shadow depth conversion")
+        identity, stage, restore = identities[0], stages[0], restored[0]
+        if (identity.get("surface") != copy.get("source") or identity.get("format") != 0x5A544E49 or
+                identity.get("readback_status") != "saved" or stage.get("rt") != copy.get("target") or
+                copy.get("source") == copy.get("target") or stage.get("format") != 114 or
+                (stage.get("width"),stage.get("height")) != (identity.get("width"),identity.get("height"))):
+            raise ValueError("mismatched shadow depth conversion")
+        if any(restore.get(k) is not True for k in ("valid", "ps_equal", "vs_equal")):
+            raise ValueError("shadow depth conversion changed constants")
+        if not position(restore) < position(stage) < position(copy) < position(identity):
+            raise ValueError("invalid shadow depth conversion order")
+        producers = [r for r in records if r["kind"] == "depth_attachment" and
+                     r.get("eye") == 0 and isinstance(r.get("draw"),int) and r["draw"] < draw and
+                     r.get("surface") == copy.get("source") and r.get("format") == 0x5A544E49 and
+                     r.get("enabled") in (1,2) and r.get("write") == 1 and
+                     all(r.get(k) == 0 for k in ("depth_hr","desc_hr","enable_hr","write_hr")) and
+                     position(r) < position(restore)]
+        if not producers:
+            raise ValueError("missing native shadow depth producer")
+
+
 def validate(folder):
     folder = Path(folder)
     receipt = json.loads((folder / "COMPLETE.json").read_text())
@@ -85,6 +122,7 @@ def validate(folder):
                 raise ValueError("unsupported or truncated pass stage")
     entries=[r for r in records if r["kind"]=="present_entry"]
     arms=[r for r in records if r["kind"]=="capture_arm"]
+    validate_shadow_conversion(records, post_inputs, auxiliary, position)
     completions=[r for r in records if r["kind"]=="present_completion"]
     staged=[r for r in records if r["kind"]=="staged_result"]
     if records[0].get("schema")!=2 or len(arms)!=1 or len(entries)!=1 or len(completions)!=1 or len(staged)!=1:

@@ -142,7 +142,7 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction) {
 struct MenuSurface { bool valid=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; };
 static SRWLOCK g_menuSurfaceLock=SRWLOCK_INIT;
 static MenuSurface g_menuSurface;
-static bool MenuConfirmActive() {
+static bool ObserveMenuConfirmActive() {
     // R2/Cross input must use the verified RegionMgr -> GameRules pause graph.
     // RegionMgr itself has no +198/+EC pause fields (post-load false positives).
     if(!g_in3DGameplayMode) return true;
@@ -156,6 +156,10 @@ static bool MenuConfirmActive() {
     d2vr_menu_native::PauseSnapshot first,second;
     return d2vr_menu_native::ObservePause(manager,read,first) &&
         d2vr_menu_native::ObservePause(manager,read,second) && first==second && first.showing;
+}
+static bool MenuConfirmActive() {
+    const uint64_t key=(uint64_t(uint32_t(g_nativeRegionManager))<<1)|unsigned(g_in3DGameplayMode);
+    return d2vr_input::PollBoolSnapshot::Read(key,ObserveMenuConfirmActive);
 }
 static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;

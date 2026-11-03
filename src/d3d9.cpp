@@ -51,7 +51,9 @@
 #include "native_constant_gate.h"
 #include "startup_shader_warmup.h"
 #include "native_image_guard.h"
+#include "native_view_code_clone.h"
 #include "native_menu_input_snapshot.h"
+#include "input_poll_snapshot.h"
 #include "native_menu_pointer_bridge.h"
 #include "vr_input.h"
 #include "unarmed_trigger_dpad.h"
@@ -1884,6 +1886,7 @@ static const d2vr_replay::StereoParams& EyeParamsRef(int eye);
 #ifdef D2VR_MATCHED_CAPTURE
 extern volatile LONG g_frameId;
 static void MatchedCaptureDraw(IDirect3DDevice9*,int,bool);
+static HRESULT ObserveVideoDrawResult(IDirect3DDevice9*,HRESULT);
 static void MatchedCaptureBlit(int,const StereoCBData&);
 static void MatchedProjectionObserved(const float*,const float*,UINT,UINT,int,HRESULT);
 static bool MatchedCaptureRecordingActive();
@@ -4906,6 +4909,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         if (!g_xrRunning) PublishAdaptiveTriggers(nullptr, false);
         return false;
     }
+    d2vr_input::PollBoolSnapshot menuPoll;
     XrActiveActionSet active{ g_padActionSet, XR_NULL_PATH };
     XrActionsSyncInfo sync{ XR_TYPE_ACTIONS_SYNC_INFO };
     sync.countActiveActionSets = 1;
@@ -5088,7 +5092,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
 #ifdef D2VR_MATCHED_CAPTURE
     if(!g_protectedGestureActions)
 #endif
-        ApplyTentacleGestures(gp);
+        if(!NativeActionMovies())ApplyTentacleGestures(gp);
 
     (void)haveL; (void)haveR; // buttons remain usable with profiles lacking sticks
 
@@ -6199,7 +6203,13 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const XrPosef head = HeadCenterPose(g_eyePose[0], g_eyePose[1]);
         const XrPosef layerHead = g_submitMode==4 ? g_trackedFrame.layerPose : LockedViewPose(head);
         const auto cinemaMode=d2vr_cinema::Select(g_cinematicTheater && g_submitMode==4 && g_stereoMode==1,true,CinemaSceneThisFrame(),
-            g_binkVideo.load(std::memory_order_acquire),CinemaOverride());
+            g_binkVideo.load(std::memory_order_acquire) &&
+#ifdef D2VR_MATCHED_CAPTURE
+            PresentedVideoThisFrame(),
+#else
+            false,
+#endif
+            CinemaOverride());
         g_presentedCinemaMode.store(cinemaMode,std::memory_order_release);
         static auto previousCinema=d2vr_cinema::Mode::Gameplay;
         if(cinemaMode!=previousCinema) {
@@ -6626,6 +6636,9 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
 static void BeginTrackedFrame() {
     if (!g_xrReady || g_trackedFrame.open) return;
+#ifdef D2VR_MATCHED_CAPTURE
+    ClearVideoProbeTargets();
+#endif
     PumpXR();
     if (!g_xrRunning) { g_haveViews = false; return; }
     PaceApplicationFrame();
@@ -6807,6 +6820,9 @@ static void TracePresentLike(IDirect3DDevice9* dev, const char* ev, void* swapch
 }
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
+#ifdef D2VR_MATCHED_CAPTURE
+    ClearVideoProbeTargets();
+#endif
     d2vr_submission::Invalidate();
     // Reset must never destroy an eye's frozen stream or wait inside a driver
     // callback. Refuse a busy device before touching any dependent resources.
@@ -6880,6 +6896,9 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
 }
 
 HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* dm) {
+#ifdef D2VR_MATCHED_CAPTURE
+    ClearVideoProbeTargets();
+#endif
     d2vr_submission::Invalidate();
     // Reset must never destroy an eye's frozen stream or wait inside a driver
     // callback. Refuse a busy device before touching any dependent resources.

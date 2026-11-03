@@ -57,6 +57,7 @@ enum : uint32_t {
 
 struct VsInfo {
     uint32_t hash = 0;
+    bool videoClip=false;
     std::vector<DWORD> bytecode; // exact identity when a released COM address is reused
     int wvpBase = -1;      // const base of the 4x4 that writes o0 (clip pos)
     int stpBase = -1;      // const base of a 4x4 that writes another output (screen texture proj)
@@ -911,6 +912,10 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                 bytes<=code.size()*4 && !(bytes&3) &&
                 d2vr_shader_metadata::ValidPixelCode(code.data(),bytes/4)) {
                 const std::string shaderBytes((const char*)code.data(), bytes);
+                if((metadata.hash==0xC1DC2D91u && bytes==700) || (metadata.hash==0xD59D80ACu && bytes==764))
+                    metadata.videoYuv=d2vr_native_clone::MatchesDigest(code.data(),bytes,
+                        metadata.hash==0xC1DC2D91u ? "bc92e5e5d69fce40ff8c426a9ed2270d141560d867b2d51043000ecffc7ddc32" :
+                        "afffea336b671be7584c3d50496dd94a3192d792d9bf1bbe615e64909c53c6df");
                 if (g_shaderDebugDump && shaderBytes.find("InvRenderTargetSize") != std::string::npos &&
                     shaderBytes.find("ShadowMask") != std::string::npos) {
                     char path[MAX_PATH];
@@ -1027,6 +1032,8 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         uint32_t h = HashBytes(fn, (n + 1) * 4);
         VsInfo vi;
         vi.hash = h;
+        vi.videoClip=h==0x7ACDFC64u && (n+1)*4==204 &&
+            d2vr_native_clone::MatchesDigest(fn,204,"25b6f6b9468d02ffbf2d3773d944e31b077133d00e43c88f5a35baac7a1c2b53");
         vi.bytecode.assign(fn,fn+n+1);
         AnalyzeVsTokenStream(fn, vi);
         bool hasTable = false;
@@ -1642,7 +1649,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_command_history::Scope command(dev,d2vr_command_history::Draw,g_replayEye,0,t,sv,pc);
-    return command.Finish(g_orig.DrawPrimitive(dev, t, sv, pc));
+    return ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawPrimitive(dev, t, sv, pc)));
 #else
     return g_orig.DrawPrimitive(dev, t, sv, pc);
 #endif
@@ -1658,7 +1665,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawIndexed,g_replayEye,0,t,uint32_t(bvi),mvi,nv,si,pc);
-    return command.Finish(g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc));
+    return ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc)));
 #else
     return g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc);
 #endif
@@ -1674,7 +1681,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
     d2vr_submission::InvalidateBindings();
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawUP,g_replayEye,0,t,pc,stride);
-    const HRESULT result=command.Finish(g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride));
+    const HRESULT result=ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride)));
     d2vr_submission::InvalidateBindings();return result;
 #else
     const HRESULT result=g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride);
@@ -1692,7 +1699,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     d2vr_submission::InvalidateBindings();
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawIndexedUP,g_replayEye,0,t,mvi,nv,pc,fmt,stride);
-    const HRESULT result=command.Finish(g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride));
+    const HRESULT result=ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride)));
     d2vr_submission::InvalidateBindings();return result;
 #else
     const HRESULT result=g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride);

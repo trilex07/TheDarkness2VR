@@ -20,6 +20,7 @@ template<class Word> bool ValidPixelCode(const Word* code,size_t words) {
 struct Pixel {
     uint32_t hash=0;
     int inverse=-1,extents=-1;
+    bool videoYuv=false; // validated complete native bytecode, not FNV alone
 };
 
 // Creation may run on an engine worker while the render thread binds/replays.
