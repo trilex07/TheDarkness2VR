@@ -403,7 +403,7 @@ static void CloseWheels(bool commit) {
 
 // Context in which the wheels may open and the crouch flick acts.
 static bool WeaponWheelContext(const XINPUT_GAMEPAD& gp,bool focused) {
-    if(!focused || !g_in3DGameplayMode || (gp.wButtons & XINPUT_GAMEPAD_START) || g_nativeCinematicPlaying || NativeActionMovies())
+    if(!focused || !NativeJackieInputAllowed() || !g_in3DGameplayMode || (gp.wButtons & XINPUT_GAMEPAD_START) || g_nativeCinematicPlaying || NativeActionMovies())
         return false;
     NativeGameplaySample sample;
     // Holding an object with a tentacle keeps the wheel/flicks (user 23:26);
@@ -456,7 +456,7 @@ static uint16_t ReadPadSetting(const char* key,const char* fallback,uint16_t fal
 // physical A to reload/X in that window also feeds the double-X weapon switch.
 static bool MenuConfirmActive(); // eye_gaze.inl: pause or menu without world
 static uint16_t PhysicalAButton() {
-    if(NativeActionMovies() || !g_inputContext || MenuConfirmActive()) return XINPUT_GAMEPAD_A; // menus/choices: native A
+    if(!NativeJackieInputAllowed() || NativeActionMovies() || !g_inputContext || MenuConfirmActive()) return XINPUT_GAMEPAD_A; // menus/choices: native A
     NativeGameplaySample sample;
     if(CopyNativeGameplay(sample) && (sample.demonHold==2 || sample.alternateHeldTarget))
         return XINPUT_GAMEPAD_A;
@@ -469,7 +469,7 @@ static void ResetWeaponWheelInput();
 static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
     // Native action movies own their original controls. Cancel queued equip
     // pulses as well as an open wheel before forwarding any choices.
-    if(NativeActionMovies()) {ResetWeaponWheelInput();g_wheelEquip={};return;}
+    if(!NativeJackieInputAllowed() || NativeActionMovies()) {ResetWeaponWheelInput();g_wheelEquip={};return;}
     const ULONGLONG now=GetTickCount64();
     if(g_weaponWheelEnabled) {
         if(g_wheelGate.open) {

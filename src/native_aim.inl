@@ -62,6 +62,12 @@ static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
 static void CaptureWeaponLoadout(BYTE* inventory); // weapon_wheel_input.inl
 static volatile LONG g_nativeRegionManager=0;      // last RegionMgr seen by the view owner (render thread)
 static NativeGameplaySample g_nativeGameplay;
+// Explicit selected-player rejection revokes Jackie-only input until a later
+// selected-player callback admits Jackie again. Poll threads retain no object.
+static volatile LONG g_nativeJackieInputRejected=0;
+static bool NativeJackieInputAllowed() {
+    return InterlockedCompareExchange(&g_nativeJackieInputRejected,0,0)==0;
+}
 static bool CopyNativeGameplay(NativeGameplaySample& out) {
     if(!TryAcquireSRWLockShared(&g_nativeGameplayLock)) return false;
     out=g_nativeGameplay; ReleaseSRWLockShared(&g_nativeGameplayLock);
@@ -355,8 +361,11 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
         uint32_t(reinterpret_cast<uintptr_t>(manager)),uint32_t(reinterpret_cast<uintptr_t>(reference)),
         read,ReadSelectedLocalPlayer,ReleaseSelectedLocalPlayer,consume,ProtectedAimCameraTable());
     g_selectedOwnerObservation.Observe(g_trackedFrame.id,r,status);
-    if(g_selectedOwnerObservation.SupersedesFallback(g_trackedFrame.id,r) &&
-       g_nativePlayerViewFrame!=g_trackedFrame.id)ResetNativeAim();
+    if(g_selectedOwnerObservation.SupersedesFallback(g_trackedFrame.id,r)) {
+        const bool accepted=g_nativePlayerViewFrame==g_trackedFrame.id;
+        if(!accepted)ResetNativeAim();
+        InterlockedExchange(&g_nativeJackieInputRejected,accepted?0:1);
+    }
     static unsigned reports=0;
     if(++reports<=3 || reports%600==0)
         Log("[ProtectedViewOwner] frame=%llu renderer=%p manager=%p nativeAvatar=%08X status=%u accepted=%d; selected RegionMgr local-player getter, balanced strong reference, EXE unchanged",

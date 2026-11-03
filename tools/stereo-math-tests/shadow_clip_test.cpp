@@ -22,7 +22,10 @@ int main(int argc,char** argv) {
     const auto window=CreateWindowA("STATIC","D2VR shader validation",WS_POPUP,0,0,64,64,nullptr,nullptr,GetModuleHandle(nullptr),nullptr);
     D3DPRESENT_PARAMETERS pp{};pp.Windowed=TRUE;pp.SwapEffect=D3DSWAPEFFECT_DISCARD;pp.hDeviceWindow=window;
     IDirect3DDevice9* dev=nullptr;
-    Check(SUCCEEDED(d3d->CreateDevice(D3DADAPTER_DEFAULT,D3DDEVTYPE_HAL,window,D3DCREATE_HARDWARE_VERTEXPROCESSING,&pp,&dev)),"driver device");
+    Check(window!=nullptr,"test window");
+    const HRESULT deviceResult=d3d->CreateDevice(D3DADAPTER_DEFAULT,D3DDEVTYPE_HAL,window,D3DCREATE_HARDWARE_VERTEXPROCESSING,&pp,&dev);
+    if(FAILED(deviceResult))std::fprintf(stderr,"CreateDevice HRESULT=%08lX\n",static_cast<unsigned long>(deviceResult));
+    Check(SUCCEEDED(deviceResult),"driver device");
     IDirect3DPixelShader9* shader=nullptr;
     Check(SUCCEEDED(dev->CreatePixelShader(reinterpret_cast<const DWORD*>(out.data()),&shader)),"driver accepts replacement");
     std::ofstream saved("shadow-clip-candidate.bin",std::ios::binary);saved.write(reinterpret_cast<char*>(out.data()),out.size()*4);saved.close();

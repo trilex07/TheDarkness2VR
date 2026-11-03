@@ -4829,7 +4829,7 @@ static d2vr_input::DoubleTapDpad g_doubleTapDpadState;
 // Uses only the existing native gameplay sample (no new hook). Without a fresh
 // sample the hand state is Unknown and triggers pass through unchanged.
 static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
-    if(NativeActionMovies()) {
+    if(NativeActionMovies() || !NativeJackieInputAllowed()) {
         g_unarmedTriggerDpadState.Reset();g_doubleTapDpadState.Reset();return;
     }
     using d2vr_input::HandSlot;
@@ -4851,7 +4851,7 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
         held=d2vr_input::ClassifyFirearm(sample.firearm[0],sample.firearm[1]);
         lastKinds=sample.firearm[0] | (unsigned(sample.firearm[1])<<8);
         lastOff=offHand;lastMain=mainHand;lastClass=held;lastSeen=nowMs;
-    } else if(g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START) && lastSeen && nowMs-lastSeen<1000) {
+    } else if(NativeJackieInputAllowed() && g_in3DGameplayMode && !(gp.wButtons & XINPUT_GAMEPAD_START) && lastSeen && nowMs-lastSeen<1000) {
         offHand=lastOff;mainHand=lastMain;held=lastClass;context=true;
     }
     static const char* const kSlot[]={"unknown","empty","armed"};
@@ -5005,7 +5005,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         ResetWeaponWheelInput();ResetPoseInput();out->Gamepad={};return true;
     }
     const auto objectiveButton=g_objectiveButton.Update(focused && circleActive,circleDown,
-        g_in3DGameplayMode && !MenuConfirmActive() && !NativeHeldActionContext() &&
+        g_in3DGameplayMode && NativeJackieInputAllowed() && !MenuConfirmActive() && !NativeHeldActionContext() &&
         !g_nativeCinematicPlaying && !NativeActionMovies(),GetTickCount64()*.001);
     gp.wButtons &= ~XINPUT_GAMEPAD_B;
     if(objectiveButton.nativeB)gp.wButtons|=XINPUT_GAMEPAD_B;
@@ -5075,7 +5075,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         loggedMenuShoulders=menuShoulderPassthrough;
         Log("[MenuShoulders] native menu L1/R1 -> LB/RB passthrough=%d",int(menuShoulderPassthrough));
     }
-    if(!NativeActionMovies()) {
+    if(NativeJackieInputAllowed() && !NativeActionMovies()) {
         if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
         ApplyProtectedLeftThrow(gp);
     } else {
@@ -5093,7 +5093,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
 #ifdef D2VR_MATCHED_CAPTURE
     if(!g_protectedGestureActions)
 #endif
-        if(!NativeActionMovies())ApplyTentacleGestures(gp);
+        if(NativeJackieInputAllowed() && !NativeActionMovies())ApplyTentacleGestures(gp);
 
     (void)haveL; (void)haveR; // buttons remain usable with profiles lacking sticks
 
@@ -5128,7 +5128,7 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
     const XrPosef head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
     const XrViewStateFlags trackedHead=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     const bool enabled=g_haveViews && (g_trackedFrame.flags & trackedHead)==trackedHead &&
-        g_in3DGameplayMode && !NativeActionMovies() && !(gp.wButtons & XINPUT_GAMEPAD_START) && !protectedPaused;
+        g_in3DGameplayMode && NativeJackieInputAllowed() && !NativeActionMovies() && !(gp.wButtons & XINPUT_GAMEPAD_START) && !protectedPaused;
     for(int h=0;h<2;++h) {
         const auto& hand=g_hands[h];
         const auto& p=hand.grip.position;

@@ -125,3 +125,39 @@ history accidentally. Baseline remains unchanged.
 - Intro presentation filter briefly returned gameplay for2 frames during an
   intro transition (484..486); no arbitrary timeout added. Check transition
   ownership before declaring all intro/video transitions complete.
+
+## Continuation checkpoint (2026-11-03, 22:16 local)
+- MAIN resumed after accidental interruption. Selected-player rejection now
+  suppresses Jackie-only trigger remapping, wheel/equip pulses, crouch/gesture
+  actions and objective-hold interception. Raw native controls remain available.
+  Protected-gesture actual-body fixture:924 PASS; XInput production203 and
+  diagnostic257 PASS; cinematic owner fixture PASS. Diagnostic and production
+  builds PASS. This is safe native fallback, not proof of specific Darkling or
+  carnival avatar layouts or their physical aiming.
+- New diagnostic frozen at build/combined-scenes-input-20261103/
+  diagnostic-special-input, DLL3632E212B263B7F258B74F6F06BF9F098C3638A4AB89ADB0524A8509B9C6E16C.
+  Own simulator PID48508, start2026-11-03 22:06:56 local. ShadowClipCoordinates=1
+  for bounded comparison only; lab receipt retains the original rollback.
+  Root DLL may be a newer build: never assume it equals installed/frozen DLL.
+- Villa walking and ordinary NPC view remain gameplay; selected owner accepted.
+  OFF depth captures51720/937/76887 and938/79513; ON48508/939/34802 and940/37253
+  all pass strict Present/depth/constant-restoration validation. Captures include
+  visible NPC and floor shadow. Native body/animation differ across launches;
+  no visual OFF/ON improvement or FPS gain established.
+- tools/audit_shadow_clip.py --sample-depth now repeats the actual depth-grid
+  calculation with validated producer/copy/restore evidence and viewport Z remap.
+  OFF examples original median~0.119/0.120 game units vs candidate~0.000395/0.000596.
+  Native inverse bias retained. This is algebraic evidence, not image acceptance.
+- Added explicit single-frame capture of first C4D1FB10 consumer output after
+  successful native draw. It uses existing bounded readback path without setting
+  render state. Build/runtime validation pending; capture stalls are never FPS.
+- Capture2 ETW now resolved with exact local DLL/PDB and a unique local symcache,
+  without network symbol servers. Steady10..30s CPU weights: driver9.851CPU-s,
+  game6.607CPU-s; proxy largest named leaves VS constants0.287, UI staging0.267,
+  PS constants0.213, replay0.204, recorder lock0.191CPU-s. Samples are not
+  recoverable savings. Current bridge fences~0.18ms and reader~0.006ms do not
+  establish the cause of user25ms frames. No speculative worker/fence patch.
+- Remaining: native special-context identity/ride classification, floor reflection
+  producer, shadow output OFF/ON, runtime choice tests, consolidated candidate.
+  Intro transition briefly leaves video mode for2 frames between closed/open
+  handles; no arbitrary hysteresis added. World-TV validation remains pending.

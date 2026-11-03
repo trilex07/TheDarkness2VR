@@ -11,6 +11,10 @@ static void Check(bool value){++checks;if(!value){std::printf("FAIL check %u\n",
 static void Log(const char*,...){}
 static bool g_protectedGestureActions=true,g_gestureBridge=false,g_tentacleBridge=false;
 static bool g_haveViews=true,g_in3DGameplayMode=true,g_headGeometryReferenceValid=false;
+static unsigned actionMovies=0;
+static unsigned NativeActionMovies(){return actionMovies;}
+static bool jackieInputAllowed=true;
+static bool NativeJackieInputAllowed(){return jackieInputAllowed;}
 static XrPosef g_eyePose[2]{},g_headGeometryReference{};
 struct Frame {struct State {XrTime predictedDisplayTime=0;} state;XrViewStateFlags flags=0;} g_trackedFrame;
 struct Hand {XrPosef grip{};bool valid=true,gripValid=true;float squeeze=0;d2vr_input::Motion motion;} g_hands[2];
@@ -27,6 +31,8 @@ static void Reset(){
     g_gestures={};g_protectedRightTentacle={};g_hands[0]={};g_hands[1]={};
     g_headGeometryReferenceValid=false;g_headGeometryReference={};g_headGeometryReference.orientation.w=1;
     g_haveViews=g_in3DGameplayMode=g_protectedGestureActions=true;
+    actionMovies=0;
+    jackieInputAllowed=true;
     g_trackedFrame.flags=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     for(auto& p:g_eyePose){p={};p.orientation.w=1;p.position.y=1.6f;}
     g_hands[0].grip.position={-.7f,1.1f,-.5f};g_hands[1].grip.position={.7f,1.1f,-.5f};
@@ -152,5 +158,14 @@ int main(){
     // OFF mode leaves raw input intact; no native hook function exists here.
     Reset();g_protectedGestureActions=false;gp=Step(.01,XINPUT_GAMEPAD_RIGHT_SHOULDER);
     Check((gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER) && gp.sThumbRX==4321);
+    // Native action movies must cancel the dwell recognizer even while both
+    // hands remain in a valid reload zone. No queued reload escapes the popup.
+    for(unsigned movie:{1u,2u,4u,8u}) {
+        Reset();g_hands[1].grip.position={.23f,.55f,0};
+        actionMovies=movie;
+        for(unsigned i=0;i<30;++i)Check(!(Step().wButtons&(XINPUT_GAMEPAD_X|XINPUT_GAMEPAD_BACK)));
+    }
+    Reset();g_hands[1].grip.position={.23f,.55f,0};jackieInputAllowed=false;
+    for(unsigned i=0;i<30;++i)Check(!(Step().wButtons&(XINPUT_GAMEPAD_X|XINPUT_GAMEPAD_BACK)));
     std::printf("Protected gesture actual-body release/rearm/focus/pause/objective/reload: %u checks PASS\n",checks);
 }

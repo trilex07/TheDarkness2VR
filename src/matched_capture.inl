@@ -18,6 +18,8 @@ static unsigned projectionObserved;
 static std::vector<uintptr_t> geometrySaved;
 // Optional one-frame pass localization. No reads or allocations when disabled.
 static bool passStages, postStagesOnly, postInputsSaved, shadowStagesOnly, shadowInputsSaved;
+static bool shadowOutputPending;
+static unsigned shadowOutputDraw, shadowOutputVs;
 static IDirect3DSurface9* stageTarget;
 static unsigned stagesSaved, stageLastDraw, stageVs, stagePs;
 static uint64_t stageBytes;
@@ -203,7 +205,7 @@ static void Begin() {
     passStages=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)!=0;
     postStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==2;
     shadowStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==3;
-    postInputsSaved=shadowInputsSaved=false;
+    postInputsSaved=shadowInputsSaved=shadowOutputPending=false;
     frame=g_trackedFrame.id; active=true; failed=false; headerPending=true; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     skinUploadsSeen=skinUploadsSaved=0;
     pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;
@@ -402,7 +404,10 @@ static const char* SaveShadowDepth(IDirect3DDevice9* dev,IDirect3DBaseTexture9* 
 static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,unsigned ps) {
     const bool shadow=shadowStagesOnly && !shadowInputsSaved && ps==0xC4D1FB10u;
     if(!shadow && (!postStagesOnly || postInputsSaved || (ps!=0x33DE98C1u && ps!=0x75F88E11u))) return;
-    if(shadow)shadowInputsSaved=true;else postInputsSaved=true;
+    if(shadow) {
+        shadowInputsSaved=true;
+        shadowOutputPending=true;shadowOutputDraw=draw;shadowOutputVs=vs;
+    } else postInputsSaved=true;
     float values[16*4]{};
     const HRESULT hr=dev->GetPixelShaderConstantF(0,values,16);
     fprintf(meta,"{\"kind\":\"post_constants\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"ps_hash\":%u,\"hr\":%ld,\"c0_to_c15\":",frame,draw,ps,hr);
@@ -578,6 +583,24 @@ static void ObserveVideoDraw(IDirect3DDevice9* dev) {
     if(pixel)pixel->Release();if(vs)vs->Release();if(back)back->Release();if(rt)rt->Release();
 }
 static HRESULT ObserveVideoDrawResult(IDirect3DDevice9* dev,HRESULT result) {
+    // One explicit matched-frame diagnostic only: retain the actual first
+    // shadow consumer's output, not the later composite containing animation.
+    // Readback does not set device state; its stall is not a performance sample.
+    if(matched_capture::shadowOutputPending && d2vr_replay::g_replayEye<0 &&
+       GetCurrentThreadId()==g_renderThreadId && matched_capture::Current()) {
+        using namespace matched_capture;
+        shadowOutputPending=false;
+        if(FAILED(result))Reject("shadow consumer draw failed");
+        else {
+            IDirect3DSurface9* target=nullptr;
+            if(SUCCEEDED(dev->GetRenderTarget(0,&target)) && target) {
+                const char* status=SaveStageSurface(dev,target,shadowOutputDraw,
+                    shadowOutputVs,0xC4D1FB10u,"after_draw");
+                if(strcmp(status,"saved"))Reject("shadow output readback failed");
+            } else Reject("shadow output target unavailable");
+            if(target)target->Release();
+        }
+    }
     if(SUCCEEDED(result))ObserveVideoDraw(dev);
     return result;
 }

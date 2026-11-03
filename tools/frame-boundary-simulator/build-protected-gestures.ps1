@@ -18,7 +18,7 @@ $signatures=@('static XrVector3f RotVec(', 'static XrPosef HeadCenterPose(',
 $bodies=@($signatures | ForEach-Object {Body $_})
 $safe=Body 'static void ApplyProtectedGestureActions(XINPUT_GAMEPAD& gp) {'
 if($safe -match 'PublishNative|ReadNative|CopyNative|ApplyTentacleGestures|VirtualProtect'){throw 'Protected gesture path may not call native hooks'}
-if($source -notmatch 'if\(!g_protectedGestureActions\)\s*#endif\s*ApplyTentacleGestures\(gp\);'){throw 'Protected mode must bypass native gesture path'}
+if($source -notmatch 'if\(!g_protectedGestureActions\)\s*#endif\s*if\(NativeJackieInputAllowed\(\) && !NativeActionMovies\(\)\)ApplyTentacleGestures\(gp\);'){throw 'Protected mode, selected-player rejection and native choices must bypass legacy gesture path'}
 $fixture=Join-Path $env:TEMP 'd2vr_protected_gestures_under_test.inl'
 [IO.File]::WriteAllText($fixture,($bodies -join "`r`n"),[Text.Encoding]::UTF8)
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
