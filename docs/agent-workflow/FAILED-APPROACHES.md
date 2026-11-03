@@ -5,6 +5,18 @@ Legacy lessons describe their original experiments, not current renderer
 contracts or permission to modify native registers. Revalidate against current
 source, BASELINE.md and the task handoff before applying them.
 
+### Simulator screenshots and context polls are not clean CPU/FPS evidence
+- **Date**: 2026-11-03
+- **Branch**: codex/simulator-perf-shadow-20261103
+- **Failure**: Screenshot/readback produced a single891ms hitch; a second
+  screenshot/movement/cinema interval measured59fps. Neither is a clean baseline
+  for the user's sustained40fps issue. Wall-clock IP snapshots include waits
+  and can perturb timing; they are not ETW CPU execution samples.
+- **Blocker**: WPR policy privilege0xc5585011 persisted outside sandbox. No
+  valid ETL was obtained. Repeating the identical command will not grant admin.
+- **Next**: Separate no-capture cadence and native critical-path attribution;
+  see HANDOFF-simulator-perf-shadow-20261103.md for exact private evidence.
+
 ### Exact source3200x3264: real allocation, rejected performance
 - **Date**: 2026-11-03
 - **Branch/Commit**: codex/source-resolution-3200-20261103 /6d696052,d15b9bc5

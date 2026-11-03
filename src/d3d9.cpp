@@ -173,6 +173,7 @@ bool g_disableFxaa = true;
 // Diagnostic shader policies are immutable after startup; creation hooks may
 // run on native worker threads and must not reopen configuration files.
 bool g_shadowScreenDepth = false;
+bool g_shadowClipCoordinates = false;
 bool g_shaderDebugDump = false;
 bool g_clipScaledUi = true;
 bool g_fixMotionVectorProjection = false;
@@ -678,6 +679,8 @@ static bool ProtectedHeadConfigurationAllowed() {
 }
 void LoadConfig() {
     g_shadowScreenDepth=GetPrivateProfileIntA("Diagnostics","ShadowScreenDepth",0,
+        ".\\Darkness2VR-diagnostic.ini")==1;
+    g_shadowClipCoordinates=GetPrivateProfileIntA("Diagnostics","ShadowClipCoordinates",0,
         ".\\Darkness2VR-diagnostic.ini")==1;
     g_shaderDebugDump=GetPrivateProfileIntA("Diagnostics","ShaderDebugDump",0,
         ".\\Darkness2VR-diagnostic.ini")==1;

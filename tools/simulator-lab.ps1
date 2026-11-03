@@ -1,4 +1,4 @@
-param([ValidateSet('Install','Restore')][string]$Action,
+param([ValidateSet('Install','Update','Restore')][string]$Action,
  [string]$GameDir='C:\Program Files (x86)\Steam\steamapps\common\Darkness II')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
@@ -34,6 +34,23 @@ if($Action -eq 'Install'){
  foreach($f in $files){if((Hash $f.target) -ne $f.after){throw 'Installation verification failed'}}
  foreach($f in $protected){if((Hash $f.target) -ne $f.hash){throw 'Protected file changed'}}
  Write-Output 'Lab installed; runtime override process-only; exact baseline rollback verified.'
+}elseif($Action -eq 'Update'){
+ $r=Get-Content $receipt -Raw | ConvertFrom-Json
+ foreach($f in $r.files){
+  if((Hash $f.backup) -ne $f.before -or (Hash $f.target) -ne $f.after){throw 'Lab payload changed; refusing update'}
+ }
+ foreach($f in $r.protected){if((Hash $f.target) -ne $f.hash){throw 'Protected file changed'}}
+ $configPath=Join-Path $lab 'candidate-diagnostic.ini'
+ if(!(Test-Path $configPath)){throw 'Candidate config missing'}
+ Copy-Item $receipt (Join-Path $lab ('payload-before-update-'+[DateTime]::UtcNow.ToString('yyyyMMddTHHmmss')+'.json'))
+ Copy-Item (Join-Path $root 'd3d9.dll') (Join-Path $lab 'candidate.dll') -Force
+ $r.files[0].after=Hash (Join-Path $lab 'candidate.dll');$r.files[1].after=Hash $configPath
+ $r.source=git -C $root rev-parse HEAD
+ $r | ConvertTo-Json -Depth 5 | Set-Content $receipt
+ Copy-Item (Join-Path $lab 'candidate.dll') $r.files[0].target -Force
+ Copy-Item $configPath $r.files[1].target -Force
+ foreach($f in $r.files){if((Hash $f.target) -ne $f.after){throw 'Update verification failed'}}
+ Write-Output 'Lab updated; exact original rollback retained.'
 }else{
  $r=Get-Content $receipt -Raw | ConvertFrom-Json
  foreach($f in $r.files){

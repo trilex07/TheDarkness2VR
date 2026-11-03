@@ -828,6 +828,7 @@ static bool BuildUnfilteredFxaa(const DWORD* fn, size_t count, std::vector<DWORD
     return true;
 }
 
+#include "shadow_clip_coordinates.h"
 static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, const DWORD* fn,
                                                         IDirect3DPixelShader9** out) {
     bool screenDepthOverride = false;
@@ -854,6 +855,10 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
     std::vector<DWORD> composite;
     std::vector<DWORD> sharp;
     const size_t originalWords = fn ? SafeShaderTokenCount(fn) : 0;
+    std::vector<uint32_t> shadowClip;
+    const bool shadowClipPatch=!screenDepthOverride && g_shadowClipCoordinates &&
+        g_nativeStereoHeadGeometry && g_submitMode==4 && g_stereoMode==1 &&
+        originalWords && d2vr_shadow_clip::Build(reinterpret_cast<const uint32_t*>(fn),originalWords+1,shadowClip);
     const unsigned compositePatch = !screenDepthOverride && g_submitMode == 4 && originalWords ?
         d2vr_composite::Build(fn, originalWords + 1,
             g_disableDepthOfField, g_disableCompositeHeightFog, composite) : 0;
@@ -861,7 +866,12 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         g_submitMode == 4 && originalWords && BuildUnfilteredFxaa(fn, originalWords + 1, sharp);
     HRESULT hr = d2vr_shader_preload::Create(dev,
         compositePatch ? composite.data() :
-        fxaaOverride ? sharp.data() : (screenDepthOverride ? replacement : fn), out,g_orig.CreatePixelShader);
+        fxaaOverride ? sharp.data() : shadowClipPatch ? reinterpret_cast<const DWORD*>(shadowClip.data()) :
+        (screenDepthOverride ? replacement : fn), out,g_orig.CreatePixelShader);
+    if(shadowClipPatch) {
+        Log("[ShadowClipCoordinates] exact C4D1FB10 NDC input candidate result=%08X",unsigned(hr));
+        if(FAILED(hr))hr=d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
+    }
     if (compositePatch || fxaaOverride) {
         if (fxaaOverride || (compositePatch & d2vr_composite::Dof))
             Log("[Sharpness] %s bypass hash=%08X result=%08X",

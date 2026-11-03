@@ -17,3 +17,5 @@ TheDarkness2VR/
 /third_party/ngx/
 /third_party/ffx/
 __pycache__/
+/tools-local/
+/test-output/simulator-lab-20261103/
