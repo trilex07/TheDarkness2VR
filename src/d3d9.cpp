@@ -4342,6 +4342,12 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction);
 static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
     if(!g_cameraShakeTrace || !camera || !avatar || !g_trackedFrame.open ||
        GetCurrentThreadId()!=g_renderThreadId || NativeCinematicPlaying())return;
+    static ULONGLONG next=0;
+    const auto now=GetTickCount64();
+    if(!g_cameraShakeTraceStart){g_cameraShakeTraceStart=now;Log("[CameraShakeTrace] BEGIN 30-second read-only selected camera/root sample; provoke normal movement, shot or impact");}
+    // The bounded probe must stop native reads too, not just stop its log.
+    if(now-g_cameraShakeTraceStart>=30000 || now<next)return;
+    next=now+50;
     float view[16]{},root[16]{};
     DWORD avatarTable=0;
     float nativeNoise[4][4]{},nativeSum[4]{},nativeShift[3]{};
@@ -4361,11 +4367,6 @@ static void TraceNativeCameraShake(DWORD camera,DWORD avatar) {
     } __except(EXCEPTION_EXECUTE_HANDLER){return;}
     for(unsigned i: {0u,1u,2u,8u,9u,10u,12u,13u,14u})
         if(!std::isfinite(view[i]) || !std::isfinite(root[i]))return;
-    static ULONGLONG next=0;
-    const auto now=GetTickCount64();
-    if(!g_cameraShakeTraceStart){g_cameraShakeTraceStart=now;Log("[CameraShakeTrace] BEGIN 30-second read-only selected camera/root sample; provoke normal movement, shot or impact");}
-    if(now-g_cameraShakeTraceStart>=30000 || now<next)return;
-    next=now+50;
     static DWORD reportedAvatarTable=0;
     if(avatarTable!=reportedAvatarTable) {
         reportedAvatarTable=avatarTable;

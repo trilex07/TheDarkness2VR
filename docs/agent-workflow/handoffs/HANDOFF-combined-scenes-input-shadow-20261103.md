@@ -102,3 +102,26 @@ history accidentally. Baseline remains unchanged.
    cinema classification only after presentation ownership is demonstrated.
 3. Finish actual native contexts and input/runtime tests, production build,
    then freeze one candidate plus exact rollback. No new hardware claims.
+
+## Follow-up after interrupted turn (2026-11-03)
+- Continued own simulator process50972. Entered villa hall with visible NPC and
+  static plant shadows; mode remained gameplay. Captures933/frame88431 and
+  934/frame90424, head yaw0/0.25, both pass strict matched-frame validation.
+  Converted depth bank restoration remains exact. Private fern-wall reprojection
+  shows stable background shadow placement in this candidate pair; this is NOT
+  an OFF/ON comparison or exhaustive shadow/reflection acceptance.
+- Prior elevator OFF/ON reprojection residuals were essentially the same
+  (mean0.002641 vs0.002692), a weak fixture without an active shadow caster.
+  Do not use its algebra improvement as demonstrated visual improvement.
+- Closed an ownership fallback hole: a selected RegionMgr local-player rejection
+  now supersedes the optional renderer FOV override in the same renderer/frame,
+  clearing stale Jackie aim/poses rather than re-admitting that older override.
+  Synthetic ControlAvatar split-owner fixture proves foreign avatar rejection,
+  valid old Jackie override, no foreign consume, balanced release including throw.
+  This does not identify/support the Darkling/carnival native layouts.
+- Cinematic fixture PASS; diagnostic build PASS after ownership change.
+- CameraShakeTrace sampling/30-second gate now precedes native reads; expired
+  diagnostics no longer keep sampling silently. No material FPS gain claimed.
+- Intro presentation filter briefly returned gameplay for2 frames during an
+  intro transition (484..486); no arbitrary timeout added. Check transition
+  ownership before declaring all intro/video transitions complete.

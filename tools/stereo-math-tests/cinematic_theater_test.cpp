@@ -6,6 +6,21 @@
 #include <unordered_map>
 #include <limits>
 int main() {
+    // A supported/foreign/temporarily missing selected player all supersede a
+    // stale Jackie renderer override; an unrelated scene/renderer does not.
+    d2vr_player_camera::SelectedOwnerObservation selected;
+    using OwnerStatus=d2vr_player_camera::Status;
+    for(auto status:{OwnerStatus::Matched,OwnerStatus::AvatarType,
+        OwnerStatus::CameraOwner,OwnerStatus::InventoryType,OwnerStatus::LocalPlayerReference}) {
+        selected.Observe(8,0x1000,status);
+        assert(selected.SupersedesFallback(8,0x1000));
+        assert(!selected.SupersedesFallback(9,0x1000));
+        assert(!selected.SupersedesFallback(8,0x2000));
+    }
+    for(auto status:{OwnerStatus::ViewContext,OwnerStatus::RegionManager,OwnerStatus::SceneReference}) {
+        selected.Observe(8,0x1000,status);
+        assert(!selected.SupersedesFallback(8,0x1000));
+    }
     using namespace d2vr_cinema;
     assert(Select(false,true,true,true)==Mode::Gameplay);
     assert(Select(true,false,true,false)==Mode::Gameplay); // stale cinematic rejected
@@ -99,5 +114,35 @@ int main() {
     memory[0x37bc]=0;memory[0x3000]=0xdeadbeef;
     assert(!d2vr_player_camera::InspectCinematicView(0x1000,read,scene));
     memory[0x2000]=0;assert(d2vr_player_camera::InspectCinematicView(0x1000,read,scene) && !scene.running);
+    // Native ControlAvatar can replace the authoritative local player before
+    // the renderer's optional FOV override. Reproduce that ownership split.
+    memory={{0x43f8,0x5000},{0x5000,0x6000},{0x6000,0xfc6d40},
+        {0x6064,0x7000},{0x7000,0x8000},{0x8000,0xfc7d00},
+        {0x9000,0xa000},{0x81c8,0xa000},{0xb000,0xc000},
+        {0xc000,0x1001630},{0xc62c,0xd000},{0xd000,0xe000},
+        {0xe000,0xffc7c0},{0xe030,0xb000},{0xc630,0xf000},
+        {0xf000,0x10000},{0x10000,0xffca10},{0x102a8,0xb000},
+        {0x4460,0xb000}};
+    unsigned releases=0,consumed=0;
+    const auto get=[&](uint32_t manager,uint32_t* out){assert(manager==0x8000);*out=0xb000;return out;};
+    const auto release=[&](uint32_t ref){assert(ref==0xb000);++releases;};
+    const auto consume=[&](const d2vr_player_camera::Owner& owner){assert(owner.avatar==0xc000);++consumed;};
+    auto ownerStatus=d2vr_player_camera::WithSelectedLocalPlayer(0x4000,0x8000,0x9000,read,get,release,consume);
+    assert(ownerStatus==OwnerStatus::Matched && releases==1 && consumed==1);
+    // Renderer still points to valid Jackie while selected local player is a
+    // foreign avatar. No consume and no fallback into stale Jackie ownership.
+    memory[0x11000]=0x12000;memory[0x12000]=0xdeadbeef;
+    const auto foreignGet=[&](uint32_t,uint32_t* out){*out=0x11000;return out;};
+    const auto foreignRelease=[&](uint32_t ref){assert(ref==0x11000);++releases;};
+    ownerStatus=d2vr_player_camera::WithSelectedLocalPlayer(0x4000,0x8000,0x9000,read,foreignGet,foreignRelease,consume);
+    d2vr_player_camera::Owner stale;
+    assert(d2vr_player_camera::Inspect(0x4000,read,stale)==OwnerStatus::Matched);
+    assert(ownerStatus==OwnerStatus::AvatarType && releases==2 && consumed==1);
+    selected.Observe(10,0x4000,ownerStatus);assert(selected.SupersedesFallback(10,0x4000));
+    bool unwound=false;
+    try {d2vr_player_camera::WithSelectedLocalPlayer(0x4000,0x8000,0x9000,read,get,release,
+        [](const d2vr_player_camera::Owner&){throw 7;});}
+    catch(int value){unwound=value==7;}
+    assert(unwound && releases==3);
     puts("PASS cinematic modes, stale-state rejection, Bink lifetime, binocular angular crop, native owner reader");
 }

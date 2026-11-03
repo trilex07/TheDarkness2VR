@@ -275,6 +275,7 @@ static bool CaptureNativeGameplay(void* self) {
 static uint64_t g_nativePlayerViewFrame=0;
 static uintptr_t g_nativePlayerViewRenderer=0;
 static uint32_t g_nativePlayerViewCamera=0;
+static d2vr_player_camera::SelectedOwnerObservation g_selectedOwnerObservation;
 #ifdef D2VR_MATCHED_CAPTURE
 static uint32_t* ReadSelectedLocalPlayer(uint32_t receiver,uint32_t* out) {
     using Getter=uint32_t*(__thiscall*)(void*,uint32_t*);
@@ -353,6 +354,9 @@ static void ObserveNativeViewOwnerChecked(void* renderer,void* reference,void* m
     const auto status=d2vr_player_camera::WithSelectedLocalPlayer(r,
         uint32_t(reinterpret_cast<uintptr_t>(manager)),uint32_t(reinterpret_cast<uintptr_t>(reference)),
         read,ReadSelectedLocalPlayer,ReleaseSelectedLocalPlayer,consume,ProtectedAimCameraTable());
+    g_selectedOwnerObservation.Observe(g_trackedFrame.id,r,status);
+    if(g_selectedOwnerObservation.SupersedesFallback(g_trackedFrame.id,r) &&
+       g_nativePlayerViewFrame!=g_trackedFrame.id)ResetNativeAim();
     static unsigned reports=0;
     if(++reports<=3 || reports%600==0)
         Log("[ProtectedViewOwner] frame=%llu renderer=%p manager=%p nativeAvatar=%08X status=%u accepted=%d; selected RegionMgr local-player getter, balanced strong reference, EXE unchanged",
@@ -371,6 +375,8 @@ static void ObserveSelectedPlayerCamera(void* renderer) {
     NativeGameplaySample selectedOwner;
     if(g_nativePlayerViewFrame==g_trackedFrame.id && g_nativePlayerViewRenderer==reinterpret_cast<uintptr_t>(renderer) &&
        CopyNativeGameplay(selectedOwner) && selectedOwner.camera==g_nativePlayerViewCamera)return;
+    if(g_selectedOwnerObservation.SupersedesFallback(g_trackedFrame.id,
+        uint32_t(reinterpret_cast<uintptr_t>(renderer))))return;
     const auto read=[](uint32_t address,uint32_t& value)->bool {
         __try {value=*reinterpret_cast<const uint32_t*>(address);return true;}
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}

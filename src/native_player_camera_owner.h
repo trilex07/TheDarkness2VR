@@ -58,6 +58,21 @@ template<class Read> RendererTrace TraceRenderer(uint32_t renderer,Read read) {
 enum class Status {RendererReference,AvatarType,CameraReference,CameraType,
                    CameraOwner,InventoryReference,InventoryType,InventoryOwner,Matched,
                    ViewContext,RegionManager,SceneReference,LocalPlayerReference};
+// Once the selected RegionMgr route is known, even its rejection supersedes
+// the optional renderer FOV override. That override may still name old Jackie
+// during ControlAvatar transitions. Never retain native object references here.
+struct SelectedOwnerObservation {
+    uint64_t frame=0;uint32_t renderer=0;
+    void Observe(uint64_t currentFrame,uint32_t currentRenderer,Status status) {
+        frame=0;renderer=0;
+        if(status==Status::ViewContext || status==Status::RegionManager ||
+           status==Status::SceneReference)return;
+        frame=currentFrame;renderer=currentRenderer;
+    }
+    bool SupersedesFallback(uint64_t currentFrame,uint32_t currentRenderer)const {
+        return frame && renderer && frame==currentFrame && renderer==currentRenderer;
+    }
+};
 // 985E6D: context+CC -> RegionMgr; 985F75: RegionMgr+174 -> scene.
 // B0EF20 returns RegionMgr+1C8. Local player is the distinct +18C/964570
 // getter. Never reinterpret the scene's pointer/layout as an avatar.
