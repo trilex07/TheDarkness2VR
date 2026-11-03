@@ -70,3 +70,14 @@ C:/Users/Trilex/Darkness2VR/.main-camera-shake/build/render-pipeline-candidate-2
   installation receipt and matching current files. Keep prior frozen packages.
 - MAIN can install this exact frozen Install.ps1 after explicit test-window
   authorization, with game closed. No install was performed in this task.
+
+## Follow-up: installed for user test
+
+User asked whether the candidate is available in Steam for testing. MAIN
+checked DarknessII was closed, ran frozen VerifyOnly successfully, then installed
+Mode Combined. No game launch. Frozen installed.json records source d58156b4,
+DLL FE216AF4E8B310C9D7E68EB059428194BA49B1FDE1C448CD1547F7E0419FF219,
+INI 2537EC1EFE21509EC86AD18B1A878EBE607DB8B051A022C1D44C8DD3479CA14D.
+Protected targets verified unchanged by installer. Headset/performance acceptance
+still NOT RUN; B97 remains the accepted rollback, not replaced in BASELINE.
+Restore using the same frozen Install.ps1 -Restore with game closed.
