@@ -7,7 +7,7 @@ New-Item -ItemType Directory -Path $game,$package | Out-Null
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}
 function Check([bool]$ok,[string]$message){if(!$ok){throw $message}}
 $global:D2vrPackageFixtureBusy=$false
-function Get-CimInstance{param($ClassName,$Filter)if($global:D2vrPackageFixtureBusy){[pscustomobject]@{Name='DarknessII.exe'}}}
+function Get-Process{if($global:D2vrPackageFixtureBusy){[pscustomobject]@{ProcessName='DarknessII'}}}
 $source=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Install.ps1') -Raw
 $literal='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
 Check ($source.Contains($literal)) 'Production target literal missing'

@@ -2,7 +2,7 @@
 param([switch]$Restore,[ValidateSet('Both','Cache','Worker','Off')][string]$Mode='Cache',[switch]$VerifyOnly)
 $ErrorActionPreference='Stop'
 function Hash([string]$path){(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}
-function Closed{if(Get-CimInstance Win32_Process -Filter "Name='DarknessII.exe'"){throw 'Close Darkness II before installing/restoring'}}
+function Closed{if(Get-Process | Where-Object ProcessName -eq 'DarknessII'){throw 'Close Darkness II before installing/restoring'}}
 Closed
 $m=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'candidate.json') -Raw | ConvertFrom-Json
 $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
