@@ -5,12 +5,12 @@ $begin=$source.IndexOf('struct EyeColorHistory {')
 $end=$source.IndexOf('static IDirect3DSurface9* g_liveColorBackup',$begin)
 if($begin -lt 0 -or $end -le $begin){throw 'Actual history implementation missing'}
 $body=(Get-Content (Join-Path $repo 'src/replay_state_cache.h') -Raw)+"`n"+$source.Substring($begin,$end-$begin)
-$call=[regex]::Match($source,'const bool historyOk = SeedRightEyeBackground\(dev, liveEnd.targets\[0\], [^;]+;')
+$call=[regex]::Match($source,'const bool historyOk = (?:isolatedOutput \|\| )?SeedRightEyeBackground\(dev, liveEnd.targets\[0\], [^;]+;')
 if(-not $call.Success){throw 'Actual history caller missing'}
-$body+="`nstatic bool SeedActualCaller(IDirect3DDevice9* dev, IDirect3DSurface9* output) { struct {IDirect3DSurface9* targets[1];} liveEnd{{output}}; "+$call.Value+" return historyOk; }`n"
-$save=[regex]::Match($source,'bool eye1Ok = FinishRightEyeHistory\(dev, liveEnd.targets\[0\], replayOk, historyOk\);')
+$body+="`nstatic bool SeedActualCaller(IDirect3DDevice9* dev, IDirect3DSurface9* output) { struct {IDirect3DSurface9* targets[1];} liveEnd{{output}}; "+$call.Value.Replace('isolatedOutput || ','')+" return historyOk; }`n"
+$save=[regex]::Match($source,'bool eye1Ok = (?:isolatedOutput \? replayOk && historyOk : )?FinishRightEyeHistory\(dev, liveEnd.targets\[0\], replayOk, historyOk\);')
 if(-not $save.Success){throw 'Actual history publication missing'}
-$body+="`nstatic bool SaveActualCaller(IDirect3DDevice9* dev, IDirect3DSurface9* output, bool replayOk, bool historyOk) { struct {IDirect3DSurface9* targets[1];} liveEnd{{output}}; "+$save.Value+" return eye1Ok; }`n"
+$body+="`nstatic bool SaveActualCaller(IDirect3DDevice9* dev, IDirect3DSurface9* output, bool replayOk, bool historyOk) { struct {IDirect3DSurface9* targets[1];} liveEnd{{output}}; "+$save.Value.Replace('isolatedOutput ? replayOk && historyOk : ','')+" return eye1Ok; }`n"
 $replay=Get-Content -LiteralPath (Join-Path $repo 'src\stereo_replay.inl') -Raw
 $drawBegin=$replay.IndexOf('        case OP_DrawPrimitive: {',$replay.IndexOf('static bool ReplayStream('))
 $drawEnd=$replay.IndexOf('        case OP_SetVertexDeclaration:', $drawBegin)

@@ -486,13 +486,13 @@ struct DeviceSnapshot {
         if(!targets[0]) {Release();return false;}
         return true;
     }
-    bool Apply(IDirect3DDevice9* dev) {
+    bool Apply(IDirect3DDevice9* dev,IDirect3DSurface9* replace=nullptr,IDirect3DSurface9* with=nullptr) {
         if (!state || owner!=dev || !targets[0]) return false;
         bool complete=true;
         // Drain the whole restore even after failure; never short-circuit the
         // remaining targets, depth or state block during live-state recovery.
         for (DWORD i = 0; i < targetCount; ++i)
-            if(FAILED(dev->SetRenderTarget(i, targets[i])))complete=false;
+            if(FAILED(dev->SetRenderTarget(i, replace && targets[i]==replace?with:targets[i])))complete=false;
         if(FAILED(dev->SetDepthStencilSurface(depth)))complete=false;
         // Apply state AFTER RTs because SetRenderTarget resets the viewport.
         if(FAILED(g_origSBApply ? g_origSBApply(state):state->Apply()))complete=false;

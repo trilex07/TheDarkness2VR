@@ -1,5 +1,19 @@
 # Baseline and current MAIN candidate
 
+## Combined accepted for continued optimization (2026-11-03)
+
+User says "okej jest kontynuuj z kolejnymi duzymi optymalizacjami" after the
+Combined Steam trial. Retain it as the current functional reference, without
+claiming a quantified FPS gain or exhaustive scene acceptance. No main merge
+was requested. Source d58156b45d89673534db135ee09b0cadc72b38d6; deployed DLL
+FE216AF4E8B310C9D7E68EB059428194BA49B1FDE1C448CD1547F7E0419FF219;
+INI 2537EC1EFE21509EC86AD18B1A878EBE607DB8B051A022C1D44C8DD3479CA14D.
+Receipt and exact prior B97 rollback:
+.main-camera-shake/build/render-pipeline-candidate-20261103/installed.json.
+New isolated-eye-output work is separate, OFF by default and not deployed.
+See HANDOFF-render-pipeline-candidate-20261103.md and
+HANDOFF-isolated-eye-output-20261103.md. Historical entries below remain intact.
+
 ## Latest installed runtime accepted for continued play (2026-11-02)
 
 User reports 'ta okej' on source f5bdb1e8, installed DLL

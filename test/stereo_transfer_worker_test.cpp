@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include "../src/stereo_transfer_worker.h"
 #include "../src/shared_reader_fence.h"
+#include "../src/isolated_eye_output.h"
 #include <dxgi.h>
 #include <d3dcompiler.h>
 #include <cstdio>
@@ -39,10 +40,13 @@ static Ref<ID3DBlob> Compile(const char* source,const char* target) {
 }
 static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceContext* ctx,
                      bool deferred=false,UINT width=64,UINT height=64,bool ownerProducer=false,bool split=false,
-                     bool overlapOwner=false,unsigned frames=100,bool reuseHistory=false) {
+                     bool overlapOwner=false,unsigned frames=100,bool reuseHistory=false,bool isolated=false) {
     IDirect3DSurface9* rtRaw=nullptr;
     HR(dev9->CreateRenderTarget(width,height,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rtRaw,nullptr));
     auto rt=Adopt(rtRaw); HR(dev9->SetRenderTarget(0,rt.Get()));
+    d2vr_eye_output::Output isolatedOutput;
+    if(isolated){CHECK(split && deferred && overlapOwner && !reuseHistory);CHECK(isolatedOutput.Prepare(dev9,rt.Get()));}
+    auto* captureSource=rt.Get();
     struct Input {
         Ref<IDirect3DTexture9> tex9;Ref<IDirect3DSurface9> surface;
         Ref<IDirect3DQuery9> producer;Ref<ID3D11Texture2D> tex11;
@@ -119,7 +123,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         auto& in=inputs[split?eye:0];
         auto& q9=in.producer;
         CHECK(!in.retained && !in.fence.pending); // native overwrite cannot bypass retirement
-        HR(dev9->StretchRect(rt.Get(),nullptr,in.surface.Get(),nullptr,D3DTEXF_NONE));
+        HR(dev9->StretchRect(captureSource,nullptr,in.surface.Get(),nullptr,D3DTEXF_NONE));
         HR(q9->Issue(D3DISSUE_END));
         HRESULT flushed=q9->GetData(nullptr,0,D3DGETDATA_FLUSH);
         CHECK(flushed==S_OK || flushed==S_FALSE);
@@ -138,7 +142,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         // The source RT changes while the flushed copy is still in flight.
         // Sampling before S_OK would observe this later color.
         const DWORD distract=eye?0xff001122:0xff221100;
-        for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,distract));
+        if(!isolated)for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,distract));
         const auto start=GetTickCount64();
         HRESULT hr=S_FALSE;
         while((hr=in.producer->GetData(nullptr,0,0))==S_FALSE) {
@@ -175,9 +179,9 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     for(unsigned frame=0;frame<frames;++frame) {
         const DWORD left=0xff000000|(frame+1)<<16|0x002233;
         const DWORD right=0xff000000|0x00bb0000|(frame+1)<<8|0x000055;
-        const bool uiOnly=reuseHistory && history.pixels && frame%3==1;
+        const bool uiOnly=((reuseHistory && history.pixels) || (isolated && frame)) && frame%3==1;
         const DWORD expectedRight=uiOnly?previousRight:right;
-        HR(dev9->ColorFill(rt.Get(),nullptr,left));issue(0);
+        captureSource=rt.Get();HR(dev9->ColorFill(rt.Get(),nullptr,left));issue(0);
         auto l=packet(0);
         if(overlapOwner) CHECK(!l->producer.Get() && l->producerComplete);
         {
@@ -193,9 +197,10 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             track(l);
             // Model main-thread right replay while the worker consumes LEFT.
             if(reuseHistory) CHECK(history.Restore(dev9,rt.Get())); // queued BEFORE slot-one overwrite
+            auto* rightTarget=isolated?isolatedOutput.Right():rt.Get();
             if(uiOnly) {
-                RECT ui={0,0,8,8};HR(dev9->ColorFill(rt.Get(),&ui,0xffabcdef));
-            } else for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rt.Get(),nullptr,right));
+                RECT ui={0,0,8,8};HR(dev9->ColorFill(rightTarget,&ui,0xffabcdef));
+            } else for(int draw=0;draw<16;++draw) HR(dev9->ColorFill(rightTarget,nullptr,right));
             if(frame%2) CHECK(pending.Finish()); // other half tests destructor join
         }
         CHECK(!fault && l->thread!=GetCurrentThreadId());
@@ -215,6 +220,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             CHECK(history.Save(dev9,rt.Get()) && !history.adopted);
             CHECK(history.pixels!=inputs[1].surface.Get());
         }
+        if(isolated)captureSource=isolatedOutput.Right();
         issue(1);auto r=packet(1);
         if(reuseHistory && frame%5!=4) {
             history.Adopt(rt.Get(),inputs[1].surface.Get());
@@ -230,7 +236,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             } else CHECK(pending.Start(queue,r,fault));
             track(r);
             if(reuseHistory) HR(dev9->StretchRect(inputs[0].surface.Get(),nullptr,rt.Get(),nullptr,D3DTEXF_NONE));
-            else HR(dev9->ColorFill(rt.Get(),nullptr,left)); // restore live image in parallel
+            else if(!isolated) HR(dev9->ColorFill(rt.Get(),nullptr,left)); // isolated output leaves live image untouched
             CHECK(pending.Finish());
         }
         CHECK(!fault);verify(1,expectedRight);verify(0,left);retire(r);r.reset();
@@ -313,8 +319,12 @@ int main() {
     HR(d9->ResetEx(&pp,nullptr));
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true,true,10,true);
     HR(d9->ResetEx(&pp,nullptr));
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,true,true,40,false,true);
+    HR(d9->ResetEx(&pp,nullptr));
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true,true,10,false,true);
+    HR(d9->ResetEx(&pp,nullptr));
     puts("PASS combined actual-source adopted history + native 0x50 + D3D11 split readers: UI persistence, seed-before-overwrite, fallback detachment, live slot restore, resize/recreate and Reset");
     ctx={};d11={};d9={};api={};DestroyWindow(window);FreeLibrary(module);
-    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 2760 eye transfers (1060 at 2676x2728), including single-owner overlap on native 0x50, two independent shared inputs, MT 0x54 workers, sampled pixel equality, concurrent D3D9 work, query retirement, RAII join, failure latch, Reset/recreate");
+    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 2860 eye transfers (1080 at 2676x2728), including persistent isolated right output, single-owner overlap on native 0x50, two independent shared inputs, MT 0x54 workers, sampled pixel equality, concurrent D3D9 work, query retirement, RAII join, failure latch, Reset/recreate");
     std::puts("No game/OpenXR/Steam calls; this does not prove frame-time improvement or headset acceptance.");
 }
