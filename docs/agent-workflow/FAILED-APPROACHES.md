@@ -5,6 +5,21 @@ Legacy lessons describe their original experiments, not current renderer
 contracts or permission to modify native registers. Revalidate against current
 source, BASELINE.md and the task handoff before applying them.
 
+### Exact source3200x3264: real allocation, rejected performance
+- **Date**: 2026-11-03
+- **Branch/Commit**: codex/source-resolution-3200-20261103 /6d696052,d15b9bc5
+- **Failure**: User reports FPS loss, CPU frame time around25ms, shimmering
+  hands and head-relative floor reflections; also reports shadows affected.
+  NativeSourceTarget log confirms actual3200x3264 RT0 (not an ignored request).
+  IsolatedEyeOutput remained active; NIS timings alone do not explain the full
+  CPU frame. Do not claim the extra pixels caused every reported artifact.
+- **Action**: Closed-game rollback first returned D178DF2D/5A5BFDE9, then exact
+  accepted Combined+IsolatedEyeOutput E56BF027/68EE5685 using frozen packages.
+  Both installed hashes and four protected targets independently verified.
+  No launch. User A/B on restored baseline pending.
+- **Evidence**: HANDOFF-render-artifacts-cinema-20261103.md; original private log
+  test-output/source-resolution-rejected-20261103/d3d9.log and user MP4.
+
 ### Scoped world diffuse AF16: no visual benefit, severe user performance regression
 - **Date**: 2026-11-03
 - **Branch/Commit**: codex/anisotropic-16x-20261103 /b4ed0fa8,c2162522

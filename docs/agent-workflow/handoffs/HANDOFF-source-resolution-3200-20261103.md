@@ -60,3 +60,15 @@ INI0F846993C35EB47535A7862E7A2B0E44B199D07EBEC9BF3DC11C626310CF5024.
 No game launch. New native allocation, viewport/internal pass inventory,
 clarity and FPS still NOT RUN; inspect next user-run log before claiming
 3200x3264 actually rendered. Previous log preserved by prior AF task.
+
+## User rejection and exact rollback
+
+2026-11-03 user reports lower FPS, CPU around25ms, hand flicker and reflections
+following head; adds shadows have the same behavior. Preserved private runtime
+log proves requested3200x3264 was allocated as actual RT0. This does not prove
+the resolution change caused the lighting bug, which has older open evidence.
+Closed-game package Restore returned D178DF2D/5A5BFDE9, then gaze-FXAA package
+Restore returned accepted E56BF027/68EE5685 Combined+IsolatedEyeOutput.
+Independent two-target and four-protected-target hashes PASS. No launch.
+Continue in HANDOFF-render-artifacts-cinema-20261103.md; do not reinstall this
+rejected trial automatically.
