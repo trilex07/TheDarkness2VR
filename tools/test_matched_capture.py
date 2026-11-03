@@ -56,6 +56,30 @@ class MatchedCaptureTests(unittest.TestCase):
     def test_complete(self):
         self.assertEqual(validate(self.folder)["frame"], 7)
 
+    def test_cpu_blit_parameters_can_precede_shared_input(self):
+        # Production BuildStereoCBData records parameters before the shared
+        # capture; neither this event nor its name witnesses a GPU Draw.
+        for eye in (0, 1):
+            blit = next(r for r in self.records if r["kind"] == "blit" and r["eye"] == eye)
+            self.records.remove(blit)
+            i = next(i for i,r in enumerate(self.records) if r["kind"] == "input" and r["eye"] == eye)
+            self.records.insert(i, blit)
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"], 7)
+
+    def test_input_or_parameters_after_final_are_rejected(self):
+        for kind in ("input", "blit"):
+            event = next(r for r in self.records if r["kind"] == kind and r["eye"] == 0)
+            old_index = self.records.index(event)
+            self.records.remove(event)
+            i = next(i for i,r in enumerate(self.records) if r["kind"] == "final" and r["eye"] == 0)
+            self.records.insert(i+1, event)
+            self.save()
+            with self.assertRaisesRegex(ValueError, "invalid image/metadata boundary ordering"):
+                validate(self.folder)
+            self.records.remove(event)
+            self.records.insert(old_index, event)
+
     def test_effective_lighting_constants_are_draw_scoped(self):
         witness = dict(kind="lighting_ps_constants", frame=7, eye=0, draw=0,
                        shader_hash=0xC4D1FB10, inverse_register=27, extents_register=-1,

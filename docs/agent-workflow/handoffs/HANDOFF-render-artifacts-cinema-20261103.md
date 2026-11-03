@@ -78,6 +78,47 @@ For cinema continue native full-screen presentation ownership, not arbitrary
 resolution threshold, timeout, or absence of world camera. For next runtime
 candidate base rendering code on accepted81bddf2b; retain exact rollback above.
 
+## Authorized matched captures, 2026-11-03
+
+User signaled readiness twice. Actual process43596, DLL E56BF027 verified.
+One request per pose: serial201/frame8420 and202/frame16299. Both complete with
+original Present hr0, both eyes, matching camera-frame, stage shaders and effective
+lighting banks (14 and10 rows). Preserved outside Git/Temp under
+C:/Users/Trilex/AppData/Local/Darkness2VR/captures/lighting-20261103/
+Darkness2VR-matched-43596-201-8420 and Darkness2VR-matched-43596-202-16299.
+All receipt files independently verified after copying. Runtime log also saved.
+Diagnostic INI backed up for each request and restored byte-exact to AC8290E4;
+MatchedFrameCapture0. No DLL, gameplay INI or render behavior changed.
+User told recording finished and free to move/play; no further automatic shots.
+
+Initial validator rejected image/metadata ordering, despite runtime completion.
+Source audit proves StartStereoTransfer calls PrepareStereoEyeConstants BEFORE
+CaptureBackbufferToShared; the former logs `blit` during CPU CB preparation,
+not GPU consumption. Corrected validator independently bounds input and parameter
+records between source and final. All prior Present/identity/hash/draw/image
+checks retained; no captured bytes edited. Added CPU-before-input acceptance
+and input/parameters-after-final rejection tests. Suite34 PASS; both actual
+captures now pass full file/metadata validation, projection ownership still false.
+Comment clarifies recorder semantics; no binary rebuilt/deployed for this fix.
+
+Added read-only audit_lighting_constants.py. Exact captured C4D1FB10 SHA and
+native selected-camera projection plus proven native0.95 conversion establish
+expected current correction. Effective c27 matrices match at all10+6 consuming
+shadow draws, max absolute error1.11e-6/1.52e-6. Therefore a missing inverse-head
+constant upload is not supported for THESE draws. This is delivery proof, not
+correct reconstruction/depth sampling or lighting acceptance. Do not remove the
+0.95 bias: AD4021..AD4067 intentionally scales projection[14], already pinned in
+native_projection_upload.h and native installer. The observed near-depth
+difference is expected native behavior, not newly discovered patch evidence.
+
+Both pictures show villa floor medallion; second native camera position differs
+by about1.91 game units and native heading also changes. Thus these are valid
+individual frames but not a stationary-body pixel A/B. Physical eye displacement
+also present. Do not claim a pure-yaw comparison or derive visual drift magnitude
+from unmatched pixels. Next offline work: use consuming shader instructions,
+WVP/STP/PS banks and depth encoding to test reconstruction consistency; changing
+coordinates remains unjustified until actual input/producer semantics match.
+
 Follow-up offline: tools/test_matched_capture.py PASS32. Private cached shader
 D82658F7 disassembly identifies OmniShadowMap/OmniShadowLookup, LightParams c1,
 DarkeningFactor c2; receives light-space vector through v0, not an inverse-matrix

@@ -541,6 +541,8 @@ static void MatchedProjectionObserved(const float* native,const float* uploaded,
     }
 }
 static void MatchedCaptureBlit(int eye,const StereoCBData& cb) {
+    // BuildStereoCBData CPU snapshot, not a GPU Draw/consumption receipt.
+    // Shared-capture "input" may follow this event before the final image.
     using namespace matched_capture;
     if (!Current()) return;
     if (blits&(1u<<eye)) { Reject("duplicate blit"); return; }

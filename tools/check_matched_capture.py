@@ -207,7 +207,13 @@ def validate(folder):
         source_i = position(source)
         if not (position(entry)<source_i and position(by_kind["submission"])<position(staged[0])):
             raise ValueError("images outside Present witness")
-        if not (source_i < position(by_kind["input"]) < position(by_kind["blit"]) < position(final) < position(by_kind["submission"])):
+        # "blit" is BuildStereoCBData's CPU parameter snapshot, not the D3D11
+        # Draw/texture-consumption event. Production may prepare it BEFORE
+        # CaptureBackbufferToShared emits "input". Require both inside the
+        # source/final boundary, without inventing their GPU execution order.
+        final_i = position(final)
+        if not (source_i < position(by_kind["input"]) < final_i < position(by_kind["submission"]) and
+                source_i < position(by_kind["blit"]) < final_i):
             raise ValueError("invalid image/metadata boundary ordering")
         if any(position(d) > source_i for d in draws):
             raise ValueError("source captured before its draws completed")
