@@ -120,3 +120,6 @@ shotgun fire ownership selects the shotgun icon. Left demon grip/held actions
 suppress synthetic weapon-switch shortcuts until 250ms after release; native
 X actions remain available. The accompanying DLC script repair hides only
 yellow destination arrows, retaining objective text and purple world guidance.
+With WeaponWheel enabled, legacy empty-hand trigger and double-X weapon-switch
+shortcuts are disabled. Select single/dual/two-handed loadouts through the
+wheel; ordinary trigger fire and native X interactions still pass through.

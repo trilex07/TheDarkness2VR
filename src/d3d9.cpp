@@ -4913,7 +4913,10 @@ static d2vr_input::DoubleTapDpad g_doubleTapDpadState;
 // Uses only the existing native gameplay sample (no new hook). Without a fresh
 // sample the hand state is Unknown and triggers pass through unchanged.
 static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
-    if(NativeActionMovies() || !NativeJackieInputAllowed()) {
+    // The wheel owns single/dual/two-handed equip. Legacy trigger and double-X
+    // shortcuts must not change the left-hand loadout during tentacle actions.
+    // Return without modifying native triggers/X or the wheel's equip pulse.
+    if(g_weaponWheelEnabled || NativeActionMovies() || !NativeJackieInputAllowed()) {
         g_unarmedTriggerDpadState.Reset();g_doubleTapDpadState.Reset();return;
     }
     using d2vr_input::HandSlot;

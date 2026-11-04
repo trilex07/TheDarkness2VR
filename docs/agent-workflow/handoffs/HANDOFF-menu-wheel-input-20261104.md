@@ -53,3 +53,10 @@ branch pending user acceptance; prior accepted task is already on main.
 Frozen package build/menu-wheel-input-20261104, source1b63e9bf. Installed to
 Steam after verify/install/restore/reinstall cycle PASS; final simulator OFF.
 See docs/research/menu-wheel-input-install-20261104.md for exact identities.
+
+Follow-up: user requested removing separate left-hand equip/unequip/switch now
+that the wheel provides dual wield. ApplyUnarmedTriggerDpad resets both legacy
+states and returns before rewriting input whenever WeaponWheel is enabled.
+Wheel equip pulses survive (applied earlier); native triggers/X pass unchanged.
+Legacy behavior remains available only with the wheel disabled. No main INI
+deployment required: this is code ownership, independent of old saved settings.
