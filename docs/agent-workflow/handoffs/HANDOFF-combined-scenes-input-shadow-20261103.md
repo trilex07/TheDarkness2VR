@@ -585,3 +585,9 @@ history accidentally. Baseline remains unchanged.
   A/B. Summaries retained privately. No headset/worst-case outdoor FPS claim.
 - New cadence analyzer rejects first/unknown/transition/mixed windows, groups
   normal3D/native theater/video separately. Two selection regressions PASS.
+- Latest frozen package: build/combined-quality-restaurant-20261104, source
+  dfbf8b68, E504 runtime DLL. Factory/actual installer VerifyOnly PASS; contains
+  the updated restaurant evidence and known material brightness caveat. NOT
+  installed. Steam remains4A/3A/68EE; independent check confirms all4 user files.
+  ALL current labs closed, no owned process remains. Headset quality and outdoor
+  enemy-load deficit remain OPEN; do not shut down or mark the overall task done.
