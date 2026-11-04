@@ -86,3 +86,9 @@ full33-file Restore PASS, restored baseline VerifyOnly PASS, reinstall PASS,
 final VerifyOnly PASS. installed.json records INSTALLED, simulator OFF.
 Game remains closed, production runtime restored. User saves/config4 exact hashes
 confirmed in test-output/vr-settings-fonts-20261104/final-user-files.json.
+
+## User acceptance and main integration (2026-11-04)
+User accepted the working installed set and explicitly requested main integration.
+Fast-forward integration preserves frozen source324a2278 and installed DLL95BB1C37.
+No new deployment or runtime changes. This does not resolve remaining FPS,
+edge/hand shimmer, reflection/shadow or exhaustive dialogue-font coverage.

@@ -1,6 +1,6 @@
 # Baseline and current MAIN candidate
 
-## Current Steam candidate: VR settings and Polish font overlay (2026-11-04)
+## Accepted Steam baseline: VR settings and Polish font overlay (2026-11-04)
 
 Source324a227841156ed9c9d84718460d0f7120f06d68 on
 codex/vr-settings-polish-fonts-20261104, MAIN worktree .main-camera-shake.
@@ -11,8 +11,10 @@ Main/pause VR settings: independent PL text/voice, live NIS, restart SS, control
 SS100, PL/PL, NIS100 defaults; simulator/collectors OFF. DLC H/B.Font tables
 synchronized with current base font atlases; base fonts/textures/scripts and
 EXE/loader unchanged. Emulator menu/language/restart/SS/font A/B PASS; headset
-acceptance NOT RUN. Prior accepted baseline below remains rollback, not acceptance
-of this new candidate. Full33-target Restore and reinstall/VerifyOnly PASS.
+acceptance was initially NOT RUN. User subsequently accepted the working set
+and requested integration into main on 2026-11-04. This is functional acceptance;
+exhaustive dialogue inspection and FPS/shimmer/shadow fixes remain unverified.
+Prior baseline below remains rollback. Full33-target Restore and reinstall/VerifyOnly PASS.
 Package build/vr-settings-fonts-candidate-20261104/Install.ps1 (-Restore rollback).
 Handoff handoffs/HANDOFF-vr-settings-polish-fonts-20261104.md. User4 save/config
 hashes restored; production candidate is installed with game closed.
