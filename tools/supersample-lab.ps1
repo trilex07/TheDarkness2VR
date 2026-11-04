@@ -1,4 +1,5 @@
-param([ValidateSet('Install','Restore')][string]$Action,[Parameter(Mandatory=$true)][string]$LabDirectory)
+param([ValidateSet('Install','Restore')][string]$Action,[Parameter(Mandatory=$true)][string]$LabDirectory,
+ [ValidateSet('Native','Supersample')][string]$Sampling='Supersample')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $lab=[IO.Path]::GetFullPath($LabDirectory)
@@ -31,7 +32,9 @@ if($Action -eq 'Install'){
  @{view_mode='both';layout='side_by_side';headset_profile='psvr2';render_width=2676;render_height=2728;asymmetric_fov=$true;fov_degrees=90;ipd_mm=64;zoom_mode='fill';zoom_scale=1;window_width=1728;window_height=924;full_render=$false;show_stats=$false;gpu_timing=$true;move_speed=3;move_boost=4;input_polling='app';preview_fps=90}|ConvertTo-Json|Set-Content (Join-Path $runtime 'settings.json')
  $backup=Join-Path $lab 'rollback/Darkness2VR.ini';Copy-Item -LiteralPath $target -Destination $backup
  $text=[IO.File]::ReadAllText($target)
- foreach($kv in @(@('RenderWidth','3345'),@('RenderHeight','3410'),@('SourceQuality','5'),@('MatchEyeResolutionToSource','0'))){$text=Set-Key $text 'Render' $kv[0] $kv[1]}
+ $width=if($Sampling -eq 'Native'){'2676'}else{'3345'}
+ $height=if($Sampling -eq 'Native'){'2728'}else{'3410'}
+ foreach($kv in @(@('RenderWidth',$width),@('RenderHeight',$height),@('SourceQuality','5'),@('MatchEyeResolutionToSource','0'))){$text=Set-Key $text 'Render' $kv[0] $kv[1]}
  $candidate=Join-Path $lab 'candidate-render.ini';[IO.File]::WriteAllText($candidate,$text,[Text.Encoding]::ASCII)
  $saves=@();$saveRoot=Join-Path $env:APPDATA 'DarknessII'
  foreach($relative in 'EE.cfg','Editor.cfg','76561198334985719/settings','76561198334985719/CONTINUE.SAV'){
@@ -40,12 +43,12 @@ if($Action -eq 'Install'){
   if((Hash $path) -ne (Hash $copy)){throw 'Save backup mismatch'}
   $saves+=@{target=$path;backup=$copy;hash=(Hash $path)}
  }
- $r=@{target=$target;backup=$backup;before=(Hash $target);after=(Hash $candidate);saves=$saves;status='prepared'}
+ $r=@{target=$target;backup=$backup;before=(Hash $target);after=(Hash $candidate);saves=$saves;sampling=$Sampling;status='prepared'}
  $r|ConvertTo-Json -Depth 6|Set-Content $extra
  if((Hash $backup) -ne $r.before){throw 'INI backup mismatch'}
  Copy-Item -LiteralPath $candidate -Destination $target -Force
  if((Hash $target) -ne $r.after){throw 'INI deployment mismatch'}
- Write-Output 'Supersample lab installed: source request3345x3410, XR recommended2676x2728 unchanged. Use this wrapper Restore.'
+ Write-Output "Sampling lab installed: $Sampling source request${width}x${height}, XR recommended2676x2728 unchanged. Use this wrapper Restore."
 }else{
  $r=Get-Content $extra -Raw|ConvertFrom-Json
  if((Hash $r.backup) -ne $r.before -or ((Hash $r.target) -ne $r.after -and (Hash $r.target) -ne $r.before)){throw 'Render identity changed'}

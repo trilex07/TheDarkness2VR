@@ -42,10 +42,15 @@ public static class D2ThreadSample {
  }
 }
 '@
-$moduleCode='$p=Get-Process -Id '+$GamePid+'; @($p.Modules | ForEach-Object { @{name=$_.ModuleName;path=$_.FileName;base=[uint64]$_.BaseAddress.ToInt64();size=$_.ModuleMemorySize} }) | ConvertTo-Json -Compress'
-$modules=& "$env:WINDIR\SysWOW64\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command $moduleCode | ConvertFrom-Json
-if($modules.PSObject.Properties.Name -contains 'value'){$modules=$modules.value}
+$moduleCode='$p=Get-Process -Id '+$GamePid+'; ConvertTo-Json -Depth 4 -Compress -InputObject @{modules=@($p.Modules | ForEach-Object { @{name=$_.ModuleName;path=$_.FileName;base=[uint64]$_.BaseAddress.ToInt64();size=$_.ModuleMemorySize} })}'
+# An explicit object envelope avoids Windows PowerShell 5.1's top-level
+# array ETS value/Count wrapper. Reject missing metadata before suspending.
+$inventory=& "$env:WINDIR\SysWOW64\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command $moduleCode | ConvertFrom-Json
+$modules=@($inventory.modules)
 if($LASTEXITCODE -or !$modules){throw 'Could not read WOW64 module inventory'}
+foreach($module in $modules){
+ if(!$module.path -or !$module.name -or $module.base -le 0 -or $module.size -le 0){throw 'Invalid WOW64 module inventory'}
+}
 $rows=@();$clock=[Diagnostics.Stopwatch]::StartNew()
 while($clock.Elapsed.TotalSeconds -lt $Seconds){
  $game.Refresh()

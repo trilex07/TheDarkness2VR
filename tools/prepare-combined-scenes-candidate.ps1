@@ -1,4 +1,6 @@
-param([string]$OutputDirectory)
+param([string]$OutputDirectory,
+ [ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedInstalledDll='4A0320B2C9369EA8696C65786B4A871434D855CB62540859209DC95A4F559EC7',
+ [ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedInstalledDiagnostic='3A3FD69804D0E62A66E699652AB89C6BCD086CCB271CBE31A65B97F8071E6A6A')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 if(!$OutputDirectory){$OutputDirectory=Join-Path $root 'build/combined-scenes-final-20261103'}
@@ -8,8 +10,7 @@ if(git -C $root status --porcelain --untracked-files=no){throw 'Commit tracked s
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}
 $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
 $dll=Join-Path $game 'd3d9.dll';$diag=Join-Path $game 'Darkness2VR-diagnostic.ini'
-if((Hash $dll) -ne 'E56BF027875A6FF3997E0B6A51A0DC43F52DD86C2EB39AE79D4C5EAB073FA5CA' -or
- (Hash $diag) -ne 'AC8290E48D6CD8CA34ED935734E7293572E2F9227B0AA27D4CA03507FA619299'){
+if((Hash $dll) -ne $ExpectedInstalledDll -or (Hash $diag) -ne $ExpectedInstalledDiagnostic){
  throw 'Exact accepted lab rollback must be installed before freeze'
 }
 $before=@(@{target=$dll;sha256=(Hash $dll)},@{target=$diag;sha256=(Hash $diag)})
@@ -30,14 +31,20 @@ public static class D2vrCombinedProfile {
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] public static extern bool WritePrivateProfileString(string section,string key,string value,string path);
 }
 '@}
-foreach($name in 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini'){
+foreach($name in 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini','material-experiment.ini'){
  $p=Join-Path $out $name;Copy-Item -LiteralPath $diag -Destination $p
- foreach($key in 'MatchedFrameCapture','CommandHistory','CameraShakeTrace','VideoDrawProbe','CpuSyncTiming','CapturePassStages','MatchedCaptureSerial'){
+ foreach($key in 'MatchedFrameCapture','CommandHistory','CameraShakeTrace','VideoDrawProbe','CpuSyncTiming','CapturePassStages','MatchedCaptureSerial','HookCostSampling'){
   if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics',$key,'0',$p)){throw 'Profile write failed'}
  }
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ShadowClipCoordinates',$(if($name -eq 'shadow-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ReflectionEyeExperiment',$(if($name -eq 'reflection-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','SmaaExperiment',$(if($name -eq 'smaa-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
+ foreach($key in 'SpecularFootprintExperiment','SkinMipFilterExperiment'){
+  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics',$key,$(if($name -eq 'material-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
+ }
+ foreach($key in 'SharedCaptureRotationExperiment','SharedReaderCompletionEventExperiment','SharedReaderSleepUsExperiment'){
+  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics',$key,'0',$p)){throw 'Profile write failed'}
+ }
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Simulator','Enabled','0',$p)){throw 'Profile write failed'}
  & (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll (Join-Path $out 'd3d9.dll') -RenderIni @((Join-Path $game 'Darkness2VR.ini')) -DiagnosticIni $p|Out-Null
 }
@@ -60,6 +67,13 @@ reflection experiments stay OFF. No temporal history or motion-vector guesses.
 Offline RTX5070 fixture: both3232x3300 eyes GPU~1.25ms, CPU enqueue~0.001ms;
 not a game FPS result. Flat interiors are exact, diagonal edges receive coverage.
 Actual headset shimmer/clarity acceptance remains NOT RUN.
+Install.ps1 -Mode MaterialExperiment enables the exact native skin shader's
+spatial specular footprint and normal-map mip interpolation. It preserves
+geometry resolution, NIS, all scene/input fixes and keeps SMAA/FXAA OFF.
+Actual GPU fixtures reduce temporal specular variation and mip transitions;
+these do not anti-alias mesh silhouettes. Headset effectiveness NOT RUN.
+Supersampling remains a separate emulator-only experiment, not in this package.
+No new GPU wait, reader polling or capture rotation default is enabled.
 Close the game before each operation. No automatic launch or runtime switch.
 
 PASS: source/build/fixture checks, simulator intro transitions, villa hands and
@@ -76,7 +90,7 @@ rendering/performance issues are solved. Private captures/saves are excluded.
 '@
 [IO.File]::WriteAllText((Join-Path $out 'README.txt'),$readme,[Text.Encoding]::UTF8)
 $names=@('d3d9.dll','d3d9.pdb','d3d9.map','baseline.dll','baseline-diagnostic.ini',
- 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini','Install.ps1','README.txt')
+ 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini','material-experiment.ini','Install.ps1','README.txt')
 $files=@(foreach($name in $names){@{name=$name;sha256=(Hash (Join-Path $out $name))}})
 @{source_commit=(git -C $root rev-parse HEAD).Trim();build_flavor='protected-native /O2 x86';
  default_mode='Combined';files=$files;before=$before;protected=$protected;installed=$false;

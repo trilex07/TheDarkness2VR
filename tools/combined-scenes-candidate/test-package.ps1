@@ -15,7 +15,8 @@ foreach($pair in @(@('baseline.dll','accepted-dll'),@('baseline-diagnostic.ini',
  @('d3d9.dll','candidate-dll'),@('candidate-diagnostic.ini','collectors0-simulator0-shadow0'),
  @('shadow-experiment.ini','collectors0-simulator0-shadow1'),
  @('reflection-experiment.ini','collectors0-simulator0-shadow0-reflection1'),
- @('smaa-experiment.ini','collectors0-simulator0-shadow0-reflection0-smaa1'))){WriteFixture (Join-Path $package $pair[0]) $pair[1]}
+ @('smaa-experiment.ini','collectors0-simulator0-shadow0-reflection0-smaa1'),
+ @('material-experiment.ini','collectors0-simulator0-shadow0-reflection0-smaa0-material1'))){WriteFixture (Join-Path $package $pair[0]) $pair[1]}
 Copy-Item (Join-Path $package 'baseline.dll') (Join-Path $game 'd3d9.dll')
 Copy-Item (Join-Path $package 'baseline-diagnostic.ini') (Join-Path $game 'Darkness2VR-diagnostic.ini')
 $before=@(foreach($name in 'd3d9.dll','Darkness2VR-diagnostic.ini'){@{target=(Join-Path $game $name);sha256=(Hash (Join-Path $game $name))}})
@@ -36,6 +37,10 @@ Check ((Hash $before[1].target) -eq (Hash (Join-Path $package 'shadow-experiment
 Check ((Hash $before[1].target) -eq (Hash (Join-Path $package 'reflection-experiment.ini'))) 'Reflection profile not installed'
 & $installer -Mode SmaaExperiment
 Check ((Hash $before[1].target) -eq (Hash (Join-Path $package 'smaa-experiment.ini'))) 'SMAA profile not installed'
+& $installer -Mode MaterialExperiment
+Check ((Hash $before[1].target) -eq (Hash (Join-Path $package 'material-experiment.ini'))) 'Material profile not installed'
+& $installer -Mode Combined
+Check ((Hash $before[1].target) -eq (Hash (Join-Path $package 'candidate-diagnostic.ini'))) 'Combined did not disable experiment'
 & $installer -Restore
 foreach($e in $before){Check ((Hash $e.target) -eq $e.sha256) 'Restore not exact'}
 $frozen=Join-Path $package 'd3d9.dll';$original=[IO.File]::ReadAllBytes($frozen)
@@ -54,4 +59,4 @@ WriteFixture $before[0].target 'foreign';$rejected=$false
 try{& $installer}catch{$rejected=$true}
 Check $rejected 'Foreign preimage accepted'
 Check ([IO.File]::ReadAllText($before[0].target) -eq 'foreign') 'Foreign preimage overwritten'
-Write-Output "PASS actual installer: verify-only, four modes, exact rollback, frozen tamper, protected tamper, foreign preimage; private fixture $work"
+Write-Output "PASS actual installer: verify-only, five modes, return to Combined, exact rollback, frozen tamper, protected tamper, foreign preimage; private fixture $work"

@@ -504,3 +504,28 @@ history accidentally. Baseline remains unchanged.
   stopped. Do not call this an SSAA FPS regression or original-cause proof.
 - Subsequent work: controlled native2676 comparison, temporal edge proof, clean
   CPU repro when background allows. No HMD acceptance, main merge or shutdown.
+
+### Latest checkpoint: all labs closed/restored, November4
+- coverage-native-reference, supersample-repeat, native-loaded and
+  supersample-clean labs ALL ENDED via wrapper Restore. Current Steam4A0320B2,
+  diagnostic3A3FD698, mainINI68EE5685; all4 saves restored, EXE/loader unchanged.
+  No owned game process left. Do not use old ACTIVE paragraphs above as state.
+- Same diagnosticE50496EB, native2676 under audio Python load36-43/s and later
+  SAME SESSION73.8-75.8/s after audio processes ended. CleanSS3345~75/s too,
+  both hands visible. No universal FPS/headset quality claim; combat still open.
+- Two current audio jobs40184/6212 identified read-only; no foreign process
+  stopped/changed. AboveNormal game-only bounded A/B/A did not help; restored.
+- More precise matched captures106/107 same projection/similar camera, still
+  small animation differences. Old10552/24264 quality comparison INVALID yaw.
+- Collector module envelope fixed; actual308sample rerun PASS. Wall IP counts
+  are NOT CPU execution, nearest MAP may alias ICF. No guessed native patch.
+- Further work: trustworthy temporal edge assessment and worst-case native CPU
+  producer ownership, not more unchanged wait/priority experiments. See research
+  capture-rotation-material-shimmer-20261104.md latest section. No push/main or
+  shutdown; unresolved goals remain.
+- Combined package tooling adds explicit MaterialExperiment (skin footprint +
+  mip interpolation only), defaultCombined retains experimentsOFF and native
+  resolution. Freeze accepts explicit hash-pinned preimages, defaults current
+  4A/3A. Actual installer fixture PASS five modes, return toCombined, rollback
+  and all tamper/foreign-preimage rejection cases. Freeze/install not implied
+  by fixture output. Supersampling is NOT included in this package.

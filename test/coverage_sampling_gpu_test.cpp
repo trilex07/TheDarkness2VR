@@ -47,6 +47,7 @@ int main(){
   printf("Coverage mode=%s phases=32 edgeSamples=%u RMS_error=%.6f interiors=exact\n",mode==0?"native1x":mode==1?"SSAA2xDimensions":mode==2?"MSAA4x":mode==3?"SSAA1.25xDimensions":"SSAA1.5xDimensions",counts[mode],sqrt(errors[mode]/counts[mode]));
  }
  CHECK(errors[1]<errors[0]*.5);CHECK(errors[2]<errors[0]);
+ CHECK(errors[3]<errors[0]*.5);CHECK(errors[4]<errors[0]*.35);
  printf("MSAA4x 50-percent error-energy efficacy gate=%s; not selected for integration\n",errors[2]<errors[0]*.5?"PASS":"FAIL");
  // A D3D9 texture itself has no sample-count argument. Sampleable INTZ depth
  // and MRT resolve ordering remain separate integration blockers, regardless

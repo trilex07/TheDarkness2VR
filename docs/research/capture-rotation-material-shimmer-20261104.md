@@ -352,3 +352,55 @@ One-shot capture INI reset to its receipt-verified candidate before rollback.
 Mode5 startup now also rejects missing/non-distinct allocation caller (fail
 closed); this adds guard tests, not a runtime-size behavior change.
 HMD edge/hand shimmer acceptance and uncontaminated whole-game FPS remain OPEN.
+
+## Native/supersample controls and concurrent CPU work
+
+All following runs use diagnostic E50496EBFC598A198A6B012C93765B3B076B9DA78D4DFBD0E538B0F31F737B47,
+the same material experiments and resource-only Mode5. Native control requests
+2676x2728; supersample requests3345x3410; XR2676x2728 unchanged. These are emulator
+world-bearing cadence measurements, not physical HMD/simulation acceptance.
+
+- coverage-native-reference-20261104: late Villa75.4/75.8 layers/s;
+  scheduled render CPU4578/376 and4734/374 =12.18/12.66ms/frame.
+  COMPLETE capture TEMP/Darkness2VR-matched-24264-105-5671.
+- coverage-supersample-repeat-20261104: after actually leaving pause,39-43/s,
+  scheduled render CPU~21-22ms/frame. Two NEW audio Python processes40184/6212
+  consumed~32CPU-seconds in a5-second window. Both identified read-only as
+  generate-polish-natural.py. Full commands remain private. No foreign task
+  stopped or reprioritized. COMPLETE35388-106-23840,821draws/eye.
+- coverage-native-loaded-20261104: SAME native2676 initially36-43/s under the
+  concurrent audio load. Without changing this DLL, resolution, camera or scene,
+  later returned to73.8-75.8/s after Python processes exited. Late5.09s process
+  sample contains no Python; game8203ms CPU, SteamVR helpers still busy.
+  This is strong load correlation in this reproduction, not proof of every
+  historical user drop. COMPLETE45416-107-6349.
+- A bounded Normal/AboveNormal/Normal priority trial in the latter session did
+  not improve cadence:58.4/57.0 before,56.4/57.2/57.6 during,57.0/63.4 after.
+  AboveNormal was restored to Normal in finally. No priority policy shipped.
+- coverage-supersample-clean-20261104: after audio work ended, active Villa with
+  both hands visible reaches74.8/75.6/75.2/s. Render scheduled CPU4656/378
+  =12.32ms/frame, D3D9 live+replay timestamp span~10.0-10.8ms, versus native
+  ~9.1-10.0ms. Spans include submission gaps and are NOT GPU Busy. This small
+  scene does not establish worst-case combat cost or universal free SSAA.
+
+The first static comparison10552 versus24264 had substantially different
+native camera yaw and is INVALID for pixel quality. New106 versus107 has the
+same projection and similar orientation, but small native animation differences
+remain. Private views-comparison.png is qualitative only. No temporal shimmer
+metric or headset acceptance is claimed from two still images.
+
+GPU fixture now enforces SSAA1.25 error-energy<50% of native and SSAA1.5<35%.
+Actual RTX5070 rerun PASS (coverage-sampling-final-gpu.log). This is synthetic
+moving triangle coverage evidence, not a game temporal-quality measurement.
+
+Wall IP sampling also exposed a PowerShell5.1 top-level array serialization
+wrapper. Collector now uses an explicit modules object envelope and validates
+every module BEFORE suspension. Actual5s rerun PASS308samples, all previous
+suspend counts zero. Native91/proxy57/systemD3D9 37/ntdll69 samples include
+wait/descheduled time; never convert these counts into execution percentages.
+Earlier nearest-MAP-symbol output may merge ICF aliases; no CPU patch follows
+from those sparse names alone.
+
+ALL four newer labs ENDED with wrapper Restore PASS: exact user4A/3A/68EE,
+EXE/loader unchanged, all4 fresh saves/settings restored. Final clean lab has
+restored-hashes.json. No permanent runtime, priority or supersampling change.
