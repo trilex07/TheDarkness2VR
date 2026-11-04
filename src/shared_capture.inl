@@ -18,7 +18,10 @@ struct SharedCaptureSlot {
     // Identity/serial of the RT0 copy this slot currently holds (compared only).
     d2vr_color_reuse::Mirror mirror;
 };
-static SharedCaptureSlot g_sharedCapture[2];
+static constexpr unsigned kSharedCaptureSlots=4;
+static SharedCaptureSlot g_sharedCapture[kSharedCaptureSlots];
+static bool g_captureRotationUnavailable=false;
+static unsigned g_captureRotation=0;
 static uint64_t g_sharedCaptureSerial=0;
 int g_zeroCopyFailures=0;
 static d2vr_transfer::Queue* g_stereoTransferQueue=nullptr;
@@ -99,11 +102,12 @@ static bool ReleaseSharedCapture() {
             return false;
         }
     for(auto& slot:g_sharedCapture)FreeSharedCaptureSlot(slot);
-    g_stereoTransferFault=false;g_splitCaptureUnavailable=false;return true;
+    g_stereoTransferFault=false;g_splitCaptureUnavailable=false;
+    g_captureRotationUnavailable=false;g_captureRotation=0;return true;
 }
 
 static bool EnsureSharedCapture(IDirect3DDevice9* dev,unsigned capture=0) {
-    if(capture>=2)return false;
+    if(capture>=kSharedCaptureSlots)return false;
     auto& slot=g_sharedCapture[capture];
     if(g_stereoTransferFault) return false;
     if (!g_zeroCopyEnabled) return false;
@@ -173,7 +177,7 @@ static bool PrepareSplitSharedCapture(IDirect3DDevice9* dev) {
 }
 
 static bool CaptureBackbufferToShared(IDirect3DDevice9* dev,bool deferProducer=false,unsigned capture=0) {
-    if(capture>=2)return false;
+    if(capture>=kSharedCaptureSlots)return false;
     auto& slot=g_sharedCapture[capture];
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::Scope cpuCapture(d2vr_cpu_sync::SharedCapture);

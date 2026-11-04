@@ -832,6 +832,7 @@ static bool BuildUnfilteredFxaa(const DWORD* fn, size_t count, std::vector<DWORD
 }
 
 #include "shadow_clip_coordinates.h"
+#include "specular_footprint.h"
 static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, const DWORD* fn,
                                                         IDirect3DPixelShader9** out) {
     bool screenDepthOverride = false;
@@ -857,7 +858,10 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
     }
     std::vector<DWORD> composite;
     std::vector<DWORD> sharp;
+    std::vector<DWORD> specular;
     const size_t originalWords = fn ? SafeShaderTokenCount(fn) : 0;
+    const bool specularPatch=!screenDepthOverride && g_specularFootprint && g_submitMode==4 &&
+        originalWords && d2vr_specular_footprint::Build(fn,originalWords+1,specular);
     std::vector<uint32_t> shadowClip;
     const bool shadowClipPatch=!screenDepthOverride && g_shadowClipCoordinates &&
         g_nativeStereoHeadGeometry && g_submitMode==4 && g_stereoMode==1 &&
@@ -868,9 +872,13 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
     const bool fxaaOverride = !screenDepthOverride && !compositePatch && g_disableFxaa &&
         g_submitMode == 4 && originalWords && BuildUnfilteredFxaa(fn, originalWords + 1, sharp);
     HRESULT hr = d2vr_shader_preload::Create(dev,
-        compositePatch ? composite.data() :
+        specularPatch ? specular.data() : compositePatch ? composite.data() :
         fxaaOverride ? sharp.data() : shadowClipPatch ? reinterpret_cast<const DWORD*>(shadowClip.data()) :
         (screenDepthOverride ? replacement : fn), out,g_orig.CreatePixelShader);
+    if(specularPatch) {
+        Log("[SpecularFootprint] exact BC938BC9 four normal samples per Phong lobe, no mesh-edge AA; result=%08X",unsigned(hr));
+        if(FAILED(hr))hr=d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
+    }
     if(shadowClipPatch) {
         Log("[ShadowClipCoordinates] exact C4D1FB10 NDC input candidate result=%08X",unsigned(hr));
         if(FAILED(hr))hr=d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);

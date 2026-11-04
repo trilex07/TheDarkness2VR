@@ -1,5 +1,26 @@
 # Failed Approaches Index
 
+### Native skin derivative variance estimate did not meet shimmer quality gate
+- **Date**: 2026-11-04
+- **Scope**: MAIN BC938BC9 exact native PS; default-off private experiment.
+- **Failure**: derivative normal-variance/gloss reduction passed flat/diffuse
+  preservation but normalized temporal variation only0.622177 ->0.553146
+  (about11%), failing the preselected20% reduction gate on actual D3D9Ex GPU.
+  Did not lower that gate or deploy this algorithm. Native XY-to-unit-Z decode
+  also discards the normal-length data needed by a direct Toksvig estimate.
+- **Next**: four spatial normal samples per Phong lobe passed the same fixture;
+  still not mesh-edge AA or headset acceptance. See
+  `docs/research/capture-rotation-material-shimmer-20261104.md`.
+
+### Four shared capture slots moved waits; no demonstrated emulator FPS win
+- **Date**: 2026-11-04
+- **Failure**: restaurant rotationON reduced the per-slot reader wait but raised
+  xrEndFrame time; cadence stayed about60/s. Later rotationOFF world phases also
+  had small reader waits. Menu-only reverse controls cannot validate gameplay.
+- **Next**: retain defaultOFF, per-slot fences and pixel/reset tests; require
+  equivalent clean gameplay and headset evidence before enabling. Do not call
+  lower time in one overlapping scope recovered FPS. Same research report.
+
 Searchable historical evidence index. Add entries when an approach fails.
 Legacy lessons describe their original experiments, not current renderer
 contracts or permission to modify native registers. Revalidate against current

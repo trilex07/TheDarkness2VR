@@ -670,6 +670,8 @@ static d2vr_eye_output::Output g_rightOutput;
 static bool g_pipelineVariantLearning=false; // actual-state sampler; startup-only, default OFF
 static bool g_reuseSharedCaptureColor = false; // startup-only; split eye slots double as pair color backups
 static int g_stereoTransferMode = 0; // 0 baseline,1 D3D9/11 worker,2 serial MT control,3 owner-wait D3D11 worker,4 single-owner overlap
+static bool g_sharedCaptureRotation=false; // opt-in: alternate fenced input pairs, never eye/frame history
+static bool g_specularFootprint=false; // exact skin shader derivative experiment, default OFF
 static bool g_livePassProbe = false; // explicit diagnostic only; never poll per-object RT state by default
 // A diagnostic lighting preset can invert only the deferred eye offset. A
 // tracked profile must choose the matching configured reconstruction explicitly;
@@ -896,6 +898,12 @@ void LoadConfig() {
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
     g_stereoTransferMode = GetPrivateProfileIntA("Render", "StereoTransferWorker", 0, chosenIni);
+    g_sharedCaptureRotation=GetPrivateProfileIntA("Render","SharedCaptureRotation",0,chosenIni)!=0;
+    g_specularFootprint=GetPrivateProfileIntA("Render","SpecularFootprint",0,chosenIni)!=0;
+#ifdef D2VR_MATCHED_CAPTURE
+    g_sharedCaptureRotation=g_sharedCaptureRotation || GetPrivateProfileIntA("Diagnostics","SharedCaptureRotationExperiment",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    g_specularFootprint=g_specularFootprint || GetPrivateProfileIntA("Diagnostics","SpecularFootprintExperiment",0,".\\Darkness2VR-diagnostic.ini")!=0;
+#endif
     g_deferStereoTransferReader = GetPrivateProfileIntA("Render", "DeferStereoTransferReader", 0, chosenIni)!=0;
     Log("[StereoTransferWorker] deferReader=%d requires worker mode=1, 3 or 4 and LastConsumerReaderFence=1",int(g_deferStereoTransferReader));
     g_overlapNativePresent = GetPrivateProfileIntA("Render", "OverlapNativePresent", 0, chosenIni)!=0;
@@ -3479,7 +3487,7 @@ static bool PumpStereoProducer(d2vr_transfer::Pending& pending,
 
 static bool StartStereoTransfer(IDirect3DDevice9* dev,int eye,d2vr_transfer::Pending& pending,
     std::shared_ptr<d2vr_transfer::Job>& job,unsigned capture=0) {
-    if(eye<0 || eye>1 || capture>=2)return false;
+    if(eye<0 || eye>1 || capture>=kSharedCaptureSlots)return false;
     auto& slot=g_sharedCapture[capture];
     if(!EnsureD11StereoPipeline() || !g_eyeRTV[eye] || !slot.srv11) return false;
     EnsureDepthTexture11();
@@ -3560,7 +3568,7 @@ static bool FinishStereoTransfer(d2vr_transfer::Pending& pending,
 
 static bool ArmStereoTransfer(d2vr_transfer::Pending& pending,
     const std::shared_ptr<d2vr_transfer::Job>& job,unsigned capture) {
-    if(capture>=2 || !job || !pending.Promote()) { g_stereoTransferFault=true; return false; }
+    if(capture>=kSharedCaptureSlots || !job || !pending.Promote()) { g_stereoTransferFault=true; return false; }
     if(!job->deferReader) return true;
     auto& slot=g_sharedCapture[capture];
     slot.deferred=job;
@@ -3901,7 +3909,20 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     // Failure keeps the established one-slot route; no pending read is bypassed.
     const bool splitCapture=transferWorker && g_deferStereoTransferReader &&
         g_lastConsumerReaderFence && PrepareSplitSharedCapture(dev);
-    const unsigned rightCapture=splitCapture?1u:0u;
+    unsigned leftCapture=0;
+    // Every selected slot retains its producer and reader queries. Rotate only
+    // split mode4 inputs; output eyes still contain THIS frame. Allocation
+    // failure permanently retains the existing pair until a successful Reset.
+    if(g_sharedCaptureRotation && splitCapture && g_stereoTransferMode==4 && !g_captureRotationUnavailable) {
+        if(EnsureSharedCapture(dev,2) && EnsureSharedCapture(dev,3)) {
+            leftCapture=2u*(g_captureRotation++&1u);
+            if(g_captureRotation==2)Log("[SharedCaptureRotation] active: alternating two fenced input pairs; same-frame stereo, +two input surfaces");
+        } else {
+            g_captureRotationUnavailable=true;
+            Log("[SharedCaptureRotation] allocation unavailable; retain original fenced pair until Reset");
+        }
+    }
+    const unsigned rightCapture=leftCapture+(splitCapture?1u:0u);
     static int reportedSplit=-1;
     if(reportedSplit!=int(splitCapture)) {
         reportedSplit=int(splitCapture);
@@ -3917,11 +3938,11 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     matched_capture::Source(dev,0);
 #endif
     g_blitPass = 1;
-    bool eye0Ok = transferWorker ? StartStereoTransfer(dev,0,leftTransfer,leftJob) :
+    bool eye0Ok = transferWorker ? StartStereoTransfer(dev,0,leftTransfer,leftJob,leftCapture) :
         (zeroCopy ? CaptureBackbufferToShared(dev) : CopyFrame(dev));
     if(!transferWorker) {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
-        if (zeroCopy) g_uploadSRV = g_sharedCapture[0].srv11;
+        if (zeroCopy) g_uploadSRV = g_sharedCapture[leftCapture].srv11;
         if (eye0Ok) eye0Ok = RenderStereoEyeD11(0, g_eyeFov[0], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
         g_uploadSRV = saved;
     }
@@ -3975,7 +3996,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         }
     }
     if(!isolatedOutput)g_rightOutput.Invalidate();
-    if(!PumpStereoProducer(leftTransfer,leftJob,0)) eye0Ok=false;
+    if(!PumpStereoProducer(leftTransfer,leftJob,leftCapture)) eye0Ok=false;
     // With split slots the left capture is already an exact private copy of
     // the live RT0, written only by capture 0: restore from it instead of a
     // second full-surface backup copy queued ahead of the right-eye replay.
@@ -3983,10 +4004,10 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     D3DSURFACE_DESC liveDesc{};
     const bool colorReuse = g_reuseSharedCaptureColor && splitCapture && eye0Ok &&
         SUCCEEDED(liveEnd.targets[0]->GetDesc(&liveDesc)) &&
-        d2vr_color_reuse::Mirrors(g_sharedCapture[0].mirror, liveEnd.targets[0], pairCaptureSerial,
+        d2vr_color_reuse::Mirrors(g_sharedCapture[leftCapture].mirror, liveEnd.targets[0], pairCaptureSerial,
             liveDesc.Width, liveDesc.Height, unsigned(liveDesc.Format), unsigned(liveDesc.MultiSampleType),
-            g_sharedCapture[0].width, g_sharedCapture[0].height);
-    const uint64_t liveBackupSerial = colorReuse ? g_sharedCapture[0].mirror.serial : 0;
+            g_sharedCapture[leftCapture].width, g_sharedCapture[leftCapture].height);
+    const uint64_t liveBackupSerial = colorReuse ? g_sharedCapture[leftCapture].mirror.serial : 0;
     {
         static int reportedReuse = -1;
         if (g_reuseSharedCaptureColor && reportedReuse != int(colorReuse)) {
@@ -3994,7 +4015,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
             Log("[SharedCaptureColor] active=%d split=%d eye0=%d format=%u msaa=%u size=%ux%u slot=%ux%u",
                 int(colorReuse), int(splitCapture), int(eye0Ok), unsigned(liveDesc.Format),
                 unsigned(liveDesc.MultiSampleType), liveDesc.Width, liveDesc.Height,
-                g_sharedCapture[0].width, g_sharedCapture[0].height);
+                g_sharedCapture[leftCapture].width, g_sharedCapture[leftCapture].height);
         }
     }
     // Preserve live pixels for restoration. A complete world render uses current
@@ -4003,15 +4024,15 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         warnEarly("BackupLiveColor failed");
         liveEnd.Release(); g_blitPass = 0; g_eyePairReady = false; return;
     }
-    if(!PumpStereoProducer(leftTransfer,leftJob,0)) eye0Ok=false;
+    if(!PumpStereoProducer(leftTransfer,leftJob,leftCapture)) eye0Ok=false;
     const bool historyOk = isolatedOutput || SeedRightEyeBackground(dev, liveEnd.targets[0], g_hadWorldDrawThisFrame);
     g_rightHistoryFromCapture = colorReuse;
-    if(!PumpStereoProducer(leftTransfer,leftJob,0)) eye0Ok=false;
+    if(!PumpStereoProducer(leftTransfer,leftJob,leftCapture)) eye0Ok=false;
     const bool frameStateOk=d2vr_replay::g_frameStart.Apply(dev,
         isolatedOutput?liveEnd.targets[0]:nullptr,isolatedOutput?g_rightOutput.Right():nullptr) &&
         (!isolatedOutput || g_rightOutput.RemapInheritedTextures(dev,d2vr_replay::g_orig.SetTexture));
     if(!frameStateOk)warnEarly("frame-start state restore failed");
-    if(!PumpStereoProducer(leftTransfer,leftJob,0)) eye0Ok=false;
+    if(!PumpStereoProducer(leftTransfer,leftJob,leftCapture)) eye0Ok=false;
     g_gpuTiming.MarkLiveEnd();
     d2vr_replay::InvalidateShadowAtlasPass();
     const bool replayOk=frameStateOk && d2vr_replay::ReplayStream(dev, 1, sp1);
@@ -4021,7 +4042,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
             Log("[StereoPair] incomplete replay count=%u; no right history save or XR layer",rejectedReplays);
     }
     QueryPerformanceCounter(&perf[2]);
-    if(!PumpStereoProducer(leftTransfer,leftJob,0)) eye0Ok=false;
+    if(!PumpStereoProducer(leftTransfer,leftJob,leftCapture)) eye0Ok=false;
 
     // The owner thread is still on D3D9. A published worker may hold D3D11
     // through the history copy; join it before the right-eye handoff.
@@ -4030,7 +4051,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     // Preserve the accepted mode-1 ordering; only mode 4 extends overlap
     // through the D3D9 history copy before reclaiming the D3D11 context.
     if(g_stereoTransferMode!=4 && leftTransfer.Active())
-        eye0Ok=FinishStereoTransfer(leftTransfer,leftJob,0) && eye0Ok;
+        eye0Ok=FinishStereoTransfer(leftTransfer,leftJob,leftCapture) && eye0Ok;
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Source(dev,1);
 #endif
@@ -4048,7 +4069,7 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
         g_rightOutput.Deactivate();
     }
     if(g_stereoTransferMode==4 && leftTransfer.Active())
-        eye0Ok=FinishStereoTransfer(leftTransfer,leftJob,0) && eye0Ok;
+        eye0Ok=FinishStereoTransfer(leftTransfer,leftJob,leftCapture) && eye0Ok;
     leftJob.reset();
 
     const bool deferredHistory = g_rightHistoryFromCapture && eye1Ok;
@@ -4058,16 +4079,16 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     if (deferredHistory) {
         // Adopt only the exact RT0 copy made by THIS pair's right capture.
         IDirect3DSurface9* rightCopy = nullptr;
-        if (eye1Ok && rightCapture == 1 &&
-            d2vr_color_reuse::Mirrors(g_sharedCapture[1].mirror, liveEnd.targets[0], liveBackupSerial,
+        if (eye1Ok && splitCapture &&
+            d2vr_color_reuse::Mirrors(g_sharedCapture[rightCapture].mirror, liveEnd.targets[0], liveBackupSerial,
                 liveDesc.Width, liveDesc.Height, unsigned(liveDesc.Format), unsigned(liveDesc.MultiSampleType),
-                g_sharedCapture[1].width, g_sharedCapture[1].height))
-            rightCopy = g_sharedCapture[1].surface9;
+                g_sharedCapture[rightCapture].width, g_sharedCapture[rightCapture].height))
+            rightCopy = g_sharedCapture[rightCapture].surface9;
         if (!CompleteRightEyeHistory(dev, liveEnd.targets[0], rightCopy)) eye1Ok = false;
     }
     if(!transferWorker) {
         ID3D11ShaderResourceView* saved = g_uploadSRV;
-        if (zeroCopy) g_uploadSRV = g_sharedCapture[0].srv11;
+        if (zeroCopy) g_uploadSRV = g_sharedCapture[leftCapture].srv11;
         if (eye1Ok) eye1Ok = RenderStereoEyeD11(1, g_eyeFov[1], 1.0f, 1.0f, 1.0f, 0.0f, 0.0f);
         g_uploadSRV = saved;
     }
@@ -4075,8 +4096,8 @@ static void RenderEyePairFromReplay(IDirect3DDevice9* dev) {
     IDirect3DSurface9* liveBackup = g_liveColorBackup;
     if (colorReuse) {
         // Slot 0 must still hold the copy validated above (only capture 0 writes it).
-        liveBackup = d2vr_color_reuse::Unchanged(g_sharedCapture[0].mirror, liveEnd.targets[0], liveBackupSerial) ?
-            g_sharedCapture[0].surface9 : nullptr;
+        liveBackup = d2vr_color_reuse::Unchanged(g_sharedCapture[leftCapture].mirror, liveEnd.targets[0], liveBackupSerial) ?
+            g_sharedCapture[leftCapture].surface9 : nullptr;
         if (!liveBackup) {
             static unsigned lost = 0;
             if (lost++ < 8) Log("[SharedCaptureColor] live copy replaced before restore; pair rejected");
@@ -4835,6 +4856,7 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
 #include "eye_gaze.inl"
 #include "gaze_lod_diagnostic.inl"
 #include "engine_frame_cap.inl"
+#include "native_sleep_timing.inl"
 #include "engine_lod_scale.inl"
 
 static d2vr_input::UnarmedTriggerDpad g_unarmedTriggerDpadState;
@@ -5780,6 +5802,7 @@ void PumpXR() {
     ObserveNativeMenuReceiver();
     ApplyGazeMenuCursor(); // same native window thread as the receiver observation
     if(g_xrRunning) { ApplyEngineFrameCap(); ApplyEngineLodScale(); ObserveGazeLodConfiguration(); ReportGazeLodRuntimeObserver(); }
+    if(g_xrRunning) PollNativeSleepTiming();
     if(g_xrRunning && g_displayRefresh.FallbackActive() && GetTickCount64()>=g_steamRefreshNext) {
         g_steamRefreshNext=GetTickCount64()+2000;
         const float previous=g_displayRefresh.Hz();

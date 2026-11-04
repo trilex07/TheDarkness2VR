@@ -40,7 +40,9 @@ static Ref<ID3DBlob> Compile(const char* source,const char* target) {
 }
 static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceContext* ctx,
                      bool deferred=false,UINT width=64,UINT height=64,bool ownerProducer=false,bool split=false,
-                     bool overlapOwner=false,unsigned frames=100,bool reuseHistory=false,bool isolated=false) {
+                     bool overlapOwner=false,unsigned frames=100,bool reuseHistory=false,bool isolated=false,bool rotation=false) {
+    CHECK(!rotation || (split && deferred && overlapOwner));
+    unsigned inputBase=0;
     IDirect3DSurface9* rtRaw=nullptr;
     HR(dev9->CreateRenderTarget(width,height,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rtRaw,nullptr));
     auto rt=Adopt(rtRaw); HR(dev9->SetRenderTarget(0,rt.Get()));
@@ -53,8 +55,8 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         Ref<ID3D11ShaderResourceView> srv;Ref<ID3D11Query> reader;
         d2vr_shared_reader::Fence fence;
         std::shared_ptr<d2vr_transfer::Job> retained;
-    } inputs[2];
-    for(unsigned i=0;i<(split?2u:1u);++i) {
+    } inputs[4];
+    for(unsigned i=0;i<(rotation?4u:split?2u:1u);++i) {
         auto& in=inputs[i];HANDLE handle=nullptr;IDirect3DTexture9* tex=nullptr;
         HR(dev9->CreateTexture(width,height,1,D3DUSAGE_RENDERTARGET,D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT,&tex,&handle));in.tex9=Adopt(tex);
         IDirect3DSurface9* surface=nullptr;HR(tex->GetSurfaceLevel(0,&surface));in.surface=Adopt(surface);
@@ -102,7 +104,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     };
     auto packet=[&](int eye) {
         auto j=std::make_shared<d2vr_transfer::Job>();
-        auto& in=inputs[split?eye:0];
+        auto& in=inputs[inputBase+(split?eye:0)];
         if(!ownerProducer)j->producer=in.producer;
         j->producerComplete=ownerProducer;j->reader=in.reader;j->context=Ref<ID3D11DeviceContext>(ctx);
         j->target=targets[eye];j->constants=buffer;j->vs=vs;j->ps=ps;
@@ -120,8 +122,9 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         in.retained.reset();
     };
     auto issue=[&](int eye) {
-        auto& in=inputs[split?eye:0];
+        auto& in=inputs[inputBase+(split?eye:0)];
         auto& q9=in.producer;
+        if(rotation && in.retained)retire(in.retained);
         CHECK(!in.retained && !in.fence.pending); // native overwrite cannot bypass retirement
         HR(dev9->StretchRect(captureSource,nullptr,in.surface.Get(),nullptr,D3DTEXF_NONE));
         HR(q9->Issue(D3DISSUE_END));
@@ -138,7 +141,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     };
     auto waitOwner=[&](int eye) {
         if(!overlapOwner) return;
-        auto& in=inputs[split?eye:0];
+        auto& in=inputs[inputBase+(split?eye:0)];
         // The source RT changes while the flushed copy is still in flight.
         // Sampling before S_OK would observe this later color.
         const DWORD distract=eye?0xff001122:0xff221100;
@@ -168,15 +171,16 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         abandoned->producerComplete=false;
         {
             d2vr_transfer::Pending pending;
-            CHECK(pending.Stage(queue,abandoned,inputs[0].producer.Get(),fault));
+            CHECK(pending.Stage(queue,abandoned,inputs[inputBase].producer.Get(),fault));
             CHECK(pending.Staged() && abandoned->thread==0 && !abandoned->readerSubmitted);
         }
-        CHECK(!fault && !inputs[0].fence.pending);
+        CHECK(!fault && !inputs[inputBase].fence.pending);
     }
     EyeColorHistory history;
     DWORD previousRight=0;
     CHECK(!reuseHistory || (split && deferred && overlapOwner));
     for(unsigned frame=0;frame<frames;++frame) {
+        inputBase=rotation?2u*(frame&1u):0;
         const DWORD left=0xff000000|(frame+1)<<16|0x002233;
         const DWORD right=0xff000000|0x00bb0000|(frame+1)<<8|0x000055;
         const bool uiOnly=((reuseHistory && history.pixels) || (isolated && frame)) && frame%3==1;
@@ -188,7 +192,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             d2vr_transfer::Pending pending;
             if(overlapOwner) {
                 l->producerComplete=false;
-                CHECK(pending.Stage(queue,l,inputs[0].producer.Get(),fault));
+                CHECK(pending.Stage(queue,l,inputs[inputBase].producer.Get(),fault));
                 CHECK(!pending.Start(queue,l,fault) && l->thread==0);
                 waitOwner(0);CHECK(pending.Poll()==S_OK);
                 CHECK(pending.Promote() && !pending.Staged());
@@ -213,7 +217,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
         }
         // The second input may be written while the first reader receipt is
         // still pending. No wait/map/poll of the first input precedes this copy.
-        if(split)CHECK(inputs[0].retained==l && inputs[0].fence.pending);
+        if(split)CHECK(inputs[inputBase].retained==l && inputs[inputBase].fence.pending);
         // Alternate the exact-copy adoption with production fallback Save:
         // fallback must detach the old shared alias before it writes.
         if(reuseHistory && frame%5==4) {
@@ -230,7 +234,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             d2vr_transfer::Pending pending;
             if(overlapOwner) {
                 r->producerComplete=false;
-                CHECK(pending.Stage(queue,r,inputs[split?1:0].producer.Get(),fault));
+                CHECK(pending.Stage(queue,r,inputs[inputBase+(split?1:0)].producer.Get(),fault));
                 waitOwner(1);CHECK(pending.Poll()==S_OK);
                 CHECK(pending.Promote() && !pending.Staged());
             } else CHECK(pending.Start(queue,r,fault));
@@ -239,10 +243,11 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
             else if(!isolated) HR(dev9->ColorFill(rt.Get(),nullptr,left)); // isolated output leaves live image untouched
             CHECK(pending.Finish());
         }
-        CHECK(!fault);verify(1,expectedRight);verify(0,left);retire(r);r.reset();
+        CHECK(!fault);verify(1,expectedRight);verify(0,left);if(!rotation)retire(r);r.reset();
         previousRight=expectedRight;
-        if(split){retire(l);l.reset();}
+        if(split){if(!rotation)retire(l);l.reset();}
     }
+    for(auto& in:inputs)if(in.retained)retire(in.retained);
     history.Release(); // COM history ownership drains before slots/Reset.
     CHECK(!history.target && !history.pixels);
     // A completed receipt must carry no D3D9 interface; an uncompleted one
@@ -323,8 +328,13 @@ int main() {
     HR(d9->ResetEx(&pp,nullptr));
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true,true,10,false,true);
     HR(d9->ResetEx(&pp,nullptr));
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,64,64,true,true,true,80,false,true,true);
+    HR(d9->ResetEx(&pp,nullptr));
+    Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728,true,true,true,10,false,true,true);
+    HR(d9->ResetEx(&pp,nullptr));
+    puts("PASS rotating input pairs: frame-varying left/right pixels, delayed receipt retirement across two frames, all four readers drained before Reset");
     puts("PASS combined actual-source adopted history + native 0x50 + D3D11 split readers: UI persistence, seed-before-overwrite, fallback detachment, live slot restore, resize/recreate and Reset");
     ctx={};d11={};d9={};api={};DestroyWindow(window);FreeLibrary(module);
-    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 2860 eye transfers (1080 at 2676x2728), including persistent isolated right output, single-owner overlap on native 0x50, two independent shared inputs, MT 0x54 workers, sampled pixel equality, concurrent D3D9 work, query retirement, RAII join, failure latch, Reset/recreate");
+    std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 3040 eye transfers (1100 at 2676x2728), including persistent isolated right output, single-owner overlap on native 0x50, two independent shared inputs, MT 0x54 workers, sampled pixel equality, concurrent D3D9 work, query retirement, RAII join, failure latch, Reset/recreate");
     std::puts("No game/OpenXR/Steam calls; this does not prove frame-time improvement or headset acceptance.");
 }

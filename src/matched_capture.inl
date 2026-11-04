@@ -601,6 +601,25 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
         SUCCEEDED(dev->GetIndices(&ib)) && SUCCEEDED(dev->GetPixelShader(&ps)) && SUCCEEDED(dev->GetTexture(0,&texture));
     const auto pixelMetadata=d2vr_replay::g_pixelShaders.Lookup(ps);
     const unsigned pixelHash=pixelMetadata.hash;
+    // First-person material evidence, only inside an explicit single-frame
+    // capture. Include mip chains and every potentially used pixel sampler;
+    // a diffuse-world whitelist cannot establish hand/outline filtering.
+    const bool edgeMaterial=pixelHash==0xE345B150u;
+    if(eye==0 && (edgeMaterial || (vp.MinZ==0.f && vp.MaxZ<=.05f))) for(unsigned slot=0;slot<8;++slot) {
+        IDirect3DBaseTexture9* base=nullptr;
+        const HRESULT textureHr=dev->GetTexture(slot,&base);
+        if(SUCCEEDED(textureHr) && base) {
+            D3DSURFACE_DESC desc{}; HRESULT descHr=E_FAIL;
+            if(base->GetType()==D3DRTYPE_TEXTURE)
+                descHr=static_cast<IDirect3DTexture9*>(base)->GetLevelDesc(0,&desc);
+            DWORD states[6]{};bool valid=true;
+            const D3DSAMPLERSTATETYPE names[]={D3DSAMP_MINFILTER,D3DSAMP_MAGFILTER,D3DSAMP_MIPFILTER,D3DSAMP_MAXANISOTROPY,D3DSAMP_MIPMAPLODBIAS,D3DSAMP_MAXMIPLEVEL};
+            for(unsigned i=0;i<6;++i) valid=SUCCEEDED(dev->GetSamplerState(slot,names[i],&states[i])) && valid;
+            fprintf(meta,"{\"kind\":\"%s\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"vs_hash\":%u,\"ps_hash\":%u,\"sampler\":%u,\"texture_type\":%u,\"mip_levels\":%u,\"desc_valid\":%s,\"width\":%u,\"height\":%u,\"format\":%u,\"sampler_valid\":%s,\"min_mag_mip_aniso_bias_maxmip\":[%lu,%lu,%lu,%lu,%lu,%lu]}\n",
+                edgeMaterial?"edge_sampler":"first_person_sampler",frame,draws[eye]-1,hash,pixelHash,slot,unsigned(base->GetType()),base->GetLevelCount(),SUCCEEDED(descHr)?"true":"false",desc.Width,desc.Height,unsigned(desc.Format),valid?"true":"false",states[0],states[1],states[2],states[3],states[4],states[5]);
+        }
+        if(base)base->Release();
+    }
     const bool lighting=pixelMetadata.inverse>=0 || pixelMetadata.extents>=0 || pixelHash==0xD82658F7u;
     if (d2vr_sampling::IsWorldDiffuseMaterial(hash,pixelHash)) {
         DWORD min=0,mag=0,mip=0,quality=0,bias=0;

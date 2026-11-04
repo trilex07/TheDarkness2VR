@@ -376,3 +376,41 @@ history accidentally. Baseline remains unchanged.
 - New fallback headset effectiveness NOT RUN. No complete edge shimmer fix,
   outdoor40FPS recovery, main merge, push or shutdown claimed. Native CPU/replay/
   wait correlation and offending-material pre-NIS pixels are next evidence gates.
+
+## Active continuation: rotation/material/sleep evidence, 2026-11-04
+
+- See `docs/research/capture-rotation-material-shimmer-20261104.md` for precise
+  changes/tests/limits. SharedCaptureRotation and SpecularFootprint defaultOFF.
+  Do not adopt rotation as a proven FPS optimization: emulator waits moved and
+  cadence did not improve. Pixel/interop/fence/Reset fixtures PASS.
+- Native skin supersampling passes the actual D3D9Ex material motion gate,
+  about67% lower normalized variation, without changing red-channel diffuse
+  checker pixels. Four extra normal reads; measured stress overhead about0.11ms
+  GPU both eyes at2676x2728. Not a complete mesh-edge or HMD fix.
+- Actual emulator game PID49628 created modified BC938BC9 successfully and
+  showed both hands. Selected native outline E345B150 has full2676x2728 depth
+  and normal inputs with point sampling, VS one-pixel neighbour offsets.
+- Diagnostic-only NativeSleepTiming observes the verified external SleepEx API
+  and native wrapper/deadline parent, preserving wait behavior; actual x86 ABI,
+  return, LastError and APC regression PASS. Production build contains no hook.
+- Current active test ownership/payload: private
+  `test-output/shimmer-repeatable-20261104/{owned-process,payload}.json`.
+  Do not assume old PIDs/window IDs valid. PID42132 is the latest recorded own
+  Steam -applaunch test, with per-process Simulator override and trace/history
+  disabled for clean timing. Read current receipt/process identity before action.
+- The lab predates the user's4A0320B2 package and restoresE56/AC82, so on ending
+  tests: close only owned game, normalize live-arm diagnostic INI to the lab
+  candidate if needed; labRestore; then install
+  `build/combined-gaze-stability-20261104/Install.ps1` to restore user4A/3A.
+  Restore all four FRESH pre-lab save/settings backups from
+  `test-output/shimmer-repeatable-20261104/save-backup/receipt.json` with hash
+  checks. Global OpenXR must remain SteamVR; main INI/EXE/loader protected hashes.
+- User's original CONTINUE is hash0386D944..., current lab restaurant fixture
+  ED13BA60... is temporary. Do not use older backup receipts from other labs.
+  Full FPS/outdoor/HMD scope remains open; no shutdown/main/push authorized by
+  these partial results. Keep progressing from evidence rather than repeat menus.
+- Automation: after launch select the NEW native game window through CUA and
+  activate it; otherwise XR IPC deliveries can be acknowledged while native UI
+  is inactive. At actual title screen use left controller menu/Start, wait for
+  transition and verify Continue RED before right primary/A. Do not treat a
+  black transition frame or unhighlighted menu as proof that gameplay loaded.
