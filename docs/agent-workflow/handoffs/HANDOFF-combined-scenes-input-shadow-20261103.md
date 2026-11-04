@@ -529,3 +529,10 @@ history accidentally. Baseline remains unchanged.
   4A/3A. Actual installer fixture PASS five modes, return toCombined, rollback
   and all tamper/foreign-preimage rejection cases. Freeze/install not implied
   by fixture output. Supersampling is NOT included in this package.
+- Additional three-target quality package tooling separates Combined/Material/
+  Coverage: the latter explicitly includes resource-only3345x3410 while final
+  eyes stay2676x2728. It has its OWN manifest/installer, exact DLL+bothINI rollback,
+  EXE/loader protection, receipt-derived mode validation and foreign-preimage
+  rejection (including VerifyOnly and Restore). Actual installer fixture PASS;
+  no install implied. DefaultCombined keeps experimentsOFF. Never run the old
+  two-target installer to restore a three-target Coverage trial.
