@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include "../src/stereo_transfer_worker.h"
 #include "../src/shared_reader_fence.h"
+#include "../src/gpu_query_pause.h"
 #include "../src/isolated_eye_output.h"
 #include <dxgi.h>
 #include <d3dcompiler.h>
@@ -15,6 +16,7 @@ using d2vr_transfer::Ref;
 struct ReaderOps {
     ID3D11DeviceContext* context;ID3D11Query* query;
     unsigned ends=0;
+    unsigned polls=0;
     bool Valid() const {return context && query;}
     const void* Context() const {return context;}
     const void* Query() const {return query;}
@@ -26,7 +28,7 @@ struct ReaderOps {
             hr==S_FALSE?d2vr_shared_reader::Poll::Pending:d2vr_shared_reader::Poll::Failed;
     }
     uint64_t Now() const {return GetTickCount64();}
-    void PauseThread(){SwitchToThread();}
+    void PauseThread(){d2vr_gpu_wait::Pause(200,polls);}
     void End(){++ends;context->End(query);}
 };
 template<class T> Ref<T> Adopt(T* p) {Ref<T> owned(p);if(p)p->Release();return owned;}

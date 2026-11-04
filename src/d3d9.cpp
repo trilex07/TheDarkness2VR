@@ -662,6 +662,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 }
 
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
+static unsigned g_sharedReaderSleepUs=0; // opt-in polling backoff, exact query completion unchanged
 static bool g_deferStereoTransferReader = false; // startup-only; exact reader fence before shared reuse
 static bool g_overlapNativePresent = false; // startup-only; protected mode 4: mirror Present inside right-eye GPU wait
 static bool g_earlyPacketPreparation = false; // owned prepass overlaps capture/backup before replay
@@ -899,6 +900,12 @@ void LoadConfig() {
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
     g_stereoTransferMode = GetPrivateProfileIntA("Render", "StereoTransferWorker", 0, chosenIni);
     g_sharedCaptureRotation=GetPrivateProfileIntA("Render","SharedCaptureRotation",0,chosenIni)!=0;
+    g_sharedReaderSleepUs=GetPrivateProfileIntA("Render","SharedReaderSleepUs",0,chosenIni);
+#ifdef D2VR_MATCHED_CAPTURE
+    g_sharedReaderSleepUs=GetPrivateProfileIntA("Diagnostics","SharedReaderSleepUsExperiment",g_sharedReaderSleepUs,".\\Darkness2VR-diagnostic.ini");
+#endif
+    if(g_sharedReaderSleepUs>1000)g_sharedReaderSleepUs=0;
+    Log("[SharedReader] polling backoff=%uus after four yields; exact completion required",g_sharedReaderSleepUs);
     g_specularFootprint=GetPrivateProfileIntA("Render","SpecularFootprint",0,chosenIni)!=0;
 #ifdef D2VR_MATCHED_CAPTURE
     g_sharedCaptureRotation=g_sharedCaptureRotation || GetPrivateProfileIntA("Diagnostics","SharedCaptureRotationExperiment",0,".\\Darkness2VR-diagnostic.ini")!=0;
@@ -7732,6 +7739,17 @@ static HRESULT STDMETHODCALLTYPE SubmissionSetSoftwareProcessing(IDirect3DDevice
     return result;
 }
 void HookDevice(IDirect3DDevice9* dev) {
+    // Query the actual swapchain, not a guessed default from the game options.
+    // One startup observation; no per-draw/per-frame query or setting change.
+    IDirect3DSwapChain9* pacingChain=nullptr;
+    if(SUCCEEDED(dev->GetSwapChain(0,&pacingChain)) && pacingChain) {
+        D3DPRESENT_PARAMETERS actual{};
+        if(SUCCEEDED(pacingChain->GetPresentParameters(&actual)))
+            Log("[NativePresentParameters] windowed=%d interval=0x%08X effect=%u flags=0x%08X backbuffers=%u size=%ux%u refresh=%u; observed, not changed",
+                int(actual.Windowed),actual.PresentationInterval,unsigned(actual.SwapEffect),actual.Flags,
+                actual.BackBufferCount,actual.BackBufferWidth,actual.BackBufferHeight,actual.FullScreen_RefreshRateInHz);
+        pacingChain->Release();
+    }
     d2vr_sampling::InvalidateSamplerCaps();
     StartAsyncLogging();
     g_renderThreadId = GetCurrentThreadId();

@@ -1,4 +1,5 @@
 #include "shared_color_reuse.h"
+#include "gpu_query_pause.h"
 // Each slot owns its full producer/reader lifetime. Fixed eye slots remove
 // the left-reader -> right-write dependency without reusing a pending input.
 struct SharedCaptureSlot {
@@ -31,6 +32,7 @@ static bool g_stereoTransferFault=false;
 static bool g_splitCaptureUnavailable=false;
 struct SharedReaderFenceOps {
     SharedCaptureSlot& slot;
+    unsigned polls=0;
     bool Valid() const {return g_ctx11 && slot.reader;}
     const void* Context() const {return g_ctx11;}
     const void* Query() const {return slot.reader;}
@@ -43,7 +45,7 @@ struct SharedReaderFenceOps {
             hr==S_FALSE ? d2vr_shared_reader::Poll::Pending : d2vr_shared_reader::Poll::Failed;
     }
     uint64_t Now() const {return GetTickCount64();}
-    void PauseThread() {SwitchToThread();}
+    void PauseThread() {d2vr_gpu_wait::Pause(g_sharedReaderSleepUs,polls);}
 };
 static bool CanReadSharedUpload(ID3D11ShaderResourceView* source) {
     for(auto& slot:g_sharedCapture)if(source && source==slot.srv11) {

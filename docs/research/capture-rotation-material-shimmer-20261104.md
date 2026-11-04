@@ -120,3 +120,41 @@ Open: real moving hands before/after, geometry/outline shimmer, clean equivalent
 world performance controls, user's outdoor25ms CPU/40FPS repro, and HMD acceptance.
 Do not merge/push, claim complete, enable experimental defaults or shut down on
 the strength of these offline/emulator results alone.
+
+
+## Scheduled CPU and reader polling backoff (checkpoint)
+
+Native swapchain GetPresentParameters reports windowed=1, interval=0x80000000
+(D3DPRESENT_INTERVAL_IMMEDIATE), DISCARD, one2676x2728 backbuffer. Observed only;
+no VSync patch. Native cap readback is120, FrameCapMode0. Native deadline SleepEx
+has zero calls in measured world windows, so it does not explain those windows.
+
+CPUExecution now uses GetThreadTimes kernel+user deltas, only with explicit
+CPUSyncTiming diagnostics. Same-thread and monotonic guards; ordinary disabled
+scopes make no thread-counter calls. Wall spans and scheduled CPU remain separate.
+Counters are quantized and scopes overlap, so do not sum their reported times.
+Real Windows x86 fixture PASS:191ms sleep approximately0 CPU;180ms busy loop
+171.88ms CPU; cross-thread stamp and disabled-scope exclusion PASS.
+
+Opt-in SharedReaderSleepUs (default0, maximum1000) uses a private thread-local
+high-resolution waitable timer after four yield polls. Diagnostic override:
+SharedReaderSleepUsExperiment. It changes no global timer/scheduler settings.
+The original D3D11 query must STILL return S_OK; timeout, ownership, retirement,
+reset and same-frame ordering are unchanged. Unsupported timer falls back to yield.
+
+Actual D3D9Ex/D3D11 fixture PASS3040 transfers,1100 full2676x2728, distinct eyes,
+four-slot retirement and adopted histories using200us backoff. Diagnostic and
+production builds PASS. Private logs gpu-query-pause-{interop-test,diagnostic,
+production}.log. No physical headset acceptance.
+
+World F (backoff0): example301-frame/5s window reader828.125CPUms/602 waits,
+about2.75ms per frame. World G (200us): example300-frame/5.015s window
+156.25CPUms/600 waits, about0.52ms per frame. Frame cadence remained about60.
+Whole render-thread CPU did not show a corresponding reliable decrease across
+these different scene phases. These are preliminary reader-scope observations,
+NOT a controlled FPS improvement. F also had a148-frame/5s window requiring
+further attribution. H reverse control is EXCLUDED: captures show title/intro,
+not the world scene. Do not compare its timings with F/G world windows.
+
+The original user outdoor40FPS/25ms CPU case is not yet reproduced. Keep this
+experiment OFF by default until equivalent world controls and runtime acceptance.

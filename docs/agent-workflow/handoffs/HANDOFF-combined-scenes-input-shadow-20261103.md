@@ -414,3 +414,16 @@ history accidentally. Baseline remains unchanged.
   is inactive. At actual title screen use left controller menu/Start, wait for
   transition and verify Continue RED before right primary/A. Do not treat a
   black transition frame or unhighlighted menu as proof that gameplay loaded.
+
+
+### CPU reader checkpoint, 2026-11-04
+- Added diagnostic scheduled thread CPU accounting and opt-in private waitable
+  timer reader backoff, default0. Native presentation already IMMEDIATE, cap120.
+- Actual CPU fixture, D3D9Ex/D3D11 interop3040/1100 full-size and both builds PASS.
+- F/G preliminary reader CPU2.75->0.52ms/frame with200us backoff, cadence60both;
+  scene phase differs, NO controlled whole-frame/FPS improvement claim.
+- H reverse control remains title/intro, EXCLUDE from world comparison. Read
+  latest ownership receipt, never use a stale PID to terminate the game.
+- Production build overwrote root d3d9.dll; installed Steam lab remains diagnostic
+  F0F41C20. For lab Update first rebuild diagnostic. End-lab restoration above
+  remains REQUIRED, including all four fresh save/settings preimages.

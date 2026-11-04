@@ -10,6 +10,7 @@ struct ImagePresentScope {
     bool previousInside=false,opened=false;
     IDirect3DDevice9* owner=nullptr;
     LARGE_INTEGER forwardStart{};
+    d2vr_cpu_sync::ThreadStamp forwardCpu{};
     bool forwardActive=false;
     uint64_t adaptiveSerial=0;
 };
@@ -44,10 +45,11 @@ static void ImagePresentBefore(IDirect3DSwapChain9* sc,uintptr_t caller,bool qua
 static void ImagePresentForwardBegin() {
     auto& state=g_imagePresentScope;
     state.forwardActive=QueryPerformanceCounter(&state.forwardStart)!=FALSE;
+    if(state.forwardActive && d2vr_cpu_sync::timing.enabled)state.forwardCpu.Read();
 }
 static void ImagePresentForwardEnd() {
     auto& state=g_imagePresentScope;
-    if(state.forwardActive) d2vr_cpu_sync::timing.Add(d2vr_cpu_sync::PresentForward,state.forwardStart);
+    if(state.forwardActive) d2vr_cpu_sync::timing.Add(d2vr_cpu_sync::PresentForward,state.forwardStart,&state.forwardCpu);
     state.forwardActive=false;
 }
 static void ImagePresentAfter(IDirect3DSwapChain9* sc,uintptr_t caller,bool qualified,bool ready,HRESULT hr) {
