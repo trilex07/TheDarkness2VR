@@ -49,3 +49,7 @@ and hash checked before freezing the final combined package. Simulator override
 is process-only, no global runtime registry change. Final diagnostic profile is
 the accepted headset profile, simulator OFF. Candidate remains on its task
 branch pending user acceptance; prior accepted task is already on main.
+
+Frozen package build/menu-wheel-input-20261104, source1b63e9bf. Installed to
+Steam after verify/install/restore/reinstall cycle PASS; final simulator OFF.
+See docs/research/menu-wheel-input-install-20261104.md for exact identities.
