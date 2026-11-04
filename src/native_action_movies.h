@@ -3,6 +3,17 @@
 #include <cstring>
 namespace d2vr_action_movies {
 enum : unsigned { Qte=1, Execution=2, Conversation=4, Story=8 };
+enum Menu : unsigned { Main=1, Title=2, Options=4, Pause=8, Talents=16 };
+inline unsigned ClassifyMenu(const char* name) {
+    if(!std::strcmp(name,"MainMenu.swf"))return Main;
+    if(!std::strcmp(name,"PressStart.swf"))return Title;
+    if(!std::strcmp(name,"Pause.swf") || !std::strcmp(name,"DemoPause.swf"))return Pause;
+    if(!std::strcmp(name,"NewTalents.swf") || !std::strcmp(name,"TalentTransition.swf"))return Talents;
+    const char* options[]={"Options.swf","OptionsMain.swf","OptionsAudio.swf","OptionsControls.swf",
+        "OptionsDisplay.swf","OptionsDisplayCustomize.swf","OptionsGame.swf","CustomizeControls.swf","ControllerLayout.swf"};
+    for(auto option:options)if(!std::strcmp(name,option))return Options;
+    return 0;
+}
 inline bool ProtectRapidChoices(unsigned flags) {
     return (flags & (Qte | Execution | Story)) != 0;
 }
@@ -25,6 +36,6 @@ template<class Read> unsigned InspectDefinition(uint32_t definition,Read read,bo
        name<0x10000 || name>UINT32_MAX-64)return 0;
     char basename[64]{};
     if(!read(name,basename,sizeof(basename)) || !std::memchr(basename,0,sizeof(basename)))return 0;
-    return settingsMenu ? (!std::strcmp(basename,"MainMenu.swf") ? 1u : 0u) : Classify(basename);
+    return settingsMenu ? ClassifyMenu(basename) : Classify(basename);
 }
 }

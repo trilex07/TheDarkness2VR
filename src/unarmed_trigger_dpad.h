@@ -11,6 +11,15 @@ namespace d2vr_input {
 //   right trigger: target[1]==0 by default -> always passes through (fires)
 // Unknown native state never translates; the trigger passes through unchanged.
 enum class HandSlot : uint8_t { Unknown=0, Empty=1, Armed=2 };
+// Demon-grip interactions own weapon-switch shortcuts until a neutral release.
+// Native X remains available for hearts/choices; only synthetic D-pad is gated.
+struct TentacleSwitchGuard {
+    uint64_t until=0;
+    bool Update(bool tracked,float squeeze,bool nativeHeld,uint64_t now) {
+        if(nativeHeld || (tracked && squeeze>.35f))until=now+250;
+        return now<until;
+    }
+};
 
 struct UnarmedTriggerDpad {
     static constexpr uint8_t kPress=128, kRelease=40;

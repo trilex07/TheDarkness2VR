@@ -1812,12 +1812,27 @@ static void NoteRecordedWorldDraw() {
     const float perspective=matrix[3]*matrix[3]+matrix[7]*matrix[7]+matrix[11]*matrix[11];
     if(std::isfinite(perspective) && perspective>=1e-8f)g_hadWorldDrawThisFrame=true;
 }
+// Native first-person geometry uses the compressed 0..0.05 depth range.
+// Orthographic Flash/UI and world/shadow passes must remain untouched.
+static bool HideMenuFirstPerson(IDirect3DDevice9* dev) {
+    if(!g_headGeometry || !g_in3DGameplayMode || !NativeMenuPresentationActive() || !g_activeVs)return false;
+    D3DVIEWPORT9 vp{};float matrix[16];
+    const int base=g_activeVs->wvpBase>=0 ? g_activeVs->wvpBase:0;
+    if(FAILED(dev->GetViewport(&vp)) || vp.MinZ!=0 || vp.MaxZ<=0 || vp.MaxZ>.050001f ||
+       FAILED(dev->GetVertexShaderConstantF(base,matrix,4)))return false;
+    const float perspective=matrix[3]*matrix[3]+matrix[7]*matrix[7]+matrix[11]*matrix[11];
+    const bool hide=std::isfinite(perspective) && perspective>.2f;
+    static unsigned reports[2]{};const int eye=g_replayEye<0?0:g_replayEye;
+    if(hide && reports[eye]++<2)Log("[MenuFirstPerson] hidden eye=%d VS=%08X; FP depth and perspective only",eye,g_activeVs->hash);
+    return hide;
+}
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_hook_cost::Scope measured(d2vr_hook_cost::DrawTotal);
 #endif
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(HideMenuFirstPerson(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
@@ -1841,6 +1856,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
 #endif
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(HideMenuFirstPerson(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
@@ -1864,6 +1880,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
 #endif
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(HideMenuFirstPerson(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
@@ -1890,6 +1907,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
 #endif
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
+    if(HideMenuFirstPerson(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);

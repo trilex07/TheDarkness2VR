@@ -11,12 +11,21 @@ static void ObserveSelectedPlayerCamera(void* renderer);
 static void __cdecl ObserveNativeViewOwner(void* renderer,void* reference,void* manager);
 #include "native_view_owner_shim.h"
 D2VR_VIEW_OWNER_SHIM(TranslatedViewOwner,ObserveNativeViewOwner)
+#include "native_action_movies.h"
 static void NativeCameraUiScale(float& x,float& y) {
+    // Front-end pixels are already presented on the cinema quad. Applying
+    // the gameplay angular contraction as well shrinks the menu twice.
+    if(!g_in3DGameplayMode || (NativeVrMenuFlags()&(d2vr_action_movies::Main|d2vr_action_movies::Title))) {
+        x=y=1;return;
+    }
     if(g_nativeCameraCoverInstalled && g_nativeCameraCoverConfirmed && g_nativeUiReferencePx>0 && g_nativeUiReferencePy>0) {
         // Pixel-space HUD is not rebuilt by the native camera setter. Preserve
         // its original angular scale and the BOSS NAME scissor fix independently.
         x*=g_nativeCoveredPx/g_nativeUiReferencePx;y*=g_nativeCoveredPy/g_nativeUiReferencePy;
     }
+    // Native menu sprites otherwise occupy a small island in the wide VR FOV.
+    // This is also part of the immutable replay-packet UI dependency key.
+    if(NativeMenuPresentationActive()){x*=1.55f;y*=1.55f;}
 }
 
 static bool NativeCameraEyeScale(int eye,float& x,float& y) {

@@ -1,6 +1,8 @@
 #include "native_action_movies.h"
 static std::atomic<uint64_t> g_nativeActionMovies{0},g_nativeVrMenu{0};
-static bool NativeVrMainMenu(){const auto v=g_nativeVrMenu.load(std::memory_order_acquire);const auto now=GetTickCount64();return (v&1) && now>=(v>>8) && now-(v>>8)<150;}
+static unsigned NativeVrMenuFlags(){const auto v=g_nativeVrMenu.load(std::memory_order_acquire);const auto now=GetTickCount64();return now>=(v>>8) && now-(v>>8)<150 ? unsigned(v&255):0;}
+static bool NativeVrMainMenu(){return (NativeVrMenuFlags()&d2vr_action_movies::Main)!=0;}
+static bool NativeMenuPresentationActive(){return NativeVrMenuFlags()!=0 || MenuConfirmActive();}
 static unsigned NativeActionMovies() {
     const auto value=g_nativeActionMovies.load(std::memory_order_acquire);
     const auto now=GetTickCount64();
@@ -55,6 +57,8 @@ static void ObserveNativeActionMovies() {
     }
     if(manager)ReleaseSelectedLocalPlayer(uint32_t(reinterpret_cast<uintptr_t>(managerRef)));
     g_nativeVrMenu.store((GetTickCount64()<<8)|menu,std::memory_order_release);
+    static unsigned previousMenu=0;
+    if(previousMenu!=menu){previousMenu=menu;Log("[NativeMenu] flags=%u; retained visible movie definitions",menu);}
     const auto previous=NativeActionMovies();
     g_nativeActionMovies.store((GetTickCount64()<<8)|flags,std::memory_order_release);
     if(previous!=flags)Log("[ActionMovies] flags=%u previous=%u; input-only protection, no camera override",flags,previous);

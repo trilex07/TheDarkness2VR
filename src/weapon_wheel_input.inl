@@ -161,6 +161,23 @@ static int ProbeWeaponIdentity(int slot,const BYTE* gun) {
     return icon;
 }
 
+// Exact native shotgun fire branch already admitted by ProtectedWeaponOwner.
+// Resource-string walks can encounter unrelated rifle names; prefer actual action ownership.
+#ifdef D2VR_MATCHED_CAPTURE
+static bool WheelShotgunGun(const BYTE* gun) {
+    if(!g_nativeImageGuard.enabled || !ProtectedGunType(const_cast<BYTE*>(gun)))return false;
+    __try {
+        const DWORD mode=*reinterpret_cast<const DWORD*>(gun+0xA78);
+        if(mode>=4)return false;
+        auto parts=*reinterpret_cast<BYTE* const*>(gun+0xA64);
+        auto action=**reinterpret_cast<BYTE***>(parts+48*mode+0xC);
+        return action && (*reinterpret_cast<DWORD*>(action)==0xFD9D68 || g_protectedShotgunFireTable.Owns(action)) &&
+            *reinterpret_cast<DWORD*>(action+4)==0x10F4F58 && **reinterpret_cast<const BYTE***>(action+0x4C)==gun;
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+}
+#else
+static bool WheelShotgunGun(const BYTE*) {return false;}
+#endif
 struct WeaponLoadoutSample {
     d2vr_wheel::Loadout loadout;
     DWORD object[3]{};   // saved weapon objects (identity changes -> re-probe)
@@ -223,6 +240,8 @@ static void CaptureWeaponLoadout(BYTE* inventory) {
             probedIcon[slot]=ProbeWeaponIdentity(slot,(const BYTE*)(uintptr_t)s.object[slot]);
         }
         s.icon[slot]=s.object[slot] ? probedIcon[slot] : -1;
+        if(slot==0 && s.object[slot] && WheelShotgunGun(reinterpret_cast<const BYTE*>(s.object[slot])))
+            s.icon[slot]=int(d2vr_weapon_icons::Icon::Shotgun);
     }
     // Largest magazine count per weapon type: an SMG holds far more rounds than
     // a pistol, so a one-handed type that ever exceeded 20 is shown as an SMG
@@ -278,7 +297,7 @@ struct WheelDisplay {
 };
 static SRWLOCK g_wheelDisplayLock=SRWLOCK_INIT;
 static WheelDisplay g_wheelDisplay;
-constexpr float kWheelSizeM=.26f;   // quad edge; wheel radius .9 of half -> ~11.7 cm
+constexpr float kWheelSizeM=.34f;   // quad edge; wheel radius .9 of half -> ~15.3 cm
 constexpr float kWheelDeadM=.045f;  // hand travel before a sector highlights
 
 static d2vr_weapon_icons::Icon IconForSlot(const WeaponLoadoutSample& s,int slot) {
@@ -355,6 +374,10 @@ static void PublishWheelDisplay(bool open) {
 
 // One wheel at the right hand (left hand if the right is not tracked) with
 // every owned weapon (user request 2026-10-31 23:11).
+static XrPosef WeaponWheelPose(const XrPosef& head) {
+    const auto offset=RotVec(head.orientation,.10f,-.04f,-.55f);
+    return {head.orientation,{head.position.x+offset.x,head.position.y+offset.y,head.position.z+offset.z}};
+}
 static void OpenWheels() {
     g_wheelSpace=g_xrSpace;
     const auto head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
@@ -365,22 +388,18 @@ static void OpenWheels() {
     w.menu=d2vr_wheel::WeaponMenu(l,SameOneHandedModel(g_wheelOpenLoadout));
     if(g_hands[h].gripValid && w.menu.count) {
         w.anchor=g_hands[h].grip.position;
-        // Plane faces the head, upright in the tracking space.
-        XrVector3f z{head.position.x-w.anchor.x,0,head.position.z-w.anchor.z};
-        float n=std::sqrt(z.x*z.x+z.z*z.z);
-        if(!(n>1e-3f)) { z={0,0,1}; n=1; }
-        z.x/=n; z.z/=n;
-        const XrVector3f y{0,1,0}, x{y.y*z.z-y.z*z.y, y.z*z.x-y.x*z.z, y.x*z.y-y.y*z.x};
-        w.axisX=x; w.axisY=y;
-        w.pose.position=w.anchor;
-        w.pose.orientation=QuatFromBasis(x,y,z);
+        // Selection remains relative to the opening hand. The visible wheel
+        // is placed in front of the eyes, above the resting controller.
+        const auto x=RotVec(head.orientation,1,0,0),y=RotVec(head.orientation,0,1,0);
+        w.axisX=x;w.axisY=y;
+        w.pose=WeaponWheelPose(head);
         w.shown=true;
     }
     static const char* const kKind[]={"single","dual","two-handed"};
     char items[96]=""; size_t used=0;
     for(int i=0;i<w.menu.count && used<sizeof(items);++i)
         used+=size_t(_snprintf_s(items+used,sizeof(items)-used,_TRUNCATE,"%s%s:%d",i?" ":"",kKind[int(w.menu.item[i].kind)],w.menu.item[i].slot));
-    Log("[WeaponWheel] open at %s hand: [%s] equipped=%d%s; hands right=%d left=%d sameModel=%d",h ? "right":"left",
+    Log("[WeaponWheel] open facing head, %s hand selection: [%s] equipped=%d%s; hands right=%d left=%d sameModel=%d",h ? "right":"left",
         items,w.menu.equipped,w.shown ? "" : " (hidden)",l.hand[0],l.hand[1],(int)SameOneHandedModel(g_wheelOpenLoadout));
 }
 
@@ -403,7 +422,7 @@ static void CloseWheels(bool commit) {
 
 // Context in which the wheels may open and the crouch flick acts.
 static bool WeaponWheelContext(const XINPUT_GAMEPAD& gp,bool focused) {
-    if(!focused || !NativeJackieInputAllowed() || !g_in3DGameplayMode || (gp.wButtons & XINPUT_GAMEPAD_START) || g_nativeCinematicPlaying || NativeActionMovies())
+    if(!focused || NativeMenuPresentationActive() || !NativeJackieInputAllowed() || !g_in3DGameplayMode || (gp.wButtons & XINPUT_GAMEPAD_START) || g_nativeCinematicPlaying || NativeActionMovies())
         return false;
     NativeGameplaySample sample;
     // Holding an object with a tentacle keeps the wheel/flicks (user 23:26);
@@ -479,6 +498,8 @@ static void ApplyWeaponWheel(XINPUT_GAMEPAD& gp) {
                 auto& w=g_wheelHand[h];
                 if(!w.shown) continue;
                 if(!g_hands[h].gripValid) { w.pick.hover=-1; continue; } // tracking loss: no guess
+                const auto head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
+                w.pose=WeaponWheelPose(head);
                 const auto& p=g_hands[h].grip.position;
                 const XrVector3f d{p.x-w.anchor.x,p.y-w.anchor.y,p.z-w.anchor.z};
                 const float u=d.x*w.axisX.x+d.y*w.axisX.y+d.z*w.axisX.z;

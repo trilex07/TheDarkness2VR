@@ -109,3 +109,14 @@ NIS tracking fallback: Render/FoveaCenterFallback=1 (default) keeps the
 sharpening area at the fixed image center when an eye gaze is unavailable.
 This prevents switching to full-image NisSharpness during blinks. Value0
 restores the legacy uniform fallback. Resolution and NIS strength are unchanged.
+
+Menu/input candidate (2026-11-04): title and front-end options stay on the
+cinema screen, without a second gameplay HUD contraction. Pause, options and
+talent menus receive 1.55x gameplay UI scale. Pause hides first-person hands,
+guns and tentacles while preserving the world and menu. Hold R3 to open the
+larger weapon wheel in front of the eyes; move the opening hand to select and
+release R3 to equip. The wheel follows head position and orientation. Native
+shotgun fire ownership selects the shotgun icon. Left demon grip/held actions
+suppress synthetic weapon-switch shortcuts until 250ms after release; native
+X actions remain available. The accompanying DLC script repair hides only
+yellow destination arrows, retaining objective text and purple world guidance.

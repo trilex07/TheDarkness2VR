@@ -147,6 +147,9 @@ static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
 
 namespace {
 static bool CinemaSceneThisFrame();
+static bool MenuConfirmActive();
+static unsigned NativeVrMenuFlags();
+static bool NativeMenuPresentationActive();
 static void PrepareWorldMarkerMovies();
 
 CRITICAL_SECTION g_logLock;
@@ -4942,8 +4945,12 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
         lastSlots=slots;
         Log("[UnarmedTriggerDpad] native hands main/right(+B0)=%s off/left(+BC)=%s",kSlot[int(mainHand)],kSlot[int(offHand)]);
     }
+    static d2vr_input::TentacleSwitchGuard switchGuard;
+    const bool switchBlocked=switchGuard.Update(g_hands[0].gripValid,g_hands[0].squeeze,
+        fresh && sample.grab==d2vr_input::GrabFeedback::Busy,nowMs);
+    if(switchBlocked)g_unarmedTriggerDpadState.Reset();
     int fired=0;
-    if(g_unarmedTriggerDpad) gp.wButtons|=g_unarmedTriggerDpadState.Update(gp.bLeftTrigger,gp.bRightTrigger,offHand,mainHand,
+    if(g_unarmedTriggerDpad && !switchBlocked) gp.wButtons|=g_unarmedTriggerDpadState.Update(gp.bLeftTrigger,gp.bRightTrigger,offHand,mainHand,
         context,nowMs,&fired);
     // [Input] DoubleTapX is re-read on every X press so it can be changed while the
     // game runs. Values: TOGGLE (default: two-handed -> DPAD_LEFT, one-handed -> DPAD_RIGHT,
@@ -4973,7 +4980,7 @@ static void ApplyUnarmedTriggerDpad(XINPUT_GAMEPAD& gp) {
     }
     prevX=xNow;
     uint16_t tapped=0;
-    g_doubleTapDpadState.Update(gp.wButtons,target,g_in3DGameplayMode && !MenuConfirmActive() &&
+    g_doubleTapDpadState.Update(gp.wButtons,target,!switchBlocked && g_in3DGameplayMode && !MenuConfirmActive() &&
         !g_nativeCinematicPlaying && !NativeHeldActionContext() && !NativeActionMovies() && !(gp.wButtons & XINPUT_GAMEPAD_START),nowMs,&tapped);
     if(tapped) {
         lastToggle=tapped;
@@ -6289,7 +6296,9 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const XrPosef layerHead = g_submitMode==4 ? g_trackedFrame.layerPose : LockedViewPose(head);
         const bool decoderActive=g_binkVideo.load(std::memory_order_acquire);
         const bool presentedVideo=PresentedVideoThisFrame();
-        const auto cinemaMode=d2vr_cinema::Select(g_cinematicTheater && g_submitMode==4 && g_stereoMode==1,true,CinemaSceneThisFrame(),
+        const bool frontMenu=!g_in3DGameplayMode || (NativeVrMenuFlags()&(d2vr_action_movies::Main|d2vr_action_movies::Title));
+        const auto cinemaMode=frontMenu && g_cinematicTheater && g_submitMode==4 && g_stereoMode==1 ?
+            d2vr_cinema::Mode::Video2D : d2vr_cinema::Select(g_cinematicTheater && g_submitMode==4 && g_stereoMode==1,true,CinemaSceneThisFrame(),
             presentedVideo,
             CinemaOverride());
         g_presentedCinemaMode.store(cinemaMode,std::memory_order_release);
@@ -6475,6 +6484,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
                             const int w=std::max(1,int(g_scW*cx)),h=std::max(1,int(g_scH*cy));
                             q.subImage.imageRect={{(int(g_scW)-w)/2,(int(g_scH)-h)/2},{w,h}};
                             q.size={g_cinemaWidthM,g_cinemaWidthM/screenAspect};
+                            if(e==0 && frontMenu)RecordMenuSurface(q);
                             layers[e]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
                         }
                         layerCount=2;

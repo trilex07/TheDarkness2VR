@@ -18,6 +18,7 @@ async def main():
     p.add_argument("action", choices=["capture", "click", "scroll", "initialize"])
     p.add_argument("--button", default="primary")
     p.add_argument("--hand", choices=["left", "right"], default="right")
+    p.add_argument("--eye", choices=["left", "right"], default="left")
     p.add_argument("--x", type=float, default=.5)
     p.add_argument("--y", type=float, default=.5)
     p.add_argument("--stick-x", type=float, default=0)
@@ -62,7 +63,7 @@ async def main():
         (lab / f"{args.name}.json").write_text(json.dumps(receipts, indent=2))
         print(json.dumps({"result": "controllers_initialized", "hands": len(receipts)}))
         return
-    info, pixels = await ui.capture("left", max_width=1000)
+    info, pixels = await ui.capture(args.eye, max_width=1000)
     result = info
     if args.action != "capture":
         kw = dict(hand=args.hand, button=args.button, hold_frames=args.frames,
@@ -74,6 +75,9 @@ async def main():
                 result, pixels = await ui.interact("hold", info["capture_id"],
                     args.x * info["image_size"][0], args.y * info["image_size"][1], **kw)
                 await asyncio.sleep(args.hold_seconds)
+                held_info, held_pixels = await ui.capture(args.eye, max_width=1000)
+                Image.open(BytesIO(held_pixels)).save(lab / f"{args.name}-held.png")
+                (lab / f"{args.name}-held.json").write_text(json.dumps(held_info, indent=2))
             finally:
                 result, pixels = await ui.interact("release", info["capture_id"], hand=args.hand)
         else:
