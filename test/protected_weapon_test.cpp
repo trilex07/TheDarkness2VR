@@ -13,6 +13,7 @@
 #include "../src/native_weapon_bridge.h"
 #include "../src/psvr2/IpcClient.h"
 #include "../src/native_weapon_prefix_plan.h"
+#include "../src/two_hand_shot_plan.h"
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line%d %s\n",__LINE__,#x);exit(1);}}while(0)
 static unsigned logCalls=0;
@@ -28,7 +29,13 @@ static d2vr_native_image::Guard g_nativeImageGuard;
 static struct {uint64_t id=20;bool open=true;XrViewStateFlags flags=15;} g_trackedFrame;
 static XrPosef g_headGeometryReference{{0,0,0,1},{}};
 static d2vr_input::Tentacles g_protectedLeftTentacle,g_protectedRightTentacle;
-static struct {bool aimValid=true;XrPosef aim{{0,0,0,1},{}};} g_hands[2];
+static struct {bool aimValid=true,gripValid=true;float squeeze=0;XrPosef aim{{0,0,0,1},{}},grip{{0,0,0,1},{}};} g_hands[2];
+static bool g_shotgunCandidate=true;
+static volatile LONG g_twoHandSupportIntent=0;
+static bool CinemaSceneThisFrame(){return false;}
+static bool VerifyWeaponLoadoutLayout(){return false;} // fixture never maps wheel globals
+static void CaptureWeaponLoadout(BYTE*){}
+static const float* StabilizedCameraWorld(const void* p,float (&)[16]){return reinterpret_cast<const float*>(static_cast<const BYTE*>(p)+0x80);}
 static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
 static PVOID volatile g_nativeHandsSelectedResource=nullptr;
 static __declspec(align(16)) BYTE camera[0x200],avatar[0x2000],inventory[0x400];

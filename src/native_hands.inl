@@ -1,11 +1,12 @@
 #include "native_hands_math.h"
+#include "two_hand_aim.h"
 #include "native_hands_layout.h"
 static bool ProtectedHandsAvailable();
 static bool ProtectedHandsResourceOwned(void* resource);
 static bool CopyProtectedHandPoses(DWORD camera,NativeWeaponPose (&poses)[2]);
 static bool CopyProtectedWeaponHandPose(DWORD camera,unsigned hand,XrPosef& pose);
-static bool ProtectedShotgunSupportOwner(DWORD camera,void** gun);
-static volatile LONG g_shotgunSupportIntent=0;
+static bool ProtectedTwoHandSupportOwner(DWORD camera,void** gun);
+static volatile LONG g_twoHandSupportIntent=0;
 // Shared guarded IK. Legacy triggers remain separate from the protected
 // private-instance packer in protected_hands.inl; neither is implicitly enabled.
 static bool g_nativeHandsInstalled=false;
@@ -100,8 +101,8 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
         void* shotgun=nullptr;
         support=left.valid && right.valid && !sample.offHandEquipped &&
             sample.grab==d2vr_input::GrabFeedback::Empty && !sample.alternateHeldTarget &&
-            InterlockedCompareExchange(&g_shotgunSupportIntent,0,0)!=0 &&
-            ProtectedShotgunSupportOwner(sample.camera,&shotgun);
+            InterlockedCompareExchange(&g_twoHandSupportIntent,0,0)!=0 &&
+            ProtectedTwoHandSupportOwner(sample.camera,&shotgun);
     } else {
         if(!TryAcquireSRWLockShared(&g_nativeWeaponLock)) return false;
         left=g_nativeWeaponPoses[0]; right=g_nativeWeaponPoses[1]; support=g_nativeSupport;
@@ -217,7 +218,7 @@ static bool ApplyNativeHandsChecked(void* receiver,DWORD cameraVtable,void* expe
             cal={};cal.parent=parent;cal.skeleton=skeleton;cal.resource=resource;
         }
         void* supportGun=nullptr;
-        if(support && !ProtectedShotgunSupportOwner(sample.camera,&supportGun))support=false;
+        if(support && !ProtectedTwoHandSupportOwner(sample.camera,&supportGun))support=false;
         if(cal.supportGun!=supportGun){cal.supportValid=false;cal.supportGun=supportGun;}
         rightValid=rightValid && d2vr_hands::Valid(bones[27]) && d2vr_hands::Valid(bones[43]);
         leftValid=leftValid && d2vr_hands::Valid(bones[5]) && d2vr_hands::Valid(bones[21]);

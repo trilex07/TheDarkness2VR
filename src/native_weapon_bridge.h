@@ -129,7 +129,7 @@ static __declspec(naked) void __fastcall FireEntry(void*,void*,void*,const float
 class Bridge {
 public:
     static bool Prepare(Compare compare,Fire fire,ModelResolve model,FireResolve shot,
-                        const d2vr_native_image::Guard& guard,ShotReport report=nullptr) {
+                        const d2vr_native_image::Guard& guard,ShotReport report=nullptr,Fire consumer=nullptr) {
         static_assert(sizeof(void*)==4,"x86 only");
         if(!guard.enabled || !guard.base || guard.bytes<9 || !compare || !fire || !model || !shot ||
            reinterpret_cast<uintptr_t>(compare)<guard.base ||
@@ -139,11 +139,13 @@ public:
            !guard.Allows(reinterpret_cast<uintptr_t>(model),1) ||
            !guard.Allows(reinterpret_cast<uintptr_t>(shot),1) ||
            (report && !guard.Allows(reinterpret_cast<uintptr_t>(report),1)) ||
+           (consumer && !guard.Allows(reinterpret_cast<uintptr_t>(consumer),1)) ||
            !guard.Allows(reinterpret_cast<uintptr_t>(&detail::ModelEntry),1) ||
            !guard.Allows(reinterpret_cast<uintptr_t>(&detail::FireEntry),1))return false;
         const unsigned char expected[]={0x55,0x8b,0xec,0x83,0xe4,0xf0,0x83,0xec,0x50};
         __try {if(std::memcmp(reinterpret_cast<void*>(compare),expected,sizeof(expected)))return false;}
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+        if(consumer)fire=consumer;
         if(detail::compare)return detail::compare==compare && detail::fire==fire &&
             detail::modelResolve==model && detail::fireResolve==shot && detail::shotReport==report;
         detail::compare=compare;detail::fire=fire;detail::modelResolve=model;detail::fireResolve=shot;

@@ -74,6 +74,23 @@ public:
         surface_.pose.position.y-=.48f;
     }
     bool Presented()const{return presented_;}
+    // Follow the same quad as the native menu. Rendering and laser hit tests
+    // consume this exact surface; no independently latched head-space offset.
+    void AnchorMenu(const XrPosef& pose,float width,float height,XrSpace space) {
+        double q[4];
+        if(!Visible() || surface_.space!=space || !d2vr_menu::detail::Pose(pose,q) ||
+           !std::isfinite(width) || !std::isfinite(height) || width<=0 || height<=0)return;
+        surface_.pose=pose;
+        if(entry_) {
+            const auto offset=d2vr_menu::detail::Rotate(q,{0,-height*.43,.015});
+            surface_.pose.position.x+=float(offset.x);
+            surface_.pose.position.y+=float(offset.y);
+            surface_.pose.position.z+=float(offset.z);
+            surface_.width=width*.4f;surface_.height=surface_.width/8;
+        } else {
+            surface_.width=width*.8f;surface_.height=surface_.width*9/16;
+        }
+    }
     const d2vr_menu::Surface& Surface()const{return surface_;}
     const d2vr_menu::Actions& Pointer()const{return pointer_;}
     const d2vr_menu::Aim& Aim()const{return aim_;}

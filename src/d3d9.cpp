@@ -93,6 +93,7 @@ static bool g_cameraEventRumble=false; // Diagnostics/CameraEventRumble, default
 #include "native_throw_compare.h"
 #include "native_weapon_bridge.h"
 #include "native_weapon_prefix_plan.h"
+#include "two_hand_shot_plan.h"
 static int g_nativeViewBoundaryMode=0; // 0 OFF, 1 observe, 2 HW boundary, 3 experimental owned method copies
 static d2vr_native_view::Boundary g_nativeViewBoundary;
 static d2vr_native_execution::Boundary g_nativeFrustumBoundary;
@@ -5136,23 +5137,25 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     ApplyUnarmedTriggerDpad(gp); // before gestures/throw/haptics so they see the rewritten triggers
 #ifdef D2VR_MATCHED_CAPTURE
     if(g_imagePreservingInput) {
-        // The left squeeze can support the equipped shotgun near its stock
+        // The left squeeze can support the equipped two-handed firearm near its
         // fore-end. Latch ownership until release so moving the hand away does
         // not suddenly emit the same squeeze as a demon-arm grab.
         NativeGameplaySample supportOwner;void* supportGun=nullptr;
-        const bool supportContext=g_shotgunCandidate && g_in3DGameplayMode && g_hands[0].gripValid &&
+        const bool supportContext=g_in3DGameplayMode && !NativeMenuPresentationActive() && g_hands[0].gripValid &&
             g_hands[1].aimValid && CopyNativeGameplay(supportOwner) &&
             supportOwner.grab==d2vr_input::GrabFeedback::Empty &&
             !supportOwner.alternateHeldTarget && !supportOwner.offHandEquipped &&
-            ProtectedShotgunSupportOwner(supportOwner.camera,&supportGun);
+            ProtectedTwoHandSupportOwner(supportOwner.camera,&supportGun);
         static bool swallowLeftGrip=false;
         if(!g_hands[0].gripValid || g_hands[0].squeeze<.35f)swallowLeftGrip=false;
         else if(supportContext && !swallowLeftGrip && g_hands[0].squeeze>.65f) {
             const auto& a=g_hands[0].grip.position;const auto& b=g_hands[1].aim.position;
             const float dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z;
-            swallowLeftGrip=dx*dx+dy*dy+dz*dz<.50f*.50f;
+            XrPosef supported{};
+            swallowLeftGrip=dx*dx+dy*dy+dz*dz<.50f*.50f &&
+                d2vr_twohand::Pose(g_hands[1].aim,a,supported);
         }
-        InterlockedExchange(&g_shotgunSupportIntent,swallowLeftGrip && supportContext?1:0);
+        InterlockedExchange(&g_twoHandSupportIntent,swallowLeftGrip && supportContext?1:0);
         WORD grips=g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
             g_hands[0].gripValid,g_hands[1].gripValid);
         if(swallowLeftGrip)grips &= ~XINPUT_GAMEPAD_LEFT_SHOULDER;
@@ -6662,6 +6665,24 @@ void SubmitXR(IDirect3DDevice9* dev) {
     const uint32_t worldLayerCount=layerCount;
     bool settingsSubmitted=false;
     if(g_vrSettings.Visible()) {
+#ifdef D2VR_MATCHED_CAPTURE
+        // Gameplay Flash menus are orthographic sprites in the eye images,
+        // unlike the front-end cinema quad. Their angular size follows the
+        // original selected-camera projection and NativeCameraUiScale's 1.55.
+        // Use that same head-relative plane for the settings entry and panel.
+        if(g_in3DGameplayMode && !CinemaSceneThisFrame() && MenuConfirmActive() &&
+           g_nativeCameraCoverConfirmed && g_nativeUiReferencePx>0 && g_nativeUiReferencePy>0) {
+            auto menuPose=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
+            double q[4];
+            if(d2vr_menu::detail::Pose(menuPose,q)) {
+                const auto forward=d2vr_menu::detail::Rotate(q,{0,0,-1.5});
+                menuPose.position.x+=float(forward.x);menuPose.position.y+=float(forward.y);
+                menuPose.position.z+=float(forward.z);
+                g_vrSettings.AnchorMenu(menuPose,3.f*1.55f/g_nativeUiReferencePx,
+                    3.f*1.55f/g_nativeUiReferencePy,g_xrSpace);
+            }
+        }
+#endif
         const auto settingsResult=g_xrSessionState!=XR_SESSION_STATE_FOCUSED ? VrSettingsRender::Failed :
             !layerCount || !fs.shouldRender ? VrSettingsRender::Pending : RenderVrSettings(settingsQuad);
         if(settingsResult==VrSettingsRender::Ready) {

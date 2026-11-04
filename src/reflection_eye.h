@@ -2,7 +2,7 @@
 #include "stereo_math.h"
 
 namespace d2vr_reflection_eye {
-// Exact VS12CCC8DB: add r0.xyz,c8,-v0 followed by tangent-space DP3s.
+// Admitted VS12CCC8DB / VS293F456B: c8-position followed by tangent DP3s.
 // Camera origin in a row-vector perspective projects to (0,0,k,0).
 inline bool Center(const float matrix[16],float out[3]) {
     if(!matrix || !out)return false;

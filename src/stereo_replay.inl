@@ -59,6 +59,7 @@ enum : uint32_t {
 struct VsInfo {
     uint32_t hash = 0;
     bool reflectionEye=false;
+    bool worldSpecularEye=false;
     bool videoClip=false;
     bool tentacleGlow=false; // complete native sprite VS, c0..c3 -> o0
     std::vector<DWORD> bytecode; // exact identity when a released COM address is reused
@@ -940,6 +941,14 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                 bytes<=code.size()*4 && !(bytes&3) &&
                 d2vr_shader_metadata::ValidPixelCode(code.data(),bytes/4)) {
                 const std::string shaderBytes((const char*)code.data(), bytes);
+                // Captured talent-shrine world materials: v2 is the tangent
+                // eye direction from VS293F456B c8. Both native variants use
+                // it in the light-map normal/specular term, not light position.
+                metadata.worldSpecularEye=bytes==1704 &&
+                    ((metadata.hash==0xBA3D8E61u && d2vr_native_clone::MatchesDigest(code.data(),bytes,
+                        "3c631401ada94476495e69fdab39bb444a4062e5daeac8696817343f294c83b1")) ||
+                     (metadata.hash==0xCA08BDC4u && d2vr_native_clone::MatchesDigest(code.data(),bytes,
+                        "0051b4e3ff1ee039ac224e9629c5181492432864b1cab6b0b4f863596300b9a1")));
                 metadata.reflectionEye=
                     (metadata.hash==0x7DCA4CC4u && bytes==1596 &&
                      d2vr_native_clone::MatchesDigest(code.data(),bytes,
@@ -1070,6 +1079,8 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         uint32_t h = HashBytes(fn, (n + 1) * 4);
         VsInfo vi;
         vi.hash = h;
+        vi.worldSpecularEye=h==0x293F456Bu && (n+1)*4==948 &&
+            d2vr_native_clone::MatchesDigest(fn,948,"ce46fc92b8eb1c017b9da0a97fb5feca3ad8a457f178e52604ea64d73e574121");
         vi.reflectionEye=h==0x12CCC8DBu && (n+1)*4==1284 &&
             d2vr_native_clone::MatchesDigest(fn,1284,"223298007ec4e1942d8e4ec600c508b9e677a2b3afa8f2090047579ea67bcca3");
         vi.videoClip=h==0x7ACDFC64u && (n+1)*4==204 &&
@@ -1749,9 +1760,11 @@ struct ReflectionEyeScope {
     float original[4]{};
     bool touched=false;
     explicit ReflectionEyeScope(IDirect3DDevice9* device):dev(device) {
-        if(!g_reflectionEyeExperiment || !dev || g_submitMode!=4 || g_stereoMode!=1 ||
-           !g_activeVs || !g_activeVs->reflectionEye ||
-           !g_pixelShaders.Lookup(g_boundPs).reflectionEye)return;
+        if(!dev || g_submitMode!=4 || g_stereoMode!=1 || !g_activeVs)return;
+        const auto pixel=g_pixelShaders.Lookup(g_boundPs);
+        const bool lightMap=g_activeVs->worldSpecularEye && pixel.worldSpecularEye;
+        const bool cube=g_reflectionEyeExperiment && g_activeVs->reflectionEye && pixel.reflectionEye;
+        if(!lightMap && !cube)return;
         const auto sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
         if(!sp.headGeometry || IsShadowAtlasPass(dev))return;
         const auto& raw=g_replayEye<0?g_vsConstantHistory.live:g_vsConstantHistory.replay;
@@ -1770,7 +1783,7 @@ struct ReflectionEyeScope {
         const auto result=g_orig.SetVertexShaderConstantF(dev,8,corrected,1);
         if(SUCCEEDED(result)) {
             static unsigned reported=0;
-            if(reported++<4)Log("[ReflectionEyeExperiment] eye=%d exact VS12CCC8DB admitted cube consumer c8 corrected; scoped restore, not FPS proof",g_replayEye<0?0:g_replayEye);
+            if(reported++<4)Log("[MaterialEye] eye=%d VS=%08X PS=%08X c8 corrected; exact consumer, scoped restore",g_replayEye<0?0:g_replayEye,g_activeVs->hash,pixel.hash);
         }
     }
     ~ReflectionEyeScope() {

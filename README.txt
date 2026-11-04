@@ -123,3 +123,13 @@ yellow destination arrows, retaining objective text and purple world guidance.
 With WeaponWheel enabled, legacy empty-hand trigger and double-X weapon-switch
 shortcuts are disabled. Select single/dual/two-handed loadouts through the
 wheel; ordinary trigger fire and native X interactions still pass through.
+
+Two-handed aiming: equip a two-handed firearm in the wheel, put the left
+controller in front of the right hand and squeeze the left grip near the
+fore-end (within 50cm to engage). Both hands steer the gun and actual shot.
+Supported fire uses half the native spread cone; release the grip to return
+to right-hand aim. Crossed/untracked hands fall back safely. Dual-wielded guns
+remain independently aimed. This changes accuracy, not native recoil animation.
+The VR Settings entry/panel follows the current native menu and its laser
+surface. Verified light-map specular materials use the actual per-eye camera
+origin, with native material constants restored after each draw.

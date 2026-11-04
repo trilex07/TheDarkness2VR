@@ -1,0 +1,25 @@
+#pragma once
+#include "native_view_code_clone.h"
+namespace d2vr_native_clone {
+inline const Block twoHandConsumer{reinterpret_cast<void*>(0xC47570),0x35D,"223bfc40a7bf09bb59b9d594802aceedff4a04b3c753978612cab69da80660e2"};
+inline const char* twoHandSpreadDigest="1a2d720d6fcbefc3dd93c1ad7ce322ee2cbeb51ab6f29d30f3dd48f4600844c5";
+inline const Call twoHandConsumerCalls[]={
+{0,0x46,0xA73EF0},
+{0,0x62,0xB84A10},
+{0,0x85,0x6B0CD0},
+{0,0x99,0x4BF720},
+{0,0xCD,0x402550},
+{0,0xE2,0x7B37F0},
+{0,0x125,0x402550},
+{0,0x149,0x402550},
+{0,0x1D3,0xB27AA0},
+{0,0x1FA,0xAE9B50},
+{0,0x231,0x4BF720},
+{0,0x26F,0x402550},
+{0,0x29E,0x402550},
+{0,0x305,0x402550},
+{0,0x320,0x402550},
+{0,0x33F,0x402550},
+{0,0x352,0xE12979},
+};
+}

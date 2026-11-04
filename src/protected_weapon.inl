@@ -2,6 +2,9 @@
 #include "native_weapon_bridge.h"
 #include "psvr2/ShotEvents.h"
 #include "native_weapon_prefix_plan.h"
+#include "two_hand_aim.h"
+static bool VerifyWeaponLoadoutLayout();
+static d2vr_native_clone::Code g_twoHandConsumerCode;
 static d2vr_native_view::InstanceTable g_protectedWeaponModelTable,g_protectedWeaponFireTable,g_protectedShotgunFireTable;
 static d2vr_native_clone::Code g_protectedWeaponModelCode,g_protectedWeaponFireCode;
 static bool g_protectedWeaponReady=false,g_protectedWeaponPrepareAttempted=false;
@@ -69,14 +72,49 @@ static bool ProtectedWeaponOwner(void* camera,unsigned slot,void*& gun,void*& mo
         return true;
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
-static bool ProtectedShotgunSupportOwner(DWORD camera,void** selectedGun) {
+static bool ProtectedTwoHandSupportOwner(DWORD camera,void** selectedGun) {
     if(selectedGun)*selectedGun=nullptr;
-    if(!g_shotgunCandidate)return false;
+    if(!VerifyWeaponLoadoutLayout())return false;
     void *gun=nullptr,*model=nullptr,*fire=nullptr;
     if(!ProtectedWeaponOwner(reinterpret_cast<void*>(camera),0,gun,model,fire) ||
-       !g_protectedShotgunFireTable.Owns(fire))return false;
+       !ProtectedWeaponFireOwned(fire))return false;
+    // Same pinned canonical two-handed slot and saved-owner chain as the wheel.
+    __try {
+        auto avatar=**reinterpret_cast<BYTE***>(reinterpret_cast<BYTE*>(camera)+0x30);
+        auto inventory=**reinterpret_cast<BYTE***>(avatar+0x630);
+        const int id=*reinterpret_cast<int*>(0x1110258);
+        if(id<0 || id>=8 || *reinterpret_cast<int*>(static_cast<BYTE*>(gun)+0xD4)!=id ||
+           **reinterpret_cast<void***>(inventory+0x12C+28*id)!=gun)return false;
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
     if(selectedGun)*selectedGun=gun;
     return true;
+}
+static bool ProtectedSupportedPose(DWORD camera,void* gun,XrPosef& pose) {
+    NativeGameplaySample owner;void* equipped=nullptr;
+    if(!gun || !g_hands[0].gripValid || !g_hands[1].aimValid ||
+       InterlockedCompareExchange(&g_twoHandSupportIntent,0,0)==0 ||
+       !CopyNativeGameplay(owner) || owner.camera!=camera || owner.offHandEquipped ||
+       owner.grab!=d2vr_input::GrabFeedback::Empty || owner.alternateHeldTarget ||
+       !ProtectedTwoHandSupportOwner(camera,&equipped) || equipped!=gun)return false;
+    return d2vr_twohand::Pose(g_hands[1].aim,g_hands[0].grip.position,pose);
+}
+// Called only from the digest-pinned private consumer. Native RNG, seed,
+// pellet count, damage and collision execute unchanged; narrow the cone only
+// for the currently owned supported two-handed firearm.
+static void* __fastcall SupportedSpread(void* self,void*,void* out,const float* matrix,
+                                      float cone,void* seed,float fraction) {
+    bool supported=false;NativeGameplaySample owner;
+    if(ProtectedWeaponAvailable() && CopyNativeGameplay(owner)) {
+        void *gun=nullptr,*model=nullptr,*fire=nullptr;XrPosef pose{};
+        supported=ProtectedWeaponOwner(reinterpret_cast<void*>(owner.camera),0,gun,model,fire) &&
+            fire==self && ProtectedSupportedPose(owner.camera,gun,pose);
+    }
+    using Spread=void*(__thiscall*)(void*,void*,const float*,float,void*,float);
+    const float adjusted=d2vr_twohand::SupportedCone(cone,supported);
+    if(supported) {
+        static unsigned reports=0;if(reports++<4)Log("[TwoHandAim] supported native cone %.4f -> %.4f",cone,adjusted);
+    }
+    return reinterpret_cast<Spread>(0xB27AA0)(self,out,matrix,adjusted,seed,fraction);
 }
 static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float* world,unsigned* stage=nullptr) {
     if(stage)*stage=1; // frame/tracking/thread context
@@ -106,7 +144,8 @@ static bool ResolveProtectedWeapon(void* model,void* fire,void* weaponRef,float*
             if(stage)*stage=7+slot*16; // active controller tracking/scale
             if(!g_hands[hand].aimValid || !std::isfinite(g_gameUnitsPerMeter) ||
                g_gameUnitsPerMeter<.01f || g_gameUnitsPerMeter>5000.f)return false;
-            const auto& ref=g_headGeometryReference;const auto& aim=g_hands[hand].aim;
+            const auto& ref=g_headGeometryReference;auto aim=g_hands[hand].aim;
+            if(hand==1)ProtectedSupportedPose(owner.camera,gun,aim);
             const float rq[4]={ref.orientation.x,ref.orientation.y,ref.orientation.z,ref.orientation.w};
             const float rp[3]={ref.position.x,ref.position.y,ref.position.z};
             const float aq[4]={aim.orientation.x,aim.orientation.y,aim.orientation.z,aim.orientation.w};
@@ -136,7 +175,9 @@ static bool CopyProtectedWeaponHandPose(DWORD camera,unsigned hand,XrPosef& pose
     // admits nor writes the optional (possibly unknown) model instance.
     if(!ProtectedWeaponOwner(reinterpret_cast<void*>(camera),1-hand,gun,model,fire) ||
        !ProtectedWeaponFireOwned(fire))return false;
-    pose=g_hands[hand].aim;return true;
+    pose=g_hands[hand].aim;
+    if(hand==1)ProtectedSupportedPose(camera,gun,pose);
+    return true;
 }
 static bool ResolveProtectedWeaponModel(const float* current,float* candidate) {
     if(!current || !candidate)return false;
@@ -226,6 +267,10 @@ static bool PrepareProtectedWeaponCode() {
     if(g_protectedWeaponPrepareAttempted)return false;
     g_protectedWeaponPrepareAttempted=true;
     using namespace d2vr_native_clone;
+    const Override spread{0,0xC47743-0xC47570,reinterpret_cast<void*>(&SupportedSpread)};
+    if(!MatchesDigest(reinterpret_cast<void*>(0xB27AA0),0x1B9,twoHandSpreadDigest) ||
+       !g_twoHandConsumerCode.Prepare(&twoHandConsumer,1,twoHandConsumerCalls,
+           _countof(twoHandConsumerCalls),&spread,g_nativeImageGuard))return false;
     // Full model/fire functions, every copied-prefix helper, and complete
     // class tables/header must match before any live-instance publication.
     if(!MatchesDigest(reinterpret_cast<void*>(0xFD6BBC),(weaponModelTableCount+1)*4,weaponModelTableDigest) ||
@@ -240,7 +285,8 @@ static bool PrepareProtectedWeaponCode() {
         reinterpret_cast<LPCSTR>(d2vr_weapon_bridge::Bridge::ModelEntry()),&self) ||
        !d2vr_weapon_bridge::Bridge::Prepare(reinterpret_cast<d2vr_weapon_bridge::Compare>(0x481F50),
            reinterpret_cast<d2vr_weapon_bridge::Fire>(0xC47570),ResolveProtectedWeaponModel,
-           ResolveProtectedWeaponFire,g_nativeImageGuard,ReportProtectedWeaponShot))return false;
+           ResolveProtectedWeaponFire,g_nativeImageGuard,ReportProtectedWeaponShot,
+           reinterpret_cast<d2vr_weapon_bridge::Fire>(g_twoHandConsumerCode.Entry(0))))return false;
     const Override comparison{0,0x262,d2vr_weapon_bridge::Bridge::ModelEntry()};
     // CFBBA0 can replace its incoming matrix using the native camera. Change
     // only its final consumer call, after that computation. Its retained refs,
@@ -313,7 +359,7 @@ static void PrepareProtectedWeaponForCamera(void* camera) {
     }
 }
 #else
-static bool ProtectedShotgunSupportOwner(DWORD,void** gun) {if(gun)*gun=nullptr;return false;}
+static bool ProtectedTwoHandSupportOwner(DWORD,void** gun) {if(gun)*gun=nullptr;return false;}
 static bool ProtectedWeaponFireOwned(void*) {return false;}
 static bool ProtectedWeaponModelOwned(void*) {return false;}
 static bool CopyProtectedWeaponHandPose(DWORD,unsigned,XrPosef&) {return false;}

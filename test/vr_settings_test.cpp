@@ -16,6 +16,25 @@ static void AimAt(Panel& panel,int x,int y,float trigger=0,bool back=false) {
     aim.trigger=trigger;aim.back=back;aim.time=aim.frame/90.;
 }
 int main(){
+    // Entry and full panel track the actual rotated/translated native menu.
+    {
+        Panel p;p.ShowEntry(true,head,space);
+        XrPosef anchor{{0,.38268343f,0,.92387953f},{2,3,-4}};
+        p.AnchorMenu(anchor,2,1,space);
+        const auto s=p.Surface();
+        CHECK(std::fabs(s.width-.8f)<1e-6f&&std::fabs(s.height-.1f)<1e-6f);
+        CHECK(std::fabs(s.pose.position.y-2.57f)<1e-5f);
+        CHECK(std::fabs(s.pose.position.x-(2+.015f*.70710678f))<1e-5f);
+        CHECK(s.pose.orientation.y==anchor.orientation.y);
+        anchor.position.x+=1;p.AnchorMenu(anchor,2,1,space);
+        CHECK(std::fabs(p.Surface().pose.position.x-s.pose.position.x-1)<1e-6f);
+        const auto saved=p.Surface();p.AnchorMenu(anchor,2,1,(XrSpace)3);
+        CHECK(p.Surface().pose.position.x==saved.pose.position.x);
+        p.AnchorMenu(anchor,NAN,1,space);CHECK(p.Surface().width==saved.width);
+        p.Toggle(head,space);p.AnchorMenu(anchor,2,1,space);
+        CHECK(p.Open()&&p.Surface().pose.position.x==anchor.position.x);
+        CHECK(std::fabs(p.Surface().width-1.6f)<1e-6f&&std::fabs(p.Surface().height-.9f)<1e-6f);
+    }
     ToggleAction toggle;
     CHECK(!toggle.Update(true,true));CHECK(!toggle.Update(true,false));
     CHECK(toggle.Update(true,true));CHECK(!toggle.Update(true,true));

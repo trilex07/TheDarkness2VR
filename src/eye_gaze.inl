@@ -165,6 +165,7 @@ static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
     s.time=GetTickCount64(); s.space=quad.space;
     AcquireSRWLockExclusive(&g_menuSurfaceLock); g_menuSurface=s; ReleaseSRWLockExclusive(&g_menuSurfaceLock);
+    g_vrSettings.AnchorMenu(s.pose,s.width,s.height,s.space);
 }
 static bool g_menuClampSaved=false;
 static uint32_t g_menuClampMouse=0;
