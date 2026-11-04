@@ -1,5 +1,15 @@
 # Baseline and current MAIN candidate
 
+## Prepared shrine/menu/two-hand candidate (2026-11-04, NOT installed)
+
+Source4dca29fe on codex/shrine-menu-twohand-20261104; frozen DLL
+85CDD777E1279A750188008877E024BC5911D2A725AEEDC7741A0CC405B5D811.
+Package build/shrine-menu-twohand-20261104/Install.ps1, simulator OFF;
+VerifyOnly PASS, exact rollback to accepted9476A8D5 +117230AC. Simulator
+tests completed and original four save/config files restored and hash-checked.
+Steam retains accepted baseline below. New changes are not user accepted.
+Details: handoffs/HANDOFF-shrine-menu-twohand-20261104.md.
+
 ## Accepted Steam baseline: menus, wheel and wheel-only equip (2026-11-04)
 
 User tested and accepted installed candidate, requested main integration.

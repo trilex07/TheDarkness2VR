@@ -72,3 +72,9 @@ candidate, with exact rollback to accepted9476A8D5 DLL +117230AC diagnostic.
 Main INI/SS125, EXE, loader and accepted DLC marker repair must match baseline.
 Headset acceptance and whether the user's specific extra shrine light is fully
 resolved remain NOT RUN. Do not merge this new candidate before user testing.
+
+Frozen source4dca29fe, DiagnosticCapture DLL
+85CDD777E1279A750188008877E024BC5911D2A725AEEDC7741A0CC405B5D811.
+Profile gate and frozen installer VerifyOnly PASS. Steam restored to accepted
+9476A8D5; all four original save/config hashes match saves.json. Simulator
+process49196 closed after identity check. No new candidate installed for HMD.
