@@ -8,6 +8,7 @@
 **Worktree**: C:\Users\Trilex\Darkness2VR\.main-camera-shake
 **Baseline**: accepted 324a2278 DLL95BB1C37, integrated main b6daa63f.
 **Integration commit**: pending user headset acceptance; do not merge as solved.
+**Implementation commit**: 3a6113ba (source used by frozen candidate).
 
 ## Goal and status
 
@@ -71,7 +72,10 @@ Private root: test-output/edge-shadow-20261104 (never commit game dumps/saves).
   settings, unknown shader, failed getter, exact restore, all four wrappers.
 - PASS actual-source pixel metadata/concurrency and shadow draw-wrapper tests;
   updated their stale fixtures with current dependencies.
-- PASS diagnostic and production x86 builds. No resolution/NIS/AF/FXAA changes.
+- PASS standard and protected-native x86 builds. Deploy the protected-native
+  build (`build.ps1 -DiagnosticCapture`); collectors remain OFF in its frozen
+  profile. Standard build was correctly rejected by the deployment gate and is
+  not deployable with accepted protected features. No resolution/NIS/AF/FXAA changes.
 - NOT RUN: exact post-villa cutscene, all lamp families/omni D82658F7, headset,
   whole-game temporal score, controlled game FPS gain. Reflections remain open.
 
@@ -99,8 +103,11 @@ No active emulator/game should remain. Candidate is separate from accepted Steam
 
 ## Next steps
 
-1. Freeze production package with prepare-combined-scenes-candidate.ps1,
-   ExpectedInstalledDll95BB1C37...; use EdgeShadowExperiment for combined trial.
+1. Frozen protected-native package: build/edge-shadow-stability-20261104.
+   Install.ps1 -Mode EdgeShadowExperiment enables both; -Mode ShadowExperiment
+   or OutlineExperiment isolates each; -Restore exact baseline. Install,
+   VerifyOnly, Restore, VerifyOnly all PASS with game closed. Steam remains95BB.
+   No simulator/collectors in the candidate profile; protected main SS125 kept.
 2. Actual post-villa/cinema shadow and headset edge/hands comparison remain
    necessary before accepting/integrating. Preserve exact rollback/current SS.
 3. If remaining local lights differ, identify their actual consumer; do not
