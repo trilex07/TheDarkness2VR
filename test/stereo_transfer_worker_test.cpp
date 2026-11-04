@@ -3,6 +3,7 @@
 #include "../src/stereo_transfer_worker.h"
 #include "../src/shared_reader_fence.h"
 #include "../src/gpu_query_pause.h"
+#include "../src/gpu_completion_pause.h"
 #include "../src/isolated_eye_output.h"
 #include <dxgi.h>
 #include <d3dcompiler.h>
@@ -13,6 +14,7 @@
 #define HR(x) do {HRESULT h=(x);if(FAILED(h)){std::printf("FAIL line %d hr=%08lx: %s\n",__LINE__,h,#x);std::exit(1);}}while(0)
 #include "actual_transfer_history.inl"
 using d2vr_transfer::Ref;
+static d2vr_gpu_wait::CompletionPause* completionPause=nullptr;
 struct ReaderOps {
     ID3D11DeviceContext* context;ID3D11Query* query;
     unsigned ends=0;
@@ -28,7 +30,7 @@ struct ReaderOps {
             hr==S_FALSE?d2vr_shared_reader::Poll::Pending:d2vr_shared_reader::Poll::Failed;
     }
     uint64_t Now() const {return GetTickCount64();}
-    void PauseThread(){d2vr_gpu_wait::Pause(200,polls);}
+    void PauseThread(){if(completionPause && completionPause->Pause())return;d2vr_gpu_wait::Pause(200,polls);}
     void End(){++ends;context->End(query);}
 };
 template<class T> Ref<T> Adopt(T* p) {Ref<T> owned(p);if(p)p->Release();return owned;}
@@ -277,7 +279,7 @@ static void Scenario(IDirect3DDevice9Ex* dev9,ID3D11Device* dev11,ID3D11DeviceCo
     printf("PASS interop scenario deferred=%d split=%d overlap=%d size=%ux%u: %u eye transfers, pixels and explicit reader retirement\n",
         int(deferred),int(split),int(overlapOwner),width,height,frames*2);
 }
-int main() {
+int main(int argc,char**) {
     static_assert(sizeof(void*)==4,"x86 required");
     wchar_t path[MAX_PATH];CHECK(GetSystemDirectoryW(path,MAX_PATH));CHECK(!wcscat_s(path,L"\\d3d9.dll"));
     HMODULE module=LoadLibraryW(path);CHECK(module);
@@ -300,6 +302,8 @@ int main() {
     CHECK(adapter.Get());ID3D11Device* d11Raw=nullptr;ID3D11DeviceContext* ctxRaw=nullptr;
     HR(D3D11CreateDevice(adapter.Get(),D3D_DRIVER_TYPE_UNKNOWN,nullptr,D3D11_CREATE_DEVICE_BGRA_SUPPORT,
         nullptr,0,D3D11_SDK_VERSION,&d11Raw,nullptr,&ctxRaw));auto d11=Adopt(d11Raw);auto ctx=Adopt(ctxRaw);
+    d2vr_gpu_wait::CompletionPause completion;
+    if(argc>1){CHECK(completion.Prepare(d11.Get(),ctx.Get()));completionPause=&completion;}
     Scenario(d9.Get(),d11.Get(),ctx.Get());
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true);
     Scenario(d9.Get(),d11.Get(),ctx.Get(),true,2676,2728);
@@ -336,6 +340,7 @@ int main() {
     HR(d9->ResetEx(&pp,nullptr));
     puts("PASS rotating input pairs: frame-varying left/right pixels, delayed receipt retirement across two frames, all four readers drained before Reset");
     puts("PASS combined actual-source adopted history + native 0x50 + D3D11 split readers: UI persistence, seed-before-overwrite, fallback detachment, live slot restore, resize/recreate and Reset");
+    CHECK(completion.Drain());completionPause=nullptr;
     ctx={};d11={};d9={};api={};DestroyWindow(window);FreeLibrary(module);
     std::puts("PASS actual x86 D3D9Ex/D3D11 worker: 3040 eye transfers (1100 at 2676x2728), including persistent isolated right output, single-owner overlap on native 0x50, two independent shared inputs, MT 0x54 workers, sampled pixel equality, concurrent D3D9 work, query retirement, RAII join, failure latch, Reset/recreate");
     std::puts("No game/OpenXR/Steam calls; this does not prove frame-time improvement or headset acceptance.");

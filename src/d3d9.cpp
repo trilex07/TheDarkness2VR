@@ -12,6 +12,7 @@
 #include <d3d9.h>
 #include "query_preload_pool.h"
 #include <d3d11.h>
+#include "render_hook_cost.h"
 #include "stereo_transfer_worker.h"
 #include "isolated_eye_output.h"
 #include <dxgi.h>
@@ -664,6 +665,7 @@ static inline bool SmallRecordCopyIsEnabled() {
 
 static bool g_lastConsumerReaderFence = false; // OFF by default; isolated timing hypothesis
 static unsigned g_sharedReaderSleepUs=0; // opt-in polling backoff, exact query completion unchanged
+static bool g_sharedReaderCompletionEvent=false; // diagnostic startup experiment; query remains authority
 static bool g_deferStereoTransferReader = false; // startup-only; exact reader fence before shared reuse
 static bool g_overlapNativePresent = false; // startup-only; protected mode 4: mirror Present inside right-eye GPU wait
 static bool g_earlyPacketPreparation = false; // owned prepass overlaps capture/backup before replay
@@ -904,9 +906,12 @@ void LoadConfig() {
     g_sharedReaderSleepUs=GetPrivateProfileIntA("Render","SharedReaderSleepUs",0,chosenIni);
 #ifdef D2VR_MATCHED_CAPTURE
     g_sharedReaderSleepUs=GetPrivateProfileIntA("Diagnostics","SharedReaderSleepUsExperiment",g_sharedReaderSleepUs,".\\Darkness2VR-diagnostic.ini");
+    g_sharedReaderCompletionEvent=GetPrivateProfileIntA("Diagnostics","SharedReaderCompletionEventExperiment",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    d2vr_hook_cost::enabled=GetPrivateProfileIntA("Diagnostics","HookCostSampling",0,".\\Darkness2VR-diagnostic.ini")!=0;
 #endif
     if(g_sharedReaderSleepUs>1000)g_sharedReaderSleepUs=0;
     Log("[SharedReader] polling backoff=%uus after four yields; exact completion required",g_sharedReaderSleepUs);
+    Log("[SharedReader] advisory GPU completion event=%d; exact query still required",int(g_sharedReaderCompletionEvent));
     g_skinMipFilter=GetPrivateProfileIntA("Render","SkinMipFilter",0,chosenIni)!=0;
 #ifdef D2VR_MATCHED_CAPTURE
     g_skinMipFilter=g_skinMipFilter || GetPrivateProfileIntA("Diagnostics","SkinMipFilterExperiment",0,".\\Darkness2VR-diagnostic.ini")!=0;
@@ -1241,17 +1246,18 @@ void PollHotkeys() {
     if (diagnosticNow - diagnosticPoll >= 1000) {
         diagnosticPoll = diagnosticNow;
 #ifdef D2VR_MATCHED_CAPTURE
-        // Explicit lab-only runtime A/B. These two settings own no persistent
-        // resource or packet state; changing them at this render boundary leaves
-        // query completion and per-draw restoration semantics unchanged.
+        // Explicit lab-only runtime A/B. Advisory completion-event objects stay
+        // alive and drain at teardown even when the pause experiment is disabled.
+        // No query identity, resource ownership or per-draw restoration changes.
         if(GetPrivateProfileIntA("Diagnostics","LiveRenderExperiments",0,".\\Darkness2VR-diagnostic.ini")) {
             unsigned reader=GetPrivateProfileIntA("Diagnostics","SharedReaderSleepUsExperiment",g_sharedReaderSleepUs,".\\Darkness2VR-diagnostic.ini");
             if(reader>1000)reader=0;
             const bool skin=GetPrivateProfileIntA("Diagnostics","SkinMipFilterExperiment",g_skinMipFilter,".\\Darkness2VR-diagnostic.ini")!=0;
-            if(reader!=g_sharedReaderSleepUs || skin!=g_skinMipFilter){
-                g_sharedReaderSleepUs=reader;g_skinMipFilter=skin;
+            const bool completion=GetPrivateProfileIntA("Diagnostics","SharedReaderCompletionEventExperiment",g_sharedReaderCompletionEvent,".\\Darkness2VR-diagnostic.ini")!=0;
+            if(reader!=g_sharedReaderSleepUs || skin!=g_skinMipFilter || completion!=g_sharedReaderCompletionEvent){
+                g_sharedReaderSleepUs=reader;g_skinMipFilter=skin;g_sharedReaderCompletionEvent=completion;
                 LARGE_INTEGER qpc{};QueryPerformanceCounter(&qpc);
-                Log("[RenderExperimentControl] readerUs=%u skinMip=%d qpc=%lld; boundary-only diagnostic A/B",reader,int(skin),qpc.QuadPart);
+                Log("[RenderExperimentControl] readerUs=%u skinMip=%d completionEvent=%d qpc=%lld; boundary-only diagnostic A/B",reader,int(skin),int(completion),qpc.QuadPart);
             }
         }
         if (g_smallRecordCopyControl.Armed()) {
@@ -2282,6 +2288,7 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
     const float* pConstantData,
     UINT Vector4fCount,const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner)
 {
+    d2vr_hook_cost::Scope hookCost(d2vr_hook_cost::VertexConstants);
     if(d2vr_stateblock::Active(dev))
         return g_origSetVertexShaderConstantF(dev,StartRegister,pConstantData,Vector4fCount);
     if(!d2vr_record_sync::NativeMutation())
@@ -7433,6 +7440,7 @@ static HRESULT STDMETHODCALLTYPE EngineSwapChainPresent(IDirect3DSwapChain9* sc,
     const bool reportReturn=dispatch.Returned(static_cast<int32_t>(hr));
 #ifdef D2VR_MATCHED_CAPTURE
     d2vr_cpu_sync::timing.Report(g_srcW,g_srcH,g_trackedFrame.id);
+    d2vr_hook_cost::Report(Log,g_trackedFrame.id);
 #endif
     InterlockedIncrement(&g_swapChainPresentCount);InterlockedExchange(&g_presentSeen,1);
     if(outer) {

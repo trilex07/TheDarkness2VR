@@ -67,6 +67,7 @@ static void ImagePresentAfter(IDirect3DSwapChain9* sc,uintptr_t caller,bool qual
         // publish the existing stage accumulator itself. Scopes overlap: these
         // are wall-time API spans, never CPU busy time or additive frame cost.
         d2vr_cpu_sync::timing.Report(g_srcW,g_srcH,g_trackedFrame.id);
+        d2vr_hook_cost::Report(Log,g_trackedFrame.id);
         InterlockedIncrement(&g_swapChainPresentCount);InterlockedExchange(&g_presentSeen,1);
         // First real successful forwarding opens admission for the NEXT game
         // frame. Never replay commands accumulated across that warm-up frame.

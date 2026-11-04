@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include "../../src/recorder_sync.h"
+#include "../../src/render_hook_cost.h"
 #define NOMINMAX
 #include "../../src/small_record_copy.h"
 #include "../../src/native_constant_source.h"

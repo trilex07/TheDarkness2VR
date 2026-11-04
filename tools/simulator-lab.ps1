@@ -1,6 +1,7 @@
 param([ValidateSet('Install','Update','Restore')][string]$Action,
  [string]$GameDir='C:\Program Files (x86)\Steam\steamapps\common\Darkness II',
- [string]$LabDirectory='')
+ [string]$LabDirectory='',
+ [ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedInstalledDll='E56BF027875A6FF3997E0B6A51A0DC43F52DD86C2EB39AE79D4C5EAB073FA5CA')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $lab=if($LabDirectory){[IO.Path]::GetFullPath($LabDirectory)}else{Join-Path $root 'test-output/simulator-lab-20261103'}
@@ -12,7 +13,7 @@ if($Action -eq 'Install'){
  $manifest=Join-Path $root 'tools-local/OpenXR-Simulator/bin-x86/openxr_simulator.json'
  if(!(Test-Path $manifest)){throw 'Build x86 simulator first'}
  $before=Hash (Join-Path $GameDir 'd3d9.dll')
- if($before -ne 'E56BF027875A6FF3997E0B6A51A0DC43F52DD86C2EB39AE79D4C5EAB073FA5CA'){throw 'Unexpected installed baseline'}
+ if($before -ne $ExpectedInstalledDll){throw 'Unexpected installed baseline'}
  & (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll (Join-Path $root 'd3d9.dll') -RenderIni @((Join-Path $GameDir 'Darkness2VR.ini')) -DiagnosticIni (Join-Path $GameDir 'Darkness2VR-diagnostic.ini') | Out-Host
  New-Item -ItemType Directory -Force (Join-Path $lab 'rollback') | Out-Null
  $files=@(); foreach($name in 'd3d9.dll','Darkness2VR-diagnostic.ini'){
@@ -26,6 +27,7 @@ if($Action -eq 'Install'){
  }
  $candidate=Join-Path $lab 'candidate.dll'; Copy-Item (Join-Path $root 'd3d9.dll') $candidate -Force
  $config=[IO.File]::ReadAllText((Join-Path $GameDir 'Darkness2VR-diagnostic.ini'))
+ $config=[regex]::Replace($config,'(?ms)^\[Simulator\]\r?\n.*?(?=^\[|\z)','')
  $config+="`r`n[Simulator]`r`nEnabled=1`r`nRuntimeJson=$manifest`r`nDataDirectory=$(Join-Path $lab 'runtime')`r`n"
  $configPath=Join-Path $lab 'candidate-diagnostic.ini';[IO.File]::WriteAllText($configPath,$config,[Text.Encoding]::ASCII)
  $files[0].after=Hash $candidate;$files[1].after=Hash $configPath

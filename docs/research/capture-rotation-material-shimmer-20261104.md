@@ -201,3 +201,64 @@ identical game simulation across phases. Keep reader experiment OFF for users.
 Game J actual projected combat capture j-shoot-test.png has both guns/hands;
 other captures include expected scripted/theater segments and are not equivalent
 free-world controls. Original outdoor40FPS is still not reproduced.
+
+## Advisory GPU completion events and Villa reproduction
+
+Added a diagnostic-only startup switch SharedReaderCompletionEventExperiment.
+ID3D11Device5 fence + ID3D11DeviceContext4 Signal + SetEventOnCompletion replace
+busy polling only as an advisory pause. The ORIGINAL exact event query returning
+S_OK remains the sole resource-reuse authority. Context lease/thread checks,
+worker receipts and Reset rejection stay intact. Unsupported APIs/failures use
+the old pause. Pending registrations persist across diagnostic live A/B and
+are drained before freeing slots. A failed drain retains slots and refuses Reset;
+the helper also retains its registration on exceptional destruction timeout.
+Default OFF, unavailable through production configuration.
+
+Official contracts checked:
+https://learn.microsoft.com/en-us/windows/win32/api/d3d11_4/nf-d3d11_4-id3d11device5-createfence
+https://learn.microsoft.com/en-us/windows/win32/api/d3d11_3/nf-d3d11_3-id3d11devicecontext4-signal
+https://learn.microsoft.com/en-us/windows/win32/api/d3d11_3/nf-d3d11_3-id3d11fence-seteventoncompletion
+
+Actual x86 GPU A/B/A/B, 400 iterations/phase, 32 full-resolution copies/iteration:
+yield CPU703.125/703.125ms versus event15.625/below-one-counter-quantum ms;
+mean wait1.7858/1.7791 versus1.8269/1.8238ms. Below-one-quantum is NOT zero cost.
+Source test/build_gpu_completion_pause.ps1; private log
+build/gpu-completion-pause-results.log. Subsequent concurrent-game fixture run
+is functional evidence only; GPU contention invalidates its clean timing comparison.
+Actual D3D9Ex/D3D11 interop PASS3040 transfers/1100 full-size with event pauses,
+both-eye pixel identities/history/reset and original-query retirement retained.
+
+Fresh lab test-output/gpu-completion-lab-20261104 backs up current user4A/3A
+directly; it does NOT use the older E56 rollback. Simulator override is process
+local and source2676x2728 unchanged. Restaurant startup test reached world and
+skin mip applied to both eyes, but its death-loop timings remain uncontrolled.
+
+Original user's Villa save yields a stable elevator/lobby view, both hands
+visible and following four distinct acknowledged controller poses. This is
+movement/visibility evidence with skin mip + specular footprint, NOT headset
+shimmer acceptance. Private hand-pose-{0..3}.png and hand-pose-acks.json.
+
+Villa same-process event/yield/event/yield comparison (complete5s windows,
+startup/straddling/last partial excluded): cadence40.67/41.8/43.8/43.6;
+scheduled render CPU21.06/19.51/19.48/20.00ms-frame; reader CPU below counter
+resolution in ALL four phases. Thus NO FPS win from completion-event waits.
+This newly reproduces a CPU-heavy roughly40FPS case, but is an indoor Villa
+case, not proof of the original enemy-heavy outdoor cause. Final images confirm
+the same idle lobby scene, no death-loop transitions. Private ab-summary.json.
+
+Eight-second wall-context sample474 observations: native EXE171, system D3D9
+42, proxy85, ntdll109; these are NOT scheduled execution percentages. Two
+same-named D3D9 modules must be matched by full path/base/size, never name case.
+Native proxy was559C0000 size12140544, systemD3D9 was664D0000 size1544192.
+Sampler now preserves full module paths and unwraps Windows PowerShell's
+serialized array value wrapper. Interval1ms is requested, NOT guaranteed;
+actual observed cadence is about59 context observations/sec. Map proximity
+is a lead, not a complete symbol/unwind attribution. Further bounded sampled
+hook timing is diagnostic-only and labels nested wall scopes non-additive.
+
+Builds for event code PASS production and diagnostic; actual-source binding
+regression PASS1679 checks. Old build-small-record-copy.ps1 currently fails its
+startup-order source check because submission QI/software hooks precede its
+copy-admission marker. No fixture PASS is claimed; its recorder C++ fixture
+now includes the new diagnostic timing declarations. This source-check issue
+predates the event/timing changes and remains separately open.

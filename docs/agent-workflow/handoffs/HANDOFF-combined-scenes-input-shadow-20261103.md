@@ -444,3 +444,25 @@ history accidentally. Baseline remains unchanged.
   four FRESH save/settings preimages. Steam global runtime must remain SteamVR.
 - Geometry/outline edge coverage, clean outdoor repro and HMD acceptance remain
   OPEN. Do not replace these with synthetic AA metrics or finish/shutdown claims.
+
+### GPU completion/Villa checkpoint (supersedes J-active notes above)
+- OLD shimmer-repeatable lab ENDED: user4A/3A + all4 fresh save/settings hashes
+  restored; receipt post-lab-restored.json at11:54:35UTC. No global XR changes.
+- NEW gpu-completion-lab-20261104 currently owns an emulator game. Read its
+  owned-process.json and verify live PID/start/path before closing. Its own
+  payload.json backups are USER4A/3A, so Restore directly returns user payload.
+  Its saves.json contains fresh copies of all4 original save/settings files.
+- Completion event is diagnostic-only/defaultOFF. Actual1600-iteration GPU
+  benchmark +3040 interop transfers PASS; CPU waiting reduced on synthetic queue.
+  Villa same-process A/B/A/B roughly41-44FPS /19.5-21ms scheduled render CPU;
+  reader cost negligible even without event, hence NO whole-frame improvement.
+- Villa original user save is now the useful stable CPU-heavy repro (elevator
+  facing lobby); restaurant fixture death loops were not identical comparisons.
+  Both hands follow acknowledged pose changes and remain visible with material
+  experiments. HMD shimmer effectiveness and original outdoor cause remain OPEN.
+- New HookCostSampling diagnostic-only bounded random1/64 wall timing is being
+  tested on this Villa instance. Disabled in user/defaults, no production timers.
+- End new lab by closing only its owned process, preserving final log, running
+  tools/simulator-lab.ps1 Restore -LabDirectory test-output/gpu-completion-lab-20261104,
+  restoring ALL4 files from its saves.json and verifying all hashes. Do not use
+  old lab rollback or overwrite frozen user main INI/EXE/loader. No shutdown.

@@ -119,6 +119,9 @@ static bool EarlyPacketParametersMatch(const StereoParams& sp) {
 // The worker owns its input; no D3D9/COM pointers or native object lists escape.
 struct PacketPreparationLease {~PacketPreparationLease(){FinishPacketPreparation();}};
 static const d2vr_packet_prepare::Output* PreparedVertexPacket(size_t record,bool complete) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope hookCost(d2vr_hook_cost::PreparedPacket);
+#endif
     if(!complete || !g_packetPreparation || !g_packetPreparation->ticket)return nullptr;
     auto& s=*g_packetPreparation;const auto& p=s.job->params;
     // Global hotkey/debug choices may change through a reentrant driver call.

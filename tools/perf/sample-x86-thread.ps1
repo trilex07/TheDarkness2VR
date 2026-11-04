@@ -1,7 +1,8 @@
 param([Parameter(Mandatory=$true)][int]$GamePid,
  [Parameter(Mandatory=$true)][int]$ThreadId,
  [Parameter(Mandatory=$true)][string]$Output,
- [ValidateRange(1,10)][int]$Seconds=5)
+ [ValidateRange(1,10)][int]$Seconds=5,
+ [ValidateRange(1,20)][int]$IntervalMs=20)
 $ErrorActionPreference='Stop'
 # Diagnostic lab only: brief control-context snapshots, never stack walking or
 # symbol loading while suspended. Every successful suspend has a finally resume.
@@ -41,8 +42,9 @@ public static class D2ThreadSample {
  }
 }
 '@
-$moduleCode='$p=Get-Process -Id '+$GamePid+'; @($p.Modules | ForEach-Object { @{name=$_.ModuleName;base=[uint64]$_.BaseAddress.ToInt64();size=$_.ModuleMemorySize} }) | ConvertTo-Json -Compress'
+$moduleCode='$p=Get-Process -Id '+$GamePid+'; @($p.Modules | ForEach-Object { @{name=$_.ModuleName;path=$_.FileName;base=[uint64]$_.BaseAddress.ToInt64();size=$_.ModuleMemorySize} }) | ConvertTo-Json -Compress'
 $modules=& "$env:WINDIR\SysWOW64\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command $moduleCode | ConvertFrom-Json
+if($modules.PSObject.Properties.Name -contains 'value'){$modules=$modules.value}
 if($LASTEXITCODE -or !$modules){throw 'Could not read WOW64 module inventory'}
 $rows=@();$clock=[Diagnostics.Stopwatch]::StartNew()
 while($clock.Elapsed.TotalSeconds -lt $Seconds){
@@ -51,7 +53,9 @@ while($clock.Elapsed.TotalSeconds -lt $Seconds){
  $t=[Diagnostics.Stopwatch]::GetTimestamp()
  $s=[D2ThreadSample]::Sample([uint32]$ThreadId)
  $rows+=@{ip=$s[0];cycles=$s[1];previousSuspendCount=$s[2];qpc=$t;sampleTicks=([Diagnostics.Stopwatch]::GetTimestamp()-$t)}
- Start-Sleep -Milliseconds 20
+ # A shorter explicitly requested interval avoids phase-locking to the game's
+ # roughly 16/22ms frames. This remains wall sampling, not ETW running time.
+ Start-Sleep -Milliseconds $IntervalMs
 }
-@{pid=$GamePid;tid=$ThreadId;start=$start;dll=(Get-FileHash -LiteralPath (Join-Path (Split-Path $exe) 'd3d9.dll')).Hash;frequency=[Diagnostics.Stopwatch]::Frequency;modules=$modules;samples=$rows;limits='Wall-clock instruction-pointer samples include blocked and descheduled states; not ETW CPU execution or causal proof. No stack data collected.'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Output
+@{pid=$GamePid;tid=$ThreadId;start=$start;intervalMs=$IntervalMs;dll=(Get-FileHash -LiteralPath (Join-Path (Split-Path $exe) 'd3d9.dll')).Hash;frequency=[Diagnostics.Stopwatch]::Frequency;modules=$modules;samples=$rows;limits='Wall-clock instruction-pointer samples include blocked and descheduled states; not ETW CPU execution or causal proof. No stack data collected.'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Output
 Write-Output "Saved $($rows.Count) context samples; each successful suspend resumed."

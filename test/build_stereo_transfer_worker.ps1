@@ -1,4 +1,4 @@
-param([switch]$CompileOnly)
+param([switch]$CompileOnly,[switch]$CompletionEvent)
 $ErrorActionPreference='Stop'
 $here=Split-Path -Parent $MyInvocation.MyCommand.Path
 $output=Join-Path $env:TEMP 'd2vr-stereo-transfer-worker-tests'
@@ -18,6 +18,7 @@ try {
     cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /WX /O2 /std:c++17 /I`"$output`" `"$source`" /Fe:stereo_transfer_worker_test.exe /link user32.lib d3d11.lib dxgi.lib d3dcompiler.lib"
     if($LASTEXITCODE -ne 0) {throw 'compile failed'}
     if($CompileOnly){Write-Output 'PASS x86 interop fixture compile; hardware execution NOT RUN';return}
-    & .\stereo_transfer_worker_test.exe
+    if($CompletionEvent){& .\stereo_transfer_worker_test.exe --completion-event}
+    else{& .\stereo_transfer_worker_test.exe}
     if($LASTEXITCODE -ne 0) {throw 'interop regression failed'}
 } finally {Pop-Location}

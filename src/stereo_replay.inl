@@ -562,6 +562,9 @@ static inline bool RecOnRenderThread() {
 // Caller holds g_recLock until the payload and its command are both published.
 static inline uint32_t RecPushLocked(const void* data, size_t bytes, const d2vr_native_constants::Proof& proof = {},
                                      bool nativeConsumed = false) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope hookCost(d2vr_hook_cost::RecordPayload);
+#endif
     if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){
         d2vr_record_sync::conflict=true;g_recOverflow=true;return 0;
     }
@@ -624,6 +627,9 @@ static void CollectLightReadbackTarget(IDirect3DSurface9* s) {
 static void NoteRecordedWorldDraw(); // caller holds g_recLock
 static inline void RecEmitLocked(RecOp op, uint32_t n, uint32_t a0 = 0, uint32_t a1 = 0,
                            uint32_t a2 = 0, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope hookCost(d2vr_hook_cost::RecordEmit);
+#endif
     if(d2vr_record_sync::Callback() || d2vr_record_sync::nativeCalls.load()!=0){d2vr_record_sync::conflict=true;return;}
     if (!g_recActive || g_recOverflow) return;
     if (g_rec.size() >= 400000) { g_recOverflow = true; return; }
@@ -2111,6 +2117,9 @@ static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDir
 #pragma optimize("y", off)
 __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetPSConstF(IDirect3DDevice9* dev, UINT s, const float* d, UINT n,
     const uintptr_t* nativeSlot,uintptr_t nativeFrame,uintptr_t nativeOwner) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope hookCost(d2vr_hook_cost::PixelConstants);
+#endif
     if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShaderConstantF(dev,s,d,n);
     if(!d2vr_record_sync::NativeMutation())return g_orig.SetPixelShaderConstantF(dev,s,d,n);
     d2vr_submission::Packet submission;

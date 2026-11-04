@@ -1,5 +1,6 @@
 #include "shared_color_reuse.h"
 #include "gpu_query_pause.h"
+#include "gpu_completion_pause.h"
 // Each slot owns its full producer/reader lifetime. Fixed eye slots remove
 // the left-reader -> right-write dependency without reusing a pending input.
 struct SharedCaptureSlot {
@@ -13,6 +14,7 @@ struct SharedCaptureSlot {
     UINT width=0,height=0;
     d2vr_shared_reader::Fence fence;
     std::shared_ptr<d2vr_transfer::Job> deferred;
+    std::shared_ptr<d2vr_gpu_wait::CompletionPause> completionPause;
     // Last owner-thread GetData for this slot's producer. S_FALSE means the
     // event was issued and flushed, and is not complete yet.
     HRESULT producerStatus=S_OK;
@@ -45,7 +47,13 @@ struct SharedReaderFenceOps {
             hr==S_FALSE ? d2vr_shared_reader::Poll::Pending : d2vr_shared_reader::Poll::Failed;
     }
     uint64_t Now() const {return GetTickCount64();}
-    void PauseThread() {d2vr_gpu_wait::Pause(g_sharedReaderSleepUs,polls);}
+    void PauseThread() {
+        if(g_sharedReaderCompletionEvent){
+            if(!slot.completionPause)slot.completionPause=std::make_shared<d2vr_gpu_wait::CompletionPause>();
+            if(slot.completionPause->Prepare(g_dev11,g_ctx11) && slot.completionPause->Pause())return;
+        }
+        d2vr_gpu_wait::Pause(g_sharedReaderSleepUs,polls);
+    }
 };
 static bool CanReadSharedUpload(ID3D11ShaderResourceView* source) {
     for(auto& slot:g_sharedCapture)if(source && source==slot.srv11) {
@@ -91,6 +99,7 @@ static bool ReleaseSharedCaptureSlot(SharedCaptureSlot& slot) {
     if(HasSharedReaderDependency(slot) && !WaitSharedReader(slot)) {
         g_stereoTransferFault=true;return false;
     }
+    if(slot.completionPause && !slot.completionPause->Drain()){g_stereoTransferFault=true;return false;}
     FreeSharedCaptureSlot(slot);return true;
 }
 static bool ReleaseSharedCapture() {
@@ -102,6 +111,10 @@ static bool ReleaseSharedCapture() {
             g_stereoTransferFault=true;
             Log("[StereoTransferWorker] eye reader incomplete; retain both capture slots and refuse Reset/reuse");
             return false;
+        }
+    for(auto& slot:g_sharedCapture)
+        if(slot.completionPause && !slot.completionPause->Drain()){
+            g_stereoTransferFault=true;return false;
         }
     for(auto& slot:g_sharedCapture)FreeSharedCaptureSlot(slot);
     g_stereoTransferFault=false;g_splitCaptureUnavailable=false;
