@@ -639,6 +639,7 @@ static float g_nisSharpness = .20f;
 // [Render] FoveatedSharpen: gaze-centred NIS (periphery/transition/fovea), mode 2 only.
 static bool g_foveatedSharpen = true;
 static bool g_foveatedCopyBase = false;
+static bool g_foveaCenterFallback = true;
 static void ParseEngineMaxFrameRate(const char* text); // engine_frame_cap.inl
 static void ParseEngineLodScale(const char* text); // engine_lod_scale.inl
 static void LoadDlssConfig(const char* chosenIni); // dlss_eye.inl
@@ -793,6 +794,7 @@ void LoadConfig() {
         char value[32]{};
         g_foveatedSharpen = GetPrivateProfileIntA("Render", "FoveatedSharpen", 1, chosenIni) != 0;
         g_foveatedCopyBase = GetPrivateProfileIntA("Render", "FoveatedCopyBase", 0, chosenIni) != 0;
+        g_foveaCenterFallback = GetPrivateProfileIntA("Render", "FoveaCenterFallback", 1, chosenIni) != 0;
         GetPrivateProfileStringA("Render", "FoveaPeriphery", "0.35", value, sizeof(value), chosenIni);
         g_foveaPeriphery = nis_upscale::ClampSharpness((float)atof(value));
         GetPrivateProfileStringA("Render", "FoveaSharpness", "1.0", value, sizeof(value), chosenIni);
@@ -800,9 +802,10 @@ void LoadConfig() {
         GetPrivateProfileStringA("Render", "FoveaSize", "0.22", value, sizeof(value), chosenIni);
         const float size=(float)atof(value);
         g_foveaSize = size>=.05f && size<=.8f ? size : .22f;
-        Log("[NIS] FoveatedSharpen=%d periphery=%.2f fovea=%.2f size=%.2f (needs NisMode=2 and eye tracking; else uniform NisSharpness)",
+        Log("[NIS] FoveatedSharpen=%d periphery=%.2f fovea=%.2f size=%.2f (NisMode=2; see center fallback policy)",
             (int)g_foveatedSharpen,g_foveaPeriphery,g_foveaSharpness,g_foveaSize);
         Log("[NIS] FoveatedCopyBase=%d (copy full eye; NIS only gaze rectangles)",int(g_foveatedCopyBase));
+        Log("[NIS] FoveaCenterFallback=%d (missing eye gaze uses fixed image center; 0=legacy uniform sharpening)",int(g_foveaCenterFallback));
     }
     Log("[NIS] mode=%d sharpness=%.2f (2=cache sharpen, 3=shared-source scale)",g_nisMode,g_nisSharpness);
     LoadDlssConfig(chosenIni);

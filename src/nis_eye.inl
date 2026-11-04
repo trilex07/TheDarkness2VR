@@ -77,10 +77,17 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
     NisTimingBegin(&g_nisEye,g_ctx11);
     // Foveated: whole image at the periphery level, then a transition square
     // and the fovea square around the gaze, each overwriting its rectangle.
-    // Same-size sharpen mode only; any missing gaze -> uniform NisSharpness.
+    // Same-size sharpen mode only. A blink must not sharpen the whole image.
     const bool foveaMode=g_foveatedSharpen && !scaleMode && g_nisMode==2 && outW==desc[0].Width && outH==desc[0].Height;
     float gx[2]{}, gy[2]{}; bool gaze[2]{};
-    if(foveaMode) for(int eye=0;eye<2;++eye) gaze[eye]=FoveaGazePixel(eye,outW,outH,gx[eye],gy[eye]);
+    int trackedEyes=0;
+    if(foveaMode) for(int eye=0;eye<2;++eye) {
+        gaze[eye]=FoveaGazePixel(eye,outW,outH,gx[eye],gy[eye]);
+        trackedEyes+=int(gaze[eye]);
+        if(!gaze[eye] && g_foveaCenterFallback) {
+            gx[eye]=outW*.5f;gy[eye]=outH*.5f;gaze[eye]=true;
+        }
+    }
     const auto levels=d2vr_fovea::Grade(g_foveaPeriphery,g_foveaSharpness);
     for(int eye=0;eye<2;++eye) {
         const bool copyBase=gaze[eye] && g_foveatedCopyBase &&
@@ -118,13 +125,13 @@ static bool NisEyeProcess(ID3D11Texture2D* left,ID3D11Texture2D* right,
     NisTimingEnd(&g_nisEye,g_ctx11);
     // Log a state only after it held for 1 s (blinks drop the gaze briefly).
     static int lastFovea=-1, pendingFovea=-1; static ULONGLONG pendingSince=0;
-    const int foveaState=int(gaze[0])+int(gaze[1]);
+    const int foveaState=trackedEyes;
     const ULONGLONG foveaNow=GetTickCount64();
     if(foveaState!=pendingFovea) { pendingFovea=foveaState; pendingSince=foveaNow; }
     if(foveaMode && foveaState!=lastFovea && foveaNow-pendingSince>=1000) {
         lastFovea=foveaState;
-        Log("[NIS] foveated sharpening %s (periphery=%.2f transition=%.2f fovea=%.2f size=%.2f); gaze eyes=%d",
-            foveaState ? "active" : "waiting for gaze (uniform NisSharpness)",levels.periphery,levels.transition,levels.fovea,g_foveaSize,foveaState);
+        Log("[NIS] foveated sharpening %s (periphery=%.2f transition=%.2f fovea=%.2f size=%.2f); tracked eyes=%d centerFallback=%d",
+            foveaState ? "tracked" : (g_foveaCenterFallback ? "fixed center" : "uniform NisSharpness"),levels.periphery,levels.transition,levels.fovea,g_foveaSize,foveaState,int(g_foveaCenterFallback));
     }
     if(!g_nisEyeReported) {
         Log("[NIS] pair dispatched mode=%d strength=%.2f source=%ux%u output=%ux%u; independent eyes, native projections retained",

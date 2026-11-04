@@ -223,3 +223,11 @@ source, BASELINE.md and the task handoff before applying them.
 - **Evidence**: actual-source correctness fixtures PASS, but optimistic ready-output-only consumption cost was approximately70.6ns serial/72.4ns cached and41.9ns/50.5ns in separate synthetic runs, before any prepass, queue or join cost. These are not gameplay frame times or FPS results.
 - **Decision**: default OFF; test candidate uses shader cache alone. Do not present thread utilization or correct output as a performance win. Keep explicit Worker/Both modes only for bounded experiments; a larger proven independent producer or materially lower preparation cost is needed before default admission.
 - **Details**: `docs/research/performance-candidate-20261103.md`, `handoffs/HANDOFF-performance-candidate-20261103.md`.
+### SMAA1x HIGH after NIS: no headset shimmer benefit
+- Date: 2026-11-04. Source33fe966d, installed DLL2119EA3C.
+- User accepts scene/input behavior but reports SMAA does not resolve edge shimmer.
+- GPU/flat/diagonal and simulator checks were correctness evidence, not temporal
+  or headset effectiveness. Do not repeat a generic post-filter as a proven fix.
+- Follow-up found a separate exact issue: missing gaze switches localized NIS
+  to uniform80% strength. Actual-source pixel regression FAIL before center
+  fallback, PASS after; not proof that all spatial/specular aliasing is fixed.

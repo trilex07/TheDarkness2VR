@@ -81,3 +81,7 @@ without changing the accepted main INI. Restart after changing either setting.
 Both current eyes fall back together if filtering is unavailable. Cached D3D11
 commands retain independent current inputs; no CPU image readback or per-frame
 command recording. Do not combine this trial with the rejected DLAA experiment.
+NIS tracking fallback: Render/FoveaCenterFallback=1 (default) keeps the
+sharpening area at the fixed image center when an eye gaze is unavailable.
+This prevents switching to full-image NisSharpness during blinks. Value0
+restores the legacy uniform fallback. Resolution and NIS strength are unchanged.

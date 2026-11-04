@@ -18,7 +18,10 @@ static UINT g_scW=0,g_scH=0;
 static bool g_foveatedSharpen=false,g_foveatedCopyBase=false;
 static bool g_gazeFxaaEnabled=false,g_foveaCenterFallback=false;
 static float g_foveaPeriphery=.35f,g_foveaSharpness=1.f,g_foveaSize=.22f;
-static bool FoveaGazePixel(int,uint32_t,uint32_t,float&,float&) {return false;}
+static unsigned testGazeMask=0;
+static bool FoveaGazePixel(int eye,uint32_t w,uint32_t h,float& x,float& y) {
+    x=w*.5f;y=h*.5f;return (testGazeMask&(1u<<eye))!=0;
+}
 static unsigned failures=0;
 static void Log(const char* format,...) {
     char text[512];va_list args;va_start(args,format);vsnprintf(text,sizeof(text),format,args);va_end(args);
@@ -130,6 +133,22 @@ int main(int argc,char** argv) {
     g_nisEye.cb=originalBuffer;badBuffer->Release();
     CHECK(NisEyeProcess(left,right,output) && g_nisEye.numConfigUploads==uploadedBeforeFailure+1);
     CHECK(Read(output[0])==high);
+    // Actual production host: loss of gaze must not turn centered sharpening
+    // into full-image80% sharpening. Includes one-eye loss and both-eye blink.
+    g_foveatedSharpen=true;g_foveatedCopyBase=true;g_foveaCenterFallback=true;
+    testGazeMask=3;CHECK(NisEyeProcess(left,right,output));
+    auto trackedLeft=Read(output[0]),trackedRight=Read(output[1]);
+    for(unsigned mask: {0u,1u,2u,3u,0u}) {
+        testGazeMask=mask;CHECK(NisEyeProcess(left,right,output));
+        CHECK(Read(output[0])==trackedLeft && Read(output[1])==trackedRight);
+    }
+    auto bounds=d2vr_fovea::Around(33,17.5f,66,35,g_foveaSize*1.7f);
+    for(unsigned y=0;y<35;++y)for(unsigned x=0;x<66;++x)
+        if(x<bounds.x || x>=bounds.x+bounds.w || y<bounds.y || y>=bounds.y+bounds.h)
+            CHECK(trackedLeft[y*66+x]==pattern[y*66+x]);
+    g_foveaCenterFallback=false;testGazeMask=0;
+    CHECK(NisEyeProcess(left,right,output));CHECK(Read(output[0])==high);
+    g_foveatedSharpen=false;g_foveatedCopyBase=false;
     NisEyeShutdown();CHECK(!g_nisEyeSource[0] && !g_nisEyeSourceOwner[1]);
     CHECK(!g_nisEye.configUploaded && !g_nisEye.numConfigUploads);
     D3D11_TEXTURE2D_DESC invalidDesc{};left->GetDesc(&invalidDesc);invalidDesc.BindFlags=0;
