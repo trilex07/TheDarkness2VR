@@ -37,3 +37,31 @@ path; private before/after crop shows reduced stair steps with retained skin
 details. Video compression and one still frame prevent a temporal/HMD claim.
 Private artifacts: test-output/aliasing-audit-20261104 and build/smaa-eye-test.log.
 Runtime simulator validation and headset acceptance must be recorded separately.
+
+## Runtime validation, 2026-11-04
+
+Process-only OpenXR Simulator sessions PID5824 and PID47916 used diagnostic
+DLL592AF198FD8D4104CB69DD1FE525EBA7352851135866BFCB3005F581E596ACC7.
+The first recommended1280x1400/eye; the second explicitly3232x3300/eye.
+Both-eye swapchains and successful SMAA pair processing are logged in private
+test-output/smaa-runtime-20261104/high-runtime.log. Native source remains
+2676x2728; NIS output and submitted eye images are3232x3300. This distinction
+matters: no claim that the native game rasterizes at the submitted resolution.
+
+Villa elevator loaded, native movie presentation returned to immersive gameplay.
+Independent controller pose commands and a head rotation/10cm translation
+produced different visible hand positions in high-hands-a.png/high-hands-b.png;
+both hands remain present. No missing-hand geometry was observed in these
+bounded poses. Desktop preview is resized and cannot prove headset shimmer or
+clarity acceptance. Reported XRCadence is simulator submission, not physicalHz.
+No recovery of the outdoor25ms/40FPS case is established.
+
+Both production and diagnostic builds PASS. Repeated RTX5070 fixture PASS,
+1.260ms GPU/pair and0.001ms CPU enqueue/pair at3232x3300. Actual installer
+fixture PASS all four modes, exact rollback, tamper and foreign-preimage checks.
+Selected-draw8 and matched-capture42 regression tests PASS.
+
+After the owned process exited, exact accepted Steam DLL/diagnostic INI and all
+four original save/settings preimages were restored with SHA checks. Global
+OpenXR remains SteamVR. No game or shutdown request is left running. No main
+merge, push, HMD acceptance, floor/shadow visual fix or FPS recovery is claimed.

@@ -336,3 +336,25 @@ history accidentally. Baseline remains unchanged.
   This is a testable partial candidate, never a claim that all user goals were
   completed. Resume these open investigations from saved evidence, not guessed
   matrix/Steam-network changes or another resolution reduction.
+
+## Resume checkpoint: edge and hand shimmer, 2026-11-04
+
+- User redirected focus to edges/hands if reflection motion is native. Viewpoint
+  dependent reflection motion alone is not a defect; shadows are not exonerated.
+- Sourceee9a6775 adds opt-in SMAA1x HIGH after NIS, defaultOFF, FXAAOFF,
+  no resolution reduction. See docs/research/smaa-edges-20261104.md for exact
+  source, GPU fixture and runtime boundaries. Cached six-draw D3D11 commands,
+  no production readback/wait; actual hand-video crop shows fewer stair steps.
+- Process-only simulator at3232x3300/eye PASS villa load, immersive gameplay,
+  both hands present at two independent controller/head poses. HMD shimmer and
+  clarity NOT RUN. No native outdoor CPU25ms/40FPS recovery demonstrated.
+- Both builds PASS; hardware fixture1.260ms GPU BOTH eyes, CPU enqueue0.001ms.
+  Actual installer four modes PASS; selected-draw8/matched-capture42 PASS.
+- Own simulatorPID47916 exited. SteamE56BF027/AC8290E4, protected files and all
+  four user save/settings preimages restored exactly. Global OpenXRSteamVR.
+  No shutdown pending: the earlier shutdown note is historical, not an action
+  to repeat while the performance/shadow scope remains unresolved.
+- Freeze the next candidate at build/combined-scenes-smaa-20261104 after this
+  documentation commit. ModeSmaaExperiment includes Combined scene/input fixes
+  and onlySMAA, shadow/reflection experimentsOFF. DefaultCombined has SMAAOFF.
+  Candidate is partial and requires HMD comparison; do not call all scope done.
