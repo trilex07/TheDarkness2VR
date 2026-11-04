@@ -72,3 +72,12 @@ exact accepted baseline/rollback. No game assets or saves are committed.
 Install the frozen combined candidate with game closed; verify receipt/protected
 identities. User headset acceptance remains necessary before updating BASELINE
 or integrating this branch into main.
+
+## Final Steam state
+Implementation commit: 83ebbd9d19c14df3e3eff9c291f188cc99238d53.
+Installed Combined candidate with game closed after exact lab restoration.
+Post-install VerifyOnly PASS: DLL B32E1FFF / diagnostic117230AC; protected EXE,
+loader and main INI unchanged. Simulator OFF and collectors OFF. Game not launched
+after final install. Exact rollback: frozen Install.ps1 -Restore.
+Private installation receipt: build/tentacle-aim-light-recenter-20261104/installed.json.
+Remaining gate: user physical headset acceptance; new task NOT merged to main.
