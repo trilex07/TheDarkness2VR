@@ -219,6 +219,7 @@ static bool ReadNativeAimDirection(float out[3]);
 static bool NativeHandsAvailable();
 static bool NativeHandsFromWeapon(void* model,DWORD cameraVtable);
 static void CaptureClickRecenterReference();
+static void RequestNativeCameraLevel();
 bool g_aimMarkerValid[2]{};
 float g_aimMarkerUV[2][2]{};
 bool g_headGeometry = true; // Enabled on startup; Ctrl+F8 toggles, F8/L3+R3 recentres.
@@ -1230,6 +1231,7 @@ void LoadConfig() {
 void RequestRecenter(const char* source) {
     // Preserve the click-frame evidence before ResetNativeAim clears ownership.
     RecordRecenterDiagnostic(source);
+    RequestNativeCameraLevel();
     ResetNativeAim();
     g_headGeometryReferenceValid = false;
     CaptureClickRecenterReference();
@@ -4400,6 +4402,7 @@ static void ToggleCinemaForMinute(const char* source) {
         (request&1)?"cinema3D":"VR");
 }
 #include "camera_anim_stabilizer.inl"
+#include "native_camera_level.inl"
 #include "camera_native_no_shake.inl"
 #include "camera_shake_source.inl"
 // Gaze rays for grab/throw (defined in eye_gaze.inl, tracking space).

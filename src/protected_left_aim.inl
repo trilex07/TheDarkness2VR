@@ -19,10 +19,11 @@ static bool ProtectedAimCameraOwned(void* camera) {
 }
 static bool ResolveProtectedLeftAim(void* self,const float* base,float* output) {
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
-    if(CinemaSceneThisFrame() || !g_protectedLeftAim || !g_imagePreservingInput || !g_protectedGestureActions ||
+    if(CinemaSceneThisFrame() || !NativeJackieInputAllowed() || NativeActionMovies() ||
+       !g_protectedLeftAim || !g_imagePreservingInput || !g_protectedGestureActions ||
        !g_nativeImageGuard.enabled || GetCurrentThreadId()!=g_renderThreadId ||
        !g_trackedFrame.open || !g_haveViews || !g_in3DGameplayMode || g_protectedRightTentacle.paused ||
-       (g_trackedFrame.flags&tracked)!=tracked || !g_hands[0].valid ||
+       (g_trackedFrame.flags&tracked)!=tracked ||
        !g_headGeometry || !g_headGeometryReferenceValid ||
        !std::isfinite(g_gameUnitsPerMeter) || g_gameUnitsPerMeter<.01f || g_gameUnitsPerMeter>5000.f ||
        !ProtectedAimCameraOwned(self) || !NativeAimOwnerMatches(self))return false;
@@ -59,11 +60,12 @@ static void PublishProtectedLeftAim(const XINPUT_GAMEPAD& gp) {
     ProtectedLeftRay sample;
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     NativeGameplaySample owner;
-    if(g_protectedLeftAim && g_protectedAimPrivateReady && g_imagePreservingInput && g_protectedGestureActions &&
+    if(!CinemaSceneThisFrame() && NativeJackieInputAllowed() && !NativeActionMovies() &&
+       g_protectedLeftAim && g_protectedAimPrivateReady && g_imagePreservingInput && g_protectedGestureActions &&
        g_nativeImageGuard.enabled && g_haveViews && g_in3DGameplayMode &&
        (g_trackedFrame.flags&tracked)==tracked && !g_protectedRightTentacle.paused &&
-       g_headGeometry && g_headGeometryReferenceValid && g_hands[0].valid &&
-       ((gp.wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER) || ProtectedLeftAimHeld()) && gp.bLeftTrigger<30 && gp.bRightTrigger<30 &&
+       g_headGeometry && g_headGeometryReferenceValid &&
+       gp.bLeftTrigger<30 && gp.bRightTrigger<30 &&
        CopyNativeGameplay(owner) && owner.grabFire && !owner.alternateHeldTarget &&
        ProtectedAimCameraOwned(reinterpret_cast<void*>(owner.camera))) {
         const auto& ref=g_headGeometryReference;
@@ -73,6 +75,13 @@ static void PublishProtectedLeftAim(const XINPUT_GAMEPAD& gp) {
         // origin + gaze); controller ray when the gaze is unavailable.
         XrVector3f gazeOrigin{},gazeDir{};
         const bool gaze=g_gazeGrab && GazeWorldRay(gazeOrigin,gazeDir);
+        // Publish the acquisition ray before the grip edge. The native query
+        // can run before the input pulse; waiting for LB leaves it head-aimed
+        // on that first update. A usable gaze does not require a tracked hand.
+        // Without gaze, require the actual aim pose (grip-only is insufficient).
+        if(!gaze && !g_hands[0].aimValid) {
+            ResetProtectedLeftAim();return;
+        }
         const XrVector3f from=gaze ? gazeOrigin : aim.position;
         const auto origin=RotVec(inverse,from.x-ref.position.x,from.y-ref.position.y,from.z-ref.position.z);
         const auto forward=gaze ? gazeDir : RotVec(aim.orientation,0,0,-1);

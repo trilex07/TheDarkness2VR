@@ -63,6 +63,9 @@ static void __fastcall CameraSourceDispatchBridge(void* self,void*,void* cameraR
     if(!admit) {
         g_cameraSourceOriginalDispatch(self,cameraReference);return;
     }
+    // The dispatch's admitted avatar owns the input camera through +62C.
+    // Level its input angles before any camera/model matrices are built.
+    ApplyNativeCameraLevel(avatar);
     CameraSourceSaved saved{};
     std::memcpy(saved.translation,owner+0x1F0,16);
     std::memcpy(saved.rotation,owner+0x20C,12);

@@ -8,6 +8,7 @@ static bool NativeCinematicPlaying() {
 }
 static void ObserveNativePauseState(void* manager);
 static void ObserveNativeActionMovies();
+static unsigned NativeActionMovies();
 static void TraceNativeCameraShake(DWORD camera,DWORD avatar);
 static void UpdateCameraAnimationStabilizer(DWORD camera,DWORD avatar);
 static bool ProtectedAimCameraOwned(void* camera);

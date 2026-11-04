@@ -27,6 +27,13 @@ Cele misji (prawy kontroler VR)
   fioletowa mgla. Krotkie nacisniecie wykonuje zwykla akcje kolka
   po puszczeniu. W menu kolko nadal dziala od razu jako Wstecz.
 
+Celowanie lewej macki (chwyt)
+----------------------------
+  Gdy GazeGrab=1 i probka wzroku jest aktualna, cel wybiera spojrzenie.
+  Bez poprawnego wzroku celuj lewym kontrolerem VR. Promien chwytu jest
+  gotowy przed nacisnieciem chwytu; nie wymaga wycelowania glowa.
+  Przy utracie obu zrodel mod wraca do natywnego zapytania gry.
+
 Trojkat i wybory
 ---------------
   Pojedyncze nacisniecie trojkata od razu wysyla natywne Y, takze w rozmowie.
@@ -41,7 +48,8 @@ VR / kino: awaryjne przelaczanie (CinematicTheater=1, SubmitMode=4)
   Reczne ustawienie dziala przez 60 sekund, potem automatyka wraca sama.
   Kolejne przytrzymanie przelacza tryb i rozpoczyna nowa minute.
   Pusc oba przyciski przed kolejnym przelaczeniem. Krotkie nacisniecie
-  nadal centruje widok (takze na poczatku przytrzymania).
+  nadal centruje widok i prostuje kat kamery gry w rozgrywce (takze
+  na poczatku przytrzymania), zachowujac kierunek obrotu postaci.
   Uzyj tego, gdy kino wlaczy sie podczas zwyklego chodzenia lub rozmowy.
   Po restarcie gry od razu dziala automatyczne wykrywanie cutscenek/video.
 

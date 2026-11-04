@@ -60,6 +60,7 @@ struct VsInfo {
     uint32_t hash = 0;
     bool reflectionEye=false;
     bool videoClip=false;
+    bool tentacleGlow=false; // complete native sprite VS, c0..c3 -> o0
     std::vector<DWORD> bytecode; // exact identity when a released COM address is reused
     int wvpBase = -1;      // const base of the 4x4 that writes o0 (clip pos)
     int stpBase = -1;      // const base of a 4x4 that writes another output (screen texture proj)
@@ -1074,6 +1075,8 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         vi.videoClip=h==0x7ACDFC64u && (n+1)*4==204 &&
             d2vr_native_clone::MatchesDigest(fn,204,"25b6f6b9468d02ffbf2d3773d944e31b077133d00e43c88f5a35baac7a1c2b53");
         vi.bytecode.assign(fn,fn+n+1);
+        vi.tentacleGlow=h==0x7070C5BCu && d2vr_native_clone::MatchesDigest(fn,(n+1)*4,
+            "60aa9a279fb5b7f34a688838bd9bbda1d5a52ce1409856fef76c5a5412e8743b");
         AnalyzeVsTokenStream(fn, vi);
         bool hasTable = false;
         int namedWvp = FindNamedMatrix(fn, n + 1, "WorldViewProjection", &hasTable);
@@ -1613,15 +1616,63 @@ struct SkinMipScope {
 // camera-local c3=(-0.2,-0.1) signature. Match the complete resource pair and
 // matrix signature before extending the same correction to them. This
 // profile-specific opt-in leaves the default renderer unchanged.
+// Resource-owned identity: no pointer cache survives texture destruction.
+static const GUID kTentacleGlowDigest={0x6bd7c210,0x9d01,0x4aa1,{0xb4,0x22,0x42,0x5c,0xa6,0x19,0xb7,0xf0}};
+static uint32_t TentacleGlowTextureDigest(IDirect3DBaseTexture9* texture) {
+    if(!texture || texture->GetType()!=D3DRTYPE_TEXTURE || texture->GetLevelCount()!=1)return 0;
+    uint32_t digest=0;DWORD bytes=sizeof(digest);
+    if(SUCCEEDED(texture->GetPrivateData(kTentacleGlowDigest,&digest,&bytes)) && bytes==sizeof(digest))return digest;
+    auto tex=static_cast<IDirect3DTexture9*>(texture);D3DSURFACE_DESC desc{};D3DLOCKED_RECT locked{};
+    if(FAILED(tex->GetLevelDesc(0,&desc)) || desc.Width!=256 || desc.Height!=256 || desc.Format!=D3DFMT_DXT1)return 0;
+    const HRESULT lock=tex->LockRect(0,&locked,nullptr,D3DLOCK_READONLY);
+    if(SUCCEEDED(lock)) {
+        if(locked.pBits && locked.Pitch>=512) {
+            digest=2166136261u;
+            for(unsigned row=0;row<64;++row)for(unsigned col=0;col<512;++col){digest^=static_cast<const BYTE*>(locked.pBits)[row*locked.Pitch+col];digest*=16777619u;}
+        }
+        tex->UnlockRect(0);
+    }
+    texture->SetPrivateData(kTentacleGlowDigest,&digest,sizeof(digest),0);
+    static unsigned reports=0;if(reports++<8)Log("[TentacleGlow] texture=%08X lock=%08X pool=%u",digest,unsigned(lock),unsigned(desc.Pool));
+    return digest;
+}
 struct TentacleHeadScope {
     IDirect3DDevice9* dev=nullptr;
     float original[16]{};
     bool applied=false;
     explicit TentacleHeadScope(IDirect3DDevice9* device) : dev(device) {
         if(!g_headAttachedTentacles || !dev || g_submitMode!=4 || g_stereoMode!=1 ||
-           !g_activeVs || (g_activeVs->hash!=0x1CB7CEE2u &&
+           !g_activeVs) return;
+        if(g_activeVs->tentacleGlow) {
+            // Pixel provenance: native FP eye sprite at half-size colour RT,
+            // VS7070C5BC / PS594C16EE. World particles and UI share this VS;
+            // require the FP depth range, perspective matrix and glow texture.
+            if(g_activePsHash!=0x594C16EEu || !NativeTentacleHeadAttachmentAllowed())return;
+            const auto sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
+            D3DVIEWPORT9 vp{};
+            if(!sp.headGeometry || FAILED(dev->GetViewport(&vp)) || vp.MinZ!=0 ||
+               vp.MaxZ>.050001f || vp.MaxZ<=0 ||
+               FAILED(dev->GetVertexShaderConstantF(0,original,4)))return;
+            const float perspective=original[3]*original[3]+original[7]*original[7]+original[11]*original[11];
+            if(!std::isfinite(perspective) || perspective<.2f)return;
+            IDirect3DBaseTexture9* texture=nullptr;
+            if(FAILED(dev->GetTexture(0,&texture)) || !texture)return;
+            const uint32_t digest=TentacleGlowTextureDigest(texture);
+            texture->Release();
+            static uint32_t reported=0;
+            if(digest && reported!=digest){reported=digest;Log("[TentacleGlow] native sprite texture=%08X size=256x256 DXT1",digest);}
+            if(digest!=0x2ECBF95Du)return; // measured native eye-glow DXT1 payload
+            float attached[16];d2vr_math::Multiply(original,sp.inverseHeadClip,attached);
+            d2vr_submission::Invalidate();
+            applied=true; // Restore even if a driver reports a partially applied failure.
+            const HRESULT hr=g_orig.SetVertexShaderConstantF(dev,0,attached,4);
+            static unsigned corrected[2]{};const int eye=g_replayEye<0?0:g_replayEye;
+            if(SUCCEEDED(hr) && corrected[eye]++<2)Log("[TentacleGlow] corrected eye=%d; exact texture, draw-scoped WVP restore",eye);
+            return;
+        }
+        if(g_activeVs->hash!=0x1CB7CEE2u &&
                             g_activeVs->hash!=0x34D4EEE8u &&
-                            g_activeVs->hash!=0xE3259C61u)) return;
+                            g_activeVs->hash!=0xE3259C61u) return;
         // Keep the tentacle and its native-held target in the same world space.
         // This does not change target physics, its transform, or human hand IK.
         if(!NativeTentacleHeadAttachmentAllowed()) return;
@@ -1772,6 +1823,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
     const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
     const ShadowClipScope shadowClip(dev);
+    const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1817,6 +1869,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
     const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
     const ShadowClipScope shadowClip(dev);
+    const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1842,6 +1895,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
     const ShadowClipScope shadowClip(dev);
+    const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -2266,7 +2320,12 @@ static HRESULT STDMETHODCALLTYPE Hook_UpdateSurface(IDirect3DDevice9* dev, IDire
 }
 static HRESULT STDMETHODCALLTYPE Hook_UpdateTexture(IDirect3DDevice9* dev, IDirect3DBaseTexture9* a, IDirect3DBaseTexture9* b) {
     if (g_recActive) RecEmit(OP_UpdateTexture, 0, (uint32_t)(uintptr_t)a, (uint32_t)(uintptr_t)b);
-    return g_orig.UpdateTexture(dev, a, b);
+    const HRESULT hr=g_orig.UpdateTexture(dev,a,b);
+    if(SUCCEEDED(hr) && a && b) {
+        const auto digest=TentacleGlowTextureDigest(a);
+        b->SetPrivateData(kTentacleGlowDigest,&digest,sizeof(digest),0);
+    }
+    return hr;
 }
 
 // ------------------------------------------------------------- replay executor
