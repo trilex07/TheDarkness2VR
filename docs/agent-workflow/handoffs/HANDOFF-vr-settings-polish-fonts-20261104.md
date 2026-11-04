@@ -23,16 +23,14 @@ UV/metrics/atlas dimensions/non-PL pixels. Rejected atlas resizing is indexed in
 FAILED-APPROACHES; prior font-metrics-six-v1 acceptance is not current correctness.
 
 ## Status
-IN PROGRESS. No runtime or asset changes installed for this task yet.
+IMPLEMENTED, emulator tested and installed to Steam. Source324a2278.
 Source read: BASELINE, WORKFLOW, failed approaches, prior font repair handoff,
 vr_settings.h/renderer, native action movie owner, polish cache tools and
 Singularity spikes/view_matrix settings/pause entry implementations.
 
-## Validation / next
-Actual panel ownership/GDI renderer tests, persistent settings/restart bounds,
-language profile rollback/failure/race checks. Build x86 protected + standard.
-MAIN emulator menu clicks and Polish glyph inspection before calling complete.
-New per-lab owned PID/path/start receipts, all4 saves backed up/restored.
+## Remaining acceptance
+User headset check of menu pointer/legibility and dialogue captions. Emulator
+results and exact source/deployment evidence below. No headset acceptance claim.
 
 ## Implemented and tested (2026-11-04)
 Menu-only VR settings entry uses exact retained MainMenu.swf plus existing pause
@@ -83,5 +81,8 @@ rollback, EXE/loader/base font/texture/script protection. Installer validates
 preimages, saves current files before writes, restores on ordinary errors.
 New profile files removed individually on rollback; transactions preserved.
 Package build/vr-settings-fonts-candidate-20261104/Install.ps1.
-Final receipt to be recorded after freeze/installation. Existing earlier
-'IN PROGRESS/no changes installed' section above is historical initial state.
+Frozen source324a227841156ed9c9d84718460d0f7120f06d68. Install VerifyOnly PASS,
+full33-file Restore PASS, restored baseline VerifyOnly PASS, reinstall PASS,
+final VerifyOnly PASS. installed.json records INSTALLED, simulator OFF.
+Game remains closed, production runtime restored. User saves/config4 exact hashes
+confirmed in test-output/vr-settings-fonts-20261104/final-user-files.json.

@@ -1,5 +1,22 @@
 # Baseline and current MAIN candidate
 
+## Current Steam candidate: VR settings and Polish font overlay (2026-11-04)
+
+Source324a227841156ed9c9d84718460d0f7120f06d68 on
+codex/vr-settings-polish-fonts-20261104, MAIN worktree .main-camera-shake.
+DLL95BB1C3706D95CA0AE4A659BC497216E8C1EC757AED7CE692FA61B0BA122F286;
+main INI C0AF553CA14EF17C5ED22F89BA40377094F3710BBA07D07B005C72636629F72A;
+diagnostic INI3A3FD69804D0E62A66E699652AB89C6BCD086CCB271CBE31A65B97F8071E6A6A.
+Main/pause VR settings: independent PL text/voice, live NIS, restart SS, controls.
+SS100, PL/PL, NIS100 defaults; simulator/collectors OFF. DLC H/B.Font tables
+synchronized with current base font atlases; base fonts/textures/scripts and
+EXE/loader unchanged. Emulator menu/language/restart/SS/font A/B PASS; headset
+acceptance NOT RUN. Prior accepted baseline below remains rollback, not acceptance
+of this new candidate. Full33-target Restore and reinstall/VerifyOnly PASS.
+Package build/vr-settings-fonts-candidate-20261104/Install.ps1 (-Restore rollback).
+Handoff handoffs/HANDOFF-vr-settings-polish-fonts-20261104.md. User4 save/config
+hashes restored; production candidate is installed with game closed.
+
 ## Current Steam: Combined with fixed-center NIS fallback (2026-11-04)
 
 User accepts the scene/input candidate but rejects SMAA effectiveness; continue
