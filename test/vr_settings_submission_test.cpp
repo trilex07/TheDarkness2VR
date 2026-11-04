@@ -29,18 +29,20 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session,const XrFrameEndInfo
     CHECK((info->layers!=nullptr)==(actualLayers!=0));
     if(actualLayers==2)CHECK(info->layers[1]->type==XR_TYPE_COMPOSITION_LAYER_QUAD);
     if(actualLayers==3){
-        CHECK(reinterpret_cast<const XrCompositionLayerQuad*>(info->layers[1])->size.width==.002f);
-        CHECK(reinterpret_cast<const XrCompositionLayerQuad*>(info->layers[2])->size.width==0);
+        CHECK(reinterpret_cast<const XrCompositionLayerQuad*>(info->layers[2])->size.width==.002f);
+        CHECK(reinterpret_cast<const XrCompositionLayerQuad*>(info->layers[1])->size.width==0);
     }
     return ended;
 }
 static void AdaptiveStereoSubmitted(XrResult result,bool pixels,uint32_t count){
     ++adaptiveCalls;CHECK(result==ended);CHECK(pixels);adaptiveLayers=count;
 }
+static void AppendWeaponWheelLayers(const XrCompositionLayerBaseHeader**,uint32_t&,unsigned,XrCompositionLayerQuad*,bool){}
 static void Actual(uint32_t layerCount,bool shouldRender){
     const XrCompositionLayerBaseHeader* layers[3]{};
     XrCompositionLayerProjection world{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
     if(layerCount)layers[0]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&world);
+    XrCompositionLayerQuad wheelQuads[2]{};
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrFrameState fs{XR_TYPE_FRAME_STATE};fs.predictedDisplayTime=123;fs.shouldRender=shouldRender;

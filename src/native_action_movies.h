@@ -16,7 +16,7 @@ inline unsigned Classify(const char* name) {
 // Borrow only while the native window/list owner holds movie AND definition
 // references. This does not establish ownership. Names are exact asset basenames,
 // not substring guesses, and never change cinematic/camera classification.
-template<class Read> unsigned InspectDefinition(uint32_t definition,Read read) {
+template<class Read> unsigned InspectDefinition(uint32_t definition,Read read,bool settingsMenu=false) {
     uint32_t table=0,metadata=0,name=0;
     if(definition<0x10000 || (definition&3) || definition>UINT32_MAX-8 ||
        !read(definition,&table,4) || table!=0xFDAFB8 ||
@@ -25,6 +25,6 @@ template<class Read> unsigned InspectDefinition(uint32_t definition,Read read) {
        name<0x10000 || name>UINT32_MAX-64)return 0;
     char basename[64]{};
     if(!read(name,basename,sizeof(basename)) || !std::memchr(basename,0,sizeof(basename)))return 0;
-    return Classify(basename);
+    return settingsMenu ? (!std::strcmp(basename,"MainMenu.swf") ? 1u : 0u) : Classify(basename);
 }
 }

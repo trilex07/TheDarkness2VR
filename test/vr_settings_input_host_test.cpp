@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include "../src/vr_settings.h"
+#include "../src/vr_input.h"
 static unsigned checks,resets,keyCalls;
 #define CHECK(x) do{++checks;if(!(x)){std::printf("FAIL %d %s\n",__LINE__,#x);std::exit(1);}}while(0)
 static int g_vrSettingsToggleKey=VK_INSERT;
@@ -17,6 +18,16 @@ static struct Hand {XrPosef aim{{0,0,0,1},{0,1.6f,0}};bool aimValid=true;float s
 static struct {uint64_t id=1;} g_trackedFrame;
 static d2vr_settings::Panel g_vrSettings;
 static d2vr_settings::ToggleAction g_vrSettingsToggle;
+static bool g_in3DGameplayMode=false;
+static bool NativeVrMainMenu(){return false;}
+static bool MenuConfirmActive(){return false;}
+static unsigned NativeActionMovies(){return 0;}
+static bool NativeJackieInputAllowed(){return false;}
+static bool NativeHeldActionContext(){return false;}
+static bool g_nativeCinematicPlaying=false,circleActive=false,circleDown=false;
+static d2vr_input::ObjectiveButton g_objectiveButton;
+static void ResetWeaponWheelInput(){}
+static void ApplyVrSettingsAction(d2vr_settings::Action){}
 static auto g_adaptiveFPSMode=d2vr_adaptive::Mode::Off;
 static XrPosef HeadCenterPose(const XrPosef& a,const XrPosef&){return a;}
 static SHORT KeyState(int key){++keyCalls;CHECK(key==VK_INSERT);return keyDown?SHORT(-32768):0;}

@@ -252,3 +252,13 @@ source, BASELINE.md and the task handoff before applying them.
 - Follow-up found a separate exact issue: missing gaze switches localized NIS
   to uniform80% strength. Actual-source pixel regression FAIL before center
   fallback, PASS after; not proof that all spatial/specular aliasing is fixed.
+
+### 2026-11-04: base-only font repair misses DLC override
+- Full native font alias in base H/B.Font and menu-font reference experiment
+  did not correct objective glyphs in emulator; both fully rolled back.
+- Cache.DLC/PCPatchManifests/Cache.Windows supplies25 overriding H/B.Font pairs.
+  All18 PL UVs differ from repaired base definitions (non-PL UVs match), while
+  English glyph textures resolve to the base atlases. Synchronize the overlay;
+  do not repeat base-only font/atlas edits as a complete fix.
+- Evidence HANDOFF-vr-settings-polish-fonts-20261104.md, dlc-font-comparison.json,
+  emulator polish-menu-zoom.png vs dlc-font-after.png.

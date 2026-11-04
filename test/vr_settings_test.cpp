@@ -53,6 +53,30 @@ int main(){
     CHECK(panel.Toggle(head,space));panel.Submitted(false);CHECK(!panel.Open());
     CHECK(panel.Toggle(head,space));AimAt(panel,100,170);aim.space=(XrSpace)3;
     panel.Input(aim,mode);CHECK(!panel.Open());
+    // New settings share their drawing rectangles with the exact ray surface.
+    Panel settings;CHECK(settings.Toggle(head,space));settings.Submitted(true);
+    auto click=[&](int x,int y) {
+        AimAt(settings,x,y);CHECK(settings.InputSettings(aim)==Action::None);
+        AimAt(settings,x,y,1);return settings.InputSettings(aim);
+    };
+    CHECK(click(80,135)==Action::NisToggle);
+    CHECK(click(80,181)==Action::NisLess);
+    CHECK(click(550,181)==Action::NisMore);
+    CHECK(click(80,227)==Action::Supersample);
+    CHECK(click(300,85)==Action::None);CHECK(settings.Options().page==1);
+    CHECK(click(80,135)==Action::Voice);CHECK(click(80,181)==Action::Text);
+    CHECK(click(500,85)==Action::None);CHECK(settings.Options().page==2);
+    CHECK(click(80,135)==Action::None); // controls are information, not settings
+    settings.Close();CHECK(!settings.OwnInput(true));
+    settings.ShowEntry(true,head,space);CHECK(settings.Entry()&&!settings.Open());
+    CHECK(!settings.OwnInput(true));CHECK(settings.Surface().cursor.height==80);
+    settings.Submitted(true);
+    aim={};aim.frame=100;aim.menu=aim.tracked=true;aim.space=space;
+    aim.pose={{0,0,0,1},{0,head.position.y-.48f,0}};
+    CHECK(settings.InputSettings(aim)==Action::None);aim.frame++;aim.trigger=1;
+    CHECK(settings.InputSettings(aim)==Action::None);CHECK(settings.Open()&&!settings.Entry());
+    CHECK(settings.OwnInput(false));settings.Close();settings.ShowEntry(false,head,space);
+    CHECK(!settings.Visible());
     CHECK(Neutral(true,0,0,0,0,0,0,0,0,0));
     for(unsigned i=0;i<8;++i){float values[8]{};values[i]=NAN;
         CHECK(!Neutral(true,0,values[0],values[1],values[2],values[3],values[4],values[5],values[6],values[7]));}
@@ -105,5 +129,12 @@ int main(){
         a.frame=2;CHECK(!Laser(s,a,h,beam,size));CHECK(beam.position.x==saved.position.x&&size.height==savedSize.height);
         a.frame=1;a.tracked=false;CHECK(!Laser(s,a,h,beam,size));
     }
+    CHECK(NextSupersample(2676,2728,100)==125);
+    CHECK(NextSupersample(2676,2728,125)==100);
+    CHECK(NextSupersample(2000,2000,125)==150);
+    CHECK(NextSupersample(2000,2000,150)==100);
+    CHECK(NextSupersample(4096,4096,100)==100);
+    CHECK(!SupersampleFits(0,2728,125));
+    CHECK(!SupersampleFits(UINT32_MAX,UINT32_MAX,150));
     std::printf("PASS VR settings input and laser %u checks\n",checks);
 }

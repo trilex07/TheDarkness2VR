@@ -125,7 +125,7 @@ int main(){
     const auto checksum=sink.checksum;
     CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);CHECK(sink.calls==1);
     nextIndex=1;CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);CHECK(sink.calls==2);
-    g_adaptiveFPSMode=d2vr_adaptive::Mode::Half;
+    g_vrSettings.Options().nis=false;++g_vrSettings.Options().revision;
     CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
     CHECK(sink.calls==3&&checksum!=sink.checksum);
     // The beam references the same released image without a new upload or XR

@@ -4,6 +4,22 @@ Darkness2VR v0.1.8 (alpha)
 Steam VR build: D3D9 proxy + OpenXR for The Darkness II.
 Mono cinema screen / projection + VR controller to XInput mapping.
 
+VR settings (menu glowne oraz pauza)
+----------------------------------
+  Wybierz dodatkowy przycisk "VR settings" prawym spustem, celujac
+  kontrolerem. Zakladki: Obraz, Jezyk oraz Sterowanie. Kolko zamyka panel;
+  panel przejmuje wejscie do puszczenia przyciskow, aby nie wybrac opcji gry.
+  INSERT otwiera ten sam panel z klawiatury.
+  NIS: wlacz/wylacz oraz ostrosc 0-100%, zmiana od razu. Procent oznacza
+  sile wyostrzania, nie skale rozdzielczosci ani zasieg obszaru spojrzenia.
+  Supersampling: 100/125/150% kazdego wymiaru, po restarcie. Niedostepne
+  poziomy sa pomijane; 125% to ok. 156% pikseli, 150% to 225%.
+  Dubbing polski i tekst polski mozna wlaczac niezaleznie. Zmiana wymaga
+  restartu; po zamknieciu gry lokalny pomocnik podmienia zweryfikowane
+  archiwa jezyka. Przy ponownym starcie odczekaj zakonczenie tej operacji.
+  Nie usuwaj folderu VRSettings: zawiera obie wersje i kopie transakcji.
+  Ustawienia sa zapisywane w [VRSettings] aktywnego Darkness2VR.ini.
+
 Cele misji (prawy kontroler VR)
 ------------------------------
   Przytrzymaj kolko (prawy gorny przycisk) przez 1 sekunde, aby pokazac

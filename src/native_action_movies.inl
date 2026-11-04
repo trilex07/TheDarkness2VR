@@ -1,5 +1,6 @@
 #include "native_action_movies.h"
-static std::atomic<uint64_t> g_nativeActionMovies{0};
+static std::atomic<uint64_t> g_nativeActionMovies{0},g_nativeVrMenu{0};
+static bool NativeVrMainMenu(){const auto v=g_nativeVrMenu.load(std::memory_order_acquire);const auto now=GetTickCount64();return (v&1) && now>=(v>>8) && now-(v>>8)<150;}
 static unsigned NativeActionMovies() {
     const auto value=g_nativeActionMovies.load(std::memory_order_acquire);
     const auto now=GetTickCount64();
@@ -22,7 +23,7 @@ static void ObserveNativeActionMovies() {
         Log("[ActionMovies] contract=%d; retained definitions, exact basename, conservative input protection",contract);
     }
     if(contract!=1)return;
-    void* managerRef=nullptr;BYTE* manager=nullptr;unsigned flags=0;
+    void* managerRef=nullptr;BYTE* manager=nullptr;unsigned flags=0,menu=0;
     void* movieRefs[64]{};void* definitions[64]{};unsigned count=0;
     __try {
         managerRef=*reinterpret_cast<void**>(0x10B389C);
@@ -42,15 +43,18 @@ static void ObserveNativeActionMovies() {
                 __try {std::memcpy(output,reinterpret_cast<const void*>(address),length);return true;}
                 __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
             };
-            for(unsigned i=0;i<count;++i)if(definitions[i])
+            for(unsigned i=0;i<count;++i)if(definitions[i]) {
                 flags|=d2vr_action_movies::InspectDefinition(*static_cast<uint32_t*>(definitions[i]),read);
+                menu|=d2vr_action_movies::InspectDefinition(*static_cast<uint32_t*>(definitions[i]),read,true);
+            }
         }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {flags=0;}
+    } __except(EXCEPTION_EXECUTE_HANDLER) {flags=menu=0;}
     for(unsigned i=0;i<count;++i) {
         if(definitions[i])ReleaseSelectedLocalPlayer(uint32_t(reinterpret_cast<uintptr_t>(definitions[i])));
         ReleaseSelectedLocalPlayer(uint32_t(reinterpret_cast<uintptr_t>(movieRefs[i])));
     }
     if(manager)ReleaseSelectedLocalPlayer(uint32_t(reinterpret_cast<uintptr_t>(managerRef)));
+    g_nativeVrMenu.store((GetTickCount64()<<8)|menu,std::memory_order_release);
     const auto previous=NativeActionMovies();
     g_nativeActionMovies.store((GetTickCount64()<<8)|flags,std::memory_order_release);
     if(previous!=flags)Log("[ActionMovies] flags=%u previous=%u; input-only protection, no camera override",flags,previous);

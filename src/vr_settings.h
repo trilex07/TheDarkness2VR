@@ -31,25 +31,57 @@ inline bool Neutral(bool tracked,uint16_t buttons,float lt,float rt,float lx,flo
         leftGrip>=0 && rightGrip>=0 && leftGrip<=.15f && rightGrip<=.15f &&
         std::hypot(lx,ly)<=.15f && std::hypot(rx,ry)<=.15f;
 }
+enum class Action {None,NisToggle,NisLess,NisMore,Supersample,Voice,Text};
+inline bool SupersampleFits(unsigned width,unsigned height,unsigned percent) {
+    const uint64_t w=uint64_t(width)*percent/100,h=uint64_t(height)*percent/100;
+    return w>0 && h>0 && w<=4096 && h<=4096 && w*h<=16000000;
+}
+inline unsigned NextSupersample(unsigned width,unsigned height,unsigned current) {
+    const unsigned next=current==100?125:current==125?150:100;
+    return next==100 || SupersampleFits(width,height,next)?next:100;
+}
+struct Preferences {
+    unsigned page=0,nisPercent=20,supersample=100;
+    bool nis=true,polishVoice=true,polishText=true,pending=false,failed=false;
+    uint64_t revision=1;
+};
+inline Rect TabRect(unsigned i){return {24+int(i)*200,66,192,42};}
+inline Rect SettingRect(unsigned i){return {24,120+int(i)*46,592,40};}
 class Panel {
     d2vr_menu::Capture capture_;
     d2vr_menu::Navigation navigation_;
     d2vr_menu::Surface surface_;
     d2vr_menu::Actions pointer_;
     d2vr_menu::Aim aim_;
-    bool open_=false,presented_=false,lease_=false;
+    bool open_=false,presented_=false,lease_=false,entry_=false;
+    XrPosef entryHead_{};
+    Preferences preferences_;
     uint64_t identity_=0;
     uint64_t inputFrame_=0;
 public:
     bool Open()const{return open_;}
+    bool Visible()const{return open_||entry_;}
+    bool Entry()const{return entry_;}
+    Preferences& Options(){return preferences_;}
+    const Preferences& Options()const{return preferences_;}
+    void ShowEntry(bool enabled,const XrPosef& head,XrSpace space) {
+        if(open_)return;
+        if(!enabled){if(entry_)Close();return;}
+        if(entry_ && surface_.space==space)return;
+        if(!Toggle(head,space))return;
+        entryHead_=head;open_=false;entry_=true;lease_=false;
+        surface_.width=.64f;surface_.height=.08f;surface_.cursor={0,0,Width,80};
+        surface_.pose.position.y-=.48f;
+    }
     bool Presented()const{return presented_;}
     const d2vr_menu::Surface& Surface()const{return surface_;}
     const d2vr_menu::Actions& Pointer()const{return pointer_;}
     const d2vr_menu::Aim& Aim()const{return aim_;}
-    void Close(){open_=presented_=false;inputFrame_=0;capture_.Reset();navigation_.Reset();pointer_={};}
+    void Close(){open_=entry_=presented_=false;inputFrame_=0;capture_.Reset();navigation_.Reset();pointer_={};}
     void SuspendSurface(){presented_=false;inputFrame_=0;capture_.Reset();pointer_={};}
     bool Toggle(const XrPosef& head,XrSpace space) {
         if(open_){Close();return false;}
+        entry_=false;
         double q[4];if(!space || !d2vr_menu::detail::Pose(head,q))return false;
         // Latch a level, world-anchored panel in front of the current head.
         // This is also the exact pose later supplied to XrCompositionLayerQuad.
@@ -67,7 +99,7 @@ public:
         open_=lease_=true;presented_=false;return true;
     }
     // A panel that failed submission must not retain a clickable surface.
-    void Submitted(bool success){if(open_){presented_=success;if(!success)Close();}}
+    void Submitted(bool success){if(Visible()){presented_=success;if(!success)Close();}}
     // Return ownership of XR controls only after release/neutral, including on
     // close or tracking loss. This never changes physical keyboard/gamepad data.
     bool OwnInput(bool neutral) {
@@ -75,27 +107,48 @@ public:
         else if(neutral)lease_=false;
         return lease_;
     }
-    void Input(const d2vr_menu::Aim& aim,d2vr_adaptive::Mode& mode) {
-        if(!open_)return;
-        if(!aim.frame || !aim.menu || !aim.tracked || aim.space!=surface_.space){Close();return;}
+    bool InputPointer(const d2vr_menu::Aim& aim) {
+        if(!Visible())return false;
+        if(!aim.frame || !aim.menu || !aim.tracked || aim.space!=surface_.space){Close();return false;}
         // Several controller polls can share one XR frame. Preserve hover and
         // capture, but never dispatch a click twice or erase the visible dot.
-        if(aim.frame==inputFrame_){pointer_.press=pointer_.release=false;return;}
-        if(aim.frame<inputFrame_){SuspendSurface();return;}
+        if(aim.frame==inputFrame_){pointer_.press=pointer_.release=false;return false;}
+        if(aim.frame<inputFrame_){SuspendSurface();return false;}
         inputFrame_=aim.frame;
         const bool wasCaptured=pointer_.captured;pointer_={};
         surface_.frame=aim.frame;
-        if(navigation_.Update(surface_,aim,wasCaptured).back){Close();return;}
-        if(!presented_)return; // Back can cancel an opening/pending panel
+        if(navigation_.Update(surface_,aim,wasCaptured).back){Close();return false;}
+        if(!presented_)return false; // Back can cancel an opening/pending panel
         pointer_=capture_.Update(surface_,aim);
         aim_=aim;
-        if(pointer_.press) {
-            const auto& hit=pointer_.hit;
-            if(CloseRect.Contains(hit.x,hit.y)){Close();return;}
-            for(unsigned i=0;i<3;++i)if(ModeRect(i).Contains(hit.x,hit.y))
-                mode=static_cast<d2vr_adaptive::Mode>(i);
-        }
+        return pointer_.press;
     }
+    void Input(const d2vr_menu::Aim& aim,d2vr_adaptive::Mode& mode) {
+        if(!InputPointer(aim))return;
+        const auto& hit=pointer_.hit;
+        if(CloseRect.Contains(hit.x,hit.y)){Close();return;}
+        for(unsigned i=0;i<3;++i)if(ModeRect(i).Contains(hit.x,hit.y))
+            mode=static_cast<d2vr_adaptive::Mode>(i);
+    }
+    Action InputSettings(const d2vr_menu::Aim& aim) {
+        if(!InputPointer(aim))return Action::None;
+        if(entry_){Toggle(entryHead_,surface_.space);return Action::None;}
+        const auto hit=pointer_.hit;
+        if(CloseRect.Contains(hit.x,hit.y)){Close();return Action::None;}
+        for(unsigned i=0;i<3;++i)if(TabRect(i).Contains(hit.x,hit.y)) {
+            preferences_.page=i;++preferences_.revision;return Action::None;
+        }
+        if(preferences_.page==0) {
+            if(SettingRect(0).Contains(hit.x,hit.y))return Action::NisToggle;
+            if(SettingRect(1).Contains(hit.x,hit.y))return hit.x<320?Action::NisLess:Action::NisMore;
+            if(SettingRect(2).Contains(hit.x,hit.y))return Action::Supersample;
+        } else if(preferences_.page==1) {
+            if(SettingRect(0).Contains(hit.x,hit.y))return Action::Voice;
+            if(SettingRect(1).Contains(hit.x,hit.y))return Action::Text;
+        }
+        return Action::None;
+    }
+
 };
 // A thin compositor quad between the actual aim origin and its finite menu hit.
 // Its long local +Y axis follows the ray; +Z faces the current head. A collinear

@@ -12,6 +12,7 @@ struct VrSettingsRenderer {
     std::vector<uint64_t> imageRevision;
     int drawnMode=-1,drawnX=-1,drawnY=-1;
     int drawnToggleKey=-1;
+    uint64_t drawnPreferences=0;bool drawnEntry=false;
     bool drawnPointer=false;
     HDC dc=nullptr;
     HBITMAP bitmap=nullptr;
@@ -62,8 +63,8 @@ struct VrSettingsRenderer {
         info.bmiHeader.biWidth=d2vr_settings::Width;info.bmiHeader.biHeight=-d2vr_settings::Height;
         info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
         if(dc)bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,nullptr,0);
-        font=CreateFontA(-23,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,"Segoe UI");
+        font=CreateFontW(-23,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Segoe UI");
         if(!dc || !bitmap || !pixels || !font){Reset();return false;}
         oldBitmap=SelectObject(dc,bitmap);oldFont=SelectObject(dc,font);
         if(!oldBitmap || oldBitmap==HGDI_ERROR || !oldFont || oldFont==HGDI_ERROR){Reset();return false;}
@@ -74,47 +75,61 @@ struct VrSettingsRenderer {
         if(!brush)return false;
         const bool ok=FillRect(dc,&box,brush)!=0;DeleteObject(brush);return ok;
     }
-    bool Text(int x,int y,const char* text) {
-        SetTextColor(dc,RGB(240,245,250));return TextOutA(dc,x,y,text,int(strlen(text)))!=0;
+    bool Text(int x,int y,const wchar_t* text) {
+        SetTextColor(dc,RGB(240,245,250));return TextOutW(dc,x,y,text,int(wcslen(text)))!=0;
     }
     bool Draw() {
         using namespace d2vr_settings;
-        const auto mode=g_adaptiveFPSMode;
+        const auto& options=g_vrSettings.Options();
         const auto& pointer=g_vrSettings.Pointer();
         const int px=pointer.visible?std::clamp(pointer.hit.x,0,Width-1):-1;
         const int py=pointer.visible?std::clamp(pointer.hit.y,0,Height-1):-1;
-        if(drawnMode==int(mode) && drawnPointer==pointer.visible && drawnX==px && drawnY==py &&
-           drawnToggleKey==g_vrSettingsToggleKey)return true;
-        if(!Fill({0,0,Width,Height},RGB(16,24,36)) || !Text(32,24,"DARKNESS II VR - SETTINGS") ||
-           !Text(32,80,"Adaptive Frame Rate"))return false;
-        const char* names[]={"OFF","AUTO","HALF"};
-        for(unsigned i=0;i<3;++i) {
-            const auto r=ModeRect(i);const auto& p=g_vrSettings.Pointer();
-            const bool hover=p.visible && r.Contains(p.hit.x,p.hit.y);
-            if(!Fill(r,hover?RGB(40,110,145):unsigned(mode)==i?RGB(28,82,100):RGB(42,50,66)) ||
-               !Text(r.x+32,r.y+14,names[i]))return false;
+        const bool entry=g_vrSettings.Entry();
+        if(revision && drawnPreferences==options.revision && drawnEntry==entry &&
+           drawnPointer==pointer.visible && drawnX==px && drawnY==py)return true;
+        if(!Fill({0,0,Width,Height},RGB(16,24,36)))return false;
+        auto button=[&](Rect r,const wchar_t* name,bool selected=false) {
+            const bool hover=pointer.visible && r.Contains(px,py);
+            return Fill(r,hover?RGB(40,110,145):selected?RGB(28,82,100):RGB(42,50,66)) &&
+                Text(r.x+12,r.y+8,name);
+        };
+        if(entry) {
+            if(!Text(210,24,L"VR settings"))return false;
+        } else {
+            if(!Text(24,22,L"DARKNESS II VR settings"))return false;
+            const wchar_t* tabs[]={L"Obraz",L"J\u0119zyk",L"Sterowanie"};
+            for(unsigned i=0;i<3;++i)if(!button(TabRect(i),tabs[i],options.page==i))return false;
+            wchar_t label[160]{};
+            if(options.page==0) {
+                if(!button(SettingRect(0),options.nis?L"NIS: W\u0141.":L"NIS: WY\u0141."))return false;
+                swprintf_s(label,L"-   Ostro\u015b\u0107 NIS: %u%%                         +",options.nisPercent);
+                if(!button(SettingRect(1),label))return false;
+                swprintf_s(label,L"Supersampling: %u%%   (kliknij, aby zmieni\u0107)",options.supersample);
+                if(!button(SettingRect(2),label))return false;
+            } else if(options.page==1) {
+                if(!button(SettingRect(0),options.polishVoice?L"Dubbing: polski":L"Dubbing: angielski") ||
+                   !button(SettingRect(1),options.polishText?L"Tekst: polski":L"Tekst: angielski") ||
+                   !Text(28,222,L"J\u0119zyk i supersampling: po restarcie gry."))return false;
+            } else {
+                if(!Text(28,120,L"Spust: wybierz    K\u00f3\u0142ko: powr\u00f3t") ||
+                   !Text(28,151,L"2x tr\u00f3jk\u0105t: pauza    K\u00f3\u0142ko (1 s): cel misji") ||
+                   !Text(28,182,L"L3+R3: centrowanie; przytrzymaj: kino / VR") ||
+                   !Text(28,213,L"Ruch: lewa ga\u0142ka    Obr\u00f3t: prawa ga\u0142ka"))return false;
+            }
+            if(!Text(24,280,options.failed?L"B\u0142\u0105d zapisu ustawie\u0144":
+                options.pending?L"Zapisano. Uruchom gr\u0119 ponownie.":L"INSERT: VR settings") ||
+               !button(CloseRect,L"Zamknij"))return false;
         }
-        // Application limiting does not assert runtime motion smoothing.
-        if(!Text(32,220,mode==d2vr_adaptive::Mode::Off ? "OFF - runtime pacing unchanged" :
-            "APP CAP - reprojection by runtime") ||
-           !Text(32,286,g_vrSettingsToggleKey==VK_INSERT ? "INSERT: toggle   B: close" :
-                g_vrSettingsToggleKey ? "Custom toggle key   B: close" : "B: close") ||
-           !Fill(CloseRect,RGB(60,65,78)) || !Text(502,286,"CLOSE"))return false;
-        const auto& p=g_vrSettings.Pointer();
-        if(p.visible) {
-            const int x=std::clamp(p.hit.x,0,Width-1),y=std::clamp(p.hit.y,0,Height-1);
-            if(!Fill({std::max(0,x-3),std::max(0,y-3),std::min(7,Width-std::max(0,x-3)),
-                std::min(7,Height-std::max(0,y-3))},RGB(80,240,255)))return false;
-        }
+        if(pointer.visible && !Fill({std::max(0,px-3),std::max(0,py-3),
+           std::min(7,Width-std::max(0,px-3)),std::min(7,Height-std::max(0,py-3))},RGB(80,240,255)))return false;
         if(!GdiFlush())return false;
-        drawnMode=int(mode);drawnPointer=pointer.visible;drawnX=px;drawnY=py;
-        drawnToggleKey=g_vrSettingsToggleKey;
-        ++revision;return true;
+        drawnPreferences=options.revision;drawnEntry=entry;
+        drawnPointer=pointer.visible;drawnX=px;drawnY=py;++revision;return true;
     }
     bool Laser(const XrCompositionLayerQuad& panel,uint64_t frame,const XrPosef& head,
                XrCompositionLayerQuad& beam) const {
         const auto& s=g_vrSettings.Surface();const auto& p=g_vrSettings.Pointer();
-        if(maxLayers<3 || !g_vrSettings.Open() || !g_vrSettings.Presented() ||
+        if(maxLayers<3 || !g_vrSettings.Visible() || !g_vrSettings.Presented() ||
            !p.visible || s.frame!=frame || panel.subImage.swapchain!=chain ||
            panel.space!=s.space || acquired)return false;
         XrPosef pose{};XrExtent2Df size{};
@@ -155,7 +170,7 @@ struct VrSettingsRenderer {
         quad={XR_TYPE_COMPOSITION_LAYER_QUAD};quad.space=s.space;quad.pose=s.pose;
         quad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;quad.size={s.width,s.height};
         quad.subImage.swapchain=chain;
-        quad.subImage.imageRect={{0,0},{d2vr_settings::Width,d2vr_settings::Height}};
+        quad.subImage.imageRect={{0,0},{d2vr_settings::Width,g_vrSettings.Entry()?80:d2vr_settings::Height}};
         return true;
     }
 };

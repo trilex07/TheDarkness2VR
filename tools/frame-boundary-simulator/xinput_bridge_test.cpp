@@ -159,6 +159,11 @@ int main() {
         Check(d2vr_action_movies::InspectDefinition(0x10000,read)==d2vr_action_movies::Qte);
         strcpy_s(name,"HUD.swf");Check(!d2vr_action_movies::InspectDefinition(0x10000,read));
         strcpy_s(name,"ConversationPopUp.swf");Check(d2vr_action_movies::InspectDefinition(0x10000,read)==4);
+        Check(!d2vr_action_movies::InspectDefinition(0x10000,read,true));
+        strcpy_s(name,"MainMenu.swf");
+        Check(d2vr_action_movies::InspectDefinition(0x10000,read,true)==1);
+        Check(!d2vr_action_movies::InspectDefinition(0x10000,read));
+        strcpy_s(name,"MainMenu.swf.bak");Check(!d2vr_action_movies::InspectDefinition(0x10000,read,true));
         memset(name,'X',sizeof(name));Check(!d2vr_action_movies::InspectDefinition(0x10000,read));
         strcpy_s(name,"ExecutionPopup.swf");metadata[0]=0;
         Check(!d2vr_action_movies::InspectDefinition(0x10000,read)); // unrelated metadata refuses

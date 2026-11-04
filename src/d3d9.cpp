@@ -688,6 +688,7 @@ static bool ProtectedHeadConfigurationAllowed() {
         g_projectionFix==3 && g_stereoLayerPose==0 && g_headLookMode==0 &&
         !g_noInvProj && !g_skipLightVsShift && !g_lightPosShift && g_lightingPreset<=0;
 }
+static void LoadVrPreferences(const char* ini);
 void LoadConfig() {
     g_shadowScreenDepth=GetPrivateProfileIntA("Diagnostics","ShadowScreenDepth",0,
         ".\\Darkness2VR-diagnostic.ini")==1;
@@ -1037,6 +1038,8 @@ void LoadConfig() {
     if(g_sourceQualityMode==d2vr_source_quality::Mode::Exact || g_sourceQualityMode==d2vr_source_quality::Mode::Supersample)
         Log("[NativeSourceTarget] requested=%dx%d per eye; engine sizing mode=Exact; actual geometry/depth/output verification required",g_renderW,g_renderH);
 #endif
+
+    LoadVrPreferences(chosenIni);
 
     char buf[64]{};
     if (GetPrivateProfileStringA("Render", "ViewOffsetX", "0.0", buf, sizeof(buf), chosenIni)) {
@@ -4294,6 +4297,7 @@ struct TrackedHand {
 };
 TrackedHand g_hands[2];
 static d2vr_settings::Panel g_vrSettings;
+#include "vr_settings_config.inl"
 static d2vr_settings::ToggleAction g_vrSettingsToggle;
 d2vr_input::RecenterModeChord g_recenterChord;
 d2vr_input::ChoicePauseButton g_triangleRecenter;
@@ -5069,7 +5073,9 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     settingsAim.menu=focused;settingsAim.trigger=rt;
     settingsAim.back=(gp.wButtons&XINPUT_GAMEPAD_B)!=0;
     settingsAim.time=GetTickCount64()*.001;
-    g_vrSettings.Input(settingsAim,g_adaptiveFPSMode);
+    if(g_haveViews)g_vrSettings.ShowEntry(focused && (NativeVrMainMenu() || (g_in3DGameplayMode && MenuConfirmActive())),
+        HeadCenterPose(g_eyePose[0],g_eyePose[1]),g_xrSpace);
+    ApplyVrSettingsAction(g_vrSettings.InputSettings(settingsAim));
     const bool rawButtons=gp.wButtons || triangleDown || menuDown || viewDown || l3 || r3;
     if(g_vrSettings.OwnInput(d2vr_settings::Neutral(g_hands[1].aimValid,
         rawButtons?1u:0u,lt,rt,lx,ly,rx,ry,g_hands[0].squeeze,g_hands[1].squeeze))) {
@@ -6633,16 +6639,19 @@ void SubmitXR(IDirect3DDevice9* dev) {
         }
     }
 
+    ObserveNativeActionMovies(); // menus also exist before any 3D player view
     const uint32_t worldLayerCount=layerCount;
     bool settingsSubmitted=false;
-    if(g_vrSettings.Open()) {
+    if(g_vrSettings.Visible()) {
         const auto settingsResult=g_xrSessionState!=XR_SESSION_STATE_FOCUSED ? VrSettingsRender::Failed :
             !layerCount || !fs.shouldRender ? VrSettingsRender::Pending : RenderVrSettings(settingsQuad);
         if(settingsResult==VrSettingsRender::Ready) {
-            if(g_haveViews && g_vrSettingsRenderer.Laser(settingsQuad,g_trackedFrame.id,
-                HeadCenterPose(g_eyePose[0],g_eyePose[1]),settingsLaser))
-                layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&settingsLaser);
+            const bool showLaser=g_haveViews && g_vrSettingsRenderer.Laser(settingsQuad,g_trackedFrame.id,
+                HeadCenterPose(g_eyePose[0],g_eyePose[1]),settingsLaser);
+            // Keep the clickable panel's layer index stable when hover adds a
+            // laser. The beam ends before the surface, so it cannot cover text.
             layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&settingsQuad);
+            if(showLaser)layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&settingsLaser);
             settingsSubmitted=true;
         } else if(settingsResult==VrSettingsRender::Pending)g_vrSettings.SuspendSurface();
         else g_vrSettings.Submitted(false);

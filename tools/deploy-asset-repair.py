@@ -14,6 +14,7 @@ helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
 
 STEMS={'H.Texture','B.Texture','F.Texture','H.Font','B.Font','H.Texture_en','B.Texture_en'}
 NAMES={s+e for s in STEMS for e in ('.cache','.toc')}
+DEFINITION_NAMES={s+e for s in ('H.Font','B.Font') for e in ('.cache','.toc')}
 METRIC_NAMES={s+e for s in ('B.Font','B.Texture_en') for e in ('.cache','.toc')}
 DIALOGUE_NAMES={s+e for s in ('H.Misc','H.Misc_en','B.Misc_en','F.Misc_en') for e in ('.cache','.toc')}
 MARKER_NAMES={'H.Script.cache','H.Script.toc'}
@@ -30,12 +31,13 @@ def main():
     ap.add_argument('--package',type=Path)
     ap.add_argument('--backup',type=Path,required=True)
     ap.add_argument('--game',type=Path,required=True)
-    a=ap.parse_args();helper.closed();cache=a.game/'Cache.Windows'
+    ap.add_argument('--cache-relative',choices=('Cache.Windows','Cache.DLC/PCPatchManifests/Cache.Windows'),default='Cache.Windows')
+    a=ap.parse_args();helper.closed();cache=a.game/a.cache_relative
     record=a.backup/'deployment.json'
     if a.action=='rollback':
         state=json.loads(record.read_text(encoding='utf-8'))
         require(state['cache']==str(cache.resolve()),'Rollback target differs')
-        require(set(state['before'])==set(state['after']) and set(state['before']) in (NAMES,METRIC_NAMES,DIALOGUE_NAMES,MARKER_NAMES),'Unexpected rollback set')
+        require(set(state['before'])==set(state['after']) and set(state['before']) in (NAMES,METRIC_NAMES,DEFINITION_NAMES,DIALOGUE_NAMES,MARKER_NAMES),'Unexpected rollback set')
         for n,h in state['before'].items():
             require(sha(a.backup/n)==h,'Backup mismatch')
             require(sha(cache/n) in (h,state['after'][n]),'Current file changed: '+n)
@@ -44,8 +46,9 @@ def main():
         print('ROLLBACK_VERIFIED');return
     require(a.package,'Package required')
     m=json.loads((a.package/'manifest.json').read_text(encoding='utf-8'))
-    kinds={'font-metrics-repair':METRIC_NAMES,'texture-font-repair':NAMES,'dialogue-natural-repair':DIALOGUE_NAMES,'hide-objective-marker':MARKER_NAMES}
+    kinds={'font-definition-repair':DEFINITION_NAMES,'font-metrics-repair':METRIC_NAMES,'texture-font-repair':NAMES,'dialogue-natural-repair':DIALOGUE_NAMES,'hide-objective-marker':MARKER_NAMES}
     names=kinds.get(m['kind'])
+    require(m.get('cache_relative','Cache.Windows')==a.cache_relative,'Archive layer differs')
     require(names and set(m['before'])==set(m['files'])==names,'Unexpected package targets')
     require(all(sha(a.package/'payload'/n)==h for n,h in m['files'].items()),'Payload hash mismatch')
     require(all(sha(cache/n)==h for n,h in m['before'].items()),'Installed preimage differs')
@@ -54,8 +57,10 @@ def main():
     protected += [cache/n for n in sorted(DIALOGUE_NAMES-names)]
     if names==DIALOGUE_NAMES:
         protected += [cache/n for n in sorted(NAMES)]
-    if names==METRIC_NAMES:
-        protected += [cache/n for n in sorted(NAMES-METRIC_NAMES)]
+    if names in (METRIC_NAMES,DEFINITION_NAMES):
+        protected += [cache/n for n in sorted(NAMES-names) if (cache/n).exists()]
+        if a.cache_relative!='Cache.Windows':
+            protected += [a.game/'Cache.Windows'/n for n in sorted(NAMES)]
     hashes={str(p):sha(p) for p in protected}
     require(not a.backup.exists(),'Fresh backup path required');a.backup.mkdir(parents=True)
     state=dict(status='BACKING_UP',cache=str(cache.resolve()),before=m['before'],after=m['files'],
