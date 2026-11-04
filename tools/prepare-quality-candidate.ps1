@@ -48,9 +48,21 @@ layers/s. Not simulation FPS, headset acceptance or worst-case combat proof.
 Same native session fell36-43 under concurrent audio-generation CPU load and
 returned~75 after it ended. Raising game priority did not help.
 
+November4 restaurant continuation: resource-only native control and Coverage
+both reached90 world-bearing layers/s without the audio Python jobs. Strict
+normal-3D-only windows: native8 windows69.6-90.0 (mean85.9), Coverage10 windows
+89.0-90.0 (mean89.68). Independent trials, different warmup/capture history;
+NOT evidence that Coverage improves performance. Earlier loaded restaurant
+Coverage had62.8/66.2 while audio jobs used~7 logical cores. Two tracked hands
+and pistol were visible and moved in the earlier Coverage trial. Actual firing
+and worst-case outdoor combat are NOT verified. Automatic-mode transitions,
+video and mixed windows excluded by tools/perf/summarize_world_cadence.py.
+
 OPEN: headset shimmer, large-combat FPS and floor/shadow visual acceptance.
 Material does not anti-alias mesh silhouettes. Coverage is experimental and
 costs56.25% more source pixels; do not assume free performance in all scenes.
+The material fixture reduces mean specular brightness~9%; judge skin highlights
+in the headset. Spatial coverage tests cannot certify temporal headset quality.
 No private captures, saved games or external tool binaries in this package.
 '@
 [IO.File]::WriteAllText((Join-Path $out 'README.txt'),$readme,[Text.Encoding]::UTF8)
@@ -64,6 +76,6 @@ if($protected.Count -ne 2){throw 'Unexpected protected set'}
 $files=@(Get-ChildItem $out -File|ForEach-Object {@{name=$_.Name;sha256=(Hash $_.FullName)}})
 @{source_commit=(git -C $root rev-parse HEAD).Trim();runtime_source=$source.source_commit;before=$before;protected=$protected;files=$files;
  profiles=@{Combined=@('d3d9.dll','candidate-diagnostic.ini','baseline-render.ini');Material=@('d3d9.dll','material-experiment.ini','baseline-render.ini');Coverage=@('d3d9.dll','material-experiment.ini','coverage-render.ini')};
- headset='NOT RUN';combat='NOT RUN';installed=$false;default_mode='Combined'}|ConvertTo-Json -Depth 8|Set-Content (Join-Path $out 'candidate.json')
+ headset='NOT RUN';combat='BOUNDED RESTAURANT EMULATOR ONLY; outdoor/firing NOT VERIFIED';installed=$false;default_mode='Combined'}|ConvertTo-Json -Depth 8|Set-Content (Join-Path $out 'candidate.json')
 & (Join-Path $out 'Install.ps1') -VerifyOnly
 Write-Output "PREPARED $out; Steam unchanged"

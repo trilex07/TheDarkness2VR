@@ -1,5 +1,12 @@
 # Bounded Darkness II combat profile
 
+For emulator logs containing theater transitions, use
+`python tools/perf/summarize_world_cadence.py <d3d9.log>` to separate normal3D,
+native-theater and video windows. It rejects initial/unknown-mode windows,
+windows spanning mode transitions and mixed/non-world cadence. It cannot prove
+focus, unpaused simulation, scene matching or physical headset FPS. Do not pool
+video rates with actual gameplay or treat independent run means as a causal A/B.
+
 Run `Capture-DarknessCombat.ps1 -Preflight` first. The capture command requires
 the audited game EXE already running in loaded, unpaused SteamVR gameplay. It
 does not launch or terminate the game, alter SteamVR, or change DLL/INI files.

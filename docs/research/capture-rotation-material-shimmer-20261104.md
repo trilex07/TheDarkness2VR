@@ -437,3 +437,34 @@ Both labs ENDED. Verified owned Coverage PID27372 stopped; simulator overlay
 restored first, then three-target quality package restored. Independent hashes
 confirm original4A/3A/68EE; all4 original user files restored and hash-verified.
 EXE/loader protected. Frozen candidate remains separate, no main/push/shutdown.
+
+### Restaurant native control and clean Coverage repeat
+
+New combat-native-control-20261104 and combat-coverage-clean-20261104 use the
+same E504, material flags and disposable restaurant checkpoint. Both use Mode5
+resource-only sizing; source2676x2728 versus3345x3410; XR2676x2728 unchanged.
+Both enable diagnostic CPUSyncTiming/HookCostSampling. Earlier frozen Coverage
+had those collectors OFF, so that earlier run is a separate configuration.
+
+Both newer sessions reach90 world-bearing layers/s. The twelve-second native
+process sample has no Python; game1.68 logical cores. The ten-second Coverage
+sample also has no Python; game1.39. SteamVR helper/server work remains active.
+Selected normal3D CPU execution samples native4203.125/450=9.34ms/frame and
+Coverage4296.875/449=9.57ms/frame; quantized scheduled kernel+user includes
+driver spinning, not exclusive engine work. Not necessarily identical frames.
+
+New summarize_world_cadence.py explicitly rejects initial, unknown-mode,
+transition and mixed/non-world windows; test selection across transitions and
+mixed boundaries PASS. No pause/focus or matched combat inference from logs.
+Accepted normal3D windows: native8, range69.6-90.0, mean85.9; Coverage10,
+range89.0-90.0, mean89.68. Different warmup/capture/run history prevents an FPS
+gain claim. Cinema and video are separately grouped; do not pool their rates.
+
+This supports background CPU contention in this reproduction and shows the
+experimental Coverage path can reach90 in this bounded restaurant scene. It
+does NOT establish the cause of every outdoor-enemy drop or free supersampling.
+The actual geometric/specular shimmer effectiveness still needs HMD assessment.
+
+Both trials ENDED: exact owned PIDs28460/38240 stopped, each wrapper Restore
+PASS, original4A/3A/68EE plus all4 user files restored. No foreign process
+stopped or reprioritized. Frozen package remains separate from installed Steam.

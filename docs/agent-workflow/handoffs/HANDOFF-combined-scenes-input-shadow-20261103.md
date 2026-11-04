@@ -561,3 +561,27 @@ history accidentally. Baseline remains unchanged.
   Restore PASS. DLL4A0320B2/diagnostic3A3FD698/render68EE5685 confirmed; all4
   original saves/settings hashes verified after restoration. Private receipts
   restored-hashes.json/restored-saves.json. No owned game process remains.
+
+### Native restaurant control and clean Coverage ENDED
+- test-output/combat-native-control-20261104 installed via supersample-lab.ps1
+  Sampling Native; E504 DLL, source2676x2728 Mode5, same material experiments.
+  CPUSyncTiming/HookCostSampling enabled (Coverage frozen trial had these OFF).
+  Disposable restaurant checkpoint, fresh original4 saves in wrapper receipt.
+- Read owned-process.json before stopping. Restore ONLY with supersample-lab.ps1
+  -Action Restore -LabDirectory test-output/combat-native-control-20261104 after
+  stopping exact owned process. This wrapper restores both layers and all4 files.
+- Native control ENDED via exact owned PID stop and wrapper Restore PASS.
+  Clean scene reached90 world-bearing layers/s; no Python in12s load sample.
+  This is not a controlled same-time comparison with earlier loaded Coverage.
+- NOW ACTIVE test-output/combat-coverage-clean-20261104, same wrapper with
+  Sampling Supersample. Read this directory's owned-process.json before stop.
+  Restore via supersample-lab.ps1 -Action Restore with THIS directory; disposable
+  restaurant checkpoint and fresh original4 files in supersample-payload.json.
+- Clean Coverage ENDED: verified owned PID38240 stopped; wrapper Restore PASS,
+  original DLL/diagnostic/render INI and all4 files restored. No owned game left.
+- Both native and Coverage reached90/s in restaurant without audio Python jobs.
+  Mode-separated normal3D samples: native8 windows69.6-90 mean85.9; Coverage10
+  windows89-90 mean89.68. Independent warmup/capture history, NOT an improvement
+  A/B. Summaries retained privately. No headset/worst-case outdoor FPS claim.
+- New cadence analyzer rejects first/unknown/transition/mixed windows, groups
+  normal3D/native theater/video separately. Two selection regressions PASS.
