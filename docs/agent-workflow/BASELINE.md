@@ -1,5 +1,20 @@
 # Baseline and current MAIN candidate
 
+## Consolidated SMAA candidate installed for user test (2026-11-04)
+
+User authorized installing the consolidated candidate. Game was closed.
+Package: build/combined-scenes-smaa-20261104, source33fe966d530804b497aadc64d9404aaf6796b0a1.
+ModeSmaaExperiment: Combined scene/input fixes plus SMAA after NIS; FXAA OFF,
+shadow/reflection experiments OFF, simulator/collectors OFF. Main INI and
+protected EXE/loader match original hashes. Installed DLL
+2119EA3CF014FE5C1823452C8E71D298FEF3ECFD8290BF0527A4508A49B92576;
+diagnostic INI ECD05B9997B38A515FF729114314928741904E4F9EDB01DC416880B04B716000.
+Install and VerifyOnly PASS; no game launched. HMD acceptance PENDING,
+FPS recovery and shadow/reflection visual fixes remain unresolved.
+Private exact receipt: package installed.json. Rollback with that package's
+Install.ps1 -Restore while game closed restores E56BF027/AC8290E4 below.
+This is a deployed candidate, not a newly accepted baseline or main merge.
+
 ## Isolated eye output accepted for continued play (2026-11-03)
 
 User reports "jest dobrze" after the isolated-eye-output Steam trial. Current
