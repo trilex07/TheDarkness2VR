@@ -839,6 +839,7 @@ static bool BuildUnfilteredFxaa(const DWORD* fn, size_t count, std::vector<DWORD
 
 #include "shadow_clip_coordinates.h"
 #include "specular_footprint.h"
+#include "outline_coverage.h"
 static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, const DWORD* fn,
                                                         IDirect3DPixelShader9** out) {
     bool screenDepthOverride = false;
@@ -866,6 +867,10 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
     std::vector<DWORD> sharp;
     std::vector<DWORD> specular;
     const size_t originalWords = fn ? SafeShaderTokenCount(fn) : 0;
+    std::vector<DWORD> outline;
+    const bool outlinePatch=!screenDepthOverride && g_outlineCoverage &&
+        g_submitMode==4 && originalWords &&
+        d2vr_outline_coverage::Build(fn,originalWords+1,outline);
     const bool specularPatch=!screenDepthOverride && g_specularFootprint && g_submitMode==4 &&
         originalWords && d2vr_specular_footprint::Build(fn,originalWords+1,specular);
     std::vector<uint32_t> shadowClip;
@@ -878,13 +883,18 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
     const bool fxaaOverride = !screenDepthOverride && !compositePatch && g_disableFxaa &&
         g_submitMode == 4 && originalWords && BuildUnfilteredFxaa(fn, originalWords + 1, sharp);
     HRESULT hr = d2vr_shader_preload::Create(dev,
-        specularPatch ? specular.data() : compositePatch ? composite.data() :
+        outlinePatch ? outline.data() : specularPatch ? specular.data() : compositePatch ? composite.data() :
         fxaaOverride ? sharp.data() : shadowClipPatch ? reinterpret_cast<const DWORD*>(shadowClip.data()) :
         (screenDepthOverride ? replacement : fn), out,g_orig.CreatePixelShader);
+    if(outlinePatch) {
+        Log("[OutlineCoverage] exact E345B150 four subpixel coverage evaluations result=%08X",unsigned(hr));
+        if(FAILED(hr))hr=d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
+    }
     if(specularPatch) {
         Log("[SpecularFootprint] exact BC938BC9 four normal samples per Phong lobe, no mesh-edge AA; result=%08X",unsigned(hr));
         if(FAILED(hr))hr=d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
     }
+    const bool shadowClipCreated=shadowClipPatch && SUCCEEDED(hr);
     if(shadowClipPatch) {
         Log("[ShadowClipCoordinates] exact C4D1FB10 NDC input candidate result=%08X",unsigned(hr));
         if(FAILED(hr))hr=d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
@@ -914,6 +924,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         // must not retain a prior object's projection registers. Publish only
         // after the complete analysis, outside any driver or recorder lock.
         d2vr_shader_metadata::Pixel metadata;
+        metadata.shadowClip=shadowClipCreated;
         const size_t psWords = SafeShaderTokenCount(fn);
         if (psWords) {
             const uint32_t psHash = HashBytes(fn, (psWords + 1) * 4);
@@ -1661,6 +1672,24 @@ struct TentacleHeadScope {
         if(applied){d2vr_submission::Invalidate();g_orig.SetVertexShaderConstantF(dev,0,original,4);}
     }
 };
+// Correct NDC only with the matching geometric-head inverse. A native/cinema
+// draw uses its original depth-scaled tuple; restore the private selector.
+struct ShadowClipScope {
+    IDirect3DDevice9* dev;
+    float original[4]{};
+    bool touched=false;
+    explicit ShadowClipScope(IDirect3DDevice9* device):dev(device) {
+        if(!g_shadowClipCoordinates || !g_pixelShaders.Lookup(g_boundPs).shadowClip)return;
+        if(FAILED(dev->GetPixelShaderConstantF(223,original,1)))return;
+        const auto sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
+        const float selector[4]={sp.headGeometry && sp.mode==0 && (g_projectionFix&2) &&
+            !g_noInvProj && (g_lightingPreset==-1 || g_lightingPreset==0) && g_activePsInverse==27 ? 1.f : 0.f,0,0,0};
+        d2vr_submission::Invalidate();
+        touched=true;
+        g_orig.SetPixelShaderConstantF(dev,223,selector,1);
+    }
+    ~ShadowClipScope(){if(touched){d2vr_submission::Invalidate();g_orig.SetPixelShaderConstantF(dev,223,original,1);}}
+};
 // Opt-in, exact shader pair only. Use the actual DEVICE WVP at the draw,
 // including inherited/partial writes; raw bank supplies an independent native
 // c8 ownership check. No guessed c8 convention for other shader families.
@@ -1742,6 +1771,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
+    const ShadowClipScope shadowClip(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1763,6 +1793,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
+    const ShadowClipScope shadowClip(dev);
     const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1785,6 +1816,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
+    const ShadowClipScope shadowClip(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1809,6 +1841,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
+    const ShadowClipScope shadowClip(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif

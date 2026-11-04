@@ -27,8 +27,13 @@ const void* g_boundVs=nullptr;const void* g_boundPs=nullptr;
 namespace d2vr_pipeline_warmup {void ObserveDraw(IDirect3DDevice9*,const void*,const void*){++observed;}}
 bool IsShadowAtlasPass(IDirect3DDevice9*){++queries;return shadow;}
 void Log(const char*,...){}
+HRESULT ObserveVideoDrawResult(IDirect3DDevice9*,HRESULT hr){return hr;}
+namespace d2vr_submission {void InvalidateBindings(){}}
 struct WorldDiffuseScope {explicit WorldDiffuseScope(IDirect3DDevice9*){++scopes;}};
 struct TentacleHeadScope {explicit TentacleHeadScope(IDirect3DDevice9*){++scopes;}};
+struct SkinMipScope {explicit SkinMipScope(IDirect3DDevice9*){}};
+struct ReflectionEyeScope {explicit ReflectionEyeScope(IDirect3DDevice9*){}};
+struct ShadowClipScope {explicit ShadowClipScope(IDirect3DDevice9*){}};
 struct Originals {
  HRESULT DrawPrimitive(IDirect3DDevice9*,D3DPRIMITIVETYPE,UINT,UINT){++calls;return E_FAIL;}
  HRESULT DrawIndexedPrimitive(IDirect3DDevice9*,D3DPRIMITIVETYPE,INT,UINT,UINT,UINT,UINT){++calls;return E_FAIL;}

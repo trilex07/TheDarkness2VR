@@ -31,12 +31,13 @@ public static class D2vrCombinedProfile {
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] public static extern bool WritePrivateProfileString(string section,string key,string value,string path);
 }
 '@}
-foreach($name in 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini','material-experiment.ini'){
+foreach($name in 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini','material-experiment.ini','outline-experiment.ini','edge-shadow-experiment.ini'){
  $p=Join-Path $out $name;Copy-Item -LiteralPath $diag -Destination $p
  foreach($key in 'MatchedFrameCapture','CommandHistory','CameraShakeTrace','VideoDrawProbe','CpuSyncTiming','CapturePassStages','MatchedCaptureSerial','HookCostSampling'){
   if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics',$key,'0',$p)){throw 'Profile write failed'}
  }
- if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ShadowClipCoordinates',$(if($name -eq 'shadow-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
+ if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ShadowClipCoordinates',$(if($name -in @('shadow-experiment.ini','edge-shadow-experiment.ini')){'1'}else{'0'}),$p)){throw 'Profile write failed'}
+ if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','OutlineCoverageExperiment',$(if($name -in @('outline-experiment.ini','edge-shadow-experiment.ini')){'1'}else{'0'}),$p)){throw 'Profile write failed'}
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ReflectionEyeExperiment',$(if($name -eq 'reflection-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','SmaaExperiment',$(if($name -eq 'smaa-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
  foreach($key in 'SpecularFootprintExperiment','SkinMipFilterExperiment'){
@@ -59,6 +60,16 @@ remains available. Resolution and main rendering INI are unchanged.
 Install.ps1 -VerifyOnly checks without writes. Install.ps1 installs Combined.
 Install.ps1 -Restore restores the exact accepted DLL/diagnostic INI.
 Install.ps1 -Mode ShadowExperiment enables ONLY the pinned shadow experiment.
+Install.ps1 -Mode OutlineExperiment enables native outline coverage integration.
+Install.ps1 -Mode EdgeShadowExperiment enables BOTH, retaining accepted features.
+The exact outline shader evaluates coverage four times within one pixel; no
+full-colour image blur or history. GPU fixture temporal L1 ratio0.5879, energy
+change-0.16%; this is not a whole-game/HMD improvement percentage. Full-size
+fixture adds0.39-0.44ms/eye, not a game FPS measurement. HMD effectiveness NOT RUN.
+Shadow correction is selected at each draw only for the matching geometric
+head inverse; native/cinema draws preserve native input. A same-light emulator
+comparison reduced mean reconstructed mask error0.04729 to0.00904 at matching
+head projections. This tests ONE light, not all lamps or the post-villa scene.
 Install.ps1 -Mode ReflectionExperiment enables ONLY the exact shader-pair eye
 coordinate experiment. Both experiments are OFF in default Combined mode.
 Install.ps1 -Mode SmaaExperiment adds SMAA 1x HIGH AFTER NIS to Combined.
@@ -80,8 +91,9 @@ PASS: source/build/fixture checks, simulator intro transitions, villa hands and
 non-cinema walking, native passive/interactive restaurant transition, double-Y
 pause. Actual native QTE/execution/story/Darkling/carnival scenes NOT RUN.
 Headset acceptance NOT RUN. No demonstrated recovery of user25ms/40FPS.
-Floor reflections remain unresolved. Shadow reconstruction algebra is improved
-but no demonstrated OFF/ON visual improvement; its default remains OFF.
+Floor reflections remain unresolved. The pinned shadow consumer improved in a
+bounded rendered-mask comparison; other shadow consumers/post-villa cutscene
+remain unverified. Shadow and outline defaults remain OFF in Combined.
 Reflection experiment: actual two-eye draw constants agree with rendered eye
 after rotation and15cm head translation; visual floor-artifact acceptance is
 NOT established. Its extra driver queries/setters are not an FPS optimization.
@@ -90,7 +102,7 @@ rendering/performance issues are solved. Private captures/saves are excluded.
 '@
 [IO.File]::WriteAllText((Join-Path $out 'README.txt'),$readme,[Text.Encoding]::UTF8)
 $names=@('d3d9.dll','d3d9.pdb','d3d9.map','baseline.dll','baseline-diagnostic.ini',
- 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini','material-experiment.ini','Install.ps1','README.txt')
+ 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini','material-experiment.ini','outline-experiment.ini','edge-shadow-experiment.ini','Install.ps1','README.txt')
 $files=@(foreach($name in $names){@{name=$name;sha256=(Hash (Join-Path $out $name))}})
 @{source_commit=(git -C $root rev-parse HEAD).Trim();build_flavor='protected-native /O2 x86';
  default_mode='Combined';files=$files;before=$before;protected=$protected;installed=$false;

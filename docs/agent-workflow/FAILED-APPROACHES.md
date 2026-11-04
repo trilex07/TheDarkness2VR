@@ -262,3 +262,16 @@ source, BASELINE.md and the task handoff before applying them.
   do not repeat base-only font/atlas edits as a complete fix.
 - Evidence HANDOFF-vr-settings-polish-fonts-20261104.md, dlc-font-comparison.json,
   emulator polish-menu-zoom.png vs dlc-font-after.png.
+
+### 2026-11-04: native outline footprint and isolated shadow-mask comparison
+- Quarter-pixel footprint temporal ratio0.8661 failed20% GPU fixture gate;
+  half-pixel four-sample native coverage passed0.5879 without full-colour blur.
+- Linear normal sampling worsened native outline variation1.1838; reverted.
+- C4D1FB10 after-draw RGB is accumulated lighting, not the isolated shadow mask.
+  Comparing grayscale/dark RGB gave invalid optimistic scores. Require before
+  target plus actual blend contract; DESTCOLOR/ZERO recovers after/before.
+- Scoped shadow selector must admit configured lighting profile-1, not only0.
+  Verify actual consuming c223; driver shader creation alone did not prove ON.
+- PS3 LRP with destination aliasing its first source was driver-rejected; final
+  independent r14 selector/r15 result passes. Per-light/cinema/headset coverage
+  still incomplete. See HANDOFF-edge-shadow-stability-20261104.md.

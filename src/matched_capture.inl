@@ -423,6 +423,20 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
     if(shadow) {
         shadowInputsSaved=true;
         shadowOutputPending=true;shadowOutputDraw=draw;shadowOutputVs=vs;
+        // This target already contains lighting. Preserve its input and blend
+        // contract so a later comparison can isolate this draw's contribution
+        // rather than accidentally measuring pre-existing dark RGB pixels.
+        const D3DRENDERSTATETYPE states[]={D3DRS_COLORWRITEENABLE,D3DRS_ALPHABLENDENABLE,
+            D3DRS_SRCBLEND,D3DRS_DESTBLEND,D3DRS_BLENDOP,D3DRS_SEPARATEALPHABLENDENABLE,
+            D3DRS_SRCBLENDALPHA,D3DRS_DESTBLENDALPHA,D3DRS_BLENDOPALPHA};
+        DWORD values[9]{};bool valid=true;
+        for(unsigned i=0;i<9;++i)valid=SUCCEEDED(dev->GetRenderState(states[i],&values[i])) && valid;
+        fprintf(meta,"{\"kind\":\"shadow_blend\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"valid\":%s,\"write_enable_src_dst_op_separate_asrc_adst_aop\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}\n",
+            frame,draw,valid?"true":"false",values[0],values[1],values[2],values[3],values[4],values[5],values[6],values[7],values[8]);
+        IDirect3DSurface9* prior=nullptr;
+        if(SUCCEEDED(dev->GetRenderTarget(0,&prior)) && prior) {
+            SaveStageSurface(dev,prior,draw,vs,ps,"shadow_before_draw");prior->Release();
+        }
     } else postInputsSaved=true;
     float values[16*4]{};
     const HRESULT hr=dev->GetPixelShaderConstantF(0,values,16);

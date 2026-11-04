@@ -177,6 +177,7 @@ bool g_disableFxaa = true;
 // run on native worker threads and must not reopen configuration files.
 bool g_shadowScreenDepth = false;
 bool g_shadowClipCoordinates = false;
+bool g_outlineCoverage = false;
 bool g_reflectionEyeExperiment = false;
 bool g_shaderDebugDump = false;
 bool g_clipScaledUi = true;
@@ -690,6 +691,8 @@ static bool ProtectedHeadConfigurationAllowed() {
 }
 static void LoadVrPreferences(const char* ini);
 void LoadConfig() {
+    g_outlineCoverage=GetPrivateProfileIntA("Diagnostics","OutlineCoverageExperiment",0,
+        ".\\Darkness2VR-diagnostic.ini")==1;
     g_shadowScreenDepth=GetPrivateProfileIntA("Diagnostics","ShadowScreenDepth",0,
         ".\\Darkness2VR-diagnostic.ini")==1;
     g_shadowClipCoordinates=GetPrivateProfileIntA("Diagnostics","ShadowClipCoordinates",0,

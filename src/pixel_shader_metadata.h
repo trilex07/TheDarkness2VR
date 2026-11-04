@@ -22,6 +22,7 @@ struct Pixel {
     int inverse=-1,extents=-1;
     bool videoYuv=false; // validated complete native bytecode, not FNV alone
     bool reflectionEye=false; // full-SHA admitted cube-map consumers; exact VS also required
+    bool shadowClip=false; // replacement created successfully; draw owns c223 selector
 };
 
 // Creation may run on an engine worker while the render thread binds/replays.

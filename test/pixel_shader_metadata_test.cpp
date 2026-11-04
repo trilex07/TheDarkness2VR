@@ -12,10 +12,15 @@
 #include "../src/pixel_shader_metadata.h"
 #include "../src/replay_state_cache.h"
 #include "../src/composite_shader_patch.h"
+#include "../src/outline_coverage.h"
+#include "../src/shadow_clip_coordinates.h"
+#include "../src/specular_footprint.h"
 #define CHECK(x) do{if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 enum {SI_END=0xffff,SI_COMMENT=0xfffe,OP_SetPixelShader=1,OP_SetVertexShader=2};
 static bool g_shadowScreenDepth=false,g_disableDepthOfField=false,g_disableCompositeHeightFog=false;
 static bool g_disableFxaa=false,g_shaderDebugDump=false,g_recActive=false;
+static bool g_outlineCoverage=false,g_specularFootprint=false,g_shadowClipCoordinates=false,g_nativeStereoHeadGeometry=false;
+static int g_stereoMode=1;
 static int g_submitMode=4,g_activePsInverse=-1,g_activePsViewExtents=-1;
 static uint32_t g_activePsHash=0;
 static const void* g_boundPs=nullptr;
