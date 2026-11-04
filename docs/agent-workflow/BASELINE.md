@@ -1,5 +1,20 @@
 # Baseline and current MAIN candidate
 
+## Current Steam: Combined with fixed-center NIS fallback (2026-11-04)
+
+User accepts the scene/input candidate but rejects SMAA effectiveness; continue
+shimmer/FPS investigation. Closed-game deployment of source8ac9f861abecc8d01e35e6529c5c1fbbc63ec62d
+uses build/combined-gaze-stability-20261104, ModeCombined. SMAA/FXAA OFF;
+fixed-center missing-gaze fallback defaults ON. NIS strengths, render resolution,
+main INI and protected EXE/loader preserved. Shadow/reflection experiments OFF.
+DLL4A0320B2C9369EA8696C65786B4A871434D855CB62540859209DC95A4F559EC7;
+diagnostic INI3A3FD69804D0E62A66E699652AB89C6BCD086CCB271CBE31A65B97F8071E6A6A.
+Frozen install/VerifyOnly PASS. Exact rollback in that package. No game launched.
+Actual NIS host blink regression FAIL before/PASS after on WARP and RTX5070;
+both x86 builds PASS. New fallback HMD acceptance NOT RUN. User40FPS/25ms case
+and complete geometric/specular shimmer remain unresolved; no new FPS gain claim.
+The previous installed SMAA package below is historical, not current Steam.
+
 ## Consolidated SMAA candidate installed for user test (2026-11-04)
 
 User authorized installing the consolidated candidate. Game was closed.

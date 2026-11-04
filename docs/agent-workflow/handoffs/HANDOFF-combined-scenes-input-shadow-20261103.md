@@ -358,3 +358,21 @@ history accidentally. Baseline remains unchanged.
   documentation commit. ModeSmaaExperiment includes Combined scene/input fixes
   and onlySMAA, shadow/reflection experimentsOFF. DefaultCombined has SMAAOFF.
   Candidate is partial and requires HMD comparison; do not call all scope done.
+
+## User feedback / follow-up Steam checkpoint
+
+- User accepts scene/input behavior, rejects SMAA for shimmer; continue FPS.
+- Primary-source web and actual user-run evidence in
+  docs/research/shimmer-performance-followup-20261104.md. Do not confuse the
+  actual2676x2728 recommendation with the earlier3232x3300 simulator fixture.
+- Found exact NIS policy defect: losing gaze switches copy-base/local rectangles
+  to uniform80% full-image sharpening. Source8ac9f861 adds configurable defaultON
+  fixed-center fallback, including individual-eye loss. Actual-source textured
+  pixel regression FAIL-before/PASS-after WARP and RTX5070; both builds PASS.
+- Current Steam package build/combined-gaze-stability-20261104 ModeCombined,
+  DLL4A0320B2 / diagnostic3A3FD698, frozen install and VerifyOnly PASS. SMAAOFF,
+  NIS strength/resolution/main INI preserved. Simulator/collectors/shadow/reflection
+  experimentsOFF. No game launched. Exact accepted baseline rollback retained.
+- New fallback headset effectiveness NOT RUN. No complete edge shimmer fix,
+  outdoor40FPS recovery, main merge, push or shutdown claimed. Native CPU/replay/
+  wait correlation and offending-material pre-NIS pixels are next evidence gates.
