@@ -1,5 +1,30 @@
 # Baseline and current MAIN candidate
 
+## Accepted Steam baseline: outline coverage and scoped shadows (2026-11-04)
+
+User tested the installed EdgeShadowExperiment and reported "tak jest dobrze",
+then requested main integration. Functional headset acceptance recorded; this
+does not establish exhaustive coverage of every light/cutscene or an FPS gain.
+Source3a6113ba6ab80cbaa06ec78e28100bd48c5fec12, integrated into main from
+codex/edge-shadow-stability-20261104 in MAIN worktree .main-camera-shake.
+Installed DLL51D08FD328EB11CDD391CD4E457C37587B97983A3F3611FDC0F8644883A6230A;
+diagnostic INI117230AC717C2A5FE7C1CA82BF6A693B2A056855D4B47F18CCA941325462C076.
+ShadowClipCoordinates=1 and OutlineCoverageExperiment=1; simulator/collectors OFF.
+Native outline coverage integrates four subpixel samples without full-colour
+blur. Exact shadow consumer uses corrected NDC only with the geometric-head
+inverse, preserving native input in other camera contexts. Prior VR settings,
+Polish font fixes and accepted render/input features retained.
+Main INI22862511B4E5697F37413802D3B562DD388ED510C68D0E1CD745E629A5A79B08
+is the user's current SS125 configuration; resolution/NIS unchanged by this task.
+EXE/loader unchanged. Install/VerifyOnly/Restore/VerifyOnly passed before trial;
+deployed hashes independently rechecked at acceptance. No deployment on merge.
+Frozen package build/edge-shadow-stability-20261104/Install.ps1:
+-Mode EdgeShadowExperiment reinstalls this accepted profile; -Restore rolls back
+to DLL95BB1C37/diagnostic3A3FD698 with the game closed. Default Combined mode
+keeps experiments OFF; choose the accepted profile explicitly when reinstalling.
+Evidence handoffs/HANDOFF-edge-shadow-stability-20261104.md. Older baseline
+sections below are historical. No claim that every shimmer/shadow issue is solved.
+
 ## Accepted Steam baseline: VR settings and Polish font overlay (2026-11-04)
 
 Source324a227841156ed9c9d84718460d0f7120f06d68 on

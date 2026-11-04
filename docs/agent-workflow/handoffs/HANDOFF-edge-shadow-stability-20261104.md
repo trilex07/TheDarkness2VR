@@ -7,7 +7,7 @@
 **Branch**: codex/edge-shadow-stability-20261104
 **Worktree**: C:\Users\Trilex\Darkness2VR\.main-camera-shake
 **Baseline**: accepted 324a2278 DLL95BB1C37, integrated main b6daa63f.
-**Integration commit**: pending user headset acceptance; do not merge as solved.
+**Integration**: user accepted installed profile and requested main; fast-forward integration.
 **Implementation commit**: 3a6113ba (source used by frozen candidate).
 
 ## Goal and status
@@ -15,6 +15,8 @@
 Reduce edge/hand shimmer and intermittent shadows at local lights and the
 post-villa cutscene. **Ready for bounded candidate review; full task remains
 unverified.** User says most shadows already look good. Preserve those paths.
+Update: user subsequently accepted the installed combined profile; see final
+acceptance section. Exhaustive all-scene validation remains outside that claim.
 
 ## Context loaded
 
@@ -124,3 +126,12 @@ Protected main INI/EXE/loader verified unchanged. No game launched by agent.
 The earlier restored-baseline note describes the completed emulator lab, not
 current deployment. User headset acceptance PENDING. Rollback: this frozen
 package Install.ps1 -Restore with game closed. Baseline acceptance unchanged.
+
+## User acceptance and main integration (2026-11-04)
+
+User reports "tak jest dobrze daj na main" after the Steam trial. Accept the
+installed combined profile as the new functional baseline. DLL/diagnostic/main
+INI hashes rechecked and match the trial above. BASELINE.md now records it.
+Merge uses source already tested; no code rebuild, deployment or game launch.
+Exact per-light/cutscene coverage and controlled performance remain bounded by
+the evidence above; acceptance is not proof that every artifact is eliminated.
