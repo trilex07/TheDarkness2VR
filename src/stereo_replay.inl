@@ -914,9 +914,16 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                 bytes<=code.size()*4 && !(bytes&3) &&
                 d2vr_shader_metadata::ValidPixelCode(code.data(),bytes/4)) {
                 const std::string shaderBytes((const char*)code.data(), bytes);
-                metadata.reflectionEye=metadata.hash==0x7DCA4CC4u && bytes==1596 &&
-                    d2vr_native_clone::MatchesDigest(code.data(),bytes,
-                        "df4b3b0c641a4bb21f4445d5193927d201a7f0e9aa0d9c42ea363299ea2911e9");
+                metadata.reflectionEye=
+                    (metadata.hash==0x7DCA4CC4u && bytes==1596 &&
+                     d2vr_native_clone::MatchesDigest(code.data(),bytes,
+                        "df4b3b0c641a4bb21f4445d5193927d201a7f0e9aa0d9c42ea363299ea2911e9")) ||
+                    // Selected draw977/225 proves this exact variant renders
+                    // the villa marble floor. Same VS12CCC8DB tangent-space
+                    // view output v2 and world basis v3..5 feed cube sampler4.
+                    (metadata.hash==0x0E907DD4u && bytes==1884 &&
+                     d2vr_native_clone::MatchesDigest(code.data(),bytes,
+                        "54d77c06d037657b32d2e4ed23458d2f3249270f21ab8c311b70704d6243eb2f"));
                 if((metadata.hash==0xC1DC2D91u && bytes==700) || (metadata.hash==0xD59D80ACu && bytes==764))
                     metadata.videoYuv=d2vr_native_clone::MatchesDigest(code.data(),bytes,
                         metadata.hash==0xC1DC2D91u ? "bc92e5e5d69fce40ff8c426a9ed2270d141560d867b2d51043000ecffc7ddc32" :
@@ -1640,7 +1647,7 @@ struct ReflectionEyeScope {
         const auto result=g_orig.SetVertexShaderConstantF(dev,8,corrected,1);
         if(SUCCEEDED(result)) {
             static unsigned reported=0;
-            if(reported++<4)Log("[ReflectionEyeExperiment] eye=%d exact VS12CCC8DB/PS7DCA4CC4 c8 corrected; scoped restore, not FPS proof",g_replayEye<0?0:g_replayEye);
+            if(reported++<4)Log("[ReflectionEyeExperiment] eye=%d exact VS12CCC8DB admitted cube consumer c8 corrected; scoped restore, not FPS proof",g_replayEye<0?0:g_replayEye);
         }
     }
     ~ReflectionEyeScope() {

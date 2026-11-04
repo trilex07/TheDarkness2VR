@@ -1,6 +1,6 @@
 # Frozen MAIN candidate. Never launches the game or changes the OpenXR runtime.
 param([switch]$Restore,[switch]$VerifyOnly,
- [ValidateSet('Combined','ShadowExperiment','ReflectionExperiment')][string]$Mode='Combined')
+ [ValidateSet('Combined','ShadowExperiment','ReflectionExperiment','SmaaExperiment')][string]$Mode='Combined')
 $ErrorActionPreference='Stop'
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}
 function Closed {if(Get-Process DarknessII -ErrorAction SilentlyContinue){throw 'Close Darkness II first'}}
@@ -34,6 +34,7 @@ if($VerifyOnly){Write-Output 'VERIFIED package, current preimage, exact rollback
 $profile=switch($Mode){
  'ShadowExperiment' {'shadow-experiment.ini'}
  'ReflectionExperiment' {'reflection-experiment.ini'}
+ 'SmaaExperiment' {'smaa-experiment.ini'}
  default {'candidate-diagnostic.ini'}
 }
 $sources=if($Restore){$backups}else{@('d3d9.dll',$profile)}

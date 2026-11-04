@@ -53,6 +53,39 @@ def validate_shadow_conversion(records, post_inputs, auxiliary, position):
             raise ValueError("missing native shadow depth producer")
 
 
+def validate_selected_draw(records, position):
+    requests = [r for r in records if r['kind'] == 'selected_draw_request']
+    stages = [r for r in records if r['kind'] == 'pass_stage' and
+              r.get('phase') in ('selected_before_draw', 'selected_after_draw')]
+    returns = [r for r in records if r['kind'] == 'selected_draw_return']
+    if not requests and not stages and not returns:
+        return
+    if len(requests) != 1 or len(stages) != 2 or len(returns) != 1:
+        raise ValueError('incomplete selected draw provenance')
+    request, result = requests[0], returns[0]
+    before = [r for r in stages if r['phase'] == 'selected_before_draw']
+    after = [r for r in stages if r['phase'] == 'selected_after_draw']
+    if len(before) != 1 or len(after) != 1:
+        raise ValueError('duplicate selected draw phase')
+    before, after = before[0], after[0]
+    pixels = [r for r in records if r['kind'] == 'draw_ps' and r.get('eye') == 0 and
+              r.get('shader_hash') == request.get('ps_hash')]
+    ordinal = request.get('ordinal')
+    if type(ordinal) is not int or not 0 <= ordinal < len(pixels):
+        raise ValueError('selected draw ordinal not witnessed')
+    draw = pixels[ordinal]['draw']
+    if (result.get('draw') != draw or result.get('eye') != 0 or result.get('hr') != 0 or
+        result.get('target_hr') != 0 or result.get('before_rt') != result.get('after_rt') or
+        result.get('ps_hash') != request.get('ps_hash') or
+        any(r.get('last_draw') != draw or r.get('eye') != 0 or r.get('saved') is not True or
+            r.get('ps_hash') != request.get('ps_hash') or r.get('sampler') != -1 or
+            r.get('rt') != result.get('before_rt') for r in stages) or
+        any(before.get(k) != after.get(k) for k in ('vs_hash','format','width','height')) or
+        before.get('file') == after.get('file') or
+        not position(request) < position(before) < position(result) < position(after)):
+        raise ValueError('mismatched selected draw provenance')
+
+
 def validate(folder):
     folder = Path(folder)
     receipt = json.loads((folder / "COMPLETE.json").read_text())
@@ -108,7 +141,7 @@ def validate(folder):
             if record.get("eye") != 0 or record.get("hr") != 0:
                 raise ValueError("invalid pass stage eye or HRESULT")
             phase = record.get("phase", "after_draw")
-            if (phase not in ("after_draw", "before_draw_input") or
+            if (phase not in ("after_draw", "before_draw_input", "selected_before_draw", "selected_after_draw") or
                 (phase == "before_draw_input" and
                  (record.get("sampler") not in (0, 2, 3) or
                   record.get("ps_hash") not in (0x33DE98C1, 0x75F88E11, 0xC4D1FB10) or
@@ -123,6 +156,7 @@ def validate(folder):
     entries=[r for r in records if r["kind"]=="present_entry"]
     arms=[r for r in records if r["kind"]=="capture_arm"]
     validate_shadow_conversion(records, post_inputs, auxiliary, position)
+    validate_selected_draw(records, position)
     completions=[r for r in records if r["kind"]=="present_completion"]
     staged=[r for r in records if r["kind"]=="staged_result"]
     if records[0].get("schema")!=2 or len(arms)!=1 or len(entries)!=1 or len(completions)!=1 or len(staged)!=1:

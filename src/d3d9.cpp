@@ -634,6 +634,7 @@ static std::string g_matchedIniPath;
 static volatile LONG g_cameraUploadWitnessBudget=0;
 #endif
 static int g_nisMode = 0; // 0=off, 2=eye-cache sharpen, 3=shared-source scaler
+static bool g_smaaEnabled=false; // opt-in SMAA 1x HIGH after sharpening, no temporal history
 static float g_nisSharpness = .20f;
 // [Render] FoveatedSharpen: gaze-centred NIS (periphery/transition/fovea), mode 2 only.
 static bool g_foveatedSharpen = true;
@@ -780,6 +781,9 @@ void LoadConfig() {
     Log("[WorldDiffuse] scoped anisotropy=%d (exact VS293F456B/PSCA08BDC4, s0 only)", (int)g_worldDiffuseAnisotropy);
     Log("[Sharpness] texture anisotropy target=%d", g_textureAnisotropy);
     g_disableFxaa = GetPrivateProfileIntA("Render", "DisableFXAA", 1, chosenIni) != 0;
+    g_smaaEnabled=GetPrivateProfileIntA("Render","SMAA",0,chosenIni)!=0 ||
+        GetPrivateProfileIntA("Diagnostics","SmaaExperiment",0,".\\Darkness2VR-diagnostic.ini")!=0;
+    Log("[SMAA] enabled=%d; opt-in 1x HIGH after NIS, unchanged resolution; no temporal guarantee",int(g_smaaEnabled));
     const int requestedNisMode=GetPrivateProfileIntA("Render", "NisMode", 0, chosenIni);
     g_nisMode=(requestedNisMode==2 || requestedNisMode==3) ? requestedNisMode : 0;
     char nisSharpness[32]{};
@@ -2420,6 +2424,9 @@ static ID3DBlob* CompileShaderBlob(const char* src, const char* entry, const cha
 }
 
 #include "dlss_eye.inl"
+#include "smaa_eye.h"
+static d2vr_smaa::Eyes g_smaaEyes;
+static bool g_smaaReported=false,g_smaaFailureReported=false;
 
 static bool EnsureDepthFreezeResources(IDirect3DDevice9* dev) {
     if (g_depthFreezeTex9 && g_depthFreezeSurf9 && g_depthFreezeSys9 && g_depthFreezeVS9 && g_depthFreezePS9) {
@@ -6327,6 +6334,13 @@ void SubmitXR(IDirect3DDevice9* dev) {
                 submitted[0]=submitted[1]=nullptr;
                 Log("[NIS] scale failed; one layer dropped, full-size fallback next frame");
             }
+            if(g_smaaEnabled && !dlssProcessed && submitted[0] && submitted[1]) {
+                ID3D11Texture2D* antialiased[2]{};
+                if(g_smaaEyes.Process(g_dev11,g_ctx11,submitted[0],submitted[1],antialiased)) {
+                    submitted[0]=antialiased[0];submitted[1]=antialiased[1];
+                    if(!g_smaaReported){g_smaaReported=true;Log("[SMAA] both completed eyes filtered; cached six-draw command list, immediate state restored");}
+                }else if(!g_smaaFailureReported){g_smaaFailureReported=true;Log("[SMAA] pair unavailable; both current unfiltered eyes retained, no stale output");}
+            }
 #ifdef D2VR_MATCHED_CAPTURE
             if(submitted[0] && submitted[1]) {
                 matched_capture::Final(0,submitted[0]);
@@ -6845,6 +6859,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETER
         EmitPipelineTrace(ev, dev);
     }
     g_gpuTiming.Release();
+    g_smaaEyes.Shutdown();g_smaaReported=g_smaaFailureReported=false;
     NisEyeShutdown();
     DlssEyeShutdown();
     d2vr_replay::InvalidateShadowAtlasPass();
@@ -6914,6 +6929,7 @@ HRESULT STDMETHODCALLTYPE Hook_ResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAM
 #endif
     g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::ResetEx));
     g_gpuTiming.Release();
+    g_smaaEyes.Shutdown();g_smaaReported=g_smaaFailureReported=false;
     NisEyeShutdown();
     DlssEyeShutdown();
     d2vr_replay::InvalidateShadowAtlasPass();

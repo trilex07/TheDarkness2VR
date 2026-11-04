@@ -30,13 +30,14 @@ public static class D2vrCombinedProfile {
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] public static extern bool WritePrivateProfileString(string section,string key,string value,string path);
 }
 '@}
-foreach($name in 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini'){
+foreach($name in 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini'){
  $p=Join-Path $out $name;Copy-Item -LiteralPath $diag -Destination $p
  foreach($key in 'MatchedFrameCapture','CommandHistory','CameraShakeTrace','VideoDrawProbe','CpuSyncTiming','CapturePassStages','MatchedCaptureSerial'){
   if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics',$key,'0',$p)){throw 'Profile write failed'}
  }
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ShadowClipCoordinates',$(if($name -eq 'shadow-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','ReflectionEyeExperiment',$(if($name -eq 'reflection-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
+ if(![D2vrCombinedProfile]::WritePrivateProfileString('Diagnostics','SmaaExperiment',$(if($name -eq 'smaa-experiment.ini'){'1'}else{'0'}),$p)){throw 'Profile write failed'}
  if(![D2vrCombinedProfile]::WritePrivateProfileString('Simulator','Enabled','0',$p)){throw 'Profile write failed'}
  & (Join-Path $PSScriptRoot 'assert-candidate-profile.ps1') -CandidateDll (Join-Path $out 'd3d9.dll') -RenderIni @((Join-Path $game 'Darkness2VR.ini')) -DiagnosticIni $p|Out-Null
 }
@@ -53,6 +54,12 @@ Install.ps1 -Restore restores the exact accepted DLL/diagnostic INI.
 Install.ps1 -Mode ShadowExperiment enables ONLY the pinned shadow experiment.
 Install.ps1 -Mode ReflectionExperiment enables ONLY the exact shader-pair eye
 coordinate experiment. Both experiments are OFF in default Combined mode.
+Install.ps1 -Mode SmaaExperiment adds SMAA 1x HIGH AFTER NIS to Combined.
+It preserves resolution, FXAA OFF and all scene/input changes. Shadow and
+reflection experiments stay OFF. No temporal history or motion-vector guesses.
+Offline RTX5070 fixture: both3232x3300 eyes GPU~1.25ms, CPU enqueue~0.001ms;
+not a game FPS result. Flat interiors are exact, diagonal edges receive coverage.
+Actual headset shimmer/clarity acceptance remains NOT RUN.
 Close the game before each operation. No automatic launch or runtime switch.
 
 PASS: source/build/fixture checks, simulator intro transitions, villa hands and
@@ -69,11 +76,11 @@ rendering/performance issues are solved. Private captures/saves are excluded.
 '@
 [IO.File]::WriteAllText((Join-Path $out 'README.txt'),$readme,[Text.Encoding]::UTF8)
 $names=@('d3d9.dll','d3d9.pdb','d3d9.map','baseline.dll','baseline-diagnostic.ini',
- 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','Install.ps1','README.txt')
+ 'candidate-diagnostic.ini','shadow-experiment.ini','reflection-experiment.ini','smaa-experiment.ini','Install.ps1','README.txt')
 $files=@(foreach($name in $names){@{name=$name;sha256=(Hash (Join-Path $out $name))}})
 @{source_commit=(git -C $root rev-parse HEAD).Trim();build_flavor='protected-native /O2 x86';
  default_mode='Combined';files=$files;before=$before;protected=$protected;installed=$false;
- headset='NOT RUN';performance='unresolved';floor_reflections='unresolved';shadow_default='OFF';reflection_default='OFF'}|
+ headset='NOT RUN';performance='unresolved';floor_reflections='unresolved';shadow_default='OFF';reflection_default='OFF';smaa_default='OFF'}|
  ConvertTo-Json -Depth 7|Set-Content -LiteralPath (Join-Path $out 'candidate.json') -Encoding UTF8
 & (Join-Path $out 'Install.ps1') -VerifyOnly
 Write-Output "PREPARED $out; Steam accepted baseline retained"

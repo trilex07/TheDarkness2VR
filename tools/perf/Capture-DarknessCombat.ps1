@@ -8,6 +8,7 @@
     [switch]$AudioCues,
     [switch]$CommandHistory,
     [switch]$PresentMonOnly,
+    [string]$SimulatorLabDirectory = '',
     [string]$SymbolSource = '',
     [string]$LocalVrDir = (Join-Path $env:LOCALAPPDATA 'Darkness2VR'),
     [switch]$Preflight
@@ -161,7 +162,25 @@ if ($CommandHistory) {
 }
 $compositor = @(Get-Process vrcompositor -ErrorAction SilentlyContinue)
 $server = @(Get-Process vrserver -ErrorAction SilentlyContinue)
-if ($compositor.Count -ne 1 -or $server.Count -ne 1) {
+$simulatorEvidence=$null
+if ($SimulatorLabDirectory) {
+    # Explicit lab-only route. Never represent simulator cadence as headset FPS.
+    $simLab=[IO.Path]::GetFullPath($SimulatorLabDirectory)
+    $owned=Get-Content -LiteralPath (Join-Path $simLab 'owned-process.json') -Raw | ConvertFrom-Json
+    if ($owned.pid -ne $game[0].Id -or [DateTime]$owned.start -ne $game[0].StartTime -or $owned.path -ne $exe) {
+        throw 'Simulator lab process identity mismatch'
+    }
+    $payload=Get-Content -LiteralPath (Join-Path $simLab 'payload.json') -Raw | ConvertFrom-Json
+    foreach ($f in $payload.files) {
+        if ((Get-FileHash -LiteralPath $f.target).Hash -ne $f.after) { throw 'Simulator lab payload changed' }
+    }
+    $runtimeLog=Join-Path $simLab "runtime/openxr_simulator.$($game[0].Id).log"
+    if (!(Test-Path -LiteralPath $runtimeLog) -or
+        (Get-Item -LiteralPath $runtimeLog).LastWriteTime -lt $game[0].StartTime) {
+        throw 'No current process-specific simulator runtime witness'
+    }
+    $simulatorEvidence=[ordered]@{lab=$simLab;runtimeLog=$runtimeLog;headsetPerformance=$false}
+} elseif ($compositor.Count -ne 1 -or $server.Count -ne 1) {
     throw 'SteamVR compositor/server must be running for a headset performance capture.'
 }
 
@@ -194,8 +213,10 @@ $manifest = [ordered]@{
     wprInstance = $instance; presentmonSession = $pmSession
     exePath = $exe; hashesBefore = $hashes; hashesAfter = $null
     localIniHashesBefore=$localHashes; localIniHashesAfter=[ordered]@{}
-    processIds = [ordered]@{ game=$game[0].Id; vrserver=$server[0].Id
-        vrcompositor=$compositor[0].Id; dwm=@(Get-Process dwm -ErrorAction SilentlyContinue | ForEach-Object Id) }
+    processIds = [ordered]@{ game=$game[0].Id; vrserver=@($server | ForEach-Object Id)
+        vrcompositor=@($compositor | ForEach-Object Id); dwm=@(Get-Process dwm -ErrorAction SilentlyContinue | ForEach-Object Id) }
+    environment = $(if($simulatorEvidence){'OpenXR Simulator'}else{'SteamVR headset'})
+    simulatorEvidence = $simulatorEvidence
     gameStartUtc = $game[0].StartTime.ToUniversalTime().ToString('o')
     qpcFrequency = [System.Diagnostics.Stopwatch]::Frequency
     startUtc = [DateTime]::UtcNow.ToString('o')

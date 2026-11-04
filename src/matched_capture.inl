@@ -20,6 +20,11 @@ static std::vector<uintptr_t> geometrySaved;
 static bool passStages, postStagesOnly, postInputsSaved, shadowStagesOnly, shadowInputsSaved;
 static bool shadowOutputPending;
 static unsigned shadowOutputDraw, shadowOutputVs;
+// Explicit one-draw pixel provenance, independent of the shadow-depth experiment.
+static bool selectedDrawOnly, selectedDrawPending, selectedDrawSaved;
+static unsigned selectedPs, selectedOrdinal, selectedSeen, selectedDraw, selectedVs;
+static IDirect3DSurface9* selectedTarget;
+static void ReleaseSelectedTarget() { if(selectedTarget)selectedTarget->Release();selectedTarget=nullptr;selectedDrawPending=false; }
 static IDirect3DSurface9* stageTarget;
 static unsigned stagesSaved, stageLastDraw, stageVs, stagePs;
 static uint64_t stageBytes;
@@ -140,6 +145,8 @@ static void Finish(bool submitted) {
     if (!active) return;
     Current();
     ReleaseStage();
+    if(selectedDrawOnly && !selectedDrawSaved) Reject("selected pixel-provenance draw not completed");
+    ReleaseSelectedTarget();
     if(g_nativeCameraCoverInstalled) {
         if(!g_nativeCameraCoverConfirmed || g_nativeCoveredFrame!=frame || projectionObserved!=3)
             Reject("no same-frame selected native camera and both GPU projection witnesses");
@@ -205,6 +212,13 @@ static void Begin() {
     passStages=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)!=0;
     postStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==2;
     shadowStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==3;
+    selectedDrawOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==4;
+    ReleaseSelectedTarget();selectedDrawSaved=false;selectedSeen=0;
+    selectedOrdinal=GetPrivateProfileIntA("Diagnostics","CaptureDrawOrdinal",0,request);
+    char selectedHash[32]{};
+    GetPrivateProfileStringA("Diagnostics","CaptureDrawPS","",selectedHash,sizeof(selectedHash),request);
+    char* hashEnd=nullptr;selectedPs=strtoul(selectedHash,&hashEnd,16);
+    const bool validSelectedHash=*selectedHash && hashEnd && !*hashEnd && strlen(selectedHash)<=8;
     postInputsSaved=shadowInputsSaved=shadowOutputPending=false;
     frame=g_trackedFrame.id; active=true; failed=false; headerPending=true; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     skinUploadsSeen=skinUploadsSaved=0;
@@ -212,6 +226,7 @@ static void Begin() {
     presentFrame=g_capturePresent.frame+1; resetGeneration=g_captureResetGeneration;
     presentDevice=g_capturePresent.device;
     if (!meta || !banks) { Reject("file creation failed"); Finish(false); return; }
+    if(selectedDrawOnly && (!validSelectedHash || selectedOrdinal>=16384)) Reject("invalid selected pixel-provenance request");
 }
 static void WriteHeader() {
     // Called only by Current, inside the same-frame/device/epoch witness.
@@ -227,6 +242,7 @@ static void WriteHeader() {
     fprintf(meta,"{\"kind\":\"header\",\"schema\":2,\"frame\":%llu,\"display_time\":%lld,\"dll_sha256\":\"%s\",\"exe_sha256\":\"%s\",\"ini_sha256\":\"%s\",\"request_sha256\":\"%s\",\"native_hooks_suppressed\":%s,\"world_state\":\"render heuristic\",\"submit_mode\":%d,\"stereo_mode\":%d,\"shift_mode\":%d,\"layer_pose\":%d,\"stereo_baseline_game_units\":%.9g}\n",
         frame,g_trackedFrame.state.predictedDisplayTime,dh.c_str(),eh.c_str(),ih.c_str(),rh.c_str(),
         (g_restoredTrackedGameplay||g_nativeCameraCoverInstalled||g_protectedTrackedHands)?"false":"true",g_submitMode,g_stereoMode,g_stereoShiftMode,g_stereoLayerPose,g_stereoIPD);
+    if(selectedDrawOnly) fprintf(meta,"{\"kind\":\"selected_draw_request\",\"frame\":%llu,\"eye\":0,\"ps_hash\":%u,\"ordinal\":%u}\n",frame,selectedPs,selectedOrdinal);
     fprintf(meta,"{\"kind\":\"protected_hands_policy\",\"frame\":%llu,\"requested\":%s,\"visible_consumption_verified\":false}\n",
         frame,g_protectedTrackedHands?"true":"false");
     fprintf(meta,"{\"kind\":\"capture_arm\",\"frame\":%llu,\"expected_serial\":%llu,\"epoch\":%llu,\"expected_game_frame\":%llu,\"reset_generation\":%ld,\"thread\":%lu,\"device\":\"%p\"}\n",
@@ -317,7 +333,7 @@ static bool IsPostStage(unsigned ps) {
            ps==0x120C78F8u || ps==0x5104FEF7u;
 }
 static void FlushStage(IDirect3DDevice9* dev) {
-    if(shadowStagesOnly)return; // reserve readback budget for the actual depth input
+    if(shadowStagesOnly || selectedDrawOnly)return; // reserve readback budget for explicit input/draw
     if(postStagesOnly && !IsPostStage(stagePs)) return;
     SaveStageSurface(dev,stageTarget,stageLastDraw,stageVs,stagePs,"after_draw");
 }
@@ -519,6 +535,24 @@ static void Submission(const XrCompositionLayerProjectionView* views) {
 }
 } // namespace matched_capture
 static void MatchedCaptureDrawReturned(IDirect3DDevice9* dev,HRESULT result) {
+    if(matched_capture::selectedDrawPending && d2vr_replay::g_replayEye<0 &&
+       GetCurrentThreadId()==g_renderThreadId) {
+        using namespace matched_capture;
+        if(Current()) {
+            IDirect3DSurface9* target=nullptr;
+            const HRESULT targetHr=dev->GetRenderTarget(0,&target);
+            fprintf(meta,"{\"kind\":\"selected_draw_return\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"ps_hash\":%u,\"hr\":%ld,\"target_hr\":%ld,\"before_rt\":\"%p\",\"after_rt\":\"%p\"}\n",frame,selectedDraw,selectedPs,result,targetHr,selectedTarget,target);
+            if(FAILED(result) || FAILED(targetHr) || !target || target!=selectedTarget)
+                Reject("selected pixel-provenance draw failed or changed target");
+            else {
+                const char* status=SaveStageSurface(dev,target,selectedDraw,selectedVs,selectedPs,"selected_after_draw");
+                selectedDrawSaved=!strcmp(status,"saved");
+                if(!selectedDrawSaved)Reject("selected pixel-provenance output readback failed");
+            }
+            if(target)target->Release();
+        }
+        ReleaseSelectedTarget();
+    }
     // One explicit matched-frame diagnostic only: retain the actual first
     // shadow consumer's output, not the later composite containing animation.
     // Readback does not set device state; its stall is not a performance sample.
@@ -578,7 +612,16 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
         fprintf(meta,"{\"kind\":\"material_sampler\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"min\":%lu,\"mag\":%lu,\"mip\":%lu,\"max_anisotropy\":%lu,\"lod_bias_bits\":%lu,\"scoped_fix_enabled\":%s,\"scoped_fix_applied\":%s}\n",
             frame,eye,draws[eye]-1,sampler?"true":"false",min,mag,mip,quality,bias,g_worldDiffuseAnisotropy?"true":"false",worldDiffuseApplied?"true":"false");
     }
-    if(eye==0 && passStages) {
+    if(eye==0 && passStages && selectedDrawOnly) {
+        if(pixelHash==selectedPs && selectedSeen++==selectedOrdinal) {
+            selectedDraw=draws[eye]-1;selectedVs=hash;
+            SaveStageShader(vs,hash,false,true);SaveStageShader(ps,pixelHash,true,true);
+            const char* status=SaveStageSurface(dev,rt,selectedDraw,hash,pixelHash,"selected_before_draw");
+            if(strcmp(status,"saved"))Reject("selected pixel-provenance input readback failed");
+            else { selectedTarget=rt;selectedTarget->AddRef();selectedDrawPending=true; }
+        }
+    }
+    if(eye==0 && passStages && !selectedDrawOnly) {
         if(stageTarget!=rt) {
             FlushStage(dev); ReleaseStage(); stageTarget=rt; if(stageTarget) stageTarget->AddRef();
         }

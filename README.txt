@@ -72,3 +72,12 @@ not passed the performance-benefit gate. Neither setting changes resolution.
 Use the frozen package Install.ps1 with the game closed; -Mode Cache, Worker,
 Both or Off selects an independent profile, and -Restore restores the exact
 previous DLL and INI. Restart the game between modes. FPS gains are unverified.
+SMAA trial (2026-11-04): [Render] SMAA=1 enables SMAA 1x HIGH after NIS.
+Default OFF. It filters detected edges at the existing eye resolution, with no
+temporal history/jitter or guessed depth/motion. It may soften thin details;
+it does not guarantee removal of temporal shimmer. FXAA can stay disabled.
+Diagnostics/SmaaExperiment=1 enables the same path for the isolated candidate
+without changing the accepted main INI. Restart after changing either setting.
+Both current eyes fall back together if filtering is unavailable. Cached D3D11
+commands retain independent current inputs; no CPU image readback or per-frame
+command recording. Do not combine this trial with the rejected DLAA experiment.

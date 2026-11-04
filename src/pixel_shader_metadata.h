@@ -21,7 +21,7 @@ struct Pixel {
     uint32_t hash=0;
     int inverse=-1,extents=-1;
     bool videoYuv=false; // validated complete native bytecode, not FNV alone
-    bool reflectionEye=false; // exact PS7DCA4CC4 cube-map consumer
+    bool reflectionEye=false; // full-SHA admitted cube-map consumers; exact VS also required
 };
 
 // Creation may run on an engine worker while the render thread binds/replays.
