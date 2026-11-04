@@ -158,3 +158,46 @@ not the world scene. Do not compare its timings with F/G world windows.
 
 The original user outdoor40FPS/25ms CPU case is not yet reproduced. Keep this
 experiment OFF by default until equivalent world controls and runtime acceptance.
+
+
+Correction to F148-frame window: exact log correlation shows native Present
+returned08760878 (S_PRESENT_OCCLUDED),662 unadmitted presents, then08760877
+(S_PRESENT_MODE_CHANGED). It is an occlusion/display-transition window, NOT a
+clean gameplay performance sample. Exclude it from controlled FPS comparisons;
+do not present it as reproduction of the user outdoor CPU25ms case.
+
+
+## Scoped first-person normal-map mip interpolation
+
+Captured skin VS02A9CDE3/PSBC938BC9 uses1024x1024,11-mip NormalMap s2 with
+ANISOTROPIC min16 / LINEAR mag but POINT mip. SkinMipFilter (default OFF) admits
+only this pair, first-person viewport MinZ0 and0<MaxZ<=.05, exact1024/11-mip
+non-RT/non-depth texture. Change only s2 MIPFILTER POINT->LINEAR around the draw;
+restore original state in both live/replay paths and invalidate material cache
+through its existing bypass. No recorded sampler commands, global aniso or bias.
+
+Actual Windows x86 D3D9 GPU test PASS: an LOD1.49->1.51 transition changes255->0
+with native nearest mip,130->126 with scoped interpolation. Destructor restores
+POINT; rejected world viewport, null/single-mip texture, already-linear state,
+failed setter and unknown shader identity are tested. This proves interpolation
+and scope restoration, not headset shimmer removal. Both builds PASS. Game I/J
+logged application eye0 AND eye1, native shader creation success and visible
+hands/weapons. Actual moving-hand temporal comparison remains an open gate.
+
+## Live reader A/B/A, same process J
+
+Explicit diagnostic LiveRenderExperiments enables render-boundary polling for
+reader backoff and scoped skin mip only. OFF by default, absent in production.
+No persistent query/resource identity is changed by either control. Private
+phase receipts and whole logs are j-ab-phases.json, j-{A200,B0,A200repeat}.log.
+Exclude startup and straddling counters; use a complete5s window before the last
+window in each16s phase. Final partial windows are excluded.
+
+Reader CPU per frame:0.573ms at200us,2.396ms at0,1.042ms at200us again.
+Whole scheduled CPU per frame:10.052,9.167,9.479ms respectively; cadence60.0,
+60.0,59.81. Thus reader-local saving is repeatable, whole-frame CPU/FPS gain IS
+NOT established. Scene advances/restarts when the idle player dies; no claim of
+identical game simulation across phases. Keep reader experiment OFF for users.
+Game J actual projected combat capture j-shoot-test.png has both guns/hands;
+other captures include expected scripted/theater segments and are not equivalent
+free-world controls. Original outdoor40FPS is still not reproduced.

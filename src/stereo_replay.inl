@@ -1556,6 +1556,26 @@ struct WorldDiffuseScope {
         }
     }
 };
+struct SkinMipScope {
+    d2vr_sampling::ScopedSkinMipFilter filter;
+    bool applied=false;
+    explicit SkinMipScope(IDirect3DDevice9* device) {
+        if(!g_skinMipFilter || g_submitMode!=4 || g_stereoMode!=1 || !g_activeVs ||
+           !d2vr_sampling::IsFirstPersonSkin(g_activeVs->hash,g_pixelShaders.Lookup(g_boundPs).hash))return;
+        if(d2vr_submission::materialsRequested){
+            d2vr_submission::Epoch::Bypass raw(d2vr_submission::gate);
+            applied=filter.Apply(device,g_orig.SetSamplerState);
+        }else applied=filter.Apply(device,g_orig.SetSamplerState);
+        static unsigned reported=0;
+        if(applied && reported++<4)Log("[SkinMipFilter] applied eye=%d s2 mip=LINEAR; restored after draw",g_replayEye<0?0:g_replayEye);
+    }
+    ~SkinMipScope(){
+        if(applied && d2vr_submission::materialsRequested){
+            d2vr_submission::Epoch::Bypass raw(d2vr_submission::gate);
+            filter.Restore();
+        }
+    }
+};
 // The player tentacle and world characters share all three skinned shaders.
 // A WVP c3 test alone incorrectly head-attached enemies in the 9dfb2c1 VR
 // trial. The captured player mesh instead has a 302920-byte VB, 213588-byte
@@ -1702,6 +1722,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
+    const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1718,6 +1739,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
+    const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
     const TentacleHeadScope tentacle(dev);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -1735,6 +1757,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
+    const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
@@ -1754,6 +1777,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
+    const SkinMipScope skinMip(dev);
     const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);

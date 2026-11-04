@@ -427,3 +427,20 @@ history accidentally. Baseline remains unchanged.
 - Production build overwrote root d3d9.dll; installed Steam lab remains diagnostic
   F0F41C20. For lab Update first rebuild diagnostic. End-lab restoration above
   remains REQUIRED, including all four fresh save/settings preimages.
+
+
+### Skin normal mip and same-process A/B checkpoint
+- SkinMipFilter defaultOFF exact VS02A9CDE3/PSBC938BC9 / s2 /1024x1024x11mips /
+  first-person viewport only. Restores draw state and bypass-invalidates material
+  cache. Real GPU native LOD jump255->0 versus linear130->126; guard tests PASS.
+  Both builds PASS; actual I/J logs application to BOTH eyes and visible guns.
+- Lab-only LiveRenderExperiments lets reader/mip switch at render boundaries.
+  Same-process J reader CPU0.573/2.396/1.042ms-frame (200/0/200us), but whole CPU
+  10.052/9.167/9.479 and60/60/59.81cadence: NO FPS gain, leave defaultOFF.
+- F148-frame window was native occlusion/mode-change, exclude it from gameplay
+  claims. H title-only excluded. Current J is an owned test, read receipt before
+  closing. Live INI changed via Win32 profile API: after closing normalize it to
+  lab candidate-diagnostic.ini BEFORE labRestore, then user package4A/3A and all
+  four FRESH save/settings preimages. Steam global runtime must remain SteamVR.
+- Geometry/outline edge coverage, clean outdoor repro and HMD acceptance remain
+  OPEN. Do not replace these with synthetic AA metrics or finish/shutdown claims.

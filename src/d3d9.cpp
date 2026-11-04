@@ -181,6 +181,7 @@ bool g_shaderDebugDump = false;
 bool g_clipScaledUi = true;
 bool g_fixMotionVectorProjection = false;
 bool g_worldDiffuseAnisotropy = false;
+bool g_skinMipFilter=false;
 bool g_gestureBridge = false; // diagnostic detection until native context/weapon state is verified
 bool g_adaptiveTriggers = true;
 bool g_tentacleBridge = false; // separate, opt-in stock-game action bridge
@@ -906,6 +907,11 @@ void LoadConfig() {
 #endif
     if(g_sharedReaderSleepUs>1000)g_sharedReaderSleepUs=0;
     Log("[SharedReader] polling backoff=%uus after four yields; exact completion required",g_sharedReaderSleepUs);
+    g_skinMipFilter=GetPrivateProfileIntA("Render","SkinMipFilter",0,chosenIni)!=0;
+#ifdef D2VR_MATCHED_CAPTURE
+    g_skinMipFilter=g_skinMipFilter || GetPrivateProfileIntA("Diagnostics","SkinMipFilterExperiment",0,".\\Darkness2VR-diagnostic.ini")!=0;
+#endif
+    Log("[SkinMipFilter] requested=%d; exact first-person skin normal s2 only",int(g_skinMipFilter));
     g_specularFootprint=GetPrivateProfileIntA("Render","SpecularFootprint",0,chosenIni)!=0;
 #ifdef D2VR_MATCHED_CAPTURE
     g_sharedCaptureRotation=g_sharedCaptureRotation || GetPrivateProfileIntA("Diagnostics","SharedCaptureRotationExperiment",0,".\\Darkness2VR-diagnostic.ini")!=0;
@@ -1235,6 +1241,19 @@ void PollHotkeys() {
     if (diagnosticNow - diagnosticPoll >= 1000) {
         diagnosticPoll = diagnosticNow;
 #ifdef D2VR_MATCHED_CAPTURE
+        // Explicit lab-only runtime A/B. These two settings own no persistent
+        // resource or packet state; changing them at this render boundary leaves
+        // query completion and per-draw restoration semantics unchanged.
+        if(GetPrivateProfileIntA("Diagnostics","LiveRenderExperiments",0,".\\Darkness2VR-diagnostic.ini")) {
+            unsigned reader=GetPrivateProfileIntA("Diagnostics","SharedReaderSleepUsExperiment",g_sharedReaderSleepUs,".\\Darkness2VR-diagnostic.ini");
+            if(reader>1000)reader=0;
+            const bool skin=GetPrivateProfileIntA("Diagnostics","SkinMipFilterExperiment",g_skinMipFilter,".\\Darkness2VR-diagnostic.ini")!=0;
+            if(reader!=g_sharedReaderSleepUs || skin!=g_skinMipFilter){
+                g_sharedReaderSleepUs=reader;g_skinMipFilter=skin;
+                LARGE_INTEGER qpc{};QueryPerformanceCounter(&qpc);
+                Log("[RenderExperimentControl] readerUs=%u skinMip=%d qpc=%lld; boundary-only diagnostic A/B",reader,int(skin),qpc.QuadPart);
+            }
+        }
         if (g_smallRecordCopyControl.Armed()) {
             const int request=GetPrivateProfileIntA("Diagnostics","SmallRecordCopyRuntime",1,
                 ".\\Darkness2VR-diagnostic.ini");

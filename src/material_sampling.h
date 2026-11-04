@@ -58,4 +58,42 @@ public:
     }
     ~ScopedDiffuseFilter() {Restore();}
 };
+// Captured first-person skin: VS02A9CDE3 / PSBC938BC9, NormalMap=s2.
+// Keep anisotropy, texture resolution, LOD bias and diffuse/shadow sampling intact.
+inline bool IsFirstPersonSkin(uint32_t vs,uint32_t ps) {
+    return vs==0x02A9CDE3u && ps==0xBC938BC9u;
+}
+class ScopedSkinMipFilter {
+    IDirect3DDevice9* device_=nullptr;
+    SamplerSetter setter_=nullptr;
+    DWORD original_=D3DTEXF_NONE;
+public:
+    ScopedSkinMipFilter()=default;
+    ScopedSkinMipFilter(const ScopedSkinMipFilter&)=delete;
+    ScopedSkinMipFilter& operator=(const ScopedSkinMipFilter&)=delete;
+    bool Apply(IDirect3DDevice9* device,SamplerSetter setter) {
+        if(device_ || !device || !setter)return false;
+        D3DVIEWPORT9 viewport{};
+        if(FAILED(device->GetViewport(&viewport)) || viewport.MinZ!=0.f ||
+           viewport.MaxZ<=0.f || viewport.MaxZ>.05f)return false;
+        if(FAILED(device->GetSamplerState(2,D3DSAMP_MIPFILTER,&original_)) ||
+           original_!=D3DTEXF_POINT)return false;
+        IDirect3DBaseTexture9* base=nullptr;
+        if(FAILED(device->GetTexture(2,&base)) || !base)return false;
+        D3DSURFACE_DESC desc{};
+        const bool normal=base->GetType()==D3DRTYPE_TEXTURE &&
+            base->GetLevelCount()==11 &&
+            SUCCEEDED(static_cast<IDirect3DTexture9*>(base)->GetLevelDesc(0,&desc)) &&
+            desc.Width==1024 && desc.Height==1024 &&
+            !(desc.Usage&(D3DUSAGE_RENDERTARGET|D3DUSAGE_DEPTHSTENCIL));
+        base->Release();
+        if(!normal || FAILED(setter(device,2,D3DSAMP_MIPFILTER,D3DTEXF_LINEAR)))return false;
+        device_=device;setter_=setter;return true;
+    }
+    void Restore() {
+        if(device_){auto* device=device_;device_=nullptr;
+            setter_(device,2,D3DSAMP_MIPFILTER,original_);}
+    }
+    ~ScopedSkinMipFilter(){Restore();}
+};
 } // namespace d2vr_sampling
