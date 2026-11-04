@@ -7,15 +7,20 @@
 namespace d2vr_source_quality {
 // OFF keeps the validated baseline. Native installs the same scoped observer
 // but returns the real client size; Quality/High add approximately 26.6%/56.3% pixels.
-enum class Mode : unsigned { Off=0, Native=1, Quality=2, High=3, Exact=4 };
+enum class Mode : unsigned { Off=0, Native=1, Quality=2, High=3, Exact=4, Supersample=5 };
 struct Size { unsigned width=0,height=0; };
-inline Mode Parse(unsigned value) {return value<=4?static_cast<Mode>(value):Mode::Off;}
+inline Mode Parse(unsigned value) {return value<=5?static_cast<Mode>(value):Mode::Off;}
 inline Size Choose(Mode mode,unsigned width,unsigned height,Size exact={}) {
-    if(mode==Mode::Off || unsigned(mode)>4 || width<640 || height<480 ||
-       width>3840 || height>3840 || uint64_t(width)*height>8294400) return {};
-    if(mode==Mode::Exact) {
-        if(exact.width<640 || exact.height<480 || exact.width>3840 || exact.height>3840 ||
-           uint64_t(exact.width)*exact.height>8294400)return {};
+    // Supersample is a separate explicit diagnostic mode. Existing modes keep
+    // the 8.29M-pixel ceiling; do not silently enlarge their memory budget.
+    const bool extended=mode==Mode::Supersample;
+    const unsigned dimension=extended?4096u:3840u;
+    const uint64_t pixels=extended?16u*1024u*1024u:8294400u;
+    if(mode==Mode::Off || unsigned(mode)>5 || width<640 || height<480 ||
+       width>dimension || height>dimension || uint64_t(width)*height>pixels) return {};
+    if(mode==Mode::Exact || extended) {
+        if(exact.width<640 || exact.height<480 || exact.width>dimension || exact.height>dimension ||
+           uint64_t(exact.width)*exact.height>pixels)return {};
         return exact;
     }
     if(mode==Mode::Native) return {width,height};

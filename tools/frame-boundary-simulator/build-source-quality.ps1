@@ -39,8 +39,8 @@ try {
     if($LASTEXITCODE -ne 0){throw 'exact native source tests failed'}
     & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll') exact deferred
     if($LASTEXITCODE -ne 0){throw 'pre-window source sizing lifecycle tests failed'}
-    & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll') exact3200
-    if($LASTEXITCODE -ne 0){throw '3200 native source tests failed'}
-    & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll') exact3200 deferred
-    if($LASTEXITCODE -ne 0){throw '3200 pre-window source sizing lifecycle tests failed'}
+    & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll') supersample3345
+    if($LASTEXITCODE -ne 0){throw 'supersample native source tests failed'}
+    & .\source-quality-test.exe (Join-Path $outDir 'fixture.dll') supersample3345 deferred
+    if($LASTEXITCODE -ne 0){throw 'supersample pre-window source sizing lifecycle tests failed'}
 } finally {Pop-Location}

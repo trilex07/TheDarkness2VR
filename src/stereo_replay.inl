@@ -1120,6 +1120,9 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* dev, IDirect3DVertexShader9* sh) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::VertexShader);
+#endif
     if(d2vr_stateblock::Active(dev))return g_orig.SetVertexShader(dev,sh);
     d2vr_record_sync::NativeMutation();
     bool published=false;
@@ -1475,6 +1478,9 @@ static HRESULT STDMETHODCALLTYPE Hook_SetClipPlane(IDirect3DDevice9* dev, DWORD 
 }
 static bool IsConstantRenderStateBinding(unsigned state,unsigned value);
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderState(IDirect3DDevice9* dev, D3DRENDERSTATETYPE st, DWORD v) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::RenderState);
+#endif
     if(d2vr_stateblock::Active(dev))return g_orig.SetRenderState(dev,st,v);
     d2vr_record_sync::NativeMutation();
     if(d2vr_submission::requested && d2vr_submission::materialsRequested){
@@ -1512,6 +1518,9 @@ static DWORD ResolveSamplerValue(IDirect3DDevice9* dev, D3DSAMPLERSTATETYPE t, D
 }
 
 static HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* dev, DWORD smp, D3DSAMPLERSTATETYPE t, DWORD v) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::SamplerState);
+#endif
     if(d2vr_stateblock::Active(dev))return g_orig.SetSamplerState(dev,smp,t,v);
     d2vr_record_sync::NativeMutation();
     v = ResolveSamplerValue(dev, t, v);
@@ -1724,6 +1733,9 @@ static void NoteRecordedWorldDraw() {
     if(std::isfinite(perspective) && perspective>=1e-8f)g_hadWorldDrawThisFrame=true;
 }
 static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::DrawTotal);
+#endif
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
@@ -1734,6 +1746,7 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope driverMeasured(d2vr_hook_cost::DrawDriver);
     d2vr_command_history::Scope command(dev,d2vr_command_history::Draw,g_replayEye,0,t,sv,pc);
     return ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawPrimitive(dev, t, sv, pc)));
 #else
@@ -1741,6 +1754,9 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
 #endif
 }
 static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, INT bvi, UINT mvi, UINT nv, UINT si, UINT pc) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::DrawTotal);
+#endif
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
@@ -1752,6 +1768,7 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
 #ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope driverMeasured(d2vr_hook_cost::DrawDriver);
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawIndexed,g_replayEye,0,t,uint32_t(bvi),mvi,nv,si,pc);
     return ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawIndexedPrimitive(dev, t, bvi, mvi, nv, si, pc)));
 #else
@@ -1759,6 +1776,9 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
 #endif
 }
 static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT pc, const void* vb, UINT stride) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::DrawTotal);
+#endif
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
@@ -1770,6 +1790,7 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
 #endif
     d2vr_submission::InvalidateBindings();
 #ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope driverMeasured(d2vr_hook_cost::DrawDriver);
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawUP,g_replayEye,0,t,pc,stride);
     const HRESULT result=ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawPrimitiveUP(dev, t, pc, vb, stride)));
     d2vr_submission::InvalidateBindings();return result;
@@ -1779,6 +1800,9 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
 #endif
 }
 static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE t, UINT mvi, UINT nv, UINT pc, const void* ib, D3DFORMAT fmt, const void* vb, UINT stride) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::DrawTotal);
+#endif
     if(SkipObjectDrawForTest(t,pc)) return D3D_OK;
     if(SkipShadowDrawForTest(dev)) return D3D_OK;
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
@@ -1790,6 +1814,7 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
 #endif
     d2vr_submission::InvalidateBindings();
 #ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope driverMeasured(d2vr_hook_cost::DrawDriver);
     d2vr_command_history::Scope command(dev,d2vr_command_history::DrawIndexedUP,g_replayEye,0,t,mvi,nv,pc,fmt,stride);
     const HRESULT result=ObserveVideoDrawResult(dev,command.Finish(g_orig.DrawIndexedPrimitiveUP(dev, t, mvi, nv, pc, ib, fmt, vb, stride)));
     d2vr_submission::InvalidateBindings();return result;
@@ -2091,6 +2116,9 @@ static HRESULT STDMETHODCALLTYPE Hook_SetIndices(IDirect3DDevice9* dev, IDirect3
         g_recActive && !g_recOverflow,d2vr_submission::FrameBindings::Indices,(uintptr_t)ib,0,0,send,[&](){return published;});
 }
 static HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* ps) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::PixelShader);
+#endif
     if(d2vr_stateblock::Active(dev))return g_orig.SetPixelShader(dev,ps);
     d2vr_record_sync::NativeMutation();
     bool published=false;

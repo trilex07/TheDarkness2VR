@@ -41,7 +41,11 @@ class ClientSize {
                 hwnd_.compare_exchange_strong(empty,hwnd);
             }
         }
-        if(Eligible(ok!=FALSE,rect!=nullptr,reinterpret_cast<uintptr_t>(hwnd),
+        // Supersampling changes only the proven resource-allocation call.
+        // The general window-size call still discovers ownership, but must
+        // retain its physical dimensions for native window layout/centering.
+        const bool allocationAllowed=mode_!=Mode::Supersample || (resourceCaller_ && caller==resourceCaller_);
+        if(allocationAllowed && Eligible(ok!=FALSE,rect!=nullptr,reinterpret_cast<uintptr_t>(hwnd),
                     reinterpret_cast<uintptr_t>(hwnd_.load()),caller,
                     caller==resourceCaller_ && resourceCaller_ ? resourceCaller_ : caller_)) {
             if(rect->left==0 && rect->top==0 && rect->right>0 && rect->bottom>0) {
@@ -78,8 +82,9 @@ public:
     std::atomic<uint64_t> resourceRequests{0};
     bool Start(void* target,d2vr_native_image::Guard guard,Mode mode,HWND hwnd,uintptr_t caller,Logger log=nullptr,Size exact={},bool discoverWindow=false,uintptr_t resourceCaller=0) {
         if(installed_) return true;
-        if(instance_.load(std::memory_order_acquire) || (!hwnd && !discoverWindow) || !caller || mode==Mode::Off || unsigned(mode)>4 ||
-           (mode==Mode::Exact && !Choose(mode,640,480,exact).width) || !External(target,guard)) return false;
+        if(instance_.load(std::memory_order_acquire) || (!hwnd && !discoverWindow) || !caller || mode==Mode::Off || unsigned(mode)>5 ||
+           (mode==Mode::Supersample && (!resourceCaller || resourceCaller==caller)) ||
+           ((mode==Mode::Exact || mode==Mode::Supersample) && !Choose(mode,640,480,exact).width) || !External(target,guard)) return false;
         HMODULE self=nullptr;
         if(!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
             reinterpret_cast<LPCSTR>(&Hook),&self)) return false;

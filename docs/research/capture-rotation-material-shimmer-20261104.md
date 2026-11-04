@@ -262,3 +262,93 @@ startup-order source check because submission QI/software hooks precede its
 copy-admission marker. No fixture PASS is claimed; its recorder C++ fixture
 now includes the new diagnostic timing declarations. This source-check issue
 predates the event/timing changes and remains separately open.
+
+### Expanded hook costs, scheduling context, and coverage sampling
+Latest diagnostic adds bounded sampled wall scopes for total/driver draws and
+texture/render/sampler/shader bindings. Nested scopes must NOT be added. Villa D
+late window283frames: native VS1.42ms/frame, PS0.79, record payload0.684,
+record command0.588, prepared lookup0.193, total draw0.983 (driver0.875 nested),
+texture binding0.274, render state0.098, sampler0.089, VS/PS binding0.208/0.205.
+This does not support promising a large win from another texture-binding cache.
+Actual-source binding regression PASS1679. Production/diagnostic builds PASS.
+
+D early game scheduled CPU22.6ms/frame versus late11.98ms/frame, without a DLL
+change. Concurrent Python PID10228 consumed17,765.625ms CPU in about5s, while
+several SteamVR processes also ran. Python command prefix was tools/gen..., but
+full command was not retained before it exited. Do not infer which script it
+was or claim causation: NPC state also changed. No other process was stopped.
+Private d-process-cpu*.json and d-profile-complete.log preserve observations.
+
+Real NVIDIA RTX5070 D3D9Ex hardware fixture samples moving triangle coverage at
+32 phases. RMS error versus area reference: native0.167464, SSAA1.25 dimensions
+0.102270, SSAA1.5 0.085743, SSAA2 0.048615, MSAA4 0.133810. Flat interior pixels
+remain exact. SSAA1.25 reduces this synthetic RMS by38.9%; NOT a headset result.
+MSAA4 fails the stricter50-percent error-energy gate and is not selected.
+INTZ rejects hardware multisampling2/4/8 on this adapter (8876086A), although
+color formats and D24S8 support it. Native sampled-depth/MRT ownership therefore
+prevents treating MSAA as a simple output-target flag.
+Sources: test/coverage_sampling_gpu_test.cpp; private build/coverage-sampling-gpu.log.
+Microsoft contracts: https://learn.microsoft.com/en-us/windows/win32/api/d3d9/nf-d3d9-idirect3ddevice9-stretchrect
+and https://learn.microsoft.com/en-us/windows/win32/api/d3d9/nf-d3d9-idirect3ddevice9-createrendertarget
+
+SourceQuality5 is a separate explicit DIAGNOSTIC experiment, bounded4096/16Mpix;
+existing0..4 retain their old8.2944M cap. Old test wrongly expected Exact3200x3264
+to pass despite that cap; corrected without enlarging existing modes. Source
+observer ABI/caller/window/failure/original-image tests PASS five variants.
+New lab requests3345x3410 (1.25x each dimension) while XR remains2676x2728.
+Installed diagnostic A119778BAA847A46559F159AC7E98D554FE5B0CABD4DD8640ACEAB2DF9E7F94F.
+Startup RT0 matches requested size; upstream geometry/depth and gameplay cost
+are NOT YET VERIFIED. Initial Quest-default run is excluded; lab settings now
+explicit PSVR2. First PSVR2 run only reached intro video, then native scene
+counter advanced without swapchain presents. It is not gameplay evidence.
+
+Fresh simulator controllers start untracked: pointer actions stay inactive and
+expire. Initializing both controller poses yields actual input_delivered acks.
+tools/simulator_control.py initialize now performs acknowledged initialization.
+Do not change the simulator's action-validity checks to hide this condition.
+
+Community comparison: UEVR issue299 reports low CPU/GPU utilization with poor
+performance, without establishing our engine's cause:
+https://github.com/praydog/UEVR/issues/299
+Valve discusses specular aliasing as a separate VR rendering problem:
+https://media.steampowered.com/apps/valve/2015/Alex_Vlachos_Advanced_VR_Rendering_GDC2015.pdf
+EDVR's own AA investigation also distinguishes texture/specular aliasing from
+geometry coverage; these are comparison leads, not transferable fixes:
+https://github.com/characterecho-sean/edvr-unofficial-patch/blob/main/docs/anti-aliasing.md
+
+The supersample-lab wrapper successfully restored every original payload and all4
+save/settings hashes; private post-lab-restored.json. Second run also intro-only,
+no world performance claim. Escalated READ-ONLY GetWindowRect confirmed native
+HWND11207886 at(-712,-1165)-(1228,-65): entire window above monitor. Coordinates
+match centering a3345x3410 request on1920x1080 while retaining the physical1940x1100
+window; this is a layout-side-effect hypothesis, not disassembly proof.
+
+Follow-up narrows Mode5 to verified resourceCaller only. General native size
+call still discovers/validates HWND ownership but returns original physical
+RECT, including native last-error and one forward. Existing modes unchanged.
+Fixture explicitly checks physical general RECT and3345x3410 resource RECT,
+including deferred discovery. Five variants PASS. Diagnostic build PASS.
+Fresh resource-only lab candidate SHA0846EC2095B737D98B11B47EBDBEDEABE9C45A7C279A2F4D06BD8E046E556BA9.
+Runtime investigation continues in test-output/coverage-resource-lab-20261104;
+use supersample wrapper Restore for that lab when closed.
+
+Resource-only runtime PASSED actual Villa loading, both hands visible. One
+matched capture COMPLETE at TEMP/Darkness2VR-matched-10552-104-11217, draws888/eye.
+1738 draw records use3345x3410 viewports; edge sampler INTZ depth is3345x3410;
+post inputs A16B16G16R16F and INTZ3345x3410. Both final eyes2676x2728. This is
+actual higher-resolution native geometry/depth, not enlarged output alone.
+Private world-villa.png/world-final.log preserve scene and measurements.
+
+Current cadence39-40FPS and scheduled render CPU~22.6ms/frame are CONTAMINATED:
+5.10s system sample: Python46072 CPU19078ms and39288 CPU16406ms (~6.96cores
+combined). Read-only CIM identified both as tools/generate-polish-natural.py,
+separate asylum dialogue batches with --threads2; SteamVR additionally busy.
+No process was stopped. Do not attribute this result solely to supersampling,
+the game, or a suspected regressed mod. Original user's low-FPS cause remains
+unproven. Full command paths remain private in world-background-context.json.
+
+Resource-only lab ENDED: exact user DLL/INI and all4 saves restored by wrapper.
+One-shot capture INI reset to its receipt-verified candidate before rollback.
+Mode5 startup now also rejects missing/non-distinct allocation caller (fail
+closed); this adds guard tests, not a runtime-size behavior change.
+HMD edge/hand shimmer acceptance and uncontaminated whole-game FPS remain OPEN.

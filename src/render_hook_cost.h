@@ -2,7 +2,7 @@
 #include <windows.h>
 #include <cstdint>
 namespace d2vr_hook_cost {
-enum Stage { VertexConstants,PixelConstants,RecordEmit,RecordPayload,PreparedPacket,Count };
+enum Stage { VertexConstants,PixelConstants,RecordEmit,RecordPayload,PreparedPacket,DrawTotal,DrawDriver,TextureBinding,RenderState,SamplerState,VertexShader,PixelShader,Count };
 #ifdef D2VR_MATCHED_CAPTURE
 inline bool enabled=false;
 struct Entry {uint64_t calls=0,samples=0,ticks=0;};
@@ -27,7 +27,7 @@ template<class Log> void Report(Log log,uint64_t frame){
     static thread_local uint64_t firstFrame=frame;
     auto now=GetTickCount64();if(now-start<5000)return;
     LARGE_INTEGER frequency{};if(!QueryPerformanceFrequency(&frequency))return;
-    const char* names[]={"native VS constants","native PS constants","record command","record payload","prepared vertex lookup"};
+    const char* names[]={"native VS constants","native PS constants","record command","record payload","prepared vertex lookup","draw total","draw driver","texture binding","render state","sampler state","vertex shader binding","pixel shader binding"};
     for(unsigned s=0;s<Count;++s){const auto& e=entries[s];if(e.samples){
         double mean=double(e.ticks)*1000.0/double(frequency.QuadPart)/double(e.samples);
         log("[HookCost] %s calls=%llu samples=%llu mean=%.6fms estimated=%.3fms frames=%llu elapsed=%llums; sampled wall, nested scopes NOT additive",names[s],e.calls,e.samples,mean,mean*double(e.calls),frame-firstFrame,now-start);

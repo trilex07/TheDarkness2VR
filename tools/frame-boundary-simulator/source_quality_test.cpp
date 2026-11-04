@@ -16,7 +16,7 @@ static std::vector<unsigned char> Text() {
 }
 int main(int argc,char** argv) {
     const auto originalText=Text();
-    assert(Parse(0)==Mode::Off && Parse(3)==Mode::High && Parse(4)==Mode::Exact && Parse(5)==Mode::Off);
+    assert(Parse(0)==Mode::Off && Parse(3)==Mode::High && Parse(4)==Mode::Exact && Parse(5)==Mode::Supersample && Parse(6)==Mode::Off);
     assert(Parse((std::numeric_limits<unsigned>::max)())==Mode::Off);
     const auto native=Choose(Mode::Native,1920,1071),quality=Choose(Mode::Quality,1920,1071),high=Choose(Mode::High,1920,1071);
     assert(native.width==1920 && native.height==1071);
@@ -29,8 +29,13 @@ int main(int argc,char** argv) {
     const auto exact=Choose(Mode::Exact,1920,1071,{2676,2728});
     assert(exact.width==2676 && exact.height==2728);
     const auto larger=Choose(Mode::Exact,1920,1071,{3200,3264});
-    assert(larger.width==3200 && larger.height==3264);
-    assert(Choose(Mode::Exact,3200,3264,{3200,3264}).width==3200);
+    assert(!larger.width); // rollback baseline ceiling remains unchanged
+    assert(!Choose(Mode::Exact,3200,3264,{3200,3264}).width);
+    const auto supersampled=Choose(Mode::Supersample,1920,1071,{3345,3410});
+    assert(supersampled.width==3345 && supersampled.height==3410);
+    assert(Choose(Mode::Supersample,3345,3410,{3345,3410}).width==3345);
+    assert(!Choose(Mode::Supersample,1920,1071,{4097,3410}).width);
+    assert(!Choose(Mode::Supersample,1920,1071,{3345,0}).width);
     assert(!Choose(Mode::Native,3200,3264).width);
     assert(!Choose(Mode::Exact,1920,1071,{3200,3265}).width);
     assert(!Choose(Mode::Exact,3200,3265,{3200,3264}).width);
@@ -53,11 +58,11 @@ int main(int argc,char** argv) {
     assert(!Eligible(true,true,2,1,4,4) && !Eligible(true,true,1,1,5,4));
     assert(!Eligible(true,true,0,0,4,4) && !Eligible(true,true,1,1,0,0));
     assert(argc>=2 && argc<=4);
-    const bool large=argc>=3 && !std::strcmp(argv[2],"exact3200");
+    const bool large=argc>=3 && !std::strcmp(argv[2],"supersample3345");
     const bool exactMode=large || (argc>=3 && !std::strcmp(argv[2],"exact"));
     const bool deferred=argc==4 && !std::strcmp(argv[3],"deferred");
-    const auto selected=exactMode?Mode::Exact:Mode::Quality;
-    const LONG expectedW=large?3200:(exactMode?2676:2160),expectedH=large?3264:(exactMode?2728:1204);
+    const auto selected=large?Mode::Supersample:exactMode?Mode::Exact:Mode::Quality;
+    const LONG expectedW=large?3345:(exactMode?2676:2160),expectedH=large?3410:(exactMode?2728:1204);
     HMODULE fixture=LoadLibraryA(argv[1]);assert(fixture);
     using Query=BOOL(WINAPI*)(HWND,LPRECT);
     auto query=reinterpret_cast<Query>(GetProcAddress(fixture,"_SizeQuery@8"));
@@ -80,8 +85,12 @@ int main(int argc,char** argv) {
     assert(!qualityHook.Start(query,guard,Mode::Off,window,nativeCaller));
     assert(!qualityHook.Start(query,guard,Mode::Exact,window,nativeCaller,nullptr,{3840,3840}));
     assert(!qualityHook.Start(query,guard,selected,nullptr,nativeCaller,nullptr,{2676,2728}));
+    if(large) {
+        assert(!qualityHook.Start(query,guard,selected,window,nativeCaller,nullptr,{3345,3410}));
+        assert(!qualityHook.Start(query,guard,selected,window,nativeCaller,nullptr,{3345,3410},false,nativeCaller));
+    }
     assert(qualityHook.Start(query,guard,selected,deferred?nullptr:window,nativeCaller,nullptr,
-        {large?3200u:2676u,large?3264u:2728u},deferred,resourceCaller));
+        {large?3345u:2676u,large?3410u:2728u},deferred,resourceCaller));
     if(deferred) {
         assert(invoke(window,&rect) && rect.right==1920 && qualityHook.requests==0); // invalid HWND
         window=CreateWindowExW(0,L"STATIC",L"source sizing fixture",WS_POPUP,0,0,640,480,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
@@ -90,25 +99,27 @@ int main(int argc,char** argv) {
         assert(resource(window,&rect) && rect.right==1920 && qualityHook.requests==0); // resource caller cannot discover a window
         assert(!invoke(window,nullptr) && qualityHook.requests==0);
     }
+    const LONG windowW=large?1920:expectedW,windowH=large?1071:expectedH;
+    const unsigned windowRequests=large?0u:1u;
     auto before=calls();assert(invoke(window,&rect));
     assert(calls()==before+1 && GetLastError()==0x1234);
-    assert(rect.left==0 && rect.top==0 && rect.right==expectedW && rect.bottom==expectedH && qualityHook.requests==1);
+    assert(rect.left==0 && rect.top==0 && rect.right==windowW && rect.bottom==windowH && qualityHook.requests==windowRequests);
     before=calls();assert(other(window,&rect));
-    assert(calls()==before+1 && rect.right==1920 && rect.bottom==1071 && qualityHook.requests==1);
+    assert(calls()==before+1 && rect.right==1920 && rect.bottom==1071 && qualityHook.requests==windowRequests);
     before=calls();assert(!invoke(reinterpret_cast<HWND>(2),&rect));
-    assert(calls()==before+1 && GetLastError()==0x1234 && rect.right==1920 && qualityHook.requests==1);
+    assert(calls()==before+1 && GetLastError()==0x1234 && rect.right==1920 && qualityHook.requests==windowRequests);
     before=calls();assert(!invoke(window,nullptr));
-    assert(calls()==before+1 && GetLastError()==0x1234 && qualityHook.requests==1);
+    assert(calls()==before+1 && GetLastError()==0x1234 && qualityHook.requests==windowRequests);
     qualityHook.Window(reinterpret_cast<HWND>(3));
-    assert(invoke(window,&rect) && rect.right==1920 && qualityHook.requests==1);
+    assert(invoke(window,&rect) && rect.right==1920 && qualityHook.requests==windowRequests);
     qualityHook.Window(window);
-    for(unsigned i=0;i<1000;++i) {assert(invoke(window,&rect));assert(rect.right==expectedW && rect.bottom==expectedH);}
-    assert(qualityHook.requests==1001);
+    for(unsigned i=0;i<1000;++i) {assert(invoke(window,&rect));assert(rect.right==windowW && rect.bottom==windowH);}
+    assert(qualityHook.requests==windowRequests*1001);
     before=calls();assert(resource(window,&rect));
     assert(calls()==before+1 && GetLastError()==0x1234 && rect.right==expectedW && rect.bottom==expectedH);
-    assert(qualityHook.requests==1002);
-    assert(resource(reinterpret_cast<HWND>(3),&rect) && rect.right==1920 && qualityHook.requests==1002);
+    assert(qualityHook.requests==windowRequests*1001+1);
+    assert(resource(reinterpret_cast<HWND>(3),&rect) && rect.right==1920 && qualityHook.requests==windowRequests*1001+1);
     assert(Text()==originalText);
     if(deferred) assert(DestroyWindow(window));
-    std::printf("PASS source quality mode=%s: bounded/aspect/exact sizing, native ABI, exact caller/window, failure/null, one forward, last error, image denial\n",large?"Exact3200x3264":(exactMode?"Exact2676x2728":"Quality"));
+    std::printf("PASS source quality mode=%s: bounded/aspect/exact sizing, native ABI, exact caller/window, failure/null, one forward, last error, image denial\n",large?"Supersample3345x3410":(exactMode?"Exact2676x2728":"Quality"));
 }

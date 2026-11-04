@@ -1028,13 +1028,13 @@ void LoadConfig() {
 #ifdef D2VR_MATCHED_CAPTURE
     const unsigned sourceQualityRequested=GetPrivateProfileIntA("Render","SourceQuality",0,chosenIni);
     g_sourceQualityMode=d2vr_source_quality::Parse(sourceQualityRequested);
-    if(sourceQualityRequested>4) Log("[SourceQuality] invalid mode=%u; OFF retained",sourceQualityRequested);
+    if(sourceQualityRequested>5) Log("[SourceQuality] invalid mode=%u; OFF retained",sourceQualityRequested);
 #endif
     g_stateBlockHookEnabled = GetPrivateProfileIntA("Render", "StateBlockHook", 0, chosenIni) != 0;
     if (g_renderW < 1280 || g_renderW > 7680) g_renderW = 2560;
     if (g_renderH < 720 || g_renderH > 4320) g_renderH = 1440;
 #ifdef D2VR_MATCHED_CAPTURE
-    if(g_sourceQualityMode==d2vr_source_quality::Mode::Exact)
+    if(g_sourceQualityMode==d2vr_source_quality::Mode::Exact || g_sourceQualityMode==d2vr_source_quality::Mode::Supersample)
         Log("[NativeSourceTarget] requested=%dx%d per eye; engine sizing mode=Exact; actual geometry/depth/output verification required",g_renderW,g_renderH);
 #endif
 
@@ -2733,6 +2733,9 @@ HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDi
 // Evolution Engine binds INTZ to sampler s0 (SetTexture(0, intzTex)) during deferred lighting/shadows
 // right after the opaque 3D geometry pass completes (see PixelShaders/C891DB74.txt & 3FF3A68C.txt).
 HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* dev, DWORD Stage, IDirect3DBaseTexture9* pTexture) {
+#ifdef D2VR_MATCHED_CAPTURE
+    d2vr_hook_cost::Scope measured(d2vr_hook_cost::TextureBinding);
+#endif
     if(d2vr_stateblock::Active(dev))return g_origSetTexture(dev,Stage,pTexture);
     const HRESULT result = g_origSetTexture(dev, Stage, pTexture);
     if (FAILED(result)) return result;

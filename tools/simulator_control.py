@@ -10,11 +10,12 @@ from io import BytesIO
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools-local/OpenXR-Simulator/mcp-server"))
 from ui_targeting import UiAutomation
+from atomic_json_file import atomic_json
 
 
 async def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("action", choices=["capture", "click", "scroll"])
+    p.add_argument("action", choices=["capture", "click", "scroll", "initialize"])
     p.add_argument("--button", default="primary")
     p.add_argument("--hand", choices=["left", "right"], default="right")
     p.add_argument("--x", type=float, default=.5)
@@ -36,6 +37,31 @@ async def main():
         p.error("--name must be a file stem")
     lab = args.lab.resolve()
     ui = UiAutomation(lab / "runtime")
+    if args.action == "initialize":
+        # Fresh simulator sessions have untracked controllers. Pointer delivery
+        # correctly refuses to acknowledge inactive actions until poses exist.
+        receipts = []
+        for hand in (0, 1):
+            ack = lab / "runtime/command_ack.json"
+            old = ack.read_bytes() if ack.exists() else b""
+            atomic_json(lab / "runtime/controller_pose_command.json", dict(
+                hand=hand, posX=.25 if hand else -.25, posY=-.25,
+                posZ=-.5, yaw=0, pitch=0, trigger=0))
+            for _ in range(150):
+                try:
+                    raw = ack.read_bytes()
+                    result = json.loads(raw)
+                    if raw != old and result.get("command") == "controller_pose" and result.get("success"):
+                        receipts.append(result)
+                        break
+                except (OSError, ValueError):
+                    pass
+                await asyncio.sleep(.02)
+            else:
+                raise RuntimeError(f"No fresh controller pose acknowledgment for hand {hand}")
+        (lab / f"{args.name}.json").write_text(json.dumps(receipts, indent=2))
+        print(json.dumps({"result": "controllers_initialized", "hands": len(receipts)}))
+        return
     info, pixels = await ui.capture("left", max_width=1000)
     result = info
     if args.action != "capture":

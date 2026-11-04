@@ -466,3 +466,41 @@ history accidentally. Baseline remains unchanged.
   tools/simulator-lab.ps1 Restore -LabDirectory test-output/gpu-completion-lab-20261104,
   restoring ALL4 files from its saves.json and verifying all hashes. Do not use
   old lab rollback or overwrite frozen user main INI/EXE/loader. No shutdown.
+
+### Supersample lab checkpoint (supersedes prior active-lab notes)
+- gpu-completion lab ENDED; own user4A/3A and all4 saves restored before next lab.
+- ACTIVE test-output/coverage-supersample-lab-20261104, ownership receipt is
+  owned-process.json (second PSVR2 launch). Never assume PID from this document.
+- Close only its verified PID/path/start. Restore via tools/supersample-lab.ps1
+  -Action Restore -LabDirectory test-output/coverage-supersample-lab-20261104.
+  Wrapper restores protected main INI FIRST, ordinary DLL/diagnostic rollback,
+  then all4 fresh save/settings backups. Ordinary lab Restore alone will reject
+  the intentionally changed main INI. User main INI68EE..., DLL4A..., diag3A...
+  and global SteamVR must remain/restored. No push/main/shutdown authorized now.
+- SourceQuality5 requests3345x3410; XR recommended2676x2728 unchanged. Both builds
+  PASS; real GPU coverage fixture improves synthetic edges, not HMD acceptance.
+  Upstream geometry/depth/world timing remain OPEN. First PSVR2 run intro-only
+  excluded; second launch currently being navigated. Initialize simulator hands
+  before pointer commands (tools/simulator_control.py initialize --lab ...).
+- More hook cost evidence and background load correlation appended to research.
+  No validated whole-game FPS improvement yet. Keep default experimental waits,
+  reader timers and material changes OFF for user until proper acceptance.
+
+### Resource-only supersample checkpoint
+- coverage-supersample lab ENDED: exact4A/3A/68EE and all4 saves restored; receipt
+  post-lab-restored.json. Both runs intro-only; native window verified entirely
+  off-monitor. No gameplay/AA/FPS acceptance from these runs.
+- NEW ACTIVE coverage-resource-lab-20261104: resource-only Mode5 (physical window
+  RECT retained at general sizing caller). SHA0846EC2095B737D98B11B47EBDBEDEABE9C45A7C279A2F4D06BD8E046E556BA9.
+  Verify live ownership receipt when navigating/stopping. Use SAME wrapper Restore
+  with NEW directory, not old ordinary lab restore. All4 save backups included.
+
+### Resource-only runtime/restore result
+- Resource-only lab ENDED, wrapper restoration succeeded exact4A/3A/68EE +4saves.
+- Villa world capture COMPLETE TEMP/Darkness2VR-matched-10552-104-11217: native
+  geometry/depth3345x3410; final2676x2728 BOTH eyes; both hands visible.
+- ~40FPS/22ms CPU run is CONTAMINATED by two concurrent natural Polish dubbing
+  Python batches consuming~7 logical cores plus SteamVR. No foreign processes
+  stopped. Do not call this an SSAA FPS regression or original-cause proof.
+- Subsequent work: controlled native2676 comparison, temporal edge proof, clean
+  CPU repro when background allows. No HMD acceptance, main merge or shutdown.
