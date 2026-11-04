@@ -1,5 +1,18 @@
 # Baseline and current MAIN candidate
 
+## Accepted Steam baseline: tentacle targeting, eye glow and camera leveling (2026-11-04)
+
+User accepted installed candidate and requested main integration. Source
+83ebbd9d19c14df3e3eff9c291f188cc99238d53, installation report06b416f8.
+DLL B32E1FFF80F933EA606980B863A97FCACC45068EB1938EC532F2E3F11A1E0F30;
+diagnostic INI117230AC717C2A5FE7C1CA82BF6A693B2A056855D4B47F18CCA941325462C076.
+Gaze acquisition with tracked left-controller fallback, exact native eye-glow
+attachment in both eyes, and native pitch/roll leveling on recenter. Prior
+edge/shadow and VR settings features retained. Functional user acceptance;
+not exhaustive coverage. Main INI/EXE/loader unchanged, SS125 preserved.
+Frozen package build/tentacle-aim-light-recenter-20261104/Install.ps1, exact
+rollback to prior DLL51D08FD3. No redeployment on integration. Evidence:
+handoffs/HANDOFF-tentacle-aim-light-recenter-20261104.md.
 ## Accepted Steam baseline: outline coverage and scoped shadows (2026-11-04)
 
 User tested the installed EdgeShadowExperiment and reported "tak jest dobrze",
