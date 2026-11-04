@@ -1,5 +1,20 @@
 # Baseline and current MAIN candidate
 
+## Accepted Steam baseline: menus, wheel and wheel-only equip (2026-11-04)
+
+User tested and accepted installed candidate, requested main integration.
+Source766577029f7eb7a7eb210fc3204323296d84970e, DLL
+9476A8D55F0891F698C4005250D5D0B6392EBF37C84E96EF5A3012EEA457FB86.
+Diagnostic117230AC717C2A5FE7C1CA82BF6A693B2A056855D4B47F18CCA941325462C076;
+main INI22862511B4E5697F37413802D3B562DD388ED510C68D0E1CD745E629A5A79B08.
+Title/front cinema, larger menus, pause FP hide, head-facing wheel and shotgun
+icon; wheel exclusively owns loadout switching. DLC yellow marker repair:
+H.Script.cache692FC3CD8D850E72CB3C168F9A8B559E0FDF0F04FC6E904D4D17C8EFD5FC986B,
+toc0B9A879C0EB3C88E693747397C3D5D08A861FD3352CC5B51C28A3738DF1CFB3E.
+Package build/wheel-only-equip-20261104, exact rollback to prior menu candidate;
+build/menu-wheel-input-20261104 restores preceding accepted tentacle baseline.
+User functional acceptance, not exhaustive coverage. No redeployment on merge.
+
 ## Accepted Steam baseline: tentacle targeting, eye glow and camera leveling (2026-11-04)
 
 User accepted installed candidate and requested main integration. Source
