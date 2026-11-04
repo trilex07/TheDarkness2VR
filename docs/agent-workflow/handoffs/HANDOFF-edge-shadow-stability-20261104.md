@@ -112,3 +112,15 @@ No active emulator/game should remain. Candidate is separate from accepted Steam
    necessary before accepting/integrating. Preserve exact rollback/current SS.
 3. If remaining local lights differ, identify their actual consumer; do not
    extend C4 fix to omni/atlas paths by guesses. No shader/AA FPS gain claim.
+
+## User-authorized Steam trial (2026-11-04)
+
+User requested deployment for headset testing. With game closed, frozen
+Install.ps1 -Mode EdgeShadowExperiment and -VerifyOnly PASS. CURRENT Steam DLL
+51D08FD328EB11CDD391CD4E457C37587B97983A3F3611FDC0F8644883A6230A;
+diagnostic INI117230AC717C2A5FE7C1CA82BF6A693B2A056855D4B47F18CCA941325462C076.
+ShadowClipCoordinates=1,OutlineCoverageExperiment=1,simulator/collectors OFF.
+Protected main INI/EXE/loader verified unchanged. No game launched by agent.
+The earlier restored-baseline note describes the completed emulator lab, not
+current deployment. User headset acceptance PENDING. Rollback: this frozen
+package Install.ps1 -Restore with game closed. Baseline acceptance unchanged.
