@@ -536,3 +536,28 @@ history accidentally. Baseline remains unchanged.
   rejection (including VerifyOnly and Restore). Actual installer fixture PASS;
   no install implied. DefaultCombined keeps experimentsOFF. Never run the old
   two-target installer to restore a three-target Coverage trial.
+
+### Quality combat lab checkpoint (ENDED; restoration below)
+- Frozen build/combined-quality-20261104 installed Coverage, then simulator-lab
+  overlay test-output/quality-combat-coverage-20261104. ACTIVE owned process:
+  consult owned-process.json (PID27372/start/path), never kill by name alone.
+- Restore order: stop verified owned process, simulator-lab Restore with current
+  directory, THEN three-target frozen package Install.ps1 -Restore, THEN all4
+  saves/settings from current saves.json. Those backups point to ORIGINAL files
+  in quality-combat-material-20261104/save-backup. Never overwrite backups.
+- Original user save replaced temporarily by disposable restaurant checkpoint.
+  Material lab ended intro-only; Coverage reached actual restaurant world with
+  both tracked hands and right pistol. Four pose capture/ack pairs retained.
+- Active world cadence62.8/66.2/s (not headset FPS). Concurrent NEW Python jobs
+  14412/46544 consumed3.92+3.15 logical cores over12s; game1.67 cores. No foreign
+  process changed. Not a clean supersample-vs-native combat comparison.
+- Initial trigger pose commands acknowledged but keyboard state overwrites their
+  trigger on later simulator polls: NOT proof of sustained trigger or firing.
+  Official UI pointer trigger hold/release delivered; actual shots NOT verified.
+  Scripted scene cycles through world/video/death; exclude mixed cadence windows.
+- Unresolved: genuine game temporal edge efficacy, clean worst-case frame cause,
+  physical HMD acceptance. No push/main/shutdown authorization inferred.
+- ENDED: verified PID27372 stopped. Inner simulator Restore then outer quality
+  Restore PASS. DLL4A0320B2/diagnostic3A3FD698/render68EE5685 confirmed; all4
+  original saves/settings hashes verified after restoration. Private receipts
+  restored-hashes.json/restored-saves.json. No owned game process remains.

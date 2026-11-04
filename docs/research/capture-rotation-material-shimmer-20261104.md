@@ -404,3 +404,36 @@ from those sparse names alone.
 ALL four newer labs ENDED with wrapper Restore PASS: exact user4A/3A/68EE,
 EXE/loader unchanged, all4 fresh saves/settings restored. Final clean lab has
 restored-hashes.json. No permanent runtime, priority or supersampling change.
+
+## Frozen quality package and restaurant trial
+
+Three-target package build/combined-quality-20261104 (tooling source2a5d36c8,
+DLL E50496EB) was actually installed with Material, then Coverage. Each mode
+preserves existing scene/input/stereo fixes. Material changes only scoped skin
+shader footprint/mip filtering; Coverage additionally requests resource-only
+3345x3410, retaining2676x2728 final eyes. Default Combined disables experiments.
+The package has exact DLL+bothINI rollback; do not use an older two-file restore.
+
+Private trials quality-combat-material-20261104 and
+quality-combat-coverage-20261104 use a disposable restaurant checkpoint, with
+four fresh original user files backed up beforehand. Material reached intro
+only. Coverage reached the actual restaurant shooting scene: world geometry,
+both tracked hands and right ornate pistol visible. Four changed controller
+poses have fresh acknowledgments and eye screenshots. This verifies a bounded
+visible update, not all hand animations or headset acceptance.
+
+Pure-world log windows show62.8/66.2 world-bearing layers/s. Other windows mix
+world/video and must be excluded. Twelve-second process sample contains NEW
+Python14412/46544 using3.92+3.15 logical cores; game1.67, vrserver.88 and two
+vrwebhelpers.77/.76. No foreign process altered. Thus not a clean combat
+comparison and not a supersampling performance verdict.
+
+Trigger command receipt alone is inadequate: simulator keyboard poll overwrites
+controller_pose trigger values on later updates. Official UI pointer trigger
+hold/release delivered, but native shot consumption was not established in
+this looping scripted scene. Do not report successful firing from these receipts.
+
+Both labs ENDED. Verified owned Coverage PID27372 stopped; simulator overlay
+restored first, then three-target quality package restored. Independent hashes
+confirm original4A/3A/68EE; all4 original user files restored and hash-verified.
+EXE/loader protected. Frozen candidate remains separate, no main/push/shutdown.
