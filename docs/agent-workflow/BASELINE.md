@@ -1,5 +1,19 @@
 # Baseline and current MAIN candidate
 
+## Accepted Steam baseline: shrine symbols and Continue hands (2026-11-05)
+
+User tested the six-file menu-hands-shrine candidate, accepted it and requested
+main integration. DLL7DD55BA4CF6E05E8FE460CBF0529FE212E68D4072D12C3D5FE5F93DE1CFE81A1
+from ba8f1eb3; asset builder a72c5714; deployment report e5d6e5e1.
+Diagnostic117230AC and main INI22862511 remain unchanged. Base H.Misc.cache
+F2BB2CA69CCBF1B88830C4DABC5CA9C0BDFD314C5B9DF94A98A0601B77117A71,
+toc0A9920AB53AD35235BB5D89D8FE82F7914B3889F56655DA4E39FAA2422928F48.
+Simulator OFF; accepted previous rendering/menu/two-hand changes retained.
+Frozen package build/menu-hands-shrine-20261105/Install.ps1; -Restore recovers
+the exact prior six-file baseline. No redeployment on main integration.
+Functional user acceptance; Circle objective/trail visual issue remains OPEN.
+Details: handoffs/HANDOFF-shrine-icon-20261105.md.
+
 ## Prepared shrine/menu/two-hand candidate (2026-11-04, NOT installed)
 
 Source4dca29fe on codex/shrine-menu-twohand-20261104; frozen DLL
