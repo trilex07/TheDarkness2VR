@@ -200,6 +200,24 @@ int main() {
             Check(reads==5); // nested lifetime cannot replace outer observation
         }
         Check(!d2vr_input::PollBoolSnapshot::Read(2,observe));Check(reads==6);
+        {
+            using F=d2vr_input::FrameBoolSnapshot;F::Reset();
+            int n=0;const auto obs=[&](){++n;return (n%2)!=0;};
+            Check(F::Read(1,10,1000,50,obs));                       // first: observe (n=1 true)
+            for(int i=0;i<500;++i)Check(F::Read(1,10,1000+i%40,50,obs)); // per-draw reuse
+            Check(n==1);
+            Check(!F::Read(1,11,1001,50,obs));Check(n==2);          // new frame
+            Check(F::Read(2,11,1001,50,obs));Check(n==3);           // owner/context changed
+            Check(F::Read(2,11,1051,50,obs));Check(n==3);           // age==max: reuse
+            Check(!F::Read(2,11,1052,50,obs));Check(n==4);          // stalled frame id: aged out
+            Check(F::Read(2,11,900,50,obs));Check(n==5);            // clock went backwards
+            {
+                d2vr_input::PollBoolSnapshot poll;                  // poll scope wins
+                Check(!F::Read(2,11,900,50,obs));Check(n==6);
+                Check(!F::Read(2,11,900,50,obs));Check(n==6);
+            }
+            Check(F::Read(2,11,900,50,obs));Check(n==6);            // frame entry untouched by poll
+        }
         d2vr_input::ChoicePauseButton b;
         Check(!d2vr_action_movies::ProtectRapidChoices(d2vr_action_movies::Conversation));
         Check(d2vr_action_movies::ProtectRapidChoices(d2vr_action_movies::Qte));

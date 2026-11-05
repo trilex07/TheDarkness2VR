@@ -161,6 +161,13 @@ static bool MenuConfirmActive() {
     const uint64_t key=(uint64_t(uint32_t(g_nativeRegionManager))<<1)|unsigned(g_in3DGameplayMode);
     return d2vr_input::PollBoolSnapshot::Read(key,ObserveMenuConfirmActive);
 }
+// Per-draw render callers only (via NativeMenuPresentationActive). One native
+// pause-graph observation per frame (or per 50 ms if frame ids stall).
+static bool MenuConfirmActiveThisFrame() {
+    const uint64_t key=(uint64_t(uint32_t(g_nativeRegionManager))<<1)|unsigned(g_in3DGameplayMode);
+    const uint64_t frame=(uint64_t(uint32_t(g_frameId))<<32)|uint32_t(g_backupFrameCounter);
+    return d2vr_input::FrameBoolSnapshot::Read(key,frame,GetTickCount64(),50,ObserveMenuConfirmActive);
+}
 static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
     s.time=GetTickCount64(); s.space=quad.space;
