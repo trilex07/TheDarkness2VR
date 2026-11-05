@@ -2,7 +2,8 @@
 static std::atomic<uint64_t> g_nativeActionMovies{0},g_nativeVrMenu{0};
 static unsigned NativeVrMenuFlags(){const auto v=g_nativeVrMenu.load(std::memory_order_acquire);const auto now=GetTickCount64();return now>=(v>>8) && now-(v>>8)<150 ? unsigned(v&255):0;}
 static bool NativeVrMainMenu(){return (NativeVrMenuFlags()&d2vr_action_movies::Main)!=0;}
-static bool NativeMenuPresentationActive(){return NativeVrMenuFlags()!=0 || MenuConfirmActive();}
+static bool MenuConfirmActiveThisFrame(); // eye_gaze.inl: frame-cached render-path read
+static bool NativeMenuPresentationActive(){return NativeVrMenuFlags()!=0 || MenuConfirmActiveThisFrame();}
 static unsigned NativeActionMovies() {
     const auto value=g_nativeActionMovies.load(std::memory_order_acquire);
     const auto now=GetTickCount64();

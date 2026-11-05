@@ -1949,6 +1949,7 @@ static d2vr_replay::StereoParams MakeEyeParams(int eye);
 static const d2vr_replay::StereoParams& EyeParamsRef(int eye);
 #ifdef D2VR_MATCHED_CAPTURE
 extern volatile LONG g_frameId;
+extern volatile LONG g_backupFrameCounter;
 static void MatchedCaptureDraw(IDirect3DDevice9*,int,bool);
 static void MatchedCaptureDrawReturned(IDirect3DDevice9*,HRESULT);
 static void MatchedCaptureBlit(int,const StereoCBData&);
