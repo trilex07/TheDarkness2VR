@@ -85,6 +85,10 @@ Log:
 Mission guidance: hold the upper button on the right controller (Circle) for
 one second to show the objective text. The screen-space destination marker is
 hidden in the local HUD asset patch; follow the native purple world guidance.
+Keep Circle held to maintain the native guidance input; a short tap retains
+the unlocked ability. A new press cancels any remaining previous tap pulse.
+Double Triangle pauses gameplay. Continue restores tracked hands using the
+game's pause state, without requiring another double Triangle.
 
 Experimental performance candidate (2026-11-03):
 Render/ShaderDemandCache=1 enables indexed, demand-prioritized shader learning

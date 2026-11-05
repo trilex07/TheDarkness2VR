@@ -63,6 +63,7 @@ static void ApplyProtectedLeftThrow(XINPUT_GAMEPAD& gp) {
     NativeGameplaySample owner;
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     const bool context=g_haveViews && g_in3DGameplayMode && !g_protectedRightTentacle.paused && (g_trackedFrame.flags&tracked)==tracked &&
+        !(gp.wButtons&XINPUT_GAMEPAD_START) &&
         g_headGeometry && g_headGeometryReferenceValid && gp.bLeftTrigger<30 && gp.bRightTrigger<30 &&
         CopyNativeGameplay(owner) &&
         ProtectedAimCameraOwned(reinterpret_cast<void*>(owner.camera)) &&
@@ -82,7 +83,7 @@ static void ApplyProtectedLeftThrow(XINPUT_GAMEPAD& gp) {
     }
     const auto& p=g_hands[0].grip.position;
     const auto forward=RotVec(g_hands[0].aim.orientation,0,0,-1);
-    const auto out=g_protectedLeftTentacle.Update(context,(gp.wButtons&XINPUT_GAMEPAD_START)!=0,
+    const auto out=g_protectedLeftTentacle.Update(context,false,
         g_hands[0].valid,false,g_hands[0].squeeze,0,{p.x,p.y,p.z},g_hands[0].motion.velocity,{},
         g_trackedFrame.state.predictedDisplayTime*1e-9,context?owner.grab:d2vr_input::GrabFeedback::Unknown,
         {forward.x,forward.y,forward.z});

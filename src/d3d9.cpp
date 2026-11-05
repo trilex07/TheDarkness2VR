@@ -5098,12 +5098,26 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         rawButtons?1u:0u,lt,rt,lx,ly,rx,ry,g_hands[0].squeeze,g_hands[1].squeeze))) {
         ResetWeaponWheelInput();ResetPoseInput();out->Gamepad={};return true;
     }
+#ifdef D2VR_MATCHED_CAPTURE
+    const bool nativePaused=MenuConfirmActive();
+    g_protectedRightTentacle.SyncNativePause(nativePaused);
+    g_protectedLeftTentacle.SyncNativePause(nativePaused);
+    static bool lastNativePause=false;
+    if(lastNativePause!=nativePaused) {
+        lastNativePause=nativePaused;
+        Log("[NativePauseInput] paused=%d; both protected hand/gesture gates synchronized",int(nativePaused));
+    }
+#endif
     const auto objectiveButton=g_objectiveButton.Update(focused && circleActive,circleDown,
         g_in3DGameplayMode && NativeJackieInputAllowed() && !MenuConfirmActive() && !NativeHeldActionContext() &&
         !g_nativeCinematicPlaying && !NativeActionMovies(),GetTickCount64()*.001);
     gp.wButtons &= ~XINPUT_GAMEPAD_B;
     if(objectiveButton.nativeB)gp.wButtons|=XINPUT_GAMEPAD_B;
     if(objectiveButton.showObjective)gp.wButtons|=XINPUT_GAMEPAD_BACK;
+    static bool objectiveWasHeld=false;
+    if(objectiveButton.showObjective && !objectiveWasHeld)
+        Log("[ObjectiveButton] held Circle -> native ShowObjective BACK; B suppressed");
+    objectiveWasHeld=objectiveButton.showObjective;
     // A native-confirmed character/retained-target hold already supplies the
     // action context. Do not require a second grip press (stock LB) just to Y.
     const bool triangleModifier=NativeHeldActionContext() ||
@@ -5300,7 +5314,8 @@ static void ApplyProtectedGestureActions(XINPUT_GAMEPAD& gp) {
     // Left grip/LB and unrelated movement/fire/menu inputs remain unchanged.
     gp.wButtons &= ~XINPUT_GAMEPAD_RIGHT_SHOULDER;
     const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
-    const bool context=g_haveViews && g_in3DGameplayMode && (g_trackedFrame.flags & tracked)==tracked;
+    const bool context=g_haveViews && g_in3DGameplayMode && (g_trackedFrame.flags & tracked)==tracked &&
+        !(gp.wButtons & XINPUT_GAMEPAD_START);
     const auto head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
     const auto velocity=g_hands[1].motion.velocity;
     // Stock tentacle gestures are directions in the visible head-attached
@@ -5308,7 +5323,7 @@ static void ApplyProtectedGestureActions(XINPUT_GAMEPAD& gp) {
     // and misclassifies vertical strokes when the head is tilted.
     const auto& q=head.orientation;
     const auto local=RotVec({-q.x,-q.y,-q.z,q.w},velocity.x,velocity.y,velocity.z);
-    const auto out=g_protectedRightTentacle.Update(context,(gp.wButtons & XINPUT_GAMEPAD_START)!=0,
+    const auto out=g_protectedRightTentacle.Update(context,false,
         false,g_hands[1].gripValid,0,g_hands[1].squeeze,{},{},{local.x,local.y,local.z},
         g_trackedFrame.state.predictedDisplayTime*1e-9);
     if(out.rightButton) gp.wButtons |= XINPUT_GAMEPAD_RIGHT_SHOULDER;

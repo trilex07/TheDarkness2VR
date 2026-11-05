@@ -8,6 +8,7 @@
 #include "../src/vr_settings.h"
 #include "../src/vr_input.h"
 static unsigned checks,resets,keyCalls;
+static void Log(const char*,...){}
 #define CHECK(x) do{++checks;if(!(x)){std::printf("FAIL %d %s\n",__LINE__,#x);std::exit(1);}}while(0)
 static int g_vrSettingsToggleKey=VK_INSERT;
 static bool keyDown=false,g_haveViews=true;

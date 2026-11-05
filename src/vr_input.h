@@ -97,7 +97,7 @@ struct ObjectiveButton {
         } else {
             if(route==Route::None && (armed || !gameplay)) {
                 route=gameplay?Route::Gameplay:Route::Native;
-                began=time;fired=false;
+                began=time;fired=false;tapUntil=objectiveUntil=0;
             }
             if(route==Route::Gameplay && !gameplay) {
                 route=Route::Cancelled;tapUntil=objectiveUntil=0;
@@ -107,7 +107,7 @@ struct ObjectiveButton {
             }
         }
         return {(route==Route::Native && down) || (gameplay && time<tapUntil),
-            gameplay && time<objectiveUntil};
+            gameplay && ((route==Route::Gameplay && down && fired) || time<objectiveUntil)};
     }
 };
 // Left grip is an explicit modifier for the missing stock Y action. Choose
@@ -316,6 +316,12 @@ struct Tentacles {
     Vec3 recentVelocity{},pendingThrowVelocity{};
     Vec3 pendingThrowAim{};
     ThrowStroke throwStroke;
+    // Protected input observes native pause, including menu-driven Continue.
+    // A START edge is only a request; it is not authoritative pause state.
+    void SyncNativePause(bool value) {
+        if(paused!=value) {*this={};paused=value;}
+        pauseDown=false;
+    }
     TentacleOutput Update(bool context,bool pause,bool leftValid,bool rightValid,
         float leftGrip,float rightGrip,Vec3 leftPosition,Vec3 leftVelocity,
         Vec3 rightVelocity,double time,GrabFeedback feedback=GrabFeedback::Unknown,Vec3 leftAim={}) {

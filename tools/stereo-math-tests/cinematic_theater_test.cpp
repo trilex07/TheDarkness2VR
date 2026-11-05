@@ -71,7 +71,7 @@ int main() {
         assert(!action.nativeB);
         if(action.showObjective)++pulses;
     }
-    assert(pulses>0 && pulses<=2);
+    assert(pulses>=10); // sustained BACK level after threshold, not a missed 120ms pulse
     action=objective.Update(true,false,true,2.6);assert(!action.nativeB && !action.showObjective);
     objective.Update(true,true,true,2.7);
     action=objective.Update(true,true,false,2.8);assert(!action.nativeB && !action.showObjective);
@@ -79,6 +79,26 @@ int main() {
     action=objective.Update(true,true,false,3);assert(action.nativeB && !action.showObjective);
     action=objective.Update(false,true,true,3.1);assert(!action.nativeB && !action.showObjective);
     action=objective.Update(true,true,true,3.2);assert(!action.nativeB && !action.showObjective);
+    objective={};objective.Update(true,false,true,0);
+    objective.Update(true,true,true,.01);
+    assert(objective.Update(true,false,true,.05).nativeB);
+    // A quick second press must cancel the previous short ability pulse.
+    action=objective.Update(true,true,true,.08);assert(!action.nativeB && !action.showObjective);
+    for(int i=1;i<=20;++i) {
+        action=objective.Update(true,true,true,.08+i*.1);
+        assert(!action.nativeB);
+        if(i>=11)assert(action.showObjective);
+    }
+    action=objective.Update(true,false,true,2.2);assert(!action.nativeB && !action.showObjective);
+    d2vr_input::Tentacles rightPause,leftPause;
+    for(int cycle=0;cycle<10;++cycle) {
+        rightPause.SyncNativePause(true);leftPause.SyncNativePause(true);
+        assert(rightPause.paused && leftPause.paused);
+        // Continue is a native UI action, with no second START edge.
+        rightPause.SyncNativePause(false);leftPause.SyncNativePause(false);
+        assert(!rightPause.paused && !leftPause.paused);
+        assert(!rightPause.rightDown && !leftPause.leftDown);
+    }
     Playback p;p.Observe(0,true);assert(!p.Active());
     p.Observe(11,true);p.Observe(11,true);p.Observe(22,true);
     p.Observe(11,false);assert(p.Active());
