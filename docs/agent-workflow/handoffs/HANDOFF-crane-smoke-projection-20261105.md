@@ -30,3 +30,18 @@ control to user, clearly identify active simulator session; restore normal
 Steam payload before headset testing. Reproducible archive gate:
 python tools/audit-clip-input-projections.py test-output/material-eye-audit-20261105 --output test-output/crane-smoke-20261105/production-audit.json
 PASS all10 identities and complete clip-input paths. No game shader data in Git.
+
+Continuation complete: user selected Continue; after-fix captures924/62570 and
+926/76994 verify native clip-bias c4 in both eyes at yaw0 and yaw-0.25 (4 draws
+PASS). Selected particle before/after RT saved. Exact impact-cloud visual
+acceptance remains unverified; crane reflection still OPEN. Material captures
+922/923: SHLight dominant contribution zero; ambient/later passes not excluded.
+No additional speculative reflection patch. See research after-fix section.
+
+RECOVERY PASS: own PID26984 closed after path/UTC-start-time identity check;
+Steam restored to E8C8015E DLL +117230AC diagnostic, protected files unchanged;
+all four fresh saves/configs restored and hashed. Simulator OFF, recorder OFF.
+No pending manual Continue request. New DLL5C55422F is source-built/private lab
+candidate only, NOT installed for normal Steam and NOT merged into main.
+Next: isolate the actual visible moving highlight and controlled impact phase;
+do not repeat c8 allowlist expansion or call register consistency visual PASS.

@@ -48,3 +48,32 @@ makes casual different-time screenshot comparisons invalid as a stability proof.
 Lab test-output/crane-smoke-20261105 preserves exact original E8 DLL/INI rollback
 and four fresh user save/config backups. Own PID/ticks/path in process.json.
 Recovery completion and candidate identity are recorded in the task handoff.
+
+## After-fix gameplay, 2026-11-05
+
+User selected Continue. PID26984 gameplay reached the crane and ball animation.
+Captures920/57341 and921/57755 did not contain the selected particle PS;
+they are NOT evidence of an absent visual defect. Captures924/62570 (yaw0)
+and926/76994 (yaw-0.25) contain VS9E39DAF1 / PSDA655BE2, with successful
+selected-before/after surface readbacks. Both eyes in both captures retain
+c4=[.5,0,0,0;0,-.5,0,0;0,0,1,0;.500149488,.500146627,0,1].
+tools/check-particle-projection-capture.py reproduces the four-draw PASS.
+This confirms effective device constants in gameplay, beyond offline fixtures.
+It does not certify the user's exact impact-cloud skyline artifact as resolved:
+the selected effect changes size/opacity during animation and matched identical
+impact phases were not captured. Headset assessment remains NOT RUN.
+
+Material captures922/59453 and923/59968 contain two crane D94B61DC draws each.
+Their effective SHLight c57..65 contains zero coefficients/color; c64=(0,1,0,0).
+Consequently the dominant SH specular contribution is zero in those draws.
+The shader also has ambient/specular terms, and later passes affect the image;
+this does NOT rule out every material contribution. Do not claim a light-pass
+producer, or a reflection fix, from the zero SH contribution alone.
+Height-fog PS33DE98C1 also reconstructs height from depth-scaled NDC. Its
+matrix convention requires separate proof before another shader patch.
+
+Recovery PASS: closed only PID26984 after path plus UTC-start-tick identity
+check. Restore verified E8C8015E DLL,117230AC diagnostic INI, protected files
+and all four fresh pre-session save/config hashes. Emulator and recording OFF.
+Private evidence: test-output/crane-smoke-20261105/recovery.json,
+effective-particle-c4.json, after-banks.json, after-runtime.log.
