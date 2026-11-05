@@ -42,9 +42,35 @@ native ownership, transformed/nonuniform geometry; all pinned pair lookups.
 PASS: actual-source pixel metadata lifecycle and concurrent publication fixture.
 PASS: protected-native x86 build using build.ps1 -DiagnosticCapture.
 PASS: git diff --check and Python compile.
-Runtime: pending. Simulator starts and title/main menu render; menu navigation
-was unresponsive to native keyboard/mouse and acknowledged simulator controls.
-Do not count delivery acknowledgments as gameplay validation.
+Runtime follow-up PASS after user selected Continue. Three actual gameplay
+captures per build, both eyes: yaw=0/x=0, yaw=-0.25/x=0, yaw=-0.25/x=0.25m.
+Private retry lab: test-output/material-eye-retry-20261105T142053.
+
+The first build CEAFF3BC exposed a real ordering conflict: ReflectionEyeScope
+ran before TentacleHeadScope. The latter changes WVP without updating c8;
+9 left-eye attached-tentacle draws after head translation had camera-center
+residual ~0.25 game units (PS1A778906,CC538CB9,891DD2C1 / VS1CB7CEE2).
+All four primitive draw wrappers now construct ReflectionEyeScope AFTER
+TentacleHeadScope, so c8 is based on the final matrix and restores first.
+No attachment/geometry validity gates were bypassed.
+
+Final protected-native DLL E8C8015E58045B6F8EA2FE744E142540FEB478608F40D3FB508B8DB4B484C72B:
+captures31736/861/3343,31736/862/3393,31736/863/3445.
+790 admitted draw witnesses,53 observed pairs,8 VS families, both eyes.
+Maximum independent float64 inverse vs captured c8 residual0.000138057;
+all below the existing native ownership tolerance0.001 (sqrt1e-6).
+VS1CB7CEE2 residual after ordering fix <=0.000002781 in these captures,
+including the translated pose. Numerical residual is in model/game units,
+not physical headset meters. Private eye-consistency-after.json stores all draws.
+The earlier private report used a stricter exploratory1e-4 flag; final contract
+comparison explicitly uses the already existing1e-3 ownership tolerance.
+
+The new scene exercises8 of13 admitted VS and53 of184 pairs. Other admitted
+identities remain offline-only. Matched capture staged_result is incomplete;
+these are individual draw/register witnesses, not a certified complete frame.
+Visual emulator image inspected for hands, tentacles and scene; no obvious
+corruption observed. No identical-pose pixel A/B or physical headset assessment.
+CPU/FPS regression has not been isolated from game/driver pacing in this test.
 Headset: NOT RUN. No performance improvement or full-game claim.
 
 ## Reproduction
@@ -56,3 +82,9 @@ private audit.json. --header can regenerate src/material_eye_allowlist.h only
 after reviewing evidence; do not automatically admit future shaders in runtime.
 Run tools/stereo-math-tests/build-reflection-eye.ps1 and
 test/build_pixel_shader_metadata.ps1 before build.ps1 -DiagnosticCapture.
+
+
+Recovery PASS: own simulator PID31736 closed after identity/start-time check;
+Steam DLL7DD55BA4 and diagnostic117230AC restored, protected files unchanged;
+all four fresh user saves/configs restored and hashes verified. Simulator OFF.
+The tested DLL is preserved as a separate candidate, not installed or merged.

@@ -1877,9 +1877,10 @@ static HRESULT DrawPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYPE 
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
-    const ReflectionEyeScope reflection(dev);
     const ShadowClipScope shadowClip(dev);
     const TentacleHeadScope tentacle(dev);
+    // Eye-dependent material parameters must use the final attached-mesh WVP.
+    const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1901,9 +1902,10 @@ static HRESULT DrawIndexedPrimitiveWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITI
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
-    const ReflectionEyeScope reflection(dev);
     const ShadowClipScope shadowClip(dev);
     const TentacleHeadScope tentacle(dev);
+    // Eye-dependent material parameters must use the final attached-mesh WVP.
+    const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1925,9 +1927,10 @@ static HRESULT DrawPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMITIVETYP
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
-    const ReflectionEyeScope reflection(dev);
     const ShadowClipScope shadowClip(dev);
     const TentacleHeadScope tentacle(dev);
+    // Eye-dependent material parameters must use the final attached-mesh WVP.
+    const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
@@ -1952,9 +1955,10 @@ static HRESULT DrawIndexedPrimitiveUPWithDiffuse(IDirect3DDevice9* dev, D3DPRIMI
     if(g_replayEye<0) d2vr_pipeline_warmup::ObserveDraw(dev,g_boundVs,g_boundPs);
     const WorldDiffuseScope diffuse(dev);
     const SkinMipScope skinMip(dev);
-    const ReflectionEyeScope reflection(dev);
     const ShadowClipScope shadowClip(dev);
     const TentacleHeadScope tentacle(dev);
+    // Eye-dependent material parameters must use the final attached-mesh WVP.
+    const ReflectionEyeScope reflection(dev);
 #ifdef D2VR_MATCHED_CAPTURE
     MatchedCaptureDraw(dev,g_replayEye<0?0:g_replayEye,diffuse.applied);
 #endif
