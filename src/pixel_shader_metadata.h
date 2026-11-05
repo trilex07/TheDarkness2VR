@@ -24,6 +24,7 @@ struct Pixel {
     bool reflectionEye=false; // full-SHA admitted cube-map consumers; exact VS also required
     bool worldSpecularEye=false; // verified light-map specular consumer of VS293F456B c8
     bool skinnedSpecularEye=false; // captured crane SH-light material, VS1CB7CEE2 c8
+    bool auditedMaterialEye=false; // exact SHA; observed pair still required at draw
     bool shadowClip=false; // replacement created successfully; draw owns c223 selector
 };
 

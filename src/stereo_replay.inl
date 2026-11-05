@@ -37,6 +37,7 @@
 #include "up_geometry_capture.h"
 #include "shader_register_history.h"
 #include "reflection_eye.h"
+#include "material_eye_allowlist.h"
 
 namespace d2vr_replay {
 
@@ -61,6 +62,7 @@ struct VsInfo {
     bool reflectionEye=false;
     bool worldSpecularEye=false;
     bool skinnedSpecularEye=false;
+    bool auditedMaterialEye=false;
     bool videoClip=false;
     bool tentacleGlow=false; // complete native sprite VS, c0..c3 -> o0
     std::vector<DWORD> bytecode; // exact identity when a released COM address is reused
@@ -942,6 +944,8 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                 bytes<=code.size()*4 && !(bytes&3) &&
                 d2vr_shader_metadata::ValidPixelCode(code.data(),bytes/4)) {
                 const std::string shaderBytes((const char*)code.data(), bytes);
+                metadata.auditedMaterialEye=d2vr_material_eyes::Admit(d2vr_material_eyes::kPixels,metadata.hash,bytes,
+                    [&](const char* sha){return d2vr_native_clone::MatchesDigest(code.data(),bytes,sha);});
                 // Captured talent-shrine world materials: v2 is the tangent
                 // eye direction from VS293F456B c8. Both native variants use
                 // it in the light-map normal/specular term, not light position.
@@ -1086,6 +1090,8 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         uint32_t h = HashBytes(fn, (n + 1) * 4);
         VsInfo vi;
         vi.hash = h;
+        vi.auditedMaterialEye=d2vr_material_eyes::Admit(d2vr_material_eyes::kVertices,h,(n+1)*4,
+            [&](const char* sha){return d2vr_native_clone::MatchesDigest(fn,(n+1)*4,sha);});
         vi.worldSpecularEye=h==0x293F456Bu && (n+1)*4==948 &&
             d2vr_native_clone::MatchesDigest(fn,948,"ce46fc92b8eb1c017b9da0a97fb5feca3ad8a457f178e52604ea64d73e574121");
         vi.skinnedSpecularEye=h==0x1CB7CEE2u && (n+1)*4==1884 &&
@@ -1774,7 +1780,9 @@ struct ReflectionEyeScope {
         const bool lightMap=g_activeVs->worldSpecularEye && pixel.worldSpecularEye;
         const bool skinned=g_activeVs->skinnedSpecularEye && pixel.skinnedSpecularEye;
         const bool cube=g_reflectionEyeExperiment && g_activeVs->reflectionEye && pixel.reflectionEye;
-        if(!lightMap && !skinned && !cube)return;
+        const bool audited=g_activeVs->auditedMaterialEye && pixel.auditedMaterialEye &&
+            d2vr_material_eyes::Pair(g_activeVs->hash,pixel.hash);
+        if(!lightMap && !skinned && !cube && !audited)return;
         const auto sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
         if(!sp.headGeometry || IsShadowAtlasPass(dev))return;
         const auto& raw=g_replayEye<0?g_vsConstantHistory.live:g_vsConstantHistory.replay;
@@ -1796,6 +1804,14 @@ struct ReflectionEyeScope {
             if(reported++<4)Log("[MaterialEye] eye=%d VS=%08X PS=%08X c8 corrected; exact consumer, scoped restore",g_replayEye<0?0:g_replayEye,g_activeVs->hash,pixel.hash);
             static unsigned skinnedReported=0;
             if(skinned && skinnedReported++<4)Log("[MaterialEyeSkinned] eye=%d VS=%08X PS=%08X c8 corrected; scoped restore",g_replayEye<0?0:g_replayEye,g_activeVs->hash,pixel.hash);
+            // One bounded report per audited VS, both eyes; repeated draws do not emit logs.
+            static uint32_t auditedSeen[2][32]{};static unsigned auditedCount[2]{};
+            const int eye=g_replayEye<0?0:g_replayEye;
+            if(audited && auditedCount[eye]<32 &&
+               std::find(auditedSeen[eye],auditedSeen[eye]+auditedCount[eye],g_activeVs->hash)==auditedSeen[eye]+auditedCount[eye]) {
+                auditedSeen[eye][auditedCount[eye]++]=g_activeVs->hash;
+                Log("[MaterialEyeAudit] eye=%d VS=%08X PS=%08X corrected; exact pair and raw ownership verified",eye,g_activeVs->hash,pixel.hash);
+            }
         }
     }
     ~ReflectionEyeScope() {

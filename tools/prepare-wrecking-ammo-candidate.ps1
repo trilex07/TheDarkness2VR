@@ -1,5 +1,6 @@
 # Freeze the tested source as a DLL-only candidate. Does not deploy or launch.
-param([string]$OutputDirectory='')
+param([string]$OutputDirectory='',
+ [string]$SimulatorEvidence='PASS diagnostic build: exact material eye consistency both eyes and head poses; native ammo fire/reload')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 if(!$OutputDirectory){$OutputDirectory=Join-Path $root 'build/wrecking-light-ammo-reserve-20261105'}
@@ -25,7 +26,7 @@ foreach($relative in @('DarknessII.exe','openxr_loader.dll','Darkness2VR.ini','D
 }
 @{kind='wrecking-light-ammo-reserve';source_commit=(git -C $root rev-parse HEAD).Trim();headset='NOT RUN';
  build_flavor='protected-native x86, diagnostic capabilities compiled; recording OFF in protected installed profile';
- simulator='PASS diagnostic build: exact material eye consistency both eyes and head poses; native ammo fire/reload';
+ simulator=$SimulatorEvidence;
  protected=$protected;files=@(@{relative='d3d9.dll';baseline='baseline-0.bin';payload='payload-0.bin';before=$before;after=(Hash (Join-Path $out 'payload-0.bin'))})} |
  ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $out 'candidate.json') -Encoding UTF8
 & (Join-Path $out 'Install.ps1') -VerifyOnly

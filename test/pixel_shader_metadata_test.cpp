@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 #include "../src/pixel_shader_metadata.h"
+#include "../src/material_eye_allowlist.h"
 #include "../src/replay_state_cache.h"
 #include "../src/composite_shader_patch.h"
 #include "../src/outline_coverage.h"

@@ -3,6 +3,8 @@
 #include <cstring>
 #include <cstdint>
 #include <initializer_list>
+#include <algorithm>
+#include "../../src/material_eye_allowlist.h"
 #include "../../src/reflection_eye.h"
 #include "../../src/shader_register_history.h"
 using HRESULT=long;
@@ -21,9 +23,9 @@ static HRESULT Set(IDirect3DDevice9* dev,unsigned start,const float* data,unsign
 }
 static struct {decltype(&Set) SetVertexShaderConstantF=Set;} g_orig;
 static bool g_reflectionEyeExperiment=false;static int g_submitMode=4,g_stereoMode=1,g_replayEye=-1;
-struct Vs{bool reflectionEye=true,worldSpecularEye=false,skinnedSpecularEye=false;unsigned hash=0x12CCC8DB;};static Vs vi;static Vs* g_activeVs=&vi;
+struct Vs{bool reflectionEye=true,worldSpecularEye=false,skinnedSpecularEye=false,auditedMaterialEye=false;unsigned hash=0x12CCC8DB;};static Vs vi;static Vs* g_activeVs=&vi;
 static const void* g_boundPs=&vi;
-static struct {bool allowed=true,world=false,skinned=false;struct Value{bool reflectionEye,worldSpecularEye,skinnedSpecularEye;unsigned hash;};Value Lookup(const void*){return {allowed,world,skinned,0xBA3D8E61};}} g_pixelShaders;
+static struct {bool allowed=true,world=false,skinned=false,audited=false;unsigned hash=0xBA3D8E61;struct Value{bool reflectionEye,worldSpecularEye,skinnedSpecularEye,auditedMaterialEye;unsigned hash;};Value Lookup(const void*){return {allowed,world,skinned,audited,hash};}} g_pixelShaders;
 static d2vr_shader_registers::History g_vsConstantHistory;
 struct Params{bool headGeometry=true;};static Params MakeEyeParams(int){return {};}
 static bool IsShadowAtlasPass(IDirect3DDevice9*){return false;}
@@ -33,6 +35,7 @@ namespace d2vr_submission {static int invalidations=0;static void Invalidate(){+
 static const float projection[16]={1,0,0,0,0,1,0,0,0,0,1.01f,1,0,0,-.1f,0};
 static void Setup(IDirect3DDevice9& device,int eye) {
     device={};g_vsConstantHistory.Clear();g_replayEye=eye;g_reflectionEyeExperiment=true;
+    vi.auditedMaterialEye=false;g_pixelShaders.audited=false;vi.hash=0x12CCC8DB;g_pixelShaders.hash=0xBA3D8E61;
     vi.reflectionEye=true;vi.worldSpecularEye=false;vi.skinnedSpecularEye=false;g_pixelShaders.skinned=false;g_pixelShaders.allowed=true;g_pixelShaders.world=false;
     float raw[36]{};std::memcpy(raw,projection,sizeof(projection));raw[35]=123.25f;
     g_vsConstantHistory.live.Write(0,9,raw,sizeof(raw));
@@ -75,6 +78,25 @@ int main(){
         g_pixelShaders.skinned=true;vi.skinnedSpecularEye=false;
         {ReflectionEyeScope s(&device);}Check(!device.gets && !device.sets,"crane PS with foreign VS rejected");
     }
+    for(int eye:{-1,1}) {
+        Setup(device,eye);g_reflectionEyeExperiment=false;
+        vi.reflectionEye=false;g_pixelShaders.allowed=false;
+        vi.auditedMaterialEye=true;vi.hash=0x8EB68C19;
+        g_pixelShaders.audited=true;g_pixelShaders.hash=0x865FF0EB;
+        float old[36];std::memcpy(old,device.values,sizeof(old));
+        {ReflectionEyeScope scope(&device);Check(device.sets==1,"audited material admitted");
+         Check(std::fabs(device.values[32]-(eye==1?.0325f:-.0325f))<1e-5f,"audited per-eye center");}
+        Check(device.sets==2 && !std::memcmp(old,device.values,sizeof(old)),"audited exact restore");
+        device.gets=device.sets=0;g_pixelShaders.hash=0x75DE5534;
+        Check(!d2vr_material_eyes::Pair(vi.hash,g_pixelShaders.hash),"unobserved cross pair fixture");
+        {ReflectionEyeScope scope(&device);}Check(!device.gets && !device.sets,"cross pair rejected");
+    }
+    unsigned checks=0;
+    const auto& pin=d2vr_material_eyes::kVertices[0];
+    Check(d2vr_material_eyes::Admit(d2vr_material_eyes::kVertices,pin.hash,pin.bytes,[&](const char* sha){++checks;return !std::strcmp(sha,pin.sha);}),"pinned identity admitted");
+    Check(!d2vr_material_eyes::Admit(d2vr_material_eyes::kVertices,pin.hash,pin.bytes+4,[&](const char*){++checks;return true;}) && checks==1,"wrong size rejected before digest");
+    Check(!d2vr_material_eyes::Admit(d2vr_material_eyes::kVertices,pin.hash,pin.bytes,[](const char*){return false;}),"wrong SHA rejected");
+    for(auto pair:d2vr_material_eyes::kPairs)Check(d2vr_material_eyes::Pair(unsigned(pair>>32),unsigned(pair)),"all pinned pairs discoverable");
     Setup(device,-1);vi.reflectionEye=false;{ReflectionEyeScope s(&device);}
     Check(!device.gets,"foreign VS rejected before driver query");
     Setup(device,-1);g_pixelShaders.allowed=false;{ReflectionEyeScope s(&device);}
