@@ -39,6 +39,7 @@
 #include "reflection_eye.h"
 #include "material_eye_allowlist.h"
 #include "screen_projection_input.h"
+#include "lit_mask_projection.h"
 
 namespace d2vr_replay {
 
@@ -1114,6 +1115,12 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
             vi.reflectedStp=d2vr_screen_projection::WorldInputRegister(h,(n+1)*4,vi.reflectedStp,
                 [&](const char* sha){return d2vr_native_clone::MatchesDigest(fn,(n+1)*4,sha);});
             vi.reflectedPreviousWvp = FindNamedMatrix(fn, n + 1, "PrevWorldProj", nullptr);
+        }
+        if(d2vr_lit_mask::Admit(h,(n+1)*4,
+            [&](const char* sha){return d2vr_native_clone::MatchesDigest(fn,(n+1)*4,sha);})) {
+            vi.reflected=true;
+            vi.reflectedWvp=0;
+            vi.reflectedStp=8;
         }
         if(g_headAttachedTentacles &&
            (h==0x1CB7CEE2u || h==0x34D4EEE8u || h==0xE3259C61u)) {

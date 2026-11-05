@@ -77,3 +77,35 @@ check. Restore verified E8C8015E DLL,117230AC diagnostic INI, protected files
 and all four fresh pre-session save/config hashes. Emulator and recording OFF.
 Private evidence: test-output/crane-smoke-20261105/recovery.json,
 effective-particle-c4.json, after-banks.json, after-runtime.log.
+
+## Gameplay spotlight: nested LitInstance mask projection
+
+User identifies the moving light as one that disables Darkness powers (also
+seen in the metro). A later lit-material pass was missing from the earlier
+specular-eye investigation. VS76C80E75 and skinned VSBBCC1217 consume the same
+model-space point through c0..3 -> POSITION and c8..11 -> TEXCOORD2. PS4BC661BA
+samples ShadowMask s3 using that projected coordinate. CTAB nests both matrices
+inside LitInstance; the existing top-level-only reflection missed c8.
+
+Six existing gameplay captures (861,862,922,923,924,926), both eyes, show c8
+matching native WVP times UV bias (max matrix residual 0.0047, half-texel),
+while actual VR raster WVP times bias differs by 1.3..4.99. Thus mask sampling
+remains attached to the native camera while the geometry follows head pose.
+This is direct draw-consumer evidence, independent of zero SH coefficients
+in the earlier D94B61DC base pass. Private lit-stp-before.json records samples.
+
+src/lit_mask_projection.h admits 24 exact archived bytecode variants by full
+hash, byte length and SHA256. Their common c0/c8 shared-point data flow is
+verified by tools/audit-lit-mask-projections.py, including morph/skinned and
+unskinned variants. Only WVP0/STP8 metadata is resolved; existing stereo code
+then transforms mask coordinates with raster coordinates. Eye/fog/light/bone
+constants are untouched. World-space ProjectorTextureProjection0 is deliberately
+excluded: its data flow is not a screen-mask lookup. Clip-input particles stay
+under the independent prior correction.
+
+PASS: 24 archived identities and shared-point paths; mask/raster equality
+through actual packet transform in both eyes at three head poses; foreign
+particle/projector rejection; light and eye constant isolation; existing particle
+and reflection scope regressions. Protected-native diagnostic DLL622D75E5 built.
+Runtime after-fix/visual result pending fresh simulator lab lit-mask-20261105;
+fresh four-file save backup and exact E8 rollback are retained there.
