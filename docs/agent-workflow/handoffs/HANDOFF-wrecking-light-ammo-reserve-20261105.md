@@ -22,7 +22,8 @@ Crane pair VS1CB7CEE2/PSD94B61DC identified by selected pixel-delta witness;
 full-SHA gated scoped c8 eye correction, both eyes, yaw and translation verified.
 Magazine/reserve native getter verified in gameplay through fire/reload.
 Detailed evidence and limits: docs/research/wrecking-light-ammo-reserve-20261105.md.
-Production DLL554CD74B; diagnostic89540B8A. Own emulator closed, exact accepted
+Candidate DLL89540B8A, exact tested protected-native build; standard554CD74B
+rejected by profile gate (omits required native features). Own emulator closed, exact accepted
 Steam DLL7DD55BA4/diagnostic117230AC and fresh four user saves/configs restored.
 New candidate is DLL-only; build/wrecking-light-ammo-reserve-20261105/Install.ps1.
 Do not confuse source simulator PASS with physical headset acceptance.

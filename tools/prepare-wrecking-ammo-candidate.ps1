@@ -24,7 +24,7 @@ foreach($relative in @('DarknessII.exe','openxr_loader.dll','Darkness2VR.ini','D
  $protected+=@{target=$target;sha256=(Hash $target)}
 }
 @{kind='wrecking-light-ammo-reserve';source_commit=(git -C $root rev-parse HEAD).Trim();headset='NOT RUN';
- build_flavor='production x86, no matched-capture instrumentation';
+ build_flavor='protected-native x86, diagnostic capabilities compiled; recording OFF in protected installed profile';
  simulator='PASS diagnostic build: exact material eye consistency both eyes and head poses; native ammo fire/reload';
  protected=$protected;files=@(@{relative='d3d9.dll';baseline='baseline-0.bin';payload='payload-0.bin';before=$before;after=(Hash (Join-Path $out 'payload-0.bin'))})} |
  ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $out 'candidate.json') -Encoding UTF8

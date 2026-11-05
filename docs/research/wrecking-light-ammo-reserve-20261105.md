@@ -73,9 +73,13 @@ Final in-headset readability and subjective crane result remain NOT RUN.
   pair works with cube experiment OFF and rejects crossed pairs.
 - PASS pixel metadata test: reused COM addresses, malformed code, concurrent
   publication, native HRESULT/bind semantics. Existing fixture compiler warnings.
-- PASS diagnostic and production x86 builds. Production excludes matched capture.
+- PASS protected-native and standard x86 compilation. FAIL standard/profile
+  compatibility gate: existing native hands/camera/input/menu features require
+  the protected-native build. Standard DLL rejected before deployment/package.
 - Diagnostic DLL89540B8A39FD399ACAF678AE9E69E88447EE491E9E30FAEAA3AF40331CA10E22.
-- Production DLL554CD74B53328738D0B8E455B9CE080DC9A4AD86880D3861233424FA776BB706.
+- Candidate uses the exact tested protected-native DLL89540B8A above, with the
+  accepted profile unchanged and recording/simulator OFF. The standard
+  DLL554CD74B was rejected and is not in the candidate.
 - No FPS improvement claim; resolution/filtering unchanged.
 - Own simulator process closed; exact DLL7DD55BA4 and diagnostic117230AC restored.
   Fresh four user save/config backups restored with SHA checks. Protected EXE,
