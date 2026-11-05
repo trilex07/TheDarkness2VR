@@ -1,5 +1,15 @@
 # Failed Approaches Index
 
+### TalentBreadcrumb name alone does not identify the moving shrine icon
+- **Date**: 2026-11-05
+- **Scope**: MAIN shrine-icon simulator investigation, no production patch.
+- **Failure**: actual HUD.swf character23 TalentBreadcrumb contains an animated
+  Text child. Hiding this clip was not demonstrated to remove the user's
+  head-following purple shrine overlay. Trial was rolled back and discarded.
+- **Next**: identify the exact visible element; inspect ContextActionPane or
+  shrine prefab producers only with matching runtime evidence. Preserve the
+  world flame and interaction. See handoffs/HANDOFF-shrine-icon-20261105.md.
+
 ### Native skin derivative variance estimate did not meet shimmer quality gate
 - **Date**: 2026-11-04
 - **Scope**: MAIN BC938BC9 exact native PS; default-off private experiment.
