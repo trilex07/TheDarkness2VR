@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include <windows.h>
+#include "../../src/render_hook_cost.h"
 #include "../../src/replay_packet_worker.h"
 #include "../../src/projection_history.h"
 #include <cstdio>

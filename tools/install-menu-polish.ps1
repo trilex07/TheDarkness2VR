@@ -9,7 +9,7 @@ $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
 $allowed=@('d3d9.dll','Darkness2VR-diagnostic.ini',
  'Cache.DLC\PCPatchManifests\Cache.Windows\H.Script.cache',
  'Cache.DLC\PCPatchManifests\Cache.Windows\H.Script.toc')
-if($m.kind -eq 'wrecking-light-ammo-reserve'){$allowed=@('d3d9.dll')}
+if($m.kind -in @('wrecking-light-ammo-reserve','lit-mask-projection')){$allowed=@('d3d9.dll')}
 if($m.kind -eq 'menu-hands-shrine-symbols'){
  $allowed+=@('Cache.Windows\H.Misc.cache','Cache.Windows\H.Misc.toc')
 }

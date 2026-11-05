@@ -45,3 +45,15 @@ No pending manual Continue request. New DLL5C55422F is source-built/private lab
 candidate only, NOT installed for normal Steam and NOT merged into main.
 Next: isolate the actual visible moving highlight and controlled impact phase;
 do not repeat c8 allowlist expansion or call register consistency visual PASS.
+
+Follow-up e5b6ec93: identified the later crane lighting pass BBCC1217/4BC661BA.
+Nested LitInstance c8 shadow-mask projection stayed native while c0 tracked
+the eye. Fixed exact c0/c8 metadata on 24 verified world and skinned variants.
+Simulator PID25864, frames 940–947: 84 effective matrix checks pass in both
+eyes; pre-fix capture 923 fails the same checker. Selected before/after pixel
+buffers confirm the corrected shader draws lit crane parts. A paused comparison
+shows the same lit feature after head rotation; unequal visibility and residual
+lighting variation prevent a full pixel-equivalence claim. Metro and exact
+impact-cloud visual acceptance remain open. Packet and projection tests pass.
+Recovery PASS: E8 DLL, 117230AC diagnostic INI and four fresh user files restored.
+Candidate DLL622D75E5 includes particle correction; normal Steam not deployed.
