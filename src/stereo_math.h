@@ -6,7 +6,9 @@
 //
 // Proven facts these helpers rely on (evidence: run_40332 frame traces + shader CTABs):
 //   * WorldViewProjection lives at c0..c3, ScreenTextureProjection at c4..c7/c8..c11 and
-//     is exactly WVP composed with the viewport bias S: u=(x+w)/2, v=(w-y)/2.
+//     usually is WVP composed with viewport bias S: u=(x+w)/2, v=(w-y)/2.
+//     Some particles multiply an already projected position by clip-to-texture;
+//     that constant block must not receive another head/eye transform.
 //   * Registers like c8..c11 of un-analyzed shaders are OFTEN light parameters
 //     (LightViewPosRadius, ShadowParams, light direction) and must never be shifted.
 //   * "InverseProjection" reconstructs VIEW space (diagonal inverse of the perspective

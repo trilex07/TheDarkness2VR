@@ -296,3 +296,11 @@ source, BASELINE.md and the task handoff before applying them.
 - PS3 LRP with destination aliasing its first source was driver-rejected; final
   independent r14 selector/r15 result passes. Per-light/cinema/headset coverage
   still incomplete. See HANDOFF-edge-shadow-stability-20261104.md.
+
+### 2026-11-05: material eye consistency does not establish visual repair
+- User accepts magazine/reserve HUD but reports E8C8015E still has moving crane
+  highlights. Prior numerical camera-center tests are not visual acceptance.
+- Do not repeat material allowlist expansion without isolating actual visible
+  contribution. Smoke also has a distinct confirmed double-projection defect:
+  particle VS consumes clip position in c4 STP; CTAB name alone is insufficient.
+- Evidence: HANDOFF-crane-smoke-projection-20261105.md.
