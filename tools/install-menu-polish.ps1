@@ -9,6 +9,9 @@ $game='C:\Program Files (x86)\Steam\steamapps\common\Darkness II'
 $allowed=@('d3d9.dll','Darkness2VR-diagnostic.ini',
  'Cache.DLC\PCPatchManifests\Cache.Windows\H.Script.cache',
  'Cache.DLC\PCPatchManifests\Cache.Windows\H.Script.toc')
+if($m.kind -eq 'menu-hands-shrine-symbols'){
+ $allowed+=@('Cache.Windows\H.Misc.cache','Cache.Windows\H.Misc.toc')
+}
 if($m.files.Count -ne $allowed.Count){throw 'Invalid target count'}
 $before=$true;$after=$true
 for($i=0;$i -lt $allowed.Count;$i++){
@@ -24,7 +27,7 @@ for($i=0;$i -lt $allowed.Count;$i++){
 }
 if(!$before -and !$after){throw 'Unrecognized or mixed installed payload; refusing overwrite'}
 foreach($e in $m.protected){if((Hash $e.target) -ne $e.sha256){throw 'Protected file changed'}}
-if($VerifyOnly){Write-Output 'VERIFIED four payloads, exact rollback, installed identity and protected files';return}
+if($VerifyOnly){Write-Output "VERIFIED $($allowed.Count) payloads, exact rollback, installed identity and protected files";return}
 $sources=@();$wanted=@();$recovery=@()
 foreach($f in $m.files){
  $sources+=if($Restore){$f.baseline}else{$f.payload}
@@ -49,4 +52,4 @@ try {
  }
  throw
 }
-Write-Output $(if($Restore){'RESTORED exact four-file baseline'}else{'INSTALLED combined menu/wheel/input/marker candidate; simulator OFF; resolution preserved'})
+Write-Output $(if($Restore){'RESTORED exact package baseline'}else{'INSTALLED combined candidate; simulator OFF; resolution preserved'})

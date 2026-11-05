@@ -1,5 +1,16 @@
 # Failed Approaches Index
 
+### Shrine asset names and partial draw deltas did not identify the symbols
+- **Date**: 2026-11-05
+- **Scope**: MAIN, user-confirmed purple angular shrine symbols.
+- **Failure**: GlyphMat color suppression (base/DLC) and degenerate
+  TalentGlyphARaised/Sphere meshes left the target. Replacing RaisedMat's shader
+  produced black spikes. All reverted. A selected BlackHoleEye draw with zero
+  delta was also insufficient negative evidence from an incomplete capture.
+- **Resolution**: base TalentShrineBlackHoleMat EyeColor/HiLiteColor suppression
+  visibly removed the confirmed symbols, retaining other shrine effects.
+  See handoffs/HANDOFF-shrine-icon-20261105.md for evidence and candidate.
+
 ### TalentBreadcrumb name alone does not identify the moving shrine icon
 - **Date**: 2026-11-05
 - **Scope**: MAIN shrine-icon simulator investigation, no production patch.

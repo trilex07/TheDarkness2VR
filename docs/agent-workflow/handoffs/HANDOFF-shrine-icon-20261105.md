@@ -6,14 +6,16 @@
 **Branch**: codex/shrine-icon-20261105
 **Worktree**: .main-camera-shake
 **Baseline**: accepted Steam source76657702, DLL9476A8D5; parent candidate ba8f1eb3, DLL7DD55BA4
-**Integration commit**: pending; no production change from this investigation
+**Integration commit**: pending; private six-file candidate prepared, not installed
 
 ## Goal
 Remove the separate purple shrine overlay that follows head movement, keeping
 the shrine flame, interaction and previously repaired native Continue hands.
 
 ## Status
-In Progress. Exact user-visible element remains unconfirmed. No icon fix claimed.
+User confirmed two purple angular symbols in private lab turn4.png.
+Visual removal PASS in simulator. Headset NOT RUN; shrine interaction/menu
+entry NOT VERIFIED in this session. Production Steam restored to accepted baseline.
 
 ## Context Loaded
 - [x] BASELINE.md
@@ -21,8 +23,14 @@ In Progress. Exact user-visible element remains unconfirmed. No icon fix claimed
 - [x] Parent objective-pause-resume handoff and private runtime evidence
 
 ## Changes
-No production code retained. The experimental HUD TalentBreadcrumb override was
-removed after examining the actual SWF. Parent hands correction is unchanged.
+tools/build-hide-shrine-symbols.py zeros exactly EyeColor and HiLiteColor of
+TalentShrineBlackHoleMat in BASE H.Misc. Pinned packed/raw resource hashes,
+fixed serialized length, original shader/macros/mesh/other TOC entries retained.
+tools/deploy-asset-repair.py supports the exact H.Misc pair for this package kind.
+tools/install-menu-polish.ps1 supports six targets only for the explicit
+menu-hands-shrine-symbols kind; legacy four-file packages remain unchanged.
+Temporary expanded shader-constant instrumentation was removed.
+Parent hands correction is unchanged.
 
 ## Evidence
 - Private lab: test-output/shrine-icon-20261105 (not for Git publication).
@@ -47,23 +55,40 @@ removed after examining the actual SWF. Parent hands correction is unchanged.
   Their mere presence is not proof that one produces the unwanted overlay.
 - Single-frame capture metadata has an incomplete staged-result witness;
   individual draw data was inspected, not claimed as a full capture PASS.
+- Confirmed lab: test-output/shrine-icon-confirmed-20261105 (private).
+- Native BlackHoleEye PS C51C7310 consumes c14 EyeColor/c15 HiLiteColor;
+  original colors match the serialized material. Isolated zero-color trial
+  removed the confirmed symbols while smoke/rays/world light stayed visible.
+- Comparison: base-shrine.png (symbols present, wrong GlyphMat trial) versus
+  black-shrine.png (symbols absent); black-back-view.png and black-use-final.png
+  show preserved other shrine effects at additional distances/head poses.
+- Raw material SHA256 3cba240e1c4efa883cc08b963944ab962dd6ad0bad90130f9f27779dda32512d.
+  Packed original SHA256 6b6da76bc0ac52d217114ae50b08b855ae8eb9e94689127126c76874bf0ae1ec.
+- Wrong trials: GlyphMat zero colors in DLC/base did not remove target;
+  RaisedMat shader replacement produced black spikes; degenerate ARaised/Sphere
+  mesh trials left target visible. All rolled back, none included in candidate.
+- Private build/shrine-symbols-20261105 payload matches the visually tested
+  blackhole trial hashes exactly. Combined build/menu-hands-shrine-20261105
+  includes parent DLL7DD55BA4 and this asset pair. Six payloads, exact rollback,
+  installed baseline and protected EXE/INI/loader verification PASS.
+- Parent hands: three Continue cycles PASS previously. Circle objective/trail
+  remains OPEN; do not claim a visual guidance fix from native BACK delivery.
 
 ## Recovery verification
-Own simulator processes terminated with path/start-time identity checks.
+Own simulator processes terminated with path/UTC start-time identity checks.
 Restored and SHA256 checked original DLL9476A8D5, diagnostic117230AC,
 DLC H.Script.cache692FC3CD and toc0B9A879C. Protected EXE/main INI/loader
 matched simulator-lab rollback checks. All four fresh user save/config backups
 from this lab were restored and hash checked. No simulator candidate remains
-installed. First cache-copy attempt encountered a transient file lock after
-process termination; retry after confirming no game process succeeded.
+installed. Base H.Misc, base B.Misc and DLC H.Misc experimental trials restored
+to their exact backups. Latest recovery: confirmed lab recover.ps1 PASS.
 
 ## Next Steps
-1. Obtain identification of the separate icon versus central radiant flame;
-   clarification was sent while investigation continued.
-2. Reproduce that exact element before adding another production patch.
-3. Keep parent hands candidate available; do not mark Circle objective/trail
-   visually fixed (the parent recorded engine input delivery only).
+1. Candidate build/menu-hands-shrine-20261105/Install.ps1 is ready for MAIN
+   deployment with game closed; -Restore recovers the full six-file baseline.
+2. Verify shrine menu entry and physical headset appearance at acceptance.
+3. Keep guidance issue OPEN, separately from icon and hands fixes.
 
 ## Notes
 Parent candidate build/objective-pause-resume-20261105 remains available.
-No new install, main integration, headset acceptance or icon fix is claimed.
+No final Steam deployment, main integration or headset acceptance claimed.

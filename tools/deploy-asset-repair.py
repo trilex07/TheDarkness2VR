@@ -18,6 +18,7 @@ DEFINITION_NAMES={s+e for s in ('H.Font','B.Font') for e in ('.cache','.toc')}
 METRIC_NAMES={s+e for s in ('B.Font','B.Texture_en') for e in ('.cache','.toc')}
 DIALOGUE_NAMES={s+e for s in ('H.Misc','H.Misc_en','B.Misc_en','F.Misc_en') for e in ('.cache','.toc')}
 MARKER_NAMES={'H.Script.cache','H.Script.toc'}
+SHRINE_NAMES={'H.Misc.cache','H.Misc.toc'}
 
 
 def copy(source,dest,expected):
@@ -37,7 +38,7 @@ def main():
     if a.action=='rollback':
         state=json.loads(record.read_text(encoding='utf-8'))
         require(state['cache']==str(cache.resolve()),'Rollback target differs')
-        require(set(state['before'])==set(state['after']) and set(state['before']) in (NAMES,METRIC_NAMES,DEFINITION_NAMES,DIALOGUE_NAMES,MARKER_NAMES),'Unexpected rollback set')
+        require(set(state['before'])==set(state['after']) and set(state['before']) in (NAMES,METRIC_NAMES,DEFINITION_NAMES,DIALOGUE_NAMES,MARKER_NAMES,SHRINE_NAMES),'Unexpected rollback set')
         for n,h in state['before'].items():
             require(sha(a.backup/n)==h,'Backup mismatch')
             require(sha(cache/n) in (h,state['after'][n]),'Current file changed: '+n)
@@ -46,7 +47,7 @@ def main():
         print('ROLLBACK_VERIFIED');return
     require(a.package,'Package required')
     m=json.loads((a.package/'manifest.json').read_text(encoding='utf-8'))
-    kinds={'font-definition-repair':DEFINITION_NAMES,'font-metrics-repair':METRIC_NAMES,'texture-font-repair':NAMES,'dialogue-natural-repair':DIALOGUE_NAMES,'hide-objective-marker':MARKER_NAMES}
+    kinds={'font-definition-repair':DEFINITION_NAMES,'font-metrics-repair':METRIC_NAMES,'texture-font-repair':NAMES,'dialogue-natural-repair':DIALOGUE_NAMES,'hide-objective-marker':MARKER_NAMES,'hide-shrine-symbols':SHRINE_NAMES}
     names=kinds.get(m['kind'])
     require(m.get('cache_relative','Cache.Windows')==a.cache_relative,'Archive layer differs')
     require(names and set(m['before'])==set(m['files'])==names,'Unexpected package targets')
