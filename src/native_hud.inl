@@ -41,7 +41,9 @@ static void UpdateNativeHudForView(void* renderer,void* reference,void* manager)
         __try {*reinterpret_cast<uint8_t*>(address)=value;return true;}
         __except(EXCEPTION_EXECUTE_HANDLER){return false;}
     };
-    const bool hide=g_hideNativeHud && !g_disableOpenXR && g_submitMode==4 && g_stereoMode==1 &&
+    const bool guidance=d2vr_hud::GuidanceActive(GetTickCount64(),
+        uint64_t(InterlockedCompareExchange64(&g_objectiveHudUntil,0,0)));
+    const bool hide=g_hideNativeHud && !guidance && !g_disableOpenXR && g_submitMode==4 && g_stereoMode==1 &&
         g_haveViews && g_trackedFrame.open;
     const auto consume=[&](const d2vr_player_camera::Owner& selected) {
         d2vr_hud::Owner hud;

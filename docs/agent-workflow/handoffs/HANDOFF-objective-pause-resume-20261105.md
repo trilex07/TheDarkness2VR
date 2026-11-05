@@ -37,6 +37,12 @@ objective marker handoff, input systems and game automation skills.
 
 No new native offsets, executable patches or global render changes.
 
+Follow-up: native_hud.h/.inl temporarily releases HideNativeHUD for eight
+seconds after held Circle (and extends while held). Restores saved native
+visibility only; never forces an originally hidden native HUD on. Native HUD
+owner/override/lease tests472 PASS. ObjectiveRoute logs actual engine-facing
+BACK and selected source, not just the requested XR state.
+
 ## Validation
 
 - PASS: normal and DiagnosticCapture builds; diagnostic DLL SHA256
@@ -54,6 +60,26 @@ No new native offsets, executable patches or global render changes.
 - Exact Steam DLL/diagnostic rollback PASS after lab; main INI/EXE/loader hashes
   unchanged; all four fresh user save/config originals restored and hash checked.
 - Headset test NOT RUN. Do not infer hardware performance from simulator.
+
+## Follow-up native consumer investigation (still OPEN)
+
+Private test-output/objective-guidance-check-20261105/final-d3d9.log proves
+BACK=1 source=XR buttons=0x0020, then BACK=0, and HUD hidden1->0. Native HUD
+elements become visible. Neither repeated Select nor held Circle visibly
+showed objective/purple route; do NOT call the complete Circle issue fixed.
+An attempted250ms HUD pre-release did not resolve it and was removed.
+Fresh originals restored again after the follow-up lab. Final frozen package
+uses the rebuilt post-investigation DLL recorded in candidate.json, rather
+than the earlier065B diagnostic build above. Headset remains NOT RUN.
+
+Native stock EXE evidence (same pinned D46BB6CB identity): string
+ForceShowCurrentObjective VA F4B720 referenced by6786D0 and A33630 handlers.
+A33630 accepts action1A/down, first dispatches ten component handlers, then
+tests avatar vtable+334 and inventory-related vtable+1AC result before calling
+5CB990 and movie vtable+74 with ForceShowCurrentObjective. Exact bytes must be
+pinned and owner/ABI established before any hook; no guessed native call added.
+Stock controller manual confirms Back, PC manual Backspace; observed engine
+delivery is not evidence that these later native conditions accepted the action.
 
 ## Candidate / next steps
 

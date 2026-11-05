@@ -87,6 +87,8 @@ one second to show the objective text. The screen-space destination marker is
 hidden in the local HUD asset patch; follow the native purple world guidance.
 Keep Circle held to maintain the native guidance input; a short tap retains
 the unlocked ability. A new press cancels any remaining previous tap pulse.
+The native HUD hide is released during guidance and for eight seconds after
+the hold, allowing the game's objective panel and guidance to be displayed.
 Double Triangle pauses gameplay. Continue restores tracked hands using the
 game's pause state, without requiring another double Triangle.
 

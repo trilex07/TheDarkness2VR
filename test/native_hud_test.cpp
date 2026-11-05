@@ -6,6 +6,9 @@ static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){std::printf("FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 int main() {
     using namespace d2vr_hud;
+    CHECK(!GuidanceActive(0,0));CHECK(GuidanceActive(100,8100));
+    CHECK(GuidanceActive(8099,8100));CHECK(!GuidanceActive(8100,8100));
+    CHECK(!GuidanceActive(99,8100)); // stale/future deadline outside bounded lease
     std::unordered_map<uint32_t,uint32_t> memory={{0x20000,0x1001630},{0x204e4,0x30000},
         {0x30000,0x40000},{0x40074,0x50000},{0x50000,0x20000},
         {0x40060,0x60000},{0x60000,0x70000},{0x70000,0xfe3b88}};

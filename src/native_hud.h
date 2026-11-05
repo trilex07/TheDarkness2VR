@@ -1,6 +1,11 @@
 #pragma once
 #include <cstdint>
 namespace d2vr_hud {
+// Explicit guidance temporarily releases the global HUD hide. Never force a
+// HUD visible when the native owner had hidden it itself.
+inline bool GuidanceActive(uint64_t now,uint64_t until) {
+    return now<until && until-now<=8000;
+}
 struct Owner {uint32_t avatar=0,player=0,playerRef=0,hud=0,hudRef=0;
     bool operator==(const Owner& b)const {return avatar==b.avatar && player==b.player &&
         playerRef==b.playerRef && hud==b.hud && hudRef==b.hudRef;}

@@ -654,6 +654,7 @@ static void LoadDlssConfig(const char* chosenIni); // dlss_eye.inl
 static float g_foveaPeriphery = .35f, g_foveaSharpness = 1.f, g_foveaSize = .22f;
 static bool g_headAttachedTentacles = false;
 static bool g_hideNativeHud = false;
+alignas(8) static volatile LONGLONG g_objectiveHudUntil=0;
 static bool g_gpuSplitTiming = false;
 static bool g_shaderDemandCache=false,g_replayPrepareWorker=false;
 static bool g_fullPacketPrepareWorker=false;
@@ -5113,6 +5114,8 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         !g_nativeCinematicPlaying && !NativeActionMovies(),GetTickCount64()*.001);
     gp.wButtons &= ~XINPUT_GAMEPAD_B;
     if(objectiveButton.nativeB)gp.wButtons|=XINPUT_GAMEPAD_B;
+    if(objectiveButton.showObjective)
+        InterlockedExchange64(&g_objectiveHudUntil,LONGLONG(GetTickCount64()+8000));
     if(objectiveButton.showObjective)gp.wButtons|=XINPUT_GAMEPAD_BACK;
     static bool objectiveWasHeld=false;
     if(objectiveButton.showObjective && !objectiveWasHeld)
@@ -5491,6 +5494,10 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
 
     if (res == ERROR_SUCCESS) {
         if(userIndex==0) {
+            static thread_local bool previousBack=false;
+            const bool back=(state->Gamepad.wButtons&XINPUT_GAMEPAD_BACK)!=0;
+            if(back!=previousBack)Log("[ObjectiveRoute] BACK=%d source=%s buttons=0x%04X",int(back),selectedXrPad?"XR":"physical",state->Gamepad.wButtons);
+            previousBack=back;
             static thread_local bool previousForwardedA=false;
             const bool forwardedA=(state->Gamepad.wButtons&XINPUT_GAMEPAD_A)!=0;
             if(forwardedA && !previousForwardedA)
