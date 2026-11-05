@@ -48,3 +48,9 @@ attached-tentacle residual improved0.25 -> <=0.000002781. Remaining5 VS are
 offline only. No full-game, performance or physical headset completion claim.
 Exact accepted Steam and four fresh saves restored; no game running.
 See detailed research evidence for serials, numerical limits and package.
+
+User authorized Steam deployment after simulator follow-up. Installed frozen
+72d54b85 candidate DLL E8C8015E, game closed, simulator OFF; exact installed
+SHA and eight protected files verified by package installer. Headset acceptance
+pending. Local receipt build/material-eye-validated-20261105/installed.json;
+rollback via same Install.ps1 -Restore to accepted DLL7DD55BA4. Main unchanged.
