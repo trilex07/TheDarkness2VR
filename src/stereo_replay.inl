@@ -60,6 +60,7 @@ struct VsInfo {
     uint32_t hash = 0;
     bool reflectionEye=false;
     bool worldSpecularEye=false;
+    bool skinnedSpecularEye=false;
     bool videoClip=false;
     bool tentacleGlow=false; // complete native sprite VS, c0..c3 -> o0
     std::vector<DWORD> bytecode; // exact identity when a released COM address is reused
@@ -949,6 +950,12 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
                         "3c631401ada94476495e69fdab39bb444a4062e5daeac8696817343f294c83b1")) ||
                      (metadata.hash==0xCA08BDC4u && d2vr_native_clone::MatchesDigest(code.data(),bytes,
                         "0051b4e3ff1ee039ac224e9629c5181492432864b1cab6b0b4f863596300b9a1")));
+                // Selected draw covers the wrecking crane (2026-11-05).
+                // v2 is eye-minus-skinned-position; PS reflects it through
+                // the world tangent basis before SHLight dominant specular.
+                metadata.skinnedSpecularEye=metadata.hash==0xD94B61DCu && bytes==2124 &&
+                    d2vr_native_clone::MatchesDigest(code.data(),bytes,
+                        "c2ce27f5670b85dca4aeb06f8d02a02376a4a748699db813b6067a1bc21af2bc");
                 metadata.reflectionEye=
                     (metadata.hash==0x7DCA4CC4u && bytes==1596 &&
                      d2vr_native_clone::MatchesDigest(code.data(),bytes,
@@ -1081,6 +1088,8 @@ static HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* dev, 
         vi.hash = h;
         vi.worldSpecularEye=h==0x293F456Bu && (n+1)*4==948 &&
             d2vr_native_clone::MatchesDigest(fn,948,"ce46fc92b8eb1c017b9da0a97fb5feca3ad8a457f178e52604ea64d73e574121");
+        vi.skinnedSpecularEye=h==0x1CB7CEE2u && (n+1)*4==1884 &&
+            d2vr_native_clone::MatchesDigest(fn,1884,"e01892e5726d7533b21281e6ad8b11d40f860f25cfaf4181709bc879410ebcba");
         vi.reflectionEye=h==0x12CCC8DBu && (n+1)*4==1284 &&
             d2vr_native_clone::MatchesDigest(fn,1284,"223298007ec4e1942d8e4ec600c508b9e677a2b3afa8f2090047579ea67bcca3");
         vi.videoClip=h==0x7ACDFC64u && (n+1)*4==204 &&
@@ -1763,8 +1772,9 @@ struct ReflectionEyeScope {
         if(!dev || g_submitMode!=4 || g_stereoMode!=1 || !g_activeVs)return;
         const auto pixel=g_pixelShaders.Lookup(g_boundPs);
         const bool lightMap=g_activeVs->worldSpecularEye && pixel.worldSpecularEye;
+        const bool skinned=g_activeVs->skinnedSpecularEye && pixel.skinnedSpecularEye;
         const bool cube=g_reflectionEyeExperiment && g_activeVs->reflectionEye && pixel.reflectionEye;
-        if(!lightMap && !cube)return;
+        if(!lightMap && !skinned && !cube)return;
         const auto sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
         if(!sp.headGeometry || IsShadowAtlasPass(dev))return;
         const auto& raw=g_replayEye<0?g_vsConstantHistory.live:g_vsConstantHistory.replay;
@@ -1784,6 +1794,8 @@ struct ReflectionEyeScope {
         if(SUCCEEDED(result)) {
             static unsigned reported=0;
             if(reported++<4)Log("[MaterialEye] eye=%d VS=%08X PS=%08X c8 corrected; exact consumer, scoped restore",g_replayEye<0?0:g_replayEye,g_activeVs->hash,pixel.hash);
+            static unsigned skinnedReported=0;
+            if(skinned && skinnedReported++<4)Log("[MaterialEyeSkinned] eye=%d VS=%08X PS=%08X c8 corrected; scoped restore",g_replayEye<0?0:g_replayEye,g_activeVs->hash,pixel.hash);
         }
     }
     ~ReflectionEyeScope() {

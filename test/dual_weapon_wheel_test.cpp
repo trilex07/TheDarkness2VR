@@ -203,7 +203,7 @@ static void AmmoTests(const char* ppm) {
     for(int i=0;i<4;++i) {
         d2vr_wheel_raster::Target t{px.data(),S*4,S,S*4,i*S,0,S};
         unsigned v=d2vr_wheel_raster::DrawShape(t,sc.data(),[&](auto&& emit){
-            d2vr_ammo_hud::Build(values[i],i==0,[&](const auto& a,const auto& b,const auto& c){
+            d2vr_ammo_hud::Build(values[i],i==0 ? 11 : (i==3 ? -1 : 9999),i==0,[&](const auto& a,const auto& b,const auto& c){
                 for(const auto* p:{&a,&b,&c}) if(p->x<-1.0001f||p->x>1.0001f||p->y<-1.0001f||p->y>1.0001f) inside=false;
                 emit(a,b,c); }); });
         CHECK(v>0);

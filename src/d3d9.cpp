@@ -964,7 +964,7 @@ void LoadConfig() {
     g_gazeMenuForceCursor = GetPrivateProfileIntA("EyeTracking", "GazeMenuForceCursor", 1, chosenIni) != 0;
     Log("[EyeTracking] GazeGrab=%d GazeThrow=%d GazeThrowAssist=%.2f GazeMenu=%d GazeWheel=%d",(int)g_gazeGrab,(int)g_gazeThrow,g_gazeThrowAssist,(int)g_gazeMenu,(int)g_gazeWheel);
     Log("[EyeTracking] enabled=%d gazeDot=%d (needs AdaptiveTriggers bridge + Toolkit gaze calibration)",(int)g_eyeTrackingEnabled,(int)g_gazeDotEnabled);
-    Log("[AmmoHud] enabled=%d (magazine rounds from gun+0xA48 on a grip-space quad; reserve ammo not shown yet)",(int)g_ammoHudEnabled);
+    Log("[AmmoHud] enabled=%d (magazine/reserve from verified native getter on a grip-space quad)",(int)g_ammoHudEnabled);
     Log("[WeaponWheel] enabled=%d (hold R3: one wheel at the right hand with every owned weapon, move the hand to it, release; closed-loop stock D-pad equip; R3 tap still reaches the game)",(int)g_weaponWheelEnabled);
     Log("[StickFlick] CrouchStickDown=%d (right stick Y never pitches the camera; up -> [Input] JumpButton default A, down -> CrouchButton default R3; physical A -> AButton default X)",(int)g_crouchStickDown);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;

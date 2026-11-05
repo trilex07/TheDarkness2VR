@@ -33,27 +33,34 @@ template<class Emit> inline void Digit(Emit& emit,uint8_t seg,float x,float y,fl
 }
 }
 
-// ammo < 0 shows "--". Values above 999 clamp to 999. low = warning colour.
-template<class Emit> inline void Build(int ammo,bool low,Emit&& emit) {
+// Each unknown value shows "--"; each value clamps at 9999. low = warning colour.
+template<class Emit> inline void Build(int ammo,int reserve,bool low,Emit&& emit) {
     detail::Rect(emit,-1,-.62f,1,.62f,.018f,.018f,.023f,.82f);            // plate
     detail::Rect(emit,-1,.56f,1,.62f,.74f,.055f,.075f,1);                  // crimson underline
-    // Bullet glyph on the left: casing + tip.
-    const float bx=-.86f;
-    detail::Rect(emit,bx,-.18f,bx+.22f,.38f,.92f,.895f,.845f,1);
-    emit(Vertex{bx,-.18f,.92f,.895f,.845f,1},Vertex{bx+.11f,-.42f,.92f,.895f,.845f,1},Vertex{bx+.22f,-.18f,.92f,.895f,.845f,1});
-    int digits[3]{-1,-1,-1}, n=0;
-    if(ammo<0) { digits[0]=digits[1]=-1; n=2; }
-    else {
-        if(ammo>999) ammo=999;
-        int v=ammo, tmp[3], k=0;
-        do { tmp[k++]=v%10; v/=10; } while(v && k<3);
-        for(int i=0;i<k;++i) digits[i]=tmp[k-1-i];
-        n=k;
+    int digits[9]{}, n=0;
+    for(int value:{ammo,reserve}) {
+        if(n)digits[n++]=-2; // separator
+        if(value<0) { digits[n++]=-1; digits[n++]=-1; }
+        else {
+            if(value>9999)value=9999;
+            int tmp[4],k=0;
+            do {tmp[k++]=value%10;value/=10;}while(value && k<4);
+            while(k)digits[n++]=tmp[--k];
+        }
     }
-    const float w=.44f, gap=.1f, h=.92f, t=.085f;
-    const float total=n*w+(n-1)*gap, x0=.225f-total*.5f, y0=-.46f;
+    const float gap=.045f,w=std::fmin(.34f,(1.8f-(n-1)*gap)/n),h=.92f,t=w*.17f;
+    const float total=n*w+(n-1)*gap, x0=-total*.5f, y0=-.46f;
     const float r=low ? .95f : .92f, g=low ? .25f : .895f, b=low ? .2f : .845f;
-    for(int i=0;i<n;++i) detail::Digit(emit,Segments(digits[i]),x0+i*(w+gap),y0,w,h,t,r,g,b);
+    for(int i=0;i<n;++i) {
+        const float x=x0+i*(w+gap);
+        if(digits[i]==-2) {
+            const Vertex a{x+w-t,y0,.7f,.7f,.7f,1}, b0{x+w,y0,.7f,.7f,.7f,1};
+            const Vertex c{x+t,y0+h,.7f,.7f,.7f,1}, d{x,y0+h,.7f,.7f,.7f,1};
+            emit(a,b0,c);emit(a,c,d);
+        } else detail::Digit(emit,Segments(digits[i]),x,y0,w,h,t,r,g,b);
+    }
 }
+
+template<class Emit> inline void Build(int ammo,bool low,Emit&& emit) { Build(ammo,-1,low,emit); }
 
 } // namespace d2vr_ammo_hud

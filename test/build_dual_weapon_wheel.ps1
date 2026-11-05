@@ -14,6 +14,6 @@ Push-Location $out
 try {
  cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /WX /O2 /MD /std:c++17 /D_CRT_SECURE_NO_WARNINGS `"$source`" /Fe:dual-weapon-wheel-test.exe"
  if($LASTEXITCODE -ne 0){throw 'Dual weapon wheel test compile failed'}
- if($Preview){& './dual-weapon-wheel-test.exe' (Join-Path $out 'wheels.ppm')} else {& './dual-weapon-wheel-test.exe'}
+ if($Preview){& './dual-weapon-wheel-test.exe' (Join-Path $out 'wheels.ppm') (Join-Path $out 'ammo.ppm')} else {& './dual-weapon-wheel-test.exe'}
  if($LASTEXITCODE -ne 0){throw 'Dual weapon wheel test failed'}
 } finally {Pop-Location}

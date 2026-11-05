@@ -21,9 +21,9 @@ static HRESULT Set(IDirect3DDevice9* dev,unsigned start,const float* data,unsign
 }
 static struct {decltype(&Set) SetVertexShaderConstantF=Set;} g_orig;
 static bool g_reflectionEyeExperiment=false;static int g_submitMode=4,g_stereoMode=1,g_replayEye=-1;
-struct Vs{bool reflectionEye=true,worldSpecularEye=false;unsigned hash=0x12CCC8DB;};static Vs vi;static Vs* g_activeVs=&vi;
+struct Vs{bool reflectionEye=true,worldSpecularEye=false,skinnedSpecularEye=false;unsigned hash=0x12CCC8DB;};static Vs vi;static Vs* g_activeVs=&vi;
 static const void* g_boundPs=&vi;
-static struct {bool allowed=true,world=false;struct Value{bool reflectionEye,worldSpecularEye;unsigned hash;};Value Lookup(const void*){return {allowed,world,0xBA3D8E61};}} g_pixelShaders;
+static struct {bool allowed=true,world=false,skinned=false;struct Value{bool reflectionEye,worldSpecularEye,skinnedSpecularEye;unsigned hash;};Value Lookup(const void*){return {allowed,world,skinned,0xBA3D8E61};}} g_pixelShaders;
 static d2vr_shader_registers::History g_vsConstantHistory;
 struct Params{bool headGeometry=true;};static Params MakeEyeParams(int){return {};}
 static bool IsShadowAtlasPass(IDirect3DDevice9*){return false;}
@@ -33,7 +33,7 @@ namespace d2vr_submission {static int invalidations=0;static void Invalidate(){+
 static const float projection[16]={1,0,0,0,0,1,0,0,0,0,1.01f,1,0,0,-.1f,0};
 static void Setup(IDirect3DDevice9& device,int eye) {
     device={};g_vsConstantHistory.Clear();g_replayEye=eye;g_reflectionEyeExperiment=true;
-    vi.reflectionEye=true;vi.worldSpecularEye=false;g_pixelShaders.allowed=true;g_pixelShaders.world=false;
+    vi.reflectionEye=true;vi.worldSpecularEye=false;vi.skinnedSpecularEye=false;g_pixelShaders.skinned=false;g_pixelShaders.allowed=true;g_pixelShaders.world=false;
     float raw[36]{};std::memcpy(raw,projection,sizeof(projection));raw[35]=123.25f;
     g_vsConstantHistory.live.Write(0,9,raw,sizeof(raw));
     g_vsConstantHistory.replay=g_vsConstantHistory.live;
@@ -63,6 +63,17 @@ int main(){
         {ReflectionEyeScope s(&device);}Check(!device.gets && !device.sets,"light-map VS with foreign PS rejected");
         g_pixelShaders.world=true;vi.worldSpecularEye=false;
         {ReflectionEyeScope s(&device);}Check(!device.gets && !device.sets,"light-map PS with foreign VS rejected");
+    }
+    for(int eye:{-1,1}) {
+        Setup(device,eye);g_reflectionEyeExperiment=false;
+        vi.reflectionEye=false;vi.skinnedSpecularEye=true;g_pixelShaders.allowed=false;g_pixelShaders.skinned=true;
+        float old[36];std::memcpy(old,device.values,sizeof(old));
+        {ReflectionEyeScope s(&device);Check(device.sets==1,"crane pair corrected with cube experiment off");}
+        Check(device.sets==2 && !std::memcmp(old,device.values,sizeof(old)),"crane restores every register");
+        device.gets=0;device.sets=0;g_pixelShaders.skinned=false;
+        {ReflectionEyeScope s(&device);}Check(!device.gets && !device.sets,"crane VS with foreign PS rejected");
+        g_pixelShaders.skinned=true;vi.skinnedSpecularEye=false;
+        {ReflectionEyeScope s(&device);}Check(!device.gets && !device.sets,"crane PS with foreign VS rejected");
     }
     Setup(device,-1);vi.reflectionEye=false;{ReflectionEyeScope s(&device);}
     Check(!device.gets,"foreign VS rejected before driver query");

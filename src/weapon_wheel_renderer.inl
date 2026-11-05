@@ -96,8 +96,10 @@ static QuadAtlas g_gazeAtlas("GazeDot",64,1);
 static bool g_gazeDotDrawn=false;
 static uint64_t g_wheelDrawn=~0ull;
 static int g_ammoDrawn[2]{-3,-3};
+static int g_ammoReserveDrawn[2]{-3,-3};
 static void ReleaseWeaponWheelRenderer() {
     g_wheelAtlas.Reset(); g_ammoAtlas.Reset(); g_gazeAtlas.Reset(); g_wheelDrawn=~0ull; g_ammoDrawn[0]=g_ammoDrawn[1]=-3;
+    g_ammoReserveDrawn[0]=g_ammoReserveDrawn[1]=-3;
     g_gazeDotDrawn=false; // g_viewSpace belongs to the session code in d3d9.cpp
 }
 
@@ -124,40 +126,43 @@ static void AppendWheelQuads(const XrCompositionLayerBaseHeader** layers,uint32_
     }
 }
 
-// Magazine counter on the back of each armed hand, attached to the grip space
+// Magazine/reserve counter on the back of each armed hand, attached to the grip space
 // so the compositor moves it with the controller (no extra latency).
 static void AppendAmmoQuads(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,uint32_t limit,
                             XrCompositionLayerQuad quads[2]) {
     if(!g_ammoHudEnabled || !g_inputContext || g_wheelGate.open) return;
     WeaponLoadoutSample s;
     if(!CopyWeaponLoadout(s)) return;
-    int ammo[2]{-3,-3}; bool show[2]{};          // XR order: 0 left, 1 right
+    int ammo[2]{-3,-3},reserve[2]{-3,-3}; bool show[2]{}; // XR order: left, right
     for(int native=0;native<2;++native) {
         const int slot=s.loadout.hand[native];
         if(slot!=d2vr_wheel::kSlotTwoHanded && !d2vr_wheel::IsOneHanded(slot)) continue;
         const int xr=native==0 ? 1 : 0;
         show[xr]=g_handGripSpace[xr]!=XR_NULL_HANDLE; ammo[xr]=s.handAmmo[native];
+        reserve[xr]=s.handReserve[native];
         // Low: a quarter of the largest magazine seen for this weapon type.
         const int max=s.maxAmmo[slot];
         if(ammo[xr]>=0 && max>=4 && ammo[xr]*4<=max) ammo[xr]+=10000; // low flag carried in the key
     }
     if(!show[0] && !show[1]) return;
     if(!g_ammoAtlas.Ensure()) return;
-    if(ammo[0]!=g_ammoDrawn[0] || ammo[1]!=g_ammoDrawn[1]) {
+    if(ammo[0]!=g_ammoDrawn[0] || ammo[1]!=g_ammoDrawn[1] ||
+       reserve[0]!=g_ammoReserveDrawn[0] || reserve[1]!=g_ammoReserveDrawn[1]) {
         for(int h=0;h<2;++h) {
             auto t=g_ammoAtlas.Cell(h);
             const bool low=ammo[h]>=10000; const int value=low ? ammo[h]-10000 : ammo[h];
-            if(show[h]) d2vr_wheel_raster::DrawShape(t,g_ammoAtlas.scratch.data(),[&](auto&& emit){ d2vr_ammo_hud::Build(value,low,emit); });
+            if(show[h]) d2vr_wheel_raster::DrawShape(t,g_ammoAtlas.scratch.data(),[&](auto&& emit){ d2vr_ammo_hud::Build(value,reserve[h],low,emit); });
             else d2vr_wheel_raster::Clear(t);
         }
         g_ammoDrawn[0]=ammo[0]; g_ammoDrawn[1]=ammo[1]; ++g_ammoAtlas.revision;
+        g_ammoReserveDrawn[0]=reserve[0];g_ammoReserveDrawn[1]=reserve[1];
     }
     if(!g_ammoAtlas.Publish()) return;
     // Grip space: -Z forward along the barrel, +Y up. Above the back of the
     // hand, tilted ~35 degrees towards the eyes.
     XrPosef pose{}; pose.orientation={-.3007f,0,0,.9537f}; pose.position={0,.055f,.045f};
     for(int h=0;h<2 && layerCount<limit;++h) if(show[h]) {
-        g_ammoAtlas.Quad(quads[h],h,g_handGripSpace[h],pose,.06f);
+        g_ammoAtlas.Quad(quads[h],h,g_handGripSpace[h],pose,.08f);
         layers[layerCount++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quads[h]);
     }
 }

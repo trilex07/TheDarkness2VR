@@ -2,7 +2,8 @@
 #include "stereo_math.h"
 
 namespace d2vr_reflection_eye {
-// Admitted VS12CCC8DB / VS293F456B: c8-position followed by tangent DP3s.
+// Admitted VS12CCC8DB / VS293F456B / skinned VS1CB7CEE2:
+// c8-position followed by tangent DP3s (after bone deformation when skinned).
 // Camera origin in a row-vector perspective projects to (0,0,k,0).
 inline bool Center(const float matrix[16],float out[3]) {
     if(!matrix || !out)return false;

@@ -184,12 +184,30 @@ struct WeaponLoadoutSample {
     DWORD type[3]{};     // object+4: same value = same weapon model (headset 23:20)
     int slotAmmo[3]{-1,-1,-1}; // rounds in the magazine (gun+0xA48, native getter 0x6E8020)
     int handAmmo[2]{-1,-1};    // same for the gun in native hand 0 (right) / 1 (left)
+    int handReserve[2]{-1,-1}; // native ammo-resource pool, excluding loaded magazine
     int maxAmmo[3]{};          // largest magazine count seen for that weapon type this run
     int icon[3]{-1,-1,-1};
 };
 static SRWLOCK g_weaponLoadoutLock=SRWLOCK_INIT;
 static WeaponLoadoutSample g_weaponLoadout;
 static ULONGLONG g_weaponLoadoutTime=0;
+
+// Native gun v148: magazine, capacity, reserve outputs; thiscall RET0C.
+// Read only on the existing owner-checked CaptureNativeGameplay thread.
+static void CaptureHandAmmo(BYTE* gun,int& magazine,int& reserve) {
+    static int verified=-1;
+    if(verified<0) {
+        verified=d2vr_native_clone::MatchesDigest(reinterpret_cast<void*>(0xBD2010),0xB9,
+            "8547c8b784ca9fb65b41727950171ad47b5a5c703321704caf85294f25e39018") ? 1:0;
+        Log("[AmmoHud] native magazine/capacity/reserve getter %s",verified ? "verified":"REFUSED");
+    }
+    if(!verified || *(DWORD*)gun!=0x1010E30 || *(DWORD*)(0x1010E30+0x148)!=0xBD2010)return;
+    int rounds=-1,capacity=-1,pool=-1;
+    using Read=void(__thiscall*)(BYTE*,int*,int*,int*);
+    reinterpret_cast<Read>(0xBD2010)(gun,&rounds,&capacity,&pool);
+    magazine=rounds>=0 && rounds<1000 ? rounds:-1;
+    reserve=pool>=0 && pool<10000 ? pool:-1;
+}
 
 // Called from CaptureNativeGameplay with the already ownership-checked inventory.
 static void CaptureWeaponLoadout(BYTE* inventory) {
@@ -216,8 +234,7 @@ static void CaptureWeaponLoadout(BYTE* inventory) {
             auto gun=**(BYTE***)(inventory+0xB0+12*hand);
             const int native=gun ? *(int*)(gun+0xD4) : 8;
             if(gun && *(DWORD*)gun==0x1010E30) {
-                const int ammo=*(int*)(gun+0xA48);
-                s.handAmmo[hand]=ammo>=0 && ammo<1000 ? ammo : -1;
+                CaptureHandAmmo(gun,s.handAmmo[hand],s.handReserve[hand]);
             }
             int canonical=native==8 ? d2vr_wheel::kSlotEmpty : d2vr_wheel::kSlotOther;
             for(int slot=0;slot<3;++slot) if(native==ids[slot]) canonical=slot;
@@ -256,14 +273,18 @@ static void CaptureWeaponLoadout(BYTE* inventory) {
         s.maxAmmo[slot]=maxValue[i];
     }
     static int lastAmmo[2]{-2,-2};
-    if(s.loadout.valid && (s.handAmmo[0]!=lastAmmo[0] || s.handAmmo[1]!=lastAmmo[1])) {
+    static int lastReserve[2]{-2,-2};
+    if(s.loadout.valid && (s.handAmmo[0]!=lastAmmo[0] || s.handAmmo[1]!=lastAmmo[1] ||
+       s.handReserve[0]!=lastReserve[0] || s.handReserve[1]!=lastReserve[1])) {
         static ULONGLONG lastLog=0; const ULONGLONG t=GetTickCount64();
         if(t-lastLog>500 || (lastAmmo[0]>=0 && s.handAmmo[0]>lastAmmo[0])) { // reloads always logged
             lastLog=t;
-            Log("[AmmoHud] magazine right=%d left=%d (max seen slot0/1/2=%d/%d/%d)",s.handAmmo[0],s.handAmmo[1],
+            Log("[AmmoHud] magazine/reserve right=%d/%d left=%d/%d (max seen slot0/1/2=%d/%d/%d)",
+                s.handAmmo[0],s.handReserve[0],s.handAmmo[1],s.handReserve[1],
                 s.maxAmmo[0],s.maxAmmo[1],s.maxAmmo[2]);
         }
         lastAmmo[0]=s.handAmmo[0]; lastAmmo[1]=s.handAmmo[1];
+        lastReserve[0]=s.handReserve[0];lastReserve[1]=s.handReserve[1];
     }
     static int lastKey=-1;
     const int key=s.loadout.valid ? (int(s.loadout.owned[0])|int(s.loadout.owned[1])<<1|int(s.loadout.owned[2])<<2|
