@@ -6,7 +6,7 @@
 **Branch**: codex/shrine-icon-20261105
 **Worktree**: .main-camera-shake
 **Baseline**: accepted Steam source76657702, DLL9476A8D5; parent candidate ba8f1eb3, DLL7DD55BA4
-**Integration commit**: pending; private six-file candidate prepared, not installed
+**Integration commit**: a72c5714; private six-file candidate installed at user request
 
 ## Goal
 Remove the separate purple shrine overlay that follows head movement, keeping
@@ -15,7 +15,8 @@ the shrine flame, interaction and previously repaired native Continue hands.
 ## Status
 User confirmed two purple angular symbols in private lab turn4.png.
 Visual removal PASS in simulator. Headset NOT RUN; shrine interaction/menu
-entry NOT VERIFIED in this session. Production Steam restored to accepted baseline.
+entry NOT VERIFIED in this session. Production Steam candidate installed after
+explicit user request on 2026-11-05; headset acceptance remains pending.
 
 ## Context Loaded
 - [x] BASELINE.md
@@ -91,4 +92,10 @@ to their exact backups. Latest recovery: confirmed lab recover.ps1 PASS.
 
 ## Notes
 Parent candidate build/objective-pause-resume-20261105 remains available.
-No final Steam deployment, main integration or headset acceptance claimed.
+## Final Steam deployment (2026-11-05)
+User requested "wrzuc na steam". Game was closed. Frozen six-file installer
+completed; post-install VerifyOnly PASS for all payloads, exact rollback and
+protected EXE/main INI/loader. DLL7DD55BA4, production diagnostic117230AC;
+simulator OFF, resolution preserved. Local receipt:
+build/menu-hands-shrine-20261105/installed.json. Main integration and headset
+acceptance remain pending. Restore with the same Install.ps1 -Restore.
