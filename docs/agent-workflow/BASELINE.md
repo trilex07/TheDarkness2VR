@@ -1,5 +1,16 @@
 # Baseline and current MAIN candidate
 
+## Accepted Steam baseline: crane lighting, particles and ammo reserve (2026-11-05)
+
+User tested the installed candidate, accepted it and requested main integration.
+Source e641c9a5; installed DLL
+622D75E5B58496652106A804EF674AC037F636B169F7104C4FF81781D088A32D.
+Simulator OFF. Main and diagnostic INIs unchanged. Frozen package
+build/lit-mask-verified-20261105/Install.ps1; -Restore returns the exact
+E8C8015E DLL. The package includes the previously accepted ammo reserve HUD.
+Functional acceptance in the reported scene; metro coverage not established.
+Details: handoffs/HANDOFF-crane-smoke-projection-20261105.md.
+
 ## Accepted Steam baseline: shrine symbols and Continue hands (2026-11-05)
 
 User tested the six-file menu-hands-shrine candidate, accepted it and requested
