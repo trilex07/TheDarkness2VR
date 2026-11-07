@@ -14,6 +14,7 @@
 static bool g_startupShaderPool=true;
 static unsigned g_startupShaderCopies=1;
 static void Log(const char* format,...) {va_list args;va_start(args,format);vprintf(format,args);va_end(args);puts("");}
+static bool g_shaderDemandCache=false; // production default ([Render] ShaderDemandCache=0)
 #include "../src/shader_preload_pool.inl"
 #define CHECK(x) do{if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 #define HR(x) do{HRESULT h=(x);if(FAILED(h)){printf("FAIL %d hr=%08lx: %s\n",__LINE__,h,#x);exit(1);}}while(0)
@@ -60,7 +61,12 @@ static void Core() {
         first.Release();second.Release();
         CHECK(two.Adopt(&device,code,&excess,0));two.ClearObjects();CHECK(excess.releases==1);
     }
-    Pool<Fake> bounded(&device);
+    {   // Default (ShaderDemandCache=0) keeps the legacy 1024-entry learning limit.
+        Pool<Fake> legacy(&device);
+        for(uint32_t i=0;i<LegacyMaxShaders;++i){auto unique=code;unique[2]=i;CHECK(legacy.Remember(&device,unique));}
+        auto over=code;over[2]=uint32_t(LegacyMaxShaders);CHECK(!legacy.Remember(&device,over));
+    }
+    Pool<Fake> bounded(&device,1,true); // ShaderDemandCache=1: indexed, 4096 entries
     for(uint32_t i=0;i<MaxShaders;++i){auto unique=code;unique[2]=i;CHECK(bounded.Remember(&device,unique));}
     auto excess=code;excess[2]=uint32_t(MaxShaders);CHECK(!bounded.Remember(&device,excess));
     uint64_t version=0;auto archive=bounded.Archive(version);

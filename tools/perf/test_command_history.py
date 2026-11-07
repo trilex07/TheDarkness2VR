@@ -41,7 +41,9 @@ class ActualHistory(unittest.TestCase):
     def test_all_real_draws_and_producer_flags_preserved(self):
         source=(ROOT/'src/stereo_replay.inl').read_text()
         for call in ('DrawPrimitive','DrawIndexedPrimitive','DrawPrimitiveUP','DrawIndexedPrimitiveUP'):
-            self.assertIn('return command.Finish(g_orig.'+call+'(',source)
+            # Every real draw still goes through command.Finish; the result may be
+            # wrapped by ObserveVideoDrawResult (video-draw observer, added later).
+            self.assertIn('command.Finish(g_orig.'+call+'(',source)
         shared=(ROOT/'src/shared_capture.inl').read_text()
         self.assertEqual(shared.count('GetData(nullptr,0,D3DGETDATA_FLUSH)'),2)
         renderer=(ROOT/'src/d3d9.cpp').read_text()

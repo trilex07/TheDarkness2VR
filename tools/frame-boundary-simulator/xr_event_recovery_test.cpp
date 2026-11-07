@@ -40,13 +40,32 @@ static d2vr_settings::Panel g_vrSettings;
 static d2vr_settings::ToggleAction g_vrSettingsToggle;
 static unsigned settingsReleases=0;
 static void ReleaseVrSettingsRenderer(){++settingsReleases;}
-static struct {void DiscardFrames(){}} g_adaptiveFPS;
+static struct {void DiscardFrames(){}void SessionEnded(){}} g_adaptiveFPS;
 static XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance,const char*,PFN_xrVoidFunction*){return XR_ERROR_FUNCTION_UNSUPPORTED;}
 static struct {
-    void Start(XrInstance,XrSession,PFN_xrGetInstanceProcAddr){}void Stop(){}
+    bool Start(XrInstance,XrSession,PFN_xrGetInstanceProcAddr){return true;}void Stop(){}
     float Hz()const{return 0;}bool Enabled()const{return false;}
     bool Event(const XrEventDataBuffer&){return false;}
+    bool FallbackActive()const{return false;}void Fallback(float){}
 } g_displayRefresh;
+// Dependencies added after this fixture: OpenVR refresh fallback, PSVR2 triggers,
+// weapon wheel, app pacing and per-frame engine observers (all inert here).
+static struct {bool Start(const char*){return false;}void Stop(){}float Read(){return 0;}} g_steamRefresh;
+static ULONGLONG g_steamRefreshNext=0;
+static bool g_cinematicScreenValid=false,g_appPacingBound=false;
+static struct {void Reset(){}} g_appHalfRate;
+static struct Button {unsigned held=0;} g_objectiveButton;
+static void ReleaseWeaponWheelRenderer(){}
+namespace d2vr {namespace psvr2 {enum class TriggerOffReason {Unfocused,SessionEnd};static void SubmitBothOff(TriggerOffReason){}}}
+static XrResult xrGetInstanceProperties(XrInstance,XrInstanceProperties*){return XR_ERROR_FUNCTION_UNSUPPORTED;}
+static void ObserveNativeMenuReceiver(){}
+static void ApplyGazeMenuCursor(){}
+static void ApplyEngineFrameCap(){}
+static void ApplyEngineLodScale(){}
+static void ObserveGazeLodConfiguration(){}
+static void ReportGazeLodRuntimeObserver(){}
+static void PollNativeSleepTiming(){}
+namespace d2vr_hook_cost {static void Report(void(*)(const char*,...),uint64_t){}}
 static struct Chord {unsigned held=0;} g_recenterChord;
 static struct Chord g_triangleRecenter;
 static uint64_t BeginAdaptivePresentation(){return 1;}
@@ -84,6 +103,7 @@ static XrResult xrEndSession(XrSession session){Check(session==g_xrSession);Chec
 namespace d2vr_cpu_sync {
 enum Kind {BoundaryWork};
 struct Scope {explicit Scope(Kind){}};
+struct ThreadStamp {};
 static struct Timing {void Report(unsigned,unsigned,uint64_t){}} timing;
 }
 namespace d2vr_replay {static void ReleaseRecording(){++recordReleases;}}

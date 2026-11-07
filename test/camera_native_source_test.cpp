@@ -8,6 +8,8 @@
 static bool g_cameraNativeNoShake=true;
 static d2vr_native_image::Guard g_nativeImageGuard;
 static void Log(const char*,...){}
+// Native recenter leveling (native_camera_level.inl) has its own gates; no pending request here.
+static void ApplyNativeCameraLevel(DWORD){}
 #include "camera_native_no_shake.inl"
 alignas(16) static BYTE owner[0x1400],avatar[16],controller[0x80];
 static DWORD controllerRef[3],avatarRef[3],cameraRef[3];

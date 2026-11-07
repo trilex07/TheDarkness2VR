@@ -2,7 +2,10 @@ $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 $source=Get-Content (Join-Path $repo 'src/stereo_replay.inl') -Raw
 $start=$source.IndexOf('struct TentacleHeadScope {')
-$end=$source.IndexOf('// Keep C++ restoration scopes', $start)
+# End at the next scope: ShadowClipScope now follows TentacleHeadScope and has
+# its own actual-source test (build_shadow_clip_scope.ps1).
+$end=$source.IndexOf('struct ShadowClipScope {', $start)
+if($end -lt 0){$end=$source.IndexOf('// Keep C++ restoration scopes', $start)}
 if($start -lt 0 -or $end -lt 0){throw 'Actual production scope not found'}
 $out=Join-Path $env:TEMP 'd2vr-tentacle-head-scope'
 New-Item -ItemType Directory -Force -Path $out|Out-Null

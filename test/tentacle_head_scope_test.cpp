@@ -22,7 +22,13 @@ struct IDirect3DIndexBuffer9 {
     HRESULT GetDesc(D3DINDEXBUFFER_DESC* out){++queries;*out=desc;return fail?E_FAIL:S_OK;}
     void Release(){CHECK(refs>0);--refs;}
 };
+// Tentacle eye-glow branch (added later) is exercised only through compile here:
+// tentacleGlow=false keeps the tested tentacle path unchanged.
+struct D3DVIEWPORT9 {DWORD X=0,Y=0,Width=0,Height=0;float MinZ=0,MaxZ=1;};
+struct IDirect3DBaseTexture9 {void Release(){}};
 struct IDirect3DDevice9 {
+    HRESULT GetViewport(D3DVIEWPORT9* vp){*vp={};return S_OK;}
+    HRESULT GetTexture(DWORD,IDirect3DBaseTexture9** out){*out=nullptr;return E_FAIL;}
     IDirect3DVertexBuffer9 vb;IDirect3DIndexBuffer9 ib;
     float matrix[16]{};UINT offset=0,stride=40;
     bool noVB=false,noIB=false,failGet=false,failSet=false;
@@ -39,7 +45,9 @@ static bool g_headAttachedTentacles=true,shadow=false;
 static bool headAttachmentAllowed=true;
 static bool NativeTentacleHeadAttachmentAllowed(){return headAttachmentAllowed;}
 static int g_submitMode=4,g_stereoMode=1,g_replayEye=-1;
-struct Shader {unsigned hash=0x1CB7CEE2;} shader;
+struct Shader {unsigned hash=0x1CB7CEE2;bool tentacleGlow=false;} shader;
+static uint32_t g_activePsHash=0;
+static uint32_t TentacleGlowTextureDigest(IDirect3DBaseTexture9*){return 0;}
 static Shader* g_activeVs=&shader;
 static StereoParams MakeEyeParams(int eye){CHECK(eye>=0 && eye<2);return params;}
 static bool IsShadowAtlasPass(IDirect3DDevice9*){return shadow;}

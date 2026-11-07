@@ -56,6 +56,12 @@ static const void* g_boundVs=nullptr;
 static const void* g_boundPs=nullptr;
 namespace d2vr_pipeline_warmup {static void ObserveDraw(IDirect3DDevice9*,const void*,const void*){}}
 struct TentacleHeadScope {explicit TentacleHeadScope(IDirect3DDevice9*){}};
+// Draw-wrapper dependencies added after this fixture (no effect on record status).
+static bool HideMenuFirstPerson(IDirect3DDevice9*){return false;}
+struct SkinMipScope {explicit SkinMipScope(IDirect3DDevice9*){}};
+struct ShadowClipScope {explicit ShadowClipScope(IDirect3DDevice9*){}};
+struct ReflectionEyeScope {explicit ReflectionEyeScope(IDirect3DDevice9*){}};
+static HRESULT ObserveVideoDrawResult(IDirect3DDevice9*,HRESULT hr){return hr;}
 static unsigned clipBegins=0,clipEnds=0;
 struct UiClipState{};
 static UiClipState BeginScaledUiClip(IDirect3DDevice9*){++clipBegins;return {};}

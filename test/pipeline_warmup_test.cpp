@@ -12,6 +12,7 @@
 static bool g_startupShaderPool=true;
 static unsigned g_startupShaderCopies=2;
 static void Log(const char* format,...) {va_list args;va_start(args,format);vprintf(format,args);va_end(args);puts("");}
+static bool g_shaderDemandCache=false; // production default ([Render] ShaderDemandCache=0)
 #include "../src/shader_preload_pool.inl"
 #include "../src/pipeline_warmup_d3d9.inl"
 #define CHECK(x) do{if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);exit(1);}}while(0)

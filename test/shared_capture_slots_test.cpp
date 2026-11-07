@@ -119,7 +119,8 @@ public:
 static bool g_zeroCopyEnabled=true,g_lastConsumerReaderFence=true;
 static UINT g_srcW=0,g_srcH=0;
 template<class... A>static void Log(A...){}
-#include "@REPO@/src/shared_capture.inl"
+static unsigned g_sharedReaderSleepUs=0;static bool g_sharedReaderCompletionEvent=false; // production defaults
+#include "d2vr_shared_capture_under_test.inl"
 static bool EnsureD11StereoPipeline(){CHECK(!context.lease);return true;}
 static void EnsureDepthTexture11(){CHECK(!context.lease);}
 static ID3D11ShaderResourceView* g_uploadSRV=nullptr;
@@ -163,7 +164,8 @@ int main(){
     // Owner-produced mode still waits its own producer; never polls the peer.
     CHECK(CaptureBackbufferToShared(&device,false,1));
     CHECK(g_srcW==2676&&g_srcH==2728);
-    CHECK(!CaptureBackbufferToShared(&device,true,2)&&!EnsureSharedCapture(&device,2));
+    // 7a63d07e raised the pool to kSharedCaptureSlots (4); the first invalid slot is that count.
+    CHECK(!CaptureBackbufferToShared(&device,true,kSharedCaptureSlots)&&!EnsureSharedCapture(&device,kSharedCaptureSlots));
     CHECK(SealSharedUpload(left.srv11)&&!CanReadSharedUpload(left.srv11));
     CHECK(CanReadSharedUpload(right.srv11));CHECK(WaitSharedReader(left));
     // A failed reader retains both resource lifetimes and that slot's packet.

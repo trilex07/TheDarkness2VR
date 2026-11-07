@@ -29,6 +29,9 @@ static float g_cameraPx=1,g_cameraPy=1;
 static uint64_t g_wvpHistoryGeneration=0;
 static void PublishProjectionEstimate(float,float){}
 template<class... T> static void Log(const char*,T...){}
+// Replay packet preparation (added later) stays inactive here: no prepared job.
+struct PrepareJobStub {template<class... A> bool Try(A&&...){return false;}};
+static PrepareJobStub* g_prepareCurrent=nullptr;static size_t g_prepareRecord=0;static uint64_t g_prepareHits=0,g_prepareMisses=0;
 #include "actual_projection_history.inl"
 #include "actual_pixel_projection.inl"
 #include "../src/vertex_shader_metadata.h"

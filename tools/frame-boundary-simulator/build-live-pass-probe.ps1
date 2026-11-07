@@ -2,7 +2,9 @@ $ErrorActionPreference='Stop'
 $here=Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo=Split-Path -Parent (Split-Path -Parent $here)
 $source=Get-Content -LiteralPath (Join-Path $repo 'src\d3d9.cpp') -Raw
-$begin=$source.IndexOf('HRESULT STDMETHODCALLTYPE Hook_SetVertexShaderConstantF(')
+# Since 42f242a2 the hook body is Native_SetVertexShaderConstantF behind the
+# naked D2VR_CONSTANT_GATE(Hook_SetVertexShaderConstantF,...) entry.
+$begin=$source.IndexOf('__declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderConstantF(')
 $end=$source.IndexOf('// ---------------------------------------------------------------- INTZ Depth Capture',$begin)
 if($begin -lt 0 -or $end -lt 0){throw 'actual hook source boundaries not found'}
 if(-not $source.Contains('g_livePassProbe=GetPrivateProfileIntA("Diagnostics","LivePassProbe",0,')) {throw 'explicit diagnostic startup option/default0 missing'}
@@ -17,7 +19,7 @@ try {
     $test=Join-Path $repo 'test\live_vs_hook_test.cpp'
     foreach($diagnostic in @($false,$true)) {
         $define=if($diagnostic){'/DD2VR_MATCHED_CAPTURE=1'}else{''}
-        cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 $define /I`"$outDir`" `"$test`" /Fe:live-pass-test.exe"
+        cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 $define /I`"$outDir`" /I`"$repo\src`" `"$test`" /Fe:live-pass-test.exe"
         if($LASTEXITCODE -ne 0){throw 'actual live VS hook fixture build failed'}
         foreach($case in @('disabled','legacy','cap','stereo')) {
             & .\live-pass-test.exe $case

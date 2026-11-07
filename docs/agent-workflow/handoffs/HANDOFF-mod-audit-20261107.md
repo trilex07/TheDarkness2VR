@@ -30,9 +30,17 @@
 - Untracked committed binaries `stereo_harness.exe`, `frame_boundary_suite.exe`; `.gitignore` for tools/test exes.
 - Test fixtures updated: protected_gestures, protected_left_throw, shadow_draw, protected_hands, protected_left_aim.
 
-## Still failing (stale fixtures, follow-up)
-camera_native_source, gaze_fxaa, live_record_status, native_player_camera_owner, outline_coverage & specular_footprint (need mandatory params), pipeline_warmup, projection_history, shader_preload_pool, shared_capture_slots (d3d11 header redefinition), tentacle_head_scope, build_test (stereo), command-history, live-pass-probe, projection-estimate, small-record-copy, xr-event-recovery.
-Also: test scripts should resolve `vswhere` by full path.
+## Round 2 (role switched to MAIN by user): remaining 17 tests
+All are test-side rot; no production defect found. Each fix mirrors the current code/intent:
+- Stubs for later-added deps: live_record_status, xr-event-recovery, projection_history, camera_native_source, native_view_owner (+ real cinematic object model), tentacle_head_scope (extraction now stops before ShadowClipScope), shader_preload_pool/pipeline_warmup (`g_shaderDemandCache`), live-pass-probe (hook is `Native_SetVertexShaderConstantF` behind `D2VR_CONSTANT_GATE` since 42f242a2).
+- Intent changes reflected: shared_capture_slots (pool is 4 slots since 7a63d07e; fake CompletionPause avoids real d3d11_4.h), shader pool (legacy 1024 vs indexed 4096 capacity), native_view_owner (cutscene detection independent of 3D-gameplay flag).
+- Source-pattern checks updated: command-history, projection-estimate (estimator moved to `projection_estimate_window.h`), small-record-copy (submission guards at vtable slots 0/77 precede admission and never record; forwards are submission-gated lambdas).
+- Orphan removed: gaze FXAA test + shader builder (feature deliberately removed in f6cb30a3).
+- `build_test.ps1` now fails on test failure (it previously only printed the exit code) and builds into TEMP.
+- outline_coverage / specular_footprint were never broken: they need `-NativeShader` with private dumps (`ps-E345B150.bin`, `ps-BC938BC9.bin`, present under `.main-camera-shake/test-output/combat-resume-20261104/shaders`).
+
+## Environment blockers (not code)
+Bitdefender blocks executing two freshly built test exes (`stereo_test.exe`, `d2vr-adaptive-integration.exe`): "file in use"/"access denied", no process holds them; Defender RTP off, SAC off. Needs a user-side AV exclusion for `%TEMP%\d2vr-*` to run them. The `vswhere` noise came from `vcvarsall.bat` in nested shells, not from the scripts (all use full paths).
 
 ## MAIN verification needed
 Nothing here changes runtime behaviour except dead-code removal; in-game verification of shadows/FPS/resolution/interactions was NOT done (SIDE).

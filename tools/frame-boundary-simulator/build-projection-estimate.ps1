@@ -6,7 +6,7 @@ foreach($required in @('memcpy(&camera[0],&d2vr_replay::g_cameraPx,sizeof(float)
     'memcpy(&camera[1],&d2vr_replay::g_cameraPy,sizeof(float));',
     'StartRegister, Vector4fCount,camera[0],camera[1],proof,',
     '4,UINT32_MAX,d2vr_replay::ActiveWvpRegister(d2vr_replay::g_activeVs),&rawReference,',
-    'd2vr_replay::ActiveStpRegister(d2vr_replay::g_activeVs));')) {
+    'd2vr_replay::ActiveStpRegister(d2vr_replay::g_activeVs),')) {
     if(-not $renderer.Contains($required)){throw "Missing live projection recording: $required"}
 }
 foreach($required in @('memcpy(&uploadParams.projectionPx,&r.a[2],sizeof(float));',
@@ -15,7 +15,9 @@ foreach($required in @('memcpy(&uploadParams.projectionPx,&r.a[2],sizeof(float))
     '&rawReference)')) {
     if(-not $source.Contains($required)){throw "Missing replay projection witness: $required"}
 }
-$start=$source.IndexOf('static float s_estHistX[8]')
+# The median window moved to projection_estimate_window.h (own test:
+# tools/stereo-math-tests/projection_estimate_test.cpp); extract its publisher here.
+$start=$source.IndexOf('static d2vr_projection_estimate::Window s_estWindow;')
 $end=$source.IndexOf('static void ObserveInverseProjection', $start)
 if($start -lt 0 -or $end -le $start){throw 'Projection estimator source not found'}
 $body=$source.Substring($start,$end-$start)
@@ -36,6 +38,9 @@ static float g_estPx=0,g_estPy=0;
 static LONG g_estValid=0;
 static bool g_cameraProjectionKnown=false;
 static float g_cameraPx=1,g_cameraPy=1;
+// Replay packet preparation (added later) stays inactive: no prepared job.
+struct PrepareJobStub {template<class... A> bool Try(A&&...){return false;}};
+static PrepareJobStub* g_prepareCurrent=nullptr;static size_t g_prepareRecord=0;static unsigned long long g_prepareHits=0,g_prepareMisses=0;
 '@
 $test=@'
 int main() {
@@ -50,10 +55,9 @@ int main() {
         assert(g_estPx==x && g_estPy==y);
         PublishProjectionEstimate(7,15); // isolated plausible matrix outlier
         assert(g_estPx==x && g_estPy==y);
-        const auto cursor=s_estHistNext;
         PublishProjectionEstimate(std::numeric_limits<float>::quiet_NaN(),2);
         PublishProjectionEstimate(0,2); PublishProjectionEstimate(1,100);
-        assert(s_estHistNext==cursor && g_estPx==x && g_estPy==y);
+        assert(g_estPx==x && g_estPy==y); // rejected values never publish
     }
     const float matrix[16]={2,0,0,0, 0,3,0,0, 0,0,1,1, 0,0,-1,0};
     for(int known=0;known<2;++known) {
@@ -77,7 +81,8 @@ int main() {
 $out=Join-Path $env:TEMP 'd2vr-projection-estimate'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $geometry=(Join-Path $repo 'src\stereo_geometry.h').Replace('\','/')
-Set-Content -LiteralPath (Join-Path $out 'test.cpp') -Value ("#include `"$geometry`"`n"+$prefix+"`n"+$params+"`n"+$body+"`n"+$shift+"`n"+$test)
+$window=(Join-Path $repo 'src\projection_estimate_window.h').Replace('\','/')
+Set-Content -LiteralPath (Join-Path $out 'test.cpp') -Value ("#include `"$geometry`"`n"+$prefix+"`n#include `"$window`"`n"+"`n"+$params+"`n"+$body+"`n"+$shift+"`n"+$test)
 $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vcvars=Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat'

@@ -45,6 +45,25 @@ static void PrepareProtectedHandsForCamera(void* p){CHECK(p==camera);++hands;}
 static void PrepareProtectedWeaponForCamera(void* p){CHECK(p==camera);++weapons;}
 static bool ReadSelectedRenderCamera(void* c,void* r,NativeCameraFields&){return readCamera && c==selected && r==renderer;}
 template<class... T> static void Log(const char*,T...){}
+// Dependencies added after this fixture: HUD/marker/action-movie observers,
+// cinema theater (off), camera shake/stabilizer/gaze LOD observers (inert).
+static unsigned aimResets=0;
+static volatile LONG g_nativeRegionManager=0,g_nativeJackieInputRejected=0;
+static bool g_cinematicTheater=false;
+static void UpdateNativeHudForView(void*,void*,void*){}
+static void PrepareWorldMarkerMovies(){}
+static void ObserveNativeActionMovies(){}
+static bool CinemaSceneThisFrame(){return false;}
+static void ResetProtectedHandPoses(){}
+struct EyeParamsStub {bool headGeometry=false;};
+static EyeParamsStub g_frameEyeParams[2];static bool g_frameEyeParamsValid=false;
+static EyeParamsStub BuildEyeParams(int){return {};}
+static void NativeCameraCaptureChanged(){}
+static void TraceNativeCameraShake(uint32_t,uint32_t){}
+static void UpdateCameraAnimationStabilizer(uint32_t,uint32_t){}
+static void ObserveGazeLodOwner(void*){}
+static void ResetNativeAim(){++aimResets;}
+static d2vr_player_camera::SelectedOwnerObservation g_selectedOwnerObservation;
 #include "d2vr_native_view_owner_under_test.inl"
 static void Word(void* p,unsigned offset,uint32_t value){memcpy(static_cast<unsigned char*>(p)+offset,&value,4);}
 static void Ref(void* p,unsigned offset,unsigned block,void* object){blocks[block]=object;Word(p,offset,uint32_t(uintptr_t(&blocks[block])));}
@@ -70,8 +89,12 @@ static void Observe(){void* reference=&sceneBlock;SetLastError(0x87654321);Obser
 template<class F> static void Reject(F change){Reset();change();Observe();CHECK(!g_nativePlayerViewFrame && !g_nativePlayerViewRenderer && !aims && !throws && !hands && !weapons);}
 int main(){
     Reset();Observe();CHECK(g_nativeCinematicFrame==17 && !g_nativeCinematicPlaying);
-    cinematicObject=scene;Observe();CHECK(g_nativeCinematicFrame==17 && g_nativeCinematicPlaying);
-    g_in3DGameplayMode=false;Observe();CHECK(!g_nativeCinematicFrame);
+    // InspectCinematicView: table FCA7E0, running state 2 at +708, no free/rails flags at +7BC.
+    static __declspec(align(4)) unsigned char cinema[0x800]{};Word(cinema,0,0xfca7e0);Word(cinema,0x708,2);Word(cinema,0x7bc,0);
+    cinematicObject=cinema;Observe();CHECK(g_nativeCinematicFrame==17 && g_nativeCinematicPlaying);
+    Word(cinema,0x7bc,1u<<8);Observe();CHECK(g_nativeCinematicFrame==17 && !g_nativeCinematicPlaying); // free camera keeps gameplay view
+    // Cutscene detection is independent of 3D-gameplay mode (cinema theater needs it in cutscenes).
+    {const unsigned before=captures;g_in3DGameplayMode=false;Observe();CHECK(g_nativeCinematicFrame==17 && captures==before);}
     Reset();g_nativeCinematicAdmitted=false;Observe();CHECK(!g_nativeCinematicFrame && captures==1);
     Reset();Observe();CHECK(captures==1 && aims==1 && throws==1 && hands==1 && weapons==1);
     CHECK(pauseObservations==1 && pauseManager==manager);

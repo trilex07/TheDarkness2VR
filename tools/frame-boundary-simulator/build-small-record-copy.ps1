@@ -19,7 +19,10 @@ if(-not $renderer.Contains('static std::atomic<bool> g_directRecordCopy{false};'
 $hookDevice=[regex]::Match($renderer,'(?s)void HookDevice\(IDirect3DDevice9\* dev\) \{.*?\r?\n\}')
 $admission=$hookDevice.Value.IndexOf('g_smallRecordCopyAdmitted = g_smallRecordCopyAdmission.Admit(g_smallRecordCopyRequested);')
 $replayHooks=$hookDevice.Value.IndexOf('d2vr_replay::InstallReplayHooks(dev);')
-$firstDeviceHook=$hookDevice.Value.IndexOf('PatchVTable(')
+# Submission interface guards (QueryInterface/SetSoftwareVertexProcessing,
+# slots 0/77) are patched earlier and never record; check the first other hook.
+$deviceHook=[regex]::Match($hookDevice.Value,'PatchVTable\(dev,\s*\d+,\s*reinterpret_cast<void\*>\(&(?!Submission)')
+$firstDeviceHook=if($deviceHook.Success){$deviceHook.Index}else{-1}
 if(-not $hookDevice.Success -or $admission -lt 0 -or $replayHooks -le $admission -or $firstDeviceHook -le $admission) {
     throw 'Guard admission must execute in HookDevice before device/replay hooks are installed'
 }
@@ -41,12 +44,12 @@ if(-not [regex]::IsMatch((Get-Content -LiteralPath (Join-Path $repo 'Darkness2VR
     throw 'Shipped INI must keep ConsumedRecordCopy=0'
 }
 # Each consumer-declared payload must reach its native setter in the same call.
-$vsHook=[regex]::Match($renderer,'(?s)d2vr_native_constants::Stage::Vertex,nativeOwner\);(.*?)const HRESULT result=g_origSetVertexShaderConstantF\(dev, StartRegister, pConstantData, Vector4fCount\);')
-if(-not $vsHook.Success -or -not $vsHook.Groups[1].Value.Contains('d2vr_record_copy::NativeConsumedRange(StartRegister,Vector4fCount,256));') -or
+$vsHook=[regex]::Match($renderer,'(?s)d2vr_native_constants::Stage::Vertex,nativeOwner\);(.*?)const auto send=\[&\]\(\)\{return g_origSetVertexShaderConstantF\(dev,StartRegister,pConstantData,Vector4fCount\);\};') # forward is a submission-gated lambda since 42f242a2
+if(-not $vsHook.Success -or -not $vsHook.Groups[1].Value.Contains('d2vr_record_copy::NativeConsumedRange(StartRegister,Vector4fCount,256)') -or
    [regex]::IsMatch($vsHook.Groups[1].Value,'\breturn\b')) {
     throw 'VS float consumer declaration must precede the native forward without an early return'
 }
-$psHook=[regex]::Match($replay,'(?s)RecEmitConsumed\(OP_SetPSConstF, d, sizeof\(float\) \* 4 \* n, s, n, 224, proof\);(.*?)g_orig\.SetPixelShaderConstantF\(dev,s,d,n\)')
+$psHook=[regex]::Match($replay,'(?s)RecEmitConsumed\(OP_SetPSConstF, d, sizeof\(float\) \* 4 \* n, s, n, 224, proof,\s*submission\.ticket \? &submission:nullptr\);(.*?)const auto send=\[&\]\(\)\{return g_orig\.SetPixelShaderConstantF\(dev,s,d,n\);\};') # submission-gated forward lambda
 if(-not $psHook.Success -or [regex]::IsMatch($psHook.Groups[1].Value,'\breturn\b')) {
     throw 'PS float consumer declaration must precede the native forward without an early return'
 }
