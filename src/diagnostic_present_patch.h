@@ -2,12 +2,14 @@
 // Diagnostic policy shared by the real installer and offline tests.
 #include <cstdint>
 #include <cstring>
+#include "native_build_identity.h"
 namespace d2vr_present_patch {
 inline constexpr unsigned char original[5]={0x8b,0x41,0x0c,0xff,0xd0};
 inline bool Identity(const char* sha,unsigned machine,unsigned stamp,unsigned size,unsigned base,unsigned magic) {
-    return sha && (!std::strcmp(sha,"d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1") ||
-        !std::strcmp(sha,"55c8d634fcbe2996d8397d15d68ea728c999697f1dd40e8779b5afe8bbb4c339")) &&
-        machine==0x14c && stamp==0x4f68a875 && size==0xdec000 && base==0x400000 && magic==0x10b;
+    // A whole-file digest can differ while the native code is identical.
+    // Identity is retained as the legacy API name; SHA is diagnostic only.
+    (void)sha;
+    return machine==0x14c && stamp==0x4f68a875 && size==0xdec000 && base==0x400000 && magic==0x10b;
 }
 // Platform supplies protection/cache operations. Only use at a quiescent site;
 // this is NOT an atomic five-byte patch and does not suspend other threads.

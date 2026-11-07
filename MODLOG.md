@@ -2842,3 +2842,6 @@ headset gate: `docs/research/darkness2-camera-shake-20261101.md` and per-task
 
 - Corrected standard BC model textures physically accepted by user; all64 new comic assets retained. Enlarged font atlases failed; same-size/full-native-cell follow-ups preserve original UVs/metrics/pixels. Latest user: "prawie" (almost).
 - Found older six-family PL glyphs had enlarged UV spans and donor advance+1. Source44cb00b9 normalizes108 existing PL glyphs while keeping non-PL UVs and pixels exact. Installed four-file font-only candidate with4 backup/4 installed/23 protected hash audit PASS, accepted textures/audio/DLL unchanged. Receipt `C:/Users/Trilex/AppData/Local/Darkness2VR/backups/font-metrics-six-20261101-v1/deployment.json`. Final headset font acceptance pending; see task handoff.
+
+## 2026-11-07: private F263 player EXE audit
+EXE hash is now warning-only; native instruction/import/owner contracts remain required. See docs/agent-workflow/handoffs/HANDOFF-player-f263-native-compat.md. Offline tests pass; player headset acceptance remains pending.

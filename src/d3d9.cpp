@@ -7779,12 +7779,14 @@ static void InstallQueryPreload(IDirect3DDevice9* dev) {
     const auto* image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
     char path[MAX_PATH]{};
     if(reinterpret_cast<uintptr_t>(image)!=0x400000 || !GetModuleFileNameA(nullptr,path,MAX_PATH))return;
-    const auto sha=matched_capture::HashFile(path);
     static constexpr BYTE site[]={0x8b,0x44,0x24,0x04,0x8b,0x10,0x83,0xc1,0x04,0x51,0x6a,0x09,
         0x50,0x8b,0x82,0xd8,0x01,0x00,0x00,0xff,0xd0,0xc2,0x04,0x00};
-    if(sha!="d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1" ||
+    const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+    const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(image+dos->e_lfanew);
+    if(!d2vr_present_patch::Identity(nullptr,pe->FileHeader.Machine,pe->FileHeader.TimeDateStamp,
+        pe->OptionalHeader.SizeOfImage,pe->OptionalHeader.ImageBase,pe->OptionalHeader.Magic) ||
        memcmp(image+0x5fbdd0,site,sizeof(site))) {
-        Log("[QueryPreload] refused: native SHA/site mismatch");return;
+        Log("[QueryPreload] refused: native PE/instruction mismatch");return;
     }
     HMODULE pinned=nullptr;
     if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,

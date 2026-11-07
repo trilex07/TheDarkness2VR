@@ -48,7 +48,7 @@ int main(){
     static_assert(sizeof(void*)==4,"Real x86 stdcall test required");
     const char* sha="d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1";
     assert(Identity(sha,0x14c,0x4f68a875,0xdec000,0x400000,0x10b));
-    assert(!Identity("unknown",0x14c,0x4f68a875,0xdec000,0x400000,0x10b));
+    assert(Identity("unknown",0x14c,0x4f68a875,0xdec000,0x400000,0x10b));
     assert(!Identity(sha,0x8664,0x4f68a875,0xdec000,0x400000,0x10b));
     for(int failure=0;failure<4;++failure){
         FakeMemory m;Patch p;

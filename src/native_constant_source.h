@@ -216,9 +216,9 @@ inline Proof InspectCurrent(const uintptr_t* slot,uintptr_t frame,const void* so
 }
 
 inline bool AdmitImage(const char* sha,const unsigned char* image) {
+    (void)sha; // diagnostic only; exact code fingerprints below establish admission
     admitted.store(false,std::memory_order_relaxed);
-    if(faulted.load(std::memory_order_relaxed) || !enabled.load(std::memory_order_relaxed) || !sha ||
-       std::strcmp(sha,"d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1") ||
+    if(faulted.load(std::memory_order_relaxed) || !enabled.load(std::memory_order_relaxed) ||
        reinterpret_cast<uintptr_t>(image)!=0x400000)return false;
     struct Fingerprint {uintptr_t address;size_t bytes;uint32_t hash;};
     constexpr Fingerprint required[]={{0xb74720,35,0x9e9cc9ec},{0x96e3b0,35,0xb213a2f0},

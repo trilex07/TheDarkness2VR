@@ -93,6 +93,8 @@ static void InstallImagePresent(IDirect3DDevice9* device) {
         g_imagePresent.Fail("image-write guard required");return;
     }
     const auto sha=matched_capture::HashFile(path);
+    if(!d2vr_native_build::KnownRuntimeSha(sha.c_str()))
+        Log("[NativeBuildCompatibility] WARNING unknown EXE sha=%s; hash is NOT a rejection gate; validating PE, native instruction/import/owner contracts",sha.c_str());
     const auto image=reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
     const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
     const auto pe=reinterpret_cast<const IMAGE_NT_HEADERS32*>(image+dos->e_lfanew);
@@ -105,7 +107,7 @@ static void InstallImagePresent(IDirect3DDevice9* device) {
         memcmp(image+0x694052,original,sizeof(original))!=0 ||
         memcmp(image+0x69406f,alternate,sizeof(alternate))!=0 ||
         memcmp(image+0x564cbf,acquisition,sizeof(acquisition))!=0) {
-        g_imagePresent.Fail("SHA/PE/original presentation dispatch mismatch");return;
+        g_imagePresent.Fail("PE/original presentation dispatch mismatch");return;
     }
     const bool nativeCopy=d2vr_native_constants::AdmitImage(sha.c_str(),image);
     Log("[NativeOwnedConstantCopy] requested=%d admitted=%d sha=%s; exact native local frames only; no EXE writes",

@@ -7,10 +7,8 @@ static void InstallNativeViewBoundary() {
     }
     const auto image=reinterpret_cast<const unsigned char*>(GetModuleHandleW(nullptr));
     char path[MAX_PATH]{};if(!GetModuleFileNameA(nullptr,path,MAX_PATH))return;
-    const auto sha=matched_capture::HashFile(path);
-    if(sha!="d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1" ||
-       reinterpret_cast<uintptr_t>(image)!=0x400000) {
-        Log("[NativeViewBoundary] refused EXE identity");return;
+    if(reinterpret_cast<uintptr_t>(image)!=0x400000) {
+        Log("[NativeViewBoundary] refused native image base");return;
     }
     const auto read=[](uint32_t address,void* output,size_t bytes)->bool {
         __try {memcpy(output,reinterpret_cast<const void*>(address),bytes);return true;}

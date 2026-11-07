@@ -19,7 +19,7 @@ static void InstallProtectedSourceQuality() {
        memcmp(image+0x89646e,call,sizeof(call)) ||
        memcmp(image+0x564c7b,call,sizeof(call)) || !target ||
        *reinterpret_cast<void*const*>(image+0xaeb478)!=target) {
-        Log("[SourceQuality] refused: original SHA/PE/native sizing call/import mismatch; baseline retained");return;
+        Log("[SourceQuality] refused: PE/native sizing call/import mismatch; baseline retained");return;
     }
     const bool ready=g_protectedSourceSize.Start(target,g_nativeImageGuard,g_sourceQualityMode,
         g_renderSizeHwnd,reinterpret_cast<uintptr_t>(image)+0x896474,Log,

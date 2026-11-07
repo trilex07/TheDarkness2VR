@@ -56,13 +56,12 @@ static bool GazeLodEntryBytesMatch() {
 static void InstallGazeLodRuntimeObserver() {
     if(!GetPrivateProfileIntA("Render","GazeLodRuntimeObserver",0,
         g_activeIni[0]?g_activeIni:".\\Darkness2VR.ini"))return;
-    if(!g_nativeImageGuard.enabled || !g_imagePreservingPresent ||
+    if(!g_nativeImageGuard.enabled || !g_imagePreservingPresent || g_imagePresent.Failed() ||
        g_nativeViewBoundaryMode==2 || g_gazeLodBoundary.Installed()) {
         Log("[GazeLOD] runtime observer refused: protected profile or debug slot unavailable");return;
     }
     char path[MAX_PATH]{};
     if(!GetModuleFileNameA(nullptr,path,MAX_PATH) ||
-       matched_capture::HashFile(path)!="d46bb6cb762732b72ab9d34428237d2afa89f5792bdbed957d78793ee8134ec1" ||
        reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))!=0x400000) {
         Log("[GazeLOD] runtime observer refused: EXE identity");return;
     }
