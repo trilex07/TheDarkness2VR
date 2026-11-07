@@ -6,7 +6,7 @@
 **Branch**: codex/tentacle-gaze-stability-20261107
 **Worktree**: C:/Users/Trilex/Darkness2VR/.side-mod-audit-20261107
 **Base**: a8abc057, production DLL A9D487B1; diagnostic117230AC/main INI22862511
-**Status**: simulator verification complete; production packaging; not integrated or headset accepted
+**Status**: simulator verification complete; installed for normal play; not integrated or headset accepted
 
 ## Request and cause
 
@@ -75,3 +75,12 @@ versions preserved under post-test-user/. Simulator OFF after recovery.
 Frozen DLL-only package uses kind tentacle-gaze-stability and existing guarded
 installer with exact baseline/candidate hashes and protected profiles/caches.
 Prepare script pins the simulator-tested D72F8E1C bytes. No runtime INI changes.
+
+## Final installed state
+
+build/tentacle-gaze-steam-20261107/Install.ps1 installed the tested D72F8E1C DLL;
+post-install VerifyOnly PASS for one payload, exact rollback and protected files.
+Simulator OFF, main/diagnostic profiles and asset caches unchanged. Game closed.
+Receipt source0c0511e1; installation receipt installed.json in that package.
+Rollback: the same Install.ps1 -Restore returns A9D487B1 exactly.
+No main merge, no physical headset or full live thrown-object flight acceptance.
