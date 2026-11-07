@@ -26,6 +26,9 @@ int g_replayEye=-1,queries=0,calls=0,scopes=0,observed=0;
 const void* g_boundVs=nullptr;const void* g_boundPs=nullptr;
 namespace d2vr_pipeline_warmup {void ObserveDraw(IDirect3DDevice9*,const void*,const void*){++observed;}}
 bool IsShadowAtlasPass(IDirect3DDevice9*){++queries;return shadow;}
+// Lives between NoteRecordedWorldDraw and the draw wrappers (excised above);
+// menu first-person hiding has no effect outside the native menu presentation.
+bool HideMenuFirstPerson(IDirect3DDevice9*){return false;}
 void Log(const char*,...){}
 HRESULT ObserveVideoDrawResult(IDirect3DDevice9*,HRESULT hr){return hr;}
 namespace d2vr_submission {void InvalidateBindings(){}}

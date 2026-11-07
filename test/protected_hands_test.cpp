@@ -27,6 +27,11 @@ static DWORD g_renderThreadId=GetCurrentThreadId();
 static d2vr_native_image::Guard g_nativeImageGuard{true,0x400000,0x100000};
 static struct {uint64_t id=20;bool open=true;XrViewStateFlags flags=15;} g_trackedFrame;
 #include "actual_cinematic_gate.inl"
+// Production dependencies added after this fixture: no cinema scene, camera
+// stabilizer off (native 0x80 world matrix), camera-shake trace off.
+static bool CinemaSceneThisFrame(){return NativeCinematicPlaying();} // theater on, SubmitMode 4, no manual override
+static const float* StabilizedCameraWorld(const void* p,float (&)[16]){return reinterpret_cast<const float*>(static_cast<const BYTE*>(p)+0x80);}
+static bool g_cameraShakeTrace=false;static ULONGLONG g_cameraShakeTraceStart=0;
 static XrPosef g_headGeometryReference{{0,0,0,1},{}};
 static d2vr_input::Tentacles g_protectedLeftTentacle,g_protectedRightTentacle;
 static struct {bool gripValid=true;XrPosef grip{{0,0,0,1},{}};} g_hands[2];
@@ -60,6 +65,8 @@ static bool NativeImageWriteAllowed(uintptr_t,size_t){return false;}
 #define GetTickCount64 Clock
 #include "actual_hands_owner.inl"
 #include "../src/native_hands.inl"
+// Same as the production fallback (protected_weapon.inl) when no two-hand gun is equipped.
+static bool ProtectedTwoHandSupportOwner(DWORD,void** gun){if(gun)*gun=nullptr;return false;}
 #include "../src/protected_hands.inl"
 #undef GetTickCount64
 static void Matrix(float* m,float x=0,float y=0,float z=0){memset(m,0,64);m[0]=m[5]=m[10]=m[15]=1;m[12]=x;m[13]=y;m[14]=z;}
@@ -229,7 +236,10 @@ int main(int argc,char** argv){
         CHECK(Near(palette[socket][13],.3f) && Near(palette[socket][14],.15f));
         CHECK(Near(palette[hand?5:27][12],hand?-.5f:.5f));
     }
-    Reject([]{g_nativeGameplay.grab=d2vr_input::GrabFeedback::Unknown;});
+    // Since 2e9b887a the protected route keeps tracked hands during demon
+    // holds: Unknown/Busy grab feedback no longer rejects the pose.
+    Reset();g_nativeGameplay.grab=d2vr_input::GrabFeedback::Unknown;CHECK(Apply());
+    Reset();g_nativeGameplay.grab=d2vr_input::GrabFeedback::Busy;CHECK(Apply());
     Reject([]{g_protectedTrackedHands=false;});Reject([]{g_haveViews=false;});Reject([]{g_in3DGameplayMode=false;});
     Reject([]{g_trackedFrame.open=false;});Reject([]{g_trackedFrame.flags=0;});Reject([]{g_renderThreadId++;});
     Reject([]{g_protectedRightTentacle.paused=true;});Reject([]{g_protectedLeftTentacle.paused=true;});

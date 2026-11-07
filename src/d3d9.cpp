@@ -1184,8 +1184,9 @@ void LoadConfig() {
     Log("  Hotkeys: F2=InvertYaw | F3=HeadLook | F4=ViewScale | F5=DepthViz | F6=Cycle BaseShift | F7=Dump Matrices | F8 (or L3+R3)=Recenter | F9=Cycle FOV Scale | F10=Cycle VR Mode | F11=Cycle Stereo Strength");
 
     {
-        int traceIni = GetPrivateProfileIntA("Render", "RenderPipelineTrace", -1, chosenIni);
-        if (traceIni < 0) traceIni = GetPrivateProfileIntA(nullptr, "RenderPipelineTrace", 0, chosenIni);
+        // A NULL section is invalid for GetPrivateProfileIntA (always returned the default),
+        // so the old "top-level key" fallback never worked; keys must live under [Render].
+        const int traceIni = GetPrivateProfileIntA("Render", "RenderPipelineTrace", 0, chosenIni);
         g_renderPipelineTrace = traceIni ? 1 : 0;
     }
     g_frameBoundaryPolicy = GetPrivateProfileIntA("Render", "FrameBoundaryPolicy", 2, chosenIni);
@@ -1215,8 +1216,7 @@ void LoadConfig() {
             traceDir, d2vr_trace::g_maxEvents, d2vr_trace::g_traceScenes, d2vr_trace::g_traceAllScenes);
     }
     {
-        int dx = GetPrivateProfileIntA("Render", "DisableOpenXR", -1, chosenIni);
-        if (dx < 0) dx = GetPrivateProfileIntA(nullptr, "DisableOpenXR", 0, chosenIni);
+        const int dx = GetPrivateProfileIntA("Render", "DisableOpenXR", 0, chosenIni);
         g_disableOpenXR = dx ? 1 : 0;
     }
     g_presentHookLevel = GetPrivateProfileIntA("Render", "PresentHookLevel", 0, chosenIni);

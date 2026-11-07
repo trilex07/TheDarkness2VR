@@ -20,3 +20,7 @@ __pycache__/
 /tools-local/
 /test-output/simulator-lab-20261103/
 /test-output/combined-scenes-input-20261103/
+
+# test harness build outputs
+tools/**/*.exe
+test/**/*.exe

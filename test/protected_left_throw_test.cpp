@@ -33,7 +33,14 @@ static void SetRef(BYTE* p,unsigned o,void* value){**reinterpret_cast<void***>(p
 static bool ProtectedAimCameraOwned(void* p){return p==camera&&*reinterpret_cast<DWORD*>(camera)==0x20000010;}
 static bool ProtectedThrowFireOwned(void* p){return p==fire&&*reinterpret_cast<DWORD*>(fire)==0x20000000;}
 struct NativeGameplaySample {DWORD camera=0,inventory=0,grabFire=0,grabEntity=0;
-    bool alternateHeldTarget=false;d2vr_input::GrabFeedback grab=d2vr_input::GrabFeedback::Busy;};
+    unsigned char demonHold=0;bool alternateHeldTarget=false;d2vr_input::GrabFeedback grab=d2vr_input::GrabFeedback::Busy;};
+// Production dependencies added after this fixture was written: no cinema scene,
+// gaze throw off (controller aim path), camera stabilizer off (native 0x80 matrix).
+static bool cinemaScene=false;
+static bool CinemaSceneThisFrame(){return cinemaScene;}
+static bool g_gazeThrow=false;static float g_gazeThrowAssist=.85f;
+static bool GazeWorldDirection(XrVector3f&){return false;}
+static const float* StabilizedCameraWorld(const void* p,float (&)[16]){return reinterpret_cast<const float*>(static_cast<const BYTE*>(p)+0x80);}
 static NativeGameplaySample gameplay;
 static bool copyOK=true;
 static bool CopyNativeGameplay(NativeGameplaySample& sample){sample=gameplay;return copyOK;}

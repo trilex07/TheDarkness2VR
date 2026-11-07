@@ -7,7 +7,8 @@
 #include <initializer_list>
 #include "../src/native_aim_math.h"
 static unsigned checks=0,captures=0;
-static void Check(bool v){++checks;if(!v){std::printf("FAIL %u\n",checks);std::exit(1);}}
+static void CheckAt(bool v,int line){++checks;if(!v){std::printf("FAIL %u line %d\n",checks,line);std::exit(1);}}
+#define Check(v) CheckAt((v),__LINE__)
 static void Log(const char*,...){}
 static ULONGLONG clockMs=1000;
 static ULONGLONG Clock(){return clockMs;}
@@ -18,7 +19,7 @@ static float g_gameUnitsPerMeter=1;
 static struct {bool enabled=true;} g_nativeImageGuard;
 static struct {bool paused=false;} g_protectedRightTentacle;
 static struct {bool open=true;XrViewStateFlags flags=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;} g_trackedFrame;
-static struct {bool valid=true;XrPosef aim{{0,0,0,1},{-.3f,1.3f,-.4f}};} g_hands[2];
+static struct {bool valid=true,aimValid=true;XrPosef aim{{0,0,0,1},{-.3f,1.3f,-.4f}};} g_hands[2];
 static XrPosef g_headGeometryReference{{0,0,0,1},{0,1.6f,0}};
 static DWORD g_renderThreadId=GetCurrentThreadId();
 struct NativeGameplaySample {DWORD camera=0x1000,inventory=0x2000,grabFire=0x3000;bool alternateHeldTarget=false;};
@@ -32,8 +33,14 @@ static bool CopyNativeGameplay(NativeGameplaySample& out){out=gameplay;return co
 static bool CaptureNativeGameplay(void*){++captures;gameplay.alternateHeldTarget=alternateAtCapture;return captureOK;}
 static SRWLOCK g_protectedAimRayLock=SRWLOCK_INIT;
 #define GetTickCount64 Clock
-#include "d2vr_protected_left_aim_under_test.inl"
-#undef GetTickCount64
+// Production dependencies added after this fixture: no cinema scene, Jackie
+// input allowed, no native action movie, gaze grab off (controller aim ray).
+static bool CinemaSceneThisFrame(){return false;}
+static bool NativeJackieInputAllowed(){return true;}
+static unsigned NativeActionMovies(){return 0;}
+static bool g_gazeGrab=false;
+static bool GazeWorldRay(XrVector3f&,XrVector3f&){return false;}
+#include "d2vr_protected_left_aim_under_test.inl"#undef GetTickCount64
 static XINPUT_GAMEPAD grip;
 static void Reset(){
     g_protectedLeftAim=g_imagePreservingInput=g_protectedGestureActions=g_protectedAimPrivateReady=true;
@@ -64,7 +71,10 @@ int main(){
     rejectPublish([]{g_nativeImageGuard.enabled=false;});rejectPublish([]{g_haveViews=false;});
     rejectPublish([]{g_in3DGameplayMode=false;});rejectPublish([]{g_protectedRightTentacle.paused=true;});
     rejectPublish([]{g_headGeometry=false;});rejectPublish([]{g_headGeometryReferenceValid=false;});
-    rejectPublish([]{g_hands[0].valid=false;});rejectPublish([]{grip.wButtons=0;});
+    rejectPublish([]{g_hands[0].valid=g_hands[0].aimValid=false;});
+    // The acquisition ray is now published before the LB edge (native query can
+    // run before the input pulse), so a released LB keeps a valid ray.
+    Reset();grip.wButtons=0;PublishProtectedLeftAim(grip);Check(g_protectedAimRay.ray.valid);
     rejectPublish([]{grip.bLeftTrigger=30;});rejectPublish([]{grip.bRightTrigger=30;});
     rejectPublish([]{copyOK=false;});rejectPublish([]{gameplay.grabFire=0;});
     rejectPublish([]{gameplay.alternateHeldTarget=true;});rejectPublish([]{owned=false;});
@@ -76,7 +86,11 @@ int main(){
         for(auto v:output)Check(v==-123);};
     rejectConsume([]{clockMs+=100;});rejectConsume([]{clockMs-=1;});
     rejectConsume([]{g_trackedFrame.open=false;});rejectConsume([]{g_haveViews=false;});
-    rejectConsume([]{g_trackedFrame.flags=0;});rejectConsume([]{g_hands[0].valid=false;});
+    rejectConsume([]{g_trackedFrame.flags=0;});
+    // Since 83ebbd9d consumption uses the fresh (<100 ms) published ray; a hand
+    // dropping tracking after publish no longer invalidates it.
+    Reset();PublishProtectedLeftAim(grip);g_hands[0].valid=g_hands[0].aimValid=false;
+    Check(ResolveProtectedLeftAim(reinterpret_cast<void*>(0x1000),base,output));
     rejectConsume([]{g_headGeometryReferenceValid=false;});rejectConsume([]{g_protectedRightTentacle.paused=true;});
     rejectConsume([]{owned=false;});rejectConsume([]{ownerMatches=false;});
     rejectConsume([]{g_renderThreadId+=1;});rejectConsume([]{captureOK=false;});

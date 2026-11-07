@@ -110,12 +110,12 @@ int main(){
         // Depth-only pad thrusts remain excluded from the stock planar slash.
         for(unsigned i=0;i<40;++i)Check(!(Step().wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));
     }
-    // Pause is latched until the next Start edge; no stroke leaks through.
-    Reset();Step();gp=Step(.01,XINPUT_GAMEPAD_START);Check(g_protectedRightTentacle.paused);
-    g_hands[1].squeeze=.9f;g_hands[1].motion.velocity={4,0,0};
-    for(unsigned i=0;i<40;++i){gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));}
-    Step(.01,XINPUT_GAMEPAD_START);Check(!g_protectedRightTentacle.paused);
-    for(unsigned i=0;i<10;++i){gp=Step();Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));}
+    // Since f8ea5c2a pause follows native MenuConfirmActive (SyncNativePause),
+    // not a START toggle: native Continue has no START edge. START frames only
+    // suppress strokes and must not latch a stale pause that blocks gestures.
+    Reset();Step();g_hands[1].squeeze=.9f;g_hands[1].motion.velocity={4,0,0};
+    for(unsigned i=0;i<40;++i){gp=Step(.01,XINPUT_GAMEPAD_START);Check(!(gp.wButtons&XINPUT_GAMEPAD_RIGHT_SHOULDER));}
+    Check(!g_protectedRightTentacle.paused);
     // Objective uses a left-face dwell, reload uses the upper-leg dwell.
     Reset();Step();g_hands[0].grip.position={-.18f,1.58f,-.08f};bool objective=false;
     for(unsigned i=0;i<30;++i)objective|=(Step().wButtons&XINPUT_GAMEPAD_BACK)!=0;
