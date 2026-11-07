@@ -39,8 +39,9 @@ static bool CinemaSceneThisFrame(){return false;}
 static bool NativeJackieInputAllowed(){return true;}
 static unsigned NativeActionMovies(){return 0;}
 static bool g_gazeGrab=false;
-static bool GazeWorldRay(XrVector3f&,XrVector3f&){return false;}
-#include "d2vr_protected_left_aim_under_test.inl"#undef GetTickCount64
+static bool TentacleGazeWorldRay(XrVector3f&,XrVector3f&){return false;}
+#include "d2vr_protected_left_aim_under_test.inl"
+#undef GetTickCount64
 static XINPUT_GAMEPAD grip;
 static void Reset(){
     g_protectedLeftAim=g_imagePreservingInput=g_protectedGestureActions=g_protectedAimPrivateReady=true;

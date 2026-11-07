@@ -74,7 +74,7 @@ static void PublishProtectedLeftAim(const XINPUT_GAMEPAD& gp) {
         // [EyeTracking] GazeGrab: the tentacle acquires what you look at (head
         // origin + gaze); controller ray when the gaze is unavailable.
         XrVector3f gazeOrigin{},gazeDir{};
-        const bool gaze=g_gazeGrab && GazeWorldRay(gazeOrigin,gazeDir);
+        const bool gaze=g_gazeGrab && TentacleGazeWorldRay(gazeOrigin,gazeDir);
         // Publish the acquisition ray before the grip edge. The native query
         // can run before the input pulse; waiting for LB leaves it head-aimed
         // on that first update. A usable gaze does not require a tracked hand.

@@ -6,6 +6,7 @@
 #include "../src/psvr2/GazeShare.h"
 #include "../src/foveated_sharpen.h"
 #include "../src/gaze_menu.h"
+#include "../src/gaze_target_filter.h"
 static int g_fail=0, g_checks=0;
 #define CHECK(c) do{ ++g_checks; if(!(c)){ ++g_fail; std::printf("FAIL %s:%d %s\n",__FILE__,__LINE__,#c);} }while(0)
 static void Seqlock() {
@@ -48,8 +49,36 @@ static void Menu() {
     CHECK(HitQuad({0,1.5f,0},{-1,0,-0.2f},c2,yaw,2,1,u,v) && u>.5f);
     CursorFilter cf; CHECK(cf.Changed(10,10,3)); CHECK(!cf.Changed(11,12,3)); CHECK(cf.Changed(14,10,3));
 }
+static void TargetStability() {
+    using namespace d2vr_gaze_target;
+    Filter f; Direction o;
+    CHECK(!f.Update(false,0,1000,{},o));
+    CHECK(f.Update(true,1000,1000,{0,0,-1},o));
+    // Repeated consumer polls must not prolong an old sample or re-filter it.
+    CHECK(f.Update(true,1000,1090,{0,0,-1},o));
+    CHECK(f.Update(false,0,1120,{},o) && o.z==-1); // blink: no controller jump
+    CHECK(!f.Update(false,0,1161,{},o));
+    CHECK(f.Update(true,1200,1200,{0,0,-1},o));
+    CHECK(f.Update(true,1210,1210,{.003f,0,-1},o) && o.x==0); // fixation noise
+    CHECK(f.Update(true,1220,1220,{.5f,0,-.8660254f},o) && o.x==0); // spike
+    CHECK(f.Update(true,1230,1230,{0,0,-1},o) && o.x==0);
+    // A deliberate new fixation becomes responsive after a bounded confirmation.
+    CHECK(f.Update(true,1240,1240,{.5f,0,-.8660254f},o) && o.x==0);
+    CHECK(f.Update(true,1250,1250,{.5f,0,-.8660254f},o) && o.x==0);
+    CHECK(f.Update(true,1260,1260,{.5f,0,-.8660254f},o) && o.x>.49f);
+    CHECK(std::fabs(Dot(o,o)-1)<1e-5f);
+    CHECK(f.Update(true,1260,1270,{-.5f,0,-.8660254f},o) && o.x>.49f); // duplicate
+    CHECK(!f.Update(false,0,900,{},o)); // clock reset clears retained gaze
+    CHECK(!f.Update(true,1001,1000,{0,0,-1},o)); // future sample
+    CHECK(!f.Update(true,800,1000,{0,0,-1},o)); // stale sample
+    CHECK(!f.Update(true,1000,1000,{NAN,0,-1},o));
+    CHECK(!f.Update(true,1000,1000,{0,0,0},o));
+    CHECK(f.Update(true,1300,1300,{0,0,-1},o));
+    CHECK(f.Update(true,1310,1310,{.05f,0,-.998749f},o) && o.x>0 && o.x<.05f);
+    f.Reset(); CHECK(!f.Update(false,0,1400,{},o));
+}
 int main() {
-    Seqlock(); Fovea(); Menu();
+    Seqlock(); Fovea(); Menu(); TargetStability();
     std::printf("%s: %d checks, %d failed\n",g_fail?"FAIL":"PASS",g_checks,g_fail);
     return g_fail?1:0;
 }

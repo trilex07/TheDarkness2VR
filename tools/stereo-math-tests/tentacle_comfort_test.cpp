@@ -45,7 +45,7 @@ static bool CopyNativeGameplay(NativeGameplaySample& s){s=owner;return fresh;}
 static bool CaptureNativeGameplay(void*){return fresh;}
 static bool ProtectedAimCameraOwned(void* p){return DWORD(uintptr_t(p))==owner.camera;}
 static bool NativeAimOwnerMatches(void* p){return ProtectedAimCameraOwned(p);}
-static bool GazeWorldRay(XrVector3f& p,XrVector3f& d){p={0,1.7f,0};d={.6f,0,-.8f};return gaze;}
+static bool TentacleGazeWorldRay(XrVector3f& p,XrVector3f& d){p={0,1.7f,0};d={.6f,0,-.8f};return gaze;}
 static void ResetProtectedLeftAim(){g_protectedAimRay={};}
 namespace d2vr_native_clone {static bool MatchesDigest(void*,size_t,const char*){return digest;}}
 #include "d2vr-tentacle-aim-under-test.inl"

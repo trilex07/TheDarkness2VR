@@ -1,7 +1,8 @@
 // PSVR2 eye tracking reader. The x64 bridge publishes the Toolkit gaze sample
 // into "Local\Darkness2VR.Gaze.<pid>" (src/psvr2/GazeShare.h). Read-only here;
-// stale (>100 ms), invalid or blinking samples mean "no gaze" and every
-// consumer keeps its controller behaviour. Recon: docs/research/psvr2-eye-tracking-recon.md.
+// Raw consumers reject stale (>100 ms), invalid or blinking samples.
+// Tentacle interactions separately retain a fixation through brief dropouts.
+// Recon: docs/research/psvr2-eye-tracking-recon.md.
 // psvr2/GazeShare.h is included at the top of d3d9.cpp (outside the anonymous namespace).
 
 struct GazeReader {
@@ -15,7 +16,8 @@ struct GazeReader {
         if(now<nextTry) return false;
         nextTry=now+2000; // the bridge may start later; retry cheaply
         wchar_t name[64];
-        swprintf_s(name,L"Local\\Darkness2VR.Gaze.%lu",GetCurrentProcessId());
+        if(g_simulatorGaze)swprintf_s(name,L"Local\\Darkness2VR.SimulatorGaze.%lu",GetCurrentProcessId());
+        else swprintf_s(name,L"Local\\Darkness2VR.Gaze.%lu",GetCurrentProcessId());
         mapping=OpenFileMappingW(FILE_MAP_READ,FALSE,name);
         if(!mapping) return false;
         view=static_cast<const d2vr::psvr2::GazeShared*>(MapViewOfFile(mapping,FILE_MAP_READ,0,0,sizeof(d2vr::psvr2::GazeShared)));
@@ -72,9 +74,9 @@ static GazeAxes CurrentGazeAxes() {
 }
 
 // Latest usable gaze direction in OpenXR VIEW space (unit vector).
-static bool LatestGaze(XrVector3f& dir) {
+static bool LatestGaze(XrVector3f& dir,uint64_t* sampleMs=nullptr) {
     if(!g_eyeTrackingEnabled) return false;
-    d2vr::psvr2::GazeSample s;
+    d2vr::psvr2::GazeSample s{};
     AcquireSRWLockExclusive(&g_gazeLock);
     const bool read=g_gazeReader.Read(s);
     ReleaseSRWLockExclusive(&g_gazeLock);
@@ -99,6 +101,7 @@ static bool LatestGaze(XrVector3f& dir) {
     const float n=std::sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
     if(!(n>.5f && n<1.5f)) return false;
     dir={v[0]/n,v[1]/n,v[2]/n};
+    if(sampleMs)*sampleMs=s.publishMs;
     return true;
 }
 
@@ -131,6 +134,39 @@ static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction) {
     if(!GazeWorldDirection(direction)) return false;
     origin=HeadCenterPose(g_eyePose[0],g_eyePose[1]).position;
     return true;
+}
+
+#include "gaze_target_filter.h"
+static SRWLOCK g_tentacleGazeLock=SRWLOCK_INIT;
+static d2vr_gaze_target::Filter g_tentacleGaze;
+static bool TentacleGazeWorldRay(XrVector3f& origin,XrVector3f& direction) {
+    AcquireSRWLockExclusive(&g_tentacleGazeLock);
+    const XrViewStateFlags tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
+    if(!g_eyeTrackingEnabled || !g_haveViews || !g_in3DGameplayMode ||
+       !g_headGeometryReferenceValid || (g_trackedFrame.flags&tracked)!=tracked ||
+       CinemaSceneThisFrame() || !NativeJackieInputAllowed() || NativeActionMovies() ||
+       g_protectedRightTentacle.paused) {
+        g_tentacleGaze.Reset();ReleaseSRWLockExclusive(&g_tentacleGazeLock);return false;
+    }
+    XrVector3f raw{};uint64_t sampleMs=0;
+    const bool valid=LatestGaze(raw,&sampleMs);
+    const XrPosef head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
+    const auto world=RotVec(head.orientation,raw.x,raw.y,raw.z);
+    d2vr_gaze_target::Direction filtered;
+    const auto now=GetTickCount64();
+    const bool usable=g_tentacleGaze.Update(valid,sampleMs,now,{world.x,world.y,world.z},filtered);
+    if(usable){origin=head.position;direction={filtered.x,filtered.y,filtered.z};}
+    if(g_simulatorGaze){
+        static ULONGLONG next=0;static int lastQuality=-1;
+        const int quality=int(valid)+2*int(usable)+4*int(g_tentacleGaze.pending);
+        if(now>=next || quality!=lastQuality){next=now+250;lastQuality=quality;Log("[TentacleGaze] valid=%d usable=%d pending=%d age=%llums direction=(%.4f,%.4f,%.4f)",
+            int(valid),int(usable),int(g_tentacleGaze.pending),g_tentacleGaze.active?now-g_tentacleGaze.lastAccepted:0ull,
+            filtered.x,filtered.y,filtered.z);}
+    }
+    ReleaseSRWLockExclusive(&g_tentacleGazeLock);return usable;
+}
+static bool TentacleGazeWorldDirection(XrVector3f& direction) {
+    XrVector3f origin{};return TentacleGazeWorldRay(origin,direction);
 }
 
 // ---------------------------------------------------------------- menu gaze

@@ -59,7 +59,7 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
     float assist=g_throwAimAssist;
     if(requested && g_gazeThrow) {
         XrVector3f gaze{};
-        const bool usedGaze=GazeWorldDirection(gaze);
+        const bool usedGaze=TentacleGazeWorldDirection(gaze);
         if(usedGaze) { aim={gaze.x,gaze.y,gaze.z}; assist=g_gazeThrowAssist; }
         Log("[GazeThrow] release aim from %s assist=%.2f",usedGaze ? "gaze" : "controller",assist);
     }
@@ -90,7 +90,7 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
     g_nativeThrowToken=token;
     ReleaseSRWLockExclusive(&g_nativeThrowLock);
     Log("[NativeThrow] request=%llu armed=%d chosenDirection=(%.3f,%.3f,%.3f) peak=(%.3f,%.3f,%.3f) controllerAim=(%.3f,%.3f,%.3f) assist=%.2f fire=%p entity=%p character=%p lifetime=650ms",
-        token.sequence,(int)(token.until!=0),token.direction[0],token.direction[1],token.direction[2],velocity.x,velocity.y,velocity.z,aim.x,aim.y,aim.z,g_throwAimAssist,(void*)token.fire,(void*)token.entity,(void*)token.character);
+        token.sequence,(int)(token.until!=0),token.direction[0],token.direction[1],token.direction[2],velocity.x,velocity.y,velocity.z,aim.x,aim.y,aim.z,assist,(void*)token.fire,(void*)token.entity,(void*)token.character);
 }
 static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0xFFC7C0,bool protectedPath=false,
                                    const void* nativeCharacterReference=nullptr) {

@@ -39,7 +39,8 @@ struct NativeGameplaySample {DWORD camera=0,inventory=0,grabFire=0,grabEntity=0;
 static bool cinemaScene=false;
 static bool CinemaSceneThisFrame(){return cinemaScene;}
 static bool g_gazeThrow=false;static float g_gazeThrowAssist=.85f;
-static bool GazeWorldDirection(XrVector3f&){return false;}
+static bool testGaze=false;
+static bool TentacleGazeWorldDirection(XrVector3f& d){d={0,0,-1};return testGaze;}
 static const float* StabilizedCameraWorld(const void* p,float (&)[16]){return reinterpret_cast<const float*>(static_cast<const BYTE*>(p)+0x80);}
 static NativeGameplaySample gameplay;
 static bool copyOK=true;
@@ -52,7 +53,7 @@ static SRWLOCK g_nativeThrowLock=SRWLOCK_INIT;
 #include "d2vr_protected_throw_under_test.inl"
 #undef GetTickCount64
 static void Reset() {
-    clockMs=1000;nextRef=0;copyOK=true;
+    clockMs=1000;nextRef=0;copyOK=true;testGaze=false;g_gazeThrow=false;
     memset(camera,0,sizeof(camera));memset(avatar,0,sizeof(avatar));memset(inventory,0,sizeof(inventory));
     memset(weapon,0,sizeof(weapon));memset(parts,0,sizeof(parts));memset(fire,0,sizeof(fire));memset(entity,0,sizeof(entity));
     Word(camera,0,0x20000010);Word(avatar,0,0x1001630);Word(inventory,0,0xFFCA10);Word(weapon,0,0xFD6E00);
@@ -254,6 +255,16 @@ int main(int argc,char** argv) {
     CHECK(!(Step(160,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
     CHECK(!(Step(180,0,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
     CHECK(!g_nativeThrowToken.until);
+    // The stabilized gaze consumer must steer the actual native release body,
+    // retaining speed and the native W component; fallback stays controller-led.
+    Reset();testGaze=true;g_gazeThrow=true;g_gazeThrowAssist=1;
+    PublishNativeThrow(true,false,true,{2,0,0},{1,0,0},true);
+    float gazeVelocity[4]={3,4,0,.25f};
+    CHECK(ResolveProtectedThrowVelocity(fire,gazeVelocity));
+    CHECK(std::fabs(gazeVelocity[0])<1e-5f && std::fabs(gazeVelocity[2]-5)<1e-5f && gazeVelocity[3]==.25f);
+    Reset();g_gazeThrow=true;testGaze=false;
+    PublishNativeThrow(true,false,true,{2,0,0},{1,0,0},true);
+    CHECK(g_nativeThrowToken.direction[0]>.99f);
     CharacterCases();
     CHECK(VirtualFree(reinterpret_cast<void*>(characterConsumer),0,MEM_RELEASE));
     printf("PASS protected throw actual bodies: %u checks; live owner/entity/character/retained-receiver gates,one-shot token,native speed/W preserved,left stroke+aim,enemy release direction,neutral LB gap,right inputs independent\n",checks);

@@ -197,6 +197,7 @@ bool g_nativeWeaponPose=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
 bool g_weaponWheelEnabled=true;   // [Input] WeaponWheel: hold R3 -> dual weapon wheels
 bool g_eyeTrackingEnabled=true;   // [EyeTracking] Enabled: read PSVR2 Toolkit gaze from the bridge
+bool g_simulatorGaze=false;       // isolated synthetic gaze section, simulator lab only
 bool g_gazeDotEnabled=false;      // [EyeTracking] GazeDot: debug ring at the gaze (axes verified 2026-11-01)
 bool g_gazeGrab=true;             // [EyeTracking] GazeGrab: tentacle grab acquires the gazed target
 bool g_gazeThrow=true;            // [EyeTracking] GazeThrow: thrown objects fly towards the gaze
@@ -4414,6 +4415,8 @@ static void ToggleCinemaForMinute(const char* source) {
 // Gaze rays for grab/throw (defined in eye_gaze.inl, tracking space).
 static bool GazeWorldDirection(XrVector3f& direction);
 static bool GazeWorldRay(XrVector3f& origin,XrVector3f& direction);
+static bool TentacleGazeWorldRay(XrVector3f& origin,XrVector3f& direction);
+static bool TentacleGazeWorldDirection(XrVector3f& direction);
 #include "protected_left_aim.inl"
 #include "native_throw.inl"
 #include "protected_left_throw.inl"
@@ -5682,6 +5685,7 @@ bool InitXR() {
         const DWORD attrs=GetFileAttributesA(manifest);
         if(manifest[0] && attrs!=INVALID_FILE_ATTRIBUTES && !(attrs&FILE_ATTRIBUTE_DIRECTORY)) {
             SetEnvironmentVariableA("XR_RUNTIME_JSON",manifest);
+            g_simulatorGaze=true;
             if(dataDir[0]) SetEnvironmentVariableA("SIMXR_DATA_DIR",dataDir);
             SetEnvironmentVariableA("SIMXR_AUTOMATION_ONLY","1");
             Log("[Simulator] process-only runtime override=%s data=%s",manifest,dataDir);

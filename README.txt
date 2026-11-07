@@ -30,6 +30,10 @@ Cele misji (prawy kontroler VR)
 Celowanie lewej macki (chwyt)
 ----------------------------
   Gdy GazeGrab=1 i probka wzroku jest aktualna, cel wybiera spojrzenie.
+  Chwyt i rzut korzystaja z tego samego stabilizowanego spojrzenia.
+  Krotkie mrugniecie podtrzymuje kierunek do 160 ms od ostatniej poprawnej
+  probki; pojedynczy duzy skok pomiaru nie przestawia celu. Nowe spojrzenie
+  oddalone o ponad 10 stopni wymaga 20 ms potwierdzenia.
   Bez poprawnego wzroku celuj lewym kontrolerem VR. Promien chwytu jest
   gotowy przed nacisnieciem chwytu; nie wymaga wycelowania glowa.
   Przy utracie obu zrodel mod wraca do natywnego zapytania gry.
