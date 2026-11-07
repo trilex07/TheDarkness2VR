@@ -6,7 +6,7 @@
 **Branch**: codex/tentacle-gaze-stability-20261107
 **Worktree**: C:/Users/Trilex/Darkness2VR/.side-mod-audit-20261107
 **Base**: a8abc057, production DLL A9D487B1; diagnostic117230AC/main INI22862511
-**Status**: runtime verification in progress; not integrated or accepted
+**Status**: simulator verification complete; production packaging; not integrated or headset accepted
 
 ## Request and cause
 
@@ -49,5 +49,29 @@ Synthetic sample tests do not establish physical PSVR2 calibration/acceptance.
 
 ## Runtime and recovery
 
-Private lab test-output/tentacle-gaze-20261107; fresh four-file user-backup receipt
-created and hash-verified. Runtime results and restoration to be appended.
+Private lab test-output/tentacle-gaze-20261107; own Steam PID43428, UTC start
+ticks639296530715404800. D72F8E1C profile/flavor gate and lab installation PASS.
+Simulator producer used isolated section; real PSVR2 mapping was not touched.
+Title/Continue -> crane gameplay, two tracked controllers. Actual private
+camera-getter acquisition consumer applied the published ray20 logged times.
+
+game-final.log / verification.json:569 filter observations;40 short dropouts
+retain gaze,39 pending-spike observations retain the preceding fixation,
+140 observations accept the deliberate new fixation.120 longer invalid periods
+correctly use controller fallback. No claimed object/entity hard lock.
+One native LB grab pulse delivered; no attachable target at that view. Full
+held-object flight NOT VERIFIED in this simulator run. Release direction and
+preserved physics are covered by the319-check actual-body offline test.
+
+Fresh 20.082-s frame capture:1710 frames,85.15 FPS,p50=11.595/p99=15.426ms,
+56.9% above11.111ms,renderer92.7% core. No matched baseline A/B; no FPS claim.
+world-left.png and grab-gaze.png retain the normal rendered scene.
+
+Stopped owned game after path/start-time check. simulator-lab Restore PASS:
+DLL A9D487B1, diagnostic117230AC and protected EXE/main INI/loader unchanged.
+Four current pre-lab save/config files restored and SHA checked; post-test
+versions preserved under post-test-user/. Simulator OFF after recovery.
+
+Frozen DLL-only package uses kind tentacle-gaze-stability and existing guarded
+installer with exact baseline/candidate hashes and protected profiles/caches.
+Prepare script pins the simulator-tested D72F8E1C bytes. No runtime INI changes.
