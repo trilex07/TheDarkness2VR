@@ -111,10 +111,10 @@ struct VrSettingsRenderer {
                    !button(SettingRect(1),options.polishText?L"Tekst: polski":L"Tekst: angielski") ||
                    !Text(28,222,L"J\u0119zyk i supersampling: po restarcie gry."))return false;
             } else {
-                if(!Text(28,120,L"Spust: wybierz    K\u00f3\u0142ko: powr\u00f3t") ||
-                   !Text(28,151,L"2x tr\u00f3jk\u0105t: pauza    K\u00f3\u0142ko (1 s): cel misji") ||
-                   !Text(28,182,L"L3+R3: centrowanie; przytrzymaj: kino / VR") ||
-                   !Text(28,213,L"Ruch: lewa ga\u0142ka    Obr\u00f3t: prawa ga\u0142ka"))return false;
+                if(!button(SettingRect(0),options.headRelativeMovement?L"[x] Ruch wzgl\u0119dem g\u0142owy":L"[ ] Ruch wzgl\u0119dem g\u0142owy") ||
+                   !button(SettingRect(1),options.weaponLaser?L"[x] Laser broni":L"[ ] Laser broni") ||
+                   !Text(28,214,L"Spust: wybierz    K\u00f3\u0142ko: powr\u00f3t") ||
+                   !Text(28,244,L"L3+R3: centrowanie / kino"))return false;
             }
             if(!Text(24,280,options.failed?L"B\u0142\u0105d zapisu ustawie\u0144":
                 options.pending?L"Zapisano. Uruchom gr\u0119 ponownie.":L"INSERT: VR settings") ||
@@ -141,9 +141,10 @@ struct VrSettingsRenderer {
             std::clamp(p.hit.y,0,d2vr_settings::Height-1)},{1,1}};
         return true;
     }
-    bool Render(XrCompositionLayerQuad& quad) {
+    bool Render(XrCompositionLayerQuad& quad,bool solidBeam=false) {
         pending=false;
         if(!g_ctx11 || !Ensure() || !Draw())return false;
+        if(solidBeam)static_cast<uint32_t*>(pixels)[0]=0xFFFF4030;
         if(!acquired) {
             XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
             const auto result=xrAcquireSwapchainImage(chain,&ai,&index);
@@ -175,7 +176,8 @@ struct VrSettingsRenderer {
     }
 };
 static VrSettingsRenderer g_vrSettingsRenderer;
-static void ReleaseVrSettingsRenderer(){g_vrSettingsRenderer.Reset();}
+static VrSettingsRenderer g_weaponLaserRenderer;
+static void ReleaseVrSettingsRenderer(){g_vrSettingsRenderer.Reset();g_weaponLaserRenderer.Reset();}
 enum class VrSettingsRender {Ready,Pending,Failed};
 static VrSettingsRender RenderVrSettings(XrCompositionLayerQuad& quad) {
     const bool ok=g_vrSettingsRenderer.Render(quad);

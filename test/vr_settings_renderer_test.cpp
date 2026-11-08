@@ -67,9 +67,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrReleaseSwapchainImage(XrSwapchain,const XrSwapc
     if(XR_SUCCEEDED(releaseResult))owned=ready=false;return releaseResult;
 }
 struct UploadSink {
-    unsigned calls=0;uint64_t checksum=0;
+    unsigned calls=0;uint64_t checksum=0;uint32_t firstPixel=0;
     void UpdateSubresource(ID3D11Texture2D*,UINT,const D3D11_BOX*,const void* pixels,UINT pitch,UINT){
         CHECK(owned&&ready);CHECK(pixels);CHECK(pitch==640*4);++calls;
+        firstPixel=static_cast<const uint32_t*>(pixels)[0];
         checksum=0;const auto* bytes=static_cast<const unsigned char*>(pixels);
         for(unsigned i=0;i<640*360*4;++i)checksum=checksum*131+bytes[i];
     }
@@ -99,6 +100,8 @@ int main(){
     // can still return a type here, so that is not our deletion oracle.
     XrCompositionLayerQuad warmup{};Reset();
     CHECK(RenderVrSettings(warmup)==VrSettingsRender::Ready);
+    Reset();CHECK(g_weaponLaserRenderer.Render(warmup,true));
+    CHECK(sink.firstPixel==0xFFFF4030);CHECK(!owned);
     ReleaseVrSettingsRenderer();
     CHECK(GdiFlush());
     const DWORD resources=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
@@ -183,6 +186,8 @@ int main(){
     destroyResult=XR_SUCCESS;g_vrSettingsRenderer.Reset();CHECK(!g_vrSettingsRenderer.chain);
     // Repeated opens/stops must release GDI handles, without a GPU/runtime.
     for(unsigned i=0;i<30;++i){Reset();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);}
+    Reset();CHECK(g_weaponLaserRenderer.Render(quad,true));
+    CHECK(sink.firstPixel==0xFFFF4030);CHECK(!owned);
     ReleaseVrSettingsRenderer();
     CHECK(GdiFlush());
     const auto after=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);

@@ -32,6 +32,7 @@
 #include "adaptive_fps.h"
 #include "app_half_rate.h"
 #include "vr_settings.h"
+#include "vr_gameplay_options.h"
 
 #include <xinput.h>
 
@@ -5116,6 +5117,17 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         lastNativePause=nativePaused;
         Log("[NativePauseInput] paused=%d; both protected hand/gesture gates synchronized",int(nativePaused));
     }
+    // Menu has already claimed/released input above. Physical pads are untouched.
+    if(g_vrSettings.Options().headRelativeMovement && focused && haveL &&
+       g_in3DGameplayMode && NativeJackieInputAllowed() && !MenuConfirmActive() &&
+       !CinemaSceneThisFrame() && g_headGeometry && g_headGeometryReferenceValid &&
+       g_trackedFrame.renderTrackingValid && g_haveViews && !g_wheelGate.open) {
+        float moveX=lx,moveY=ly;
+        if(d2vr_gameplay::HeadMovement(g_headGeometryReference,
+           HeadCenterPose(g_eyePose[0],g_eyePose[1]),moveX,moveY)) {
+            gp.sThumbLX=StickShort(moveX);gp.sThumbLY=StickShort(moveY);
+        }
+    }
 #endif
     const auto objectiveButton=g_objectiveButton.Update(focused && circleActive,circleDown,
         g_in3DGameplayMode && NativeJackieInputAllowed() && !MenuConfirmActive() && !NativeHeldActionContext() &&
@@ -6265,6 +6277,7 @@ static bool WriteTextureToSwapchain(XrSwapchain sc, ID3D11Texture2D** scImages, 
 }
 
 #include "vr_settings_renderer.inl"
+#include "weapon_laser.inl"
 #include "weapon_wheel_renderer.inl"
 
 void SubmitXR(IDirect3DDevice9* dev) {
@@ -6286,6 +6299,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
     const XrCompositionLayerBaseHeader* layers[8] = { nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr };
     XrCompositionLayerQuad wheelQuads[5]{};
+    XrCompositionLayerQuad weaponLaserQuads[2]{};
     XrCompositionLayerQuad cinemaEyes[2]{};
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
@@ -6694,6 +6708,10 @@ void SubmitXR(IDirect3DDevice9* dev) {
 
     ObserveNativeActionMovies(); // menus also exist before any 3D player view
     const uint32_t worldLayerCount=layerCount;
+#ifdef D2VR_MATCHED_CAPTURE
+    AppendWeaponLaserLayers(layers,layerCount,8,weaponLaserQuads,fs.shouldRender);
+    const uint32_t weaponLaserLayerCount=layerCount-worldLayerCount;
+#endif
     bool settingsSubmitted=false;
     if(g_vrSettings.Visible()) {
 #ifdef D2VR_MATCHED_CAPTURE
@@ -6743,7 +6761,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
     if(settingsSubmitted)g_vrSettings.Submitted(endR==XR_SUCCESS);
     AdaptiveStereoSubmitted(endR,havePixels,worldLayerCount);
 #ifdef D2VR_MATCHED_CAPTURE
-    matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1 && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
+    matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1+weaponLaserLayerCount && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
 #endif
     g_trackedFrame.open = false;
     const ULONGLONG frameMs = GetTickCount64() - g_trackedFrame.startedMs;

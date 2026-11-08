@@ -31,7 +31,7 @@ inline bool Neutral(bool tracked,uint16_t buttons,float lt,float rt,float lx,flo
         leftGrip>=0 && rightGrip>=0 && leftGrip<=.15f && rightGrip<=.15f &&
         std::hypot(lx,ly)<=.15f && std::hypot(rx,ry)<=.15f;
 }
-enum class Action {None,NisToggle,NisLess,NisMore,Supersample,Voice,Text};
+enum class Action {None,NisToggle,NisLess,NisMore,Supersample,Voice,Text,HeadRelativeMovement,WeaponLaser};
 inline bool SupersampleFits(unsigned width,unsigned height,unsigned percent) {
     const uint64_t w=uint64_t(width)*percent/100,h=uint64_t(height)*percent/100;
     return w>0 && h>0 && w<=4096 && h<=4096 && w*h<=16000000;
@@ -43,6 +43,7 @@ inline unsigned NextSupersample(unsigned width,unsigned height,unsigned current)
 struct Preferences {
     unsigned page=0,nisPercent=20,supersample=100;
     bool nis=true,polishVoice=true,polishText=true,pending=false,failed=false;
+    bool headRelativeMovement=false,weaponLaser=false;
     uint64_t revision=1;
 };
 inline Rect TabRect(unsigned i){return {24+int(i)*200,66,192,42};}
@@ -162,6 +163,10 @@ public:
         } else if(preferences_.page==1) {
             if(SettingRect(0).Contains(hit.x,hit.y))return Action::Voice;
             if(SettingRect(1).Contains(hit.x,hit.y))return Action::Text;
+        }
+        if(preferences_.page==2) {
+            if(SettingRect(0).Contains(hit.x,hit.y))return Action::HeadRelativeMovement;
+            if(SettingRect(1).Contains(hit.x,hit.y))return Action::WeaponLaser;
         }
         return Action::None;
     }

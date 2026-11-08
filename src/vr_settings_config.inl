@@ -15,6 +15,8 @@ static void LoadVrPreferences(const char* ini) {
         unsigned((g_foveatedSharpen?g_foveaSharpness:g_nisSharpness)*100+.5f),ini),0u,100u);
     o.supersample=GetPrivateProfileIntA("VRSettings","Supersampling",100,ini);
     if(o.supersample!=100 && o.supersample!=125 && o.supersample!=150)o.supersample=100;
+    o.headRelativeMovement=GetPrivateProfileIntA("VRSettings","HeadRelativeMovement",0,ini)!=0;
+    o.weaponLaser=GetPrivateProfileIntA("VRSettings","WeaponLaser",0,ini)!=0;
     o.polishVoice=GetPrivateProfileIntA("VRSettings","PolishVoice",1,ini)!=0;
     o.polishText=GetPrivateProfileIntA("VRSettings","PolishText",1,ini)!=0;
 #ifdef D2VR_MATCHED_CAPTURE
@@ -32,8 +34,8 @@ static void LoadVrPreferences(const char* ini) {
         (GetPrivateProfileIntA("VRSettings","AppliedPolishText",1,ini)!=0)!=o.polishText;
     o.failed=o.failed || GetPrivateProfileIntA("VRSettings","LanguageError",0,ini)!=0;
     ++o.revision;
-    Log("[VRSettings] loaded NIS=%d strength=%u SS=%u source=%dx%d voicePL=%d textPL=%d",
-        int(o.nis),o.nisPercent,o.supersample,g_renderW,g_renderH,int(o.polishVoice),int(o.polishText));
+    Log("[VRSettings] loaded NIS=%d strength=%u SS=%u source=%dx%d voicePL=%d textPL=%d headMove=%d gunLaser=%d",
+        int(o.nis),o.nisPercent,o.supersample,g_renderW,g_renderH,int(o.polishVoice),int(o.polishText),int(o.headRelativeMovement),int(o.weaponLaser));
 }
 static bool StartVrLanguageHelper() {
     if(g_vrLanguageHelper) {
@@ -74,6 +76,8 @@ static void ApplyVrSettingsAction(d2vr_settings::Action action) {
         ok=false;
 #endif
         break;}
+    case Action::HeadRelativeMovement:o.headRelativeMovement=!o.headRelativeMovement;ok=VrWrite("HeadRelativeMovement",o.headRelativeMovement);break;
+    case Action::WeaponLaser:o.weaponLaser=!o.weaponLaser;ok=VrWrite("WeaponLaser",o.weaponLaser);break;
     case Action::Voice:case Action::Text: {
         if(!StartVrLanguageHelper()){ok=false;break;}
         if(action==Action::Voice){o.polishVoice=!o.polishVoice;ok=VrWrite("PolishVoice",o.polishVoice);}
@@ -84,5 +88,5 @@ static void ApplyVrSettingsAction(d2vr_settings::Action action) {
     if(!ok)o=previous;
     o.failed=!ok;++o.revision;
     if(ok){g_nisMode=o.nis?g_vrNisMode:0;g_nisSharpness=g_foveaSharpness=o.nisPercent*.01f;}
-    Log("[VRSettings] action=%u saved=%d NIS=%d strength=%u SS=%u voicePL=%d textPL=%d",unsigned(action),int(ok),int(o.nis),o.nisPercent,o.supersample,int(o.polishVoice),int(o.polishText));
+    Log("[VRSettings] action=%u saved=%d NIS=%d strength=%u SS=%u voicePL=%d textPL=%d headMove=%d gunLaser=%d",unsigned(action),int(ok),int(o.nis),o.nisPercent,o.supersample,int(o.polishVoice),int(o.polishText),int(o.headRelativeMovement),int(o.weaponLaser));
 }

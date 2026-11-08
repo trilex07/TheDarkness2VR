@@ -1,4 +1,5 @@
 #include "../src/vr_settings.h"
+#include "../src/vr_gameplay_options.h"
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
@@ -85,7 +86,10 @@ int main(){
     CHECK(click(300,85)==Action::None);CHECK(settings.Options().page==1);
     CHECK(click(80,135)==Action::Voice);CHECK(click(80,181)==Action::Text);
     CHECK(click(500,85)==Action::None);CHECK(settings.Options().page==2);
-    CHECK(click(80,135)==Action::None); // controls are information, not settings
+    CHECK(!settings.Options().headRelativeMovement&&!settings.Options().weaponLaser);
+    CHECK(click(500,85)==Action::None);CHECK(settings.Options().page==2);
+    CHECK(click(80,135)==Action::HeadRelativeMovement);
+    CHECK(click(80,181)==Action::WeaponLaser);
     settings.Close();CHECK(!settings.OwnInput(true));
     settings.ShowEntry(true,head,space);CHECK(settings.Entry()&&!settings.Open());
     CHECK(!settings.OwnInput(true));CHECK(settings.Surface().cursor.height==80);
@@ -148,6 +152,27 @@ int main(){
         a.frame=2;CHECK(!Laser(s,a,h,beam,size));CHECK(beam.position.x==saved.position.x&&size.height==savedSize.height);
         a.frame=1;a.tracked=false;CHECK(!Laser(s,a,h,beam,size));
     }
+    // Check both signs, strafe/forward combinations and norm preservation.
+    for(float yaw:{-3.f,-1.5707963f,0.f,1.5707963f,3.f})
+    for(float refYaw:{-2.f,0.f,2.f})for(float x:{-1.f,0.f,1.f})for(float y:{-1.f,0.f,1.f}) {
+        XrPosef ref{{0,std::sin(refYaw*.5f),0,std::cos(refYaw*.5f)},{0,0,0}};
+        XrPosef h{{0,std::sin((refYaw+yaw)*.5f),0,std::cos((refYaw+yaw)*.5f)},{0,0,0}};
+        float a=x,b=y;CHECK(d2vr_gameplay::HeadMovement(ref,h,a,b));
+        CHECK(std::fabs(a-(std::cos(yaw)*x-std::sin(yaw)*y))<1e-5);
+        CHECK(std::fabs(b-(std::sin(yaw)*x+std::cos(yaw)*y))<1e-5);
+        CHECK(std::fabs(a*a+b*b-x*x-y*y)<1e-5);
+        XrPosef gun=h;gun.position={.3f,-.2f,-.4f};
+        XrPosef beam{};XrExtent2Df size{};
+        CHECK(d2vr_gameplay::WeaponBeam(gun,ref,space,beam,size));
+        CHECK(std::fabs(size.height-7.978f)<1e-4);
+        double q[4];CHECK(d2vr_menu::detail::Pose(beam,q));
+        const auto axis=d2vr_menu::detail::Rotate(q,{0,1,0});
+        double aq[4];CHECK(d2vr_menu::detail::Pose(gun,aq));
+        const auto forward=d2vr_menu::detail::Rotate(aq,{0,0,-1});
+        CHECK(std::fabs(axis.x-forward.x)<1e-5&&std::fabs(axis.y-forward.y)<1e-5&&std::fabs(axis.z-forward.z)<1e-5);
+    }
+    {float x=1,y=0;auto invalidHead=head;invalidHead.orientation.w=0;
+     CHECK(!d2vr_gameplay::HeadMovement(head,invalidHead,x,y));CHECK(x==1&&y==0);}
     CHECK(NextSupersample(2676,2728,100)==125);
     CHECK(NextSupersample(2676,2728,125)==100);
     CHECK(NextSupersample(2000,2000,125)==150);

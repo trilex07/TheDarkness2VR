@@ -19,7 +19,7 @@ $vcvars=Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat'
 $sdk=if($env:OPENXR_SDK){$env:OPENXR_SDK}else{'C:\Users\Trilex\openxr-sdk'}
 Push-Location $OutputDir
 try {
-    foreach($name in @('vr_settings_test','vr_settings_renderer_test','vr_settings_input_host_test','vr_settings_submission_test')) {
+    foreach($name in @('vr_settings_test','vr_settings_renderer_test','vr_settings_input_host_test','vr_settings_submission_test','vr_gameplay_preferences_test','weapon_laser_test')) {
         $source=Join-Path $here ($name+'.cpp')
         if(!(Test-Path -LiteralPath $source)){throw "Missing $source"}
         cmd /c "`"$vcvars`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 /I`"$sdk\include`" /I`"$OutputDir`" `"$source`" /Fe:$name.exe /link user32.lib gdi32.lib"
