@@ -43,6 +43,9 @@ in addition to the existing button. No synthetic gameplay test authorization.
 
 ## Deployment
 
-Freeze/install pending. tools/prepare-heart-pull-candidate.ps1 pins prior DLL,
-protects ten other installed files and provides exact DLL rollback.
+Source0706868c frozen in build/heart-pull-steam-20261108 and installed MAIN.
+Post-install VerifyOnly PASS: DLL F11472BE matches payload, exact rollback
+9F7222AE present, ten protected installed files unchanged. Receipt installed.json.
+Rollback with that package's Install.ps1 -Restore while game is closed.
+tools/prepare-heart-pull-candidate.ps1 pins prior DLL and protects those files.
 No release, remote push or main merge authorized in this task.
