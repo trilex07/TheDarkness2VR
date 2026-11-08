@@ -58,6 +58,7 @@
 #include "input_poll_snapshot.h"
 #include "native_menu_pointer_bridge.h"
 #include "vr_input.h"
+#include "heart_pull.h"
 #include "unarmed_trigger_dpad.h"
 #include "dual_weapon_wheel.h"
 #include "weapon_wheel_raster.h"
@@ -4326,6 +4327,7 @@ struct GestureState {
     bool grabbed=false;
 };
 static GestureState g_gestures;
+static d2vr_input::HeartPull g_heartPull;
 static d2vr_input::Tentacles g_tentacles;
 static void CancelGripHaptic(int hand) {
     const auto now=GetTickCount64();
@@ -4384,7 +4386,7 @@ static void ResetPoseInput() {
     g_protectedGrips={};
     g_protectedRightTentacle={};
 #endif
-    g_gestures={}; g_recenterChord={}; g_triangleRecenter={}; g_objectiveButton={}; g_tentacles={};
+    g_gestures={}; g_heartPull={}; g_recenterChord={}; g_triangleRecenter={}; g_objectiveButton={}; g_tentacles={};
     g_tentacleAimVisible=false; g_aimMarkerValid[0]=g_aimMarkerValid[1]=false;
     ResetNativeAim();
     for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.flags=0; hand.squeeze=0; hand.motion={}; }
@@ -5208,9 +5210,30 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         loggedMenuShoulders=menuShoulderPassthrough;
         Log("[MenuShoulders] native menu L1/R1 -> LB/RB passthrough=%d",int(menuShoulderPassthrough));
     }
+    NativeGameplaySample heartOwner;
+    const auto heartHead=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
+    const auto heartHand=g_hands[0].grip.position;
+    const XrViewStateFlags heartTracked=XR_VIEW_STATE_POSITION_TRACKED_BIT|XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
+    const bool heartContext=g_protectedGestureActions && g_imagePreservingInput && focused &&
+        g_haveViews && g_in3DGameplayMode && !MenuConfirmActive() && !g_wheelGate.open &&
+        NativeJackieInputAllowed() && !NativeActionMovies() && !CinemaSceneThisFrame() &&
+        !(gp.wButtons&XINPUT_GAMEPAD_START) && gp.bLeftTrigger<30 && gp.bRightTrigger<30 &&
+        !InterlockedCompareExchange(&g_twoHandSupportIntent,0,0) &&
+        CopyNativeGameplay(heartOwner) && heartOwner.grab==d2vr_input::GrabFeedback::Empty &&
+        !heartOwner.alternateHeldTarget;
+    const auto heart=g_heartPull.Update(heartContext,
+        g_hands[0].gripValid && (g_trackedFrame.flags&heartTracked)==heartTracked,
+        g_hands[0].squeeze,{heartHand.x,heartHand.y,heartHand.z},
+        {heartHead.position.x,heartHead.position.y,heartHead.position.z},
+        g_trackedFrame.state.predictedDisplayTime*1e-9);
+    if(heart.eat)gp.wButtons|=XINPUT_GAMEPAD_X;
+    if(heart.fired)Log("[HeartPull] L1 + inward pull -> stock contextual X hold");
     if(NativeJackieInputAllowed() && !NativeActionMovies()) {
         if(g_protectedGestureActions) ApplyProtectedGestureActions(gp);
-        ApplyProtectedLeftThrow(gp);
+        if(heart.ownsGrip) {
+            gp.wButtons&=~XINPUT_GAMEPAD_LEFT_SHOULDER;
+            ResetProtectedLeftThrow();ResetNativeThrow();
+        } else ApplyProtectedLeftThrow(gp);
     } else {
         // Do not carry a queued stroke/throw into or out of native choices.
         g_protectedRightTentacle={};ResetProtectedLeftThrow();ResetNativeThrow();
