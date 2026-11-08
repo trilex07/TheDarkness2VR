@@ -24,8 +24,8 @@ foreach($lang in 'en','pl'){
 $manifest | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'languages.json')
 foreach($n in $names){Copy-Item (Join-Path $root "languages/pl/$n") (Join-Path $cache $n) -Force}
 $ini=Join-Path $game 'Darkness2VR.ini'
-function Trial([int]$voice,[int]$text,[bool]$corrupt){
- [IO.File]::WriteAllText($ini,"[VRSettings]`r`nPolishVoice=$voice`r`nPolishText=$text`r`n")
+function Trial([int]$voice,[int]$text,[bool]$corrupt,[bool]$missing=$false){
+ [IO.File]::WriteAllText($ini,$(if($missing){"[VRSettings]`r`n"}else{"[VRSettings]`r`nPolishVoice=$voice`r`nPolishText=$text`r`n"}))
  $before=@{};foreach($n in $names){$before[$n]=Hash (Join-Path $cache $n)}
  $owner=Start-Process (Join-Path $game 'DarknessII.exe') -WindowStyle Hidden -PassThru
  $worker=$null
@@ -50,5 +50,6 @@ function Trial([int]$voice,[int]$text,[bool]$corrupt){
  }
 }
 foreach($voice in 0,1){foreach($text in 0,1){Trial $voice $text $false}}
+Trial 0 0 $false $true
 Trial 0 0 $true
-Write-Output 'PASS: four independent language combinations, live-process wait, corrupt profile rejected without mutation'
+Write-Output 'PASS: four independent language combinations, English missing-key defaults, live-process wait, corrupt profile rejected without mutation'

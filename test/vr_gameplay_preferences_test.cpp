@@ -21,8 +21,16 @@ int main(){
     using namespace d2vr_settings;
     char temp[MAX_PATH]{};CHECK(GetTempPathA(MAX_PATH,temp));
     CHECK(GetTempFileNameA(temp,"d2g",0,g_activeIni));
+    CHECK(!g_vrSettings.Options().polishText&&!g_vrSettings.Options().polishVoice);
     LoadVrPreferences(g_activeIni);
+    CHECK(!g_vrSettings.Options().polishText&&!g_vrSettings.Options().polishVoice);
     CHECK(!g_vrSettings.Options().headRelativeMovement&&!g_vrSettings.Options().weaponLaser);
+    for(bool text:{false,true})for(bool voice:{false,true}) {
+        CHECK(WritePrivateProfileStringA("VRSettings","PolishText",text?"1":"0",g_activeIni));
+        CHECK(WritePrivateProfileStringA("VRSettings","PolishVoice",voice?"1":"0",g_activeIni));
+        LoadVrPreferences(g_activeIni);
+        CHECK(g_vrSettings.Options().polishText==text&&g_vrSettings.Options().polishVoice==voice);
+    }
     for(auto action:{Action::HeadRelativeMovement,Action::WeaponLaser}) {
         ApplyVrSettingsAction(action);CHECK(!g_vrSettings.Options().failed);
     }

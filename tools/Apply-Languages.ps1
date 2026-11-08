@@ -24,8 +24,8 @@ try {
  $locked=$mutex.WaitOne(0);if(!$locked){throw 'Another language transaction owns the archives'}
  Closed
  if(!(Test-Path -LiteralPath $IniPath) -or [IO.Path]::GetFullPath($IniPath) -ne $IniPath){throw 'INI identity missing'}
- $voice=if([VrLanguageIni]::GetPrivateProfileInt('VRSettings','PolishVoice',1,$IniPath)){'pl'}else{'en'}
- $text=if([VrLanguageIni]::GetPrivateProfileInt('VRSettings','PolishText',1,$IniPath)){'pl'}else{'en'}
+ $voice=if([VrLanguageIni]::GetPrivateProfileInt('VRSettings','PolishVoice',0,$IniPath)){'pl'}else{'en'}
+ $text=if([VrLanguageIni]::GetPrivateProfileInt('VRSettings','PolishText',0,$IniPath)){'pl'}else{'en'}
  $m=Get-Content (Join-Path $root 'languages.json') -Raw | ConvertFrom-Json
  $names=@('H.Misc.cache','H.Misc.toc','H.Misc_en.cache','H.Misc_en.toc','B.Misc_en.cache','B.Misc_en.toc','F.Misc_en.cache','F.Misc_en.toc')
  $selected=@{}
