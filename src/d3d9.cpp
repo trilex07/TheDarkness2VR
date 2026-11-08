@@ -57,6 +57,7 @@
 #include "native_menu_input_snapshot.h"
 #include "input_poll_snapshot.h"
 #include "native_menu_pointer_bridge.h"
+#include "controller_menu_pointer.h"
 #include "vr_input.h"
 #include "heart_pull.h"
 #include "unarmed_trigger_dpad.h"
@@ -152,6 +153,7 @@ static volatile LONG g_captureResetGeneration=0, g_captureResetting=0;
 namespace {
 static bool CinemaSceneThisFrame();
 static bool MenuConfirmActive();
+static bool ControllerMenuConfirmReady();
 static unsigned NativeVrMenuFlags();
 static bool NativeMenuPresentationActive();
 static void PrepareWorldMarkerMovies();
@@ -6301,6 +6303,7 @@ static bool WriteTextureToSwapchain(XrSwapchain sc, ID3D11Texture2D** scImages, 
 
 #include "vr_settings_renderer.inl"
 #include "weapon_laser.inl"
+#include "controller_menu_laser.inl"
 #include "weapon_wheel_renderer.inl"
 
 void SubmitXR(IDirect3DDevice9* dev) {
@@ -6323,6 +6326,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
     const XrCompositionLayerBaseHeader* layers[8] = { nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr };
     XrCompositionLayerQuad wheelQuads[5]{};
     XrCompositionLayerQuad weaponLaserQuads[2]{};
+    XrCompositionLayerQuad menuLaserQuads[2]{};
     XrCompositionLayerQuad cinemaEyes[2]{};
     XrCompositionLayerQuad settingsQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad settingsLaser{XR_TYPE_COMPOSITION_LAYER_QUAD};
@@ -6730,6 +6734,9 @@ void SubmitXR(IDirect3DDevice9* dev) {
     }
 
     ObserveNativeActionMovies(); // menus also exist before any 3D player view
+#ifdef D2VR_MATCHED_CAPTURE
+    if(layerCount && fs.shouldRender)RecordProjectedMenuSurface();
+#endif
     const uint32_t worldLayerCount=layerCount;
 #ifdef D2VR_MATCHED_CAPTURE
     AppendWeaponLaserLayers(layers,layerCount,8,weaponLaserQuads,fs.shouldRender);
@@ -6769,6 +6776,9 @@ void SubmitXR(IDirect3DDevice9* dev) {
         else g_vrSettings.Submitted(false);
     }
     if(!settingsSubmitted)AppendWeaponWheelLayers(layers,layerCount,8,wheelQuads,fs.shouldRender);
+#ifdef D2VR_MATCHED_CAPTURE
+    AppendControllerMenuLaser(layers,layerCount,8,menuLaserQuads,fs.shouldRender);
+#endif
     XrFrameEndInfo fei{ XR_TYPE_FRAME_END_INFO };
     fei.displayTime = fs.predictedDisplayTime;
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -6782,6 +6792,12 @@ void SubmitXR(IDirect3DDevice9* dev) {
         endR=xrEndFrame(g_xrSession, &fei);
     }
     if(settingsSubmitted)g_vrSettings.Submitted(endR==XR_SUCCESS);
+#ifdef D2VR_MATCHED_CAPTURE
+    AcquireSRWLockExclusive(&g_menuSurfaceLock);
+    g_menuSurface.submitted=endR==XR_SUCCESS && fs.shouldRender && worldLayerCount &&
+        g_menuSurface.frame==g_trackedFrame.id && NativeMenuPresentationActive();
+    ReleaseSRWLockExclusive(&g_menuSurfaceLock);
+#endif
     AdaptiveStereoSubmitted(endR,havePixels,worldLayerCount);
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1+weaponLaserLayerCount && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);

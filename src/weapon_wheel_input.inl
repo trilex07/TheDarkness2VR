@@ -583,6 +583,7 @@ static void ApplyMenuTriggerConfirm(XINPUT_GAMEPAD& gp) {
     const bool down=gp.bRightTrigger>150;
     static bool wasDown=false;
     static bool menu=false;
+    static bool confirmed=false;
     static bool lastWorld=false;
     static LONG lastManager=0;
     const LONG manager=g_nativeRegionManager;
@@ -592,8 +593,15 @@ static void ApplyMenuTriggerConfirm(XINPUT_GAMEPAD& gp) {
     if(down && !wasDown) Log("[R2Route] menu=%d world=%d inputContext=%d stickY=%d buttonsBefore=0x%04X",
         int(menu),int(g_in3DGameplayMode),int(g_inputContext),int(gp.sThumbRY),unsigned(gp.wButtons));
     wasDown=down;
-    if(!down) menu=false;
-    if(menu && down) { gp.wButtons|=XINPUT_GAMEPAD_A; gp.bRightTrigger=0; }
+    if(!down) {menu=false;confirmed=false;}
+    if(menu && down) {
+        // Once accepted, retain one native A hold until trigger release.
+        // Moving the ray away/back while held cannot create another A edge.
+        if(confirmed || ControllerMenuConfirmReady()) {
+            gp.wButtons|=XINPUT_GAMEPAD_A;confirmed=true;
+        }
+        gp.bRightTrigger=0;
+    }
 }
 
 static void ResetWeaponWheelInput() {

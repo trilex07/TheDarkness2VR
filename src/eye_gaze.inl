@@ -175,9 +175,39 @@ static bool TentacleGazeWorldDirection(XrVector3f& direction) {
 // game's own pad handling. Cursor setter MouseDeviceWin vtable FC00C8 +0x70 ->
 // C4B690 (thiscall x,y client pixels: ClientToScreen, SetCursorPos when
 // acquired, stores +21C/+220). Runs only on the native window thread.
-struct MenuSurface { bool valid=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; };
+struct MenuSurface { bool valid=false,submitted=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; uint64_t frame=0; };
 static SRWLOCK g_menuSurfaceLock=SRWLOCK_INIT;
 static MenuSurface g_menuSurface;
+static std::atomic<uint64_t> g_controllerMenuCursorTime{0};
+static std::atomic<uint64_t> g_controllerMenuCursorXY{0};
+static bool ControllerMenuEnabled() {
+    DWORD foreground=0;GetWindowThreadProcessId(GetForegroundWindow(),&foreground);
+    return foreground==GetCurrentProcessId() && g_xrSessionState==XR_SESSION_STATE_FOCUSED && g_haveViews &&
+        g_hands[1].aimValid && !g_vrSettings.Open() &&
+        !(g_vrSettings.Entry() && g_vrSettings.Pointer().visible) &&
+        NativeMenuPresentationActive() && !NativeActionMovies();
+}
+static bool ControllerMenuHit(const MenuSurface& source,d2vr_menu::Surface& surface,d2vr_menu::Hit& hit) {
+    const auto now=GetTickCount64();
+    if(!source.valid || !source.submitted || !source.frame || now<source.time ||
+       now-source.time>150 || source.space!=g_xrSpace || !ControllerMenuEnabled() ||
+       !g_eyeCacheW || !g_eyeCacheH)return false;
+    surface={};surface.identity=1;surface.frame=source.frame;surface.space=source.space;
+    surface.pose=source.pose;surface.width=source.width;surface.height=source.height;
+    surface.cursor={0,0,g_eyeCacheW,g_eyeCacheH};
+    return d2vr_menu::ControllerHit(surface,g_hands[1].aim,true,g_xrSpace,hit);
+}
+static bool ControllerMenuConfirmReady() {
+    if(!ControllerMenuEnabled())return true; // preserve ordinary pad navigation
+    MenuSurface source;
+    AcquireSRWLockShared(&g_menuSurfaceLock);source=g_menuSurface;ReleaseSRWLockShared(&g_menuSurfaceLock);
+    d2vr_menu::Surface surface;d2vr_menu::Hit hit;
+    if(!ControllerMenuHit(source,surface,hit))return false;
+    const uint64_t stamp=g_controllerMenuCursorTime.load(std::memory_order_acquire);
+    const uint64_t xy=g_controllerMenuCursorXY.load(std::memory_order_relaxed);
+    const auto now=GetTickCount64();
+    return stamp && now>=stamp && d2vr_menu::CursorReady(hit,int(uint32_t(xy)),int(uint32_t(xy>>32)),double(now-stamp)*.001);
+}
 static bool ObserveMenuConfirmActive() {
     // R2/Cross input must use the verified RegionMgr -> GameRules pause graph.
     // RegionMgr itself has no +198/+EC pause fields (post-load false positives).
@@ -207,6 +237,7 @@ static bool MenuConfirmActiveThisFrame() {
 static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
     s.time=GetTickCount64(); s.space=quad.space;
+    s.frame=g_trackedFrame.id;
     AcquireSRWLockExclusive(&g_menuSurfaceLock); g_menuSurface=s; ReleaseSRWLockExclusive(&g_menuSurfaceLock);
     g_vrSettings.AnchorMenu(s.pose,s.width,s.height,s.space);
 }
@@ -229,7 +260,8 @@ static void ApplyGazeMenuCursor() {
     static ULONGLONG nextObserve=0; static uint32_t mouse=0; static bool contractOk=false, contractChecked=false;
     // The menu gate (pause / Flash cursor / no world) also drives A-confirm in
     // pause menus, so it runs even with GazeMenu off (user 01:01: gaze menu dropped).
-    const bool cursorFeature=g_gazeMenu && g_eyeTrackingEnabled;
+    const bool controllerFeature=ControllerMenuEnabled();
+    const bool cursorFeature=controllerFeature || (g_gazeMenu && g_eyeTrackingEnabled);
     const HWND window=g_renderSizeHwnd;
     DWORD pid=0;
     if(!window || GetWindowThreadProcessId(window,&pid)!=GetCurrentThreadId() || pid!=GetCurrentProcessId()) return;
@@ -278,14 +310,14 @@ static void ApplyGazeMenuCursor() {
     // yet nothing highlighted: the top movie had cursorRequested=0 (pad mode,
     // mouse ignored). Request the cursor the way the game's own setter B072E0
     // does (movie+F4 = 1) while the gaze menu is active; restore on exit.
-    if(cursorFeature && g_gazeMenuForceCursor) {
+    if(controllerFeature || g_gazeMenuForceCursor || forcedMovie) {
         static int setterOk=-1;
         if(setterOk<0) {
             static const BYTE setterBytes[]={0x8A,0x44,0x24,0x04,0x88,0x81,0xF4,0x00,0x00,0x00,0xC2,0x04,0x00};
             __try { setterOk=!memcmp((void*)0xB072E0,setterBytes,sizeof(setterBytes)); } __except(EXCEPTION_EXECUTE_HANDLER) { setterOk=0; }
             Log("[GazeMenu] cursor-request flag movie+F4 %s",setterOk==1 ? "verified (setter B072E0)" : "REFUSED: unexpected EXE bytes");
         }
-        if(setterOk==1 && gate && topMovie && !topWantsCursor && (!forcedMovie || forcedMovie==topMovie)) {
+        if(setterOk==1 && cursorFeature && gate && topMovie && !topWantsCursor && (!forcedMovie || forcedMovie==topMovie)) {
             // Re-request if the game switched back to pad mode (logged, rate-limited).
             static unsigned reapplied=0; static ULONGLONG lastReapply=0;
             const bool again=forcedMovie==topMovie;
@@ -294,7 +326,7 @@ static void ApplyGazeMenuCursor() {
             else if(forcedMovie && (++reapplied, nowGate-lastReapply>2000)) {
                 lastReapply=nowGate; Log("[GazeMenu] game cleared the cursor request again (%u times); re-requested",reapplied);
             }
-        } else if(!gate && forcedMovie) {
+        } else if((!gate || !cursorFeature) && forcedMovie) {
             if(topMovie==forcedMovie) { __try { *(BYTE*)(forcedMovie+0xF4)=0; } __except(EXCEPTION_EXECUTE_HANDLER) {} }
             Log("[GazeMenu] cursor request released on movie %08X",forcedMovie);
             forcedMovie=0;
@@ -319,7 +351,11 @@ static void ApplyGazeMenuCursor() {
     AcquireSRWLockShared(&g_menuSurfaceLock); surface=g_menuSurface; ReleaseSRWLockShared(&g_menuSurfaceLock);
     const ULONGLONG now=GetTickCount64();
     float u=0,v=0;
-    if(surface.valid && now-surface.time<=250 && surface.space==g_xrSpace) {
+    if(controllerFeature) {
+        d2vr_menu::Surface menu;d2vr_menu::Hit hit;
+        if(!ControllerMenuHit(surface,menu,hit))return;
+        u=float(hit.u);v=float(hit.v);
+    } else if(surface.valid && now-surface.time<=250 && surface.space==g_xrSpace) {
         // Menu on the cinema quad (no 3D world): gaze ray against the quad.
         XrVector3f o{},d{};
         if(!GazeWorldRay(o,d)) return;
@@ -346,7 +382,7 @@ static void ApplyGazeMenuCursor() {
     const int surfH=g_eyeCacheH ? int(g_eyeCacheH) : int(client.bottom);
     client.right=surfW; client.bottom=surfH; // logged size = cursor space
     const int x=int(u*float(surfW-1)+.5f), y=int(v*float(surfH-1)+.5f);
-    if(!filter.Changed(x,y,3)) return;
+    if(!controllerFeature && !filter.Changed(x,y,3)) return;
     // Resolve the mouse device through the verified receiver graph (cached 2 s).
     if(!mouse || now>=nextObserve) {
         nextObserve=now+2000; mouse=0;
@@ -388,6 +424,10 @@ static void ApplyGazeMenuCursor() {
         if(*(DWORD*)mouse!=0xFC00C8) { mouse=0; return; }
         nativeX=*(int*)(mouse+0x21C); nativeY=*(int*)(mouse+0x220); acquiredNow=*(BYTE*)(mouse+7);
     } __except(EXCEPTION_EXECUTE_HANDLER) { mouse=0; return; }
+    if(controllerFeature && acquiredNow) {
+        g_controllerMenuCursorXY.store(uint64_t(uint32_t(nativeX))|(uint64_t(uint32_t(nativeY))<<32),std::memory_order_relaxed);
+        g_controllerMenuCursorTime.store(now,std::memory_order_release);
+    }
     if(g_gazeMenuMode==1) {
         using SetPos=void(__thiscall*)(void*,int,int);
         __try { reinterpret_cast<SetPos>(0xC4B690)(reinterpret_cast<void*>(mouse),x,y); }
