@@ -103,3 +103,15 @@ authorization evidence). User approval is requested for these exact operations.
 No installation or runtime test occurred. Installed DLL remains D72F8E1C;
 candidate F98BFEFD is local and unaccepted. No merge, release or push occurred.
 REA close_binary completed after its timed-out analysis drained.
+
+## User-authorized MAIN installation
+
+User explicitly approved both installation and branch push and assigned MAIN.
+Package Install.ps1 completed; subsequent -VerifyOnly PASS confirms one DLL,
+exact rollback and eight protected files. Installed SHA256 now
+F98BFEFDD4A4405AE6E534BE8DF2932880F2888DF3A096D64DC87B8171B919D1.
+Receipt: build/throw-target-steam-20261108/installed.json. Simulator OFF;
+profiles, EXE, loader and caches preserved. No game was running at installation.
+Rollback: build/throw-target-steam-20261108/Install.ps1 -Restore restores D72F8E1C.
+Gameplay/headset acceptance remains pending; no game launch or runtime test in
+this installation turn. Approval resolved the earlier automatic-review blockers.
