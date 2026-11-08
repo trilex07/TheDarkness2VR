@@ -79,3 +79,27 @@ checks the exact D72F baseline and preserves profiles/caches/loader/EXE.
 Package Install.ps1 supports -VerifyOnly and -Restore for the exact baseline.
 No installer release, Git main merge or accepted-baseline update is authorized
 by this handoff alone.
+
+## Frozen result and approval blockers
+
+Implementation commit0449d252228643d699f6a761745b74be1ab5ae52.
+Final protected-native x86 release build PASS, DLL SHA256
+F98BFEFDD4A4405AE6E534BE8DF2932880F2888DF3A096D64DC87B8171B919D1.
+Final source body tests384 checks PASS. Frozen package
+build/throw-target-steam-20261108/Install.ps1 -VerifyOnly PASS: one DLL payload,
+exact rollback, baseline identity and eight protected installed files checked.
+Normal launch/profile gate PASS. Source preparation role was MAIN in this
+handoff, but automatic approval review classified the session as SIDE.
+
+Automatic review rejected these operations before process execution:
+- git push -u origin codex/throw-target-20261108: potentially private source
+  exported to an unverified destination without explicit payload authorization.
+  Destination from git config: https://github.com/trilex07/thedarkness2vr.git.
+- Package Install.ps1 (then -VerifyOnly): changing the live Steam DLL is
+  MAIN-only; reviewer treated this session as SIDE/offline preparation.
+
+Do not bypass or retry without explicit user authorization (or genuinely new
+authorization evidence). User approval is requested for these exact operations.
+No installation or runtime test occurred. Installed DLL remains D72F8E1C;
+candidate F98BFEFD is local and unaccepted. No merge, release or push occurred.
+REA close_binary completed after its timed-out analysis drained.
