@@ -22,8 +22,9 @@ function Extract([string]$source,[string]$signature) {
 $main=Get-Content (Join-Path $repo 'src\d3d9.cpp') -Raw
 $aim=Get-Content (Join-Path $repo 'src\native_aim.inl') -Raw
 $throw=Get-Content (Join-Path $repo 'src\native_throw.inl') -Raw
+$target=Get-Content (Join-Path $repo 'src\throw_target.inl') -Raw
 $protected=Get-Content (Join-Path $repo 'src\protected_left_throw.inl') -Raw
-[IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_protected_throw_types.inl'),(Extract $throw 'struct NativeThrowToken {')+';',[Text.Encoding]::UTF8)
+[IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_protected_throw_types.inl'),(Extract $throw 'struct NativeThrowToken {')+';'+(Extract $target 'struct ThrowTargetScope {')+';',[Text.Encoding]::UTF8)
 $bodies=@((Extract $main 'static XrVector3f RotVec('),(Extract $aim 'static bool NativeAimOwnerMatches('),
     (Extract $throw 'static void ResetNativeThrow() {'),(Extract $throw 'static bool NativeThrowFireOwnerMatches('),
     (Extract $aim 'static bool NativeHeldActionContext() {'),
@@ -31,6 +32,12 @@ $bodies=@((Extract $main 'static XrVector3f RotVec('),(Extract $aim 'static bool
     (Extract $protected 'static bool ProtectedLeftAimHeld() {'),(Extract $protected 'static void ResetProtectedLeftThrow() {'),
     (Extract $throw 'static bool ReadNativeThrowTarget('),
     (Extract $throw 'static void PublishNativeThrow('),(Extract $throw 'static bool TryNativeThrowVelocity('),
+    (Extract $target 'static bool ThrowTargetNpc('),(Extract $target 'static bool __fastcall FilterThrowTarget('),
+    (Extract $target 'static bool __fastcall SkipThrowProjectile('),
+    (Extract $target 'static void __cdecl MarkThrowTargetTrajectory('),
+    (Extract $target 'static __declspec(naked) void ThrowTargetTrajectory()'),
+    (Extract $target 'static bool ResolveThrowTargetRay('),(Extract $target 'static void __cdecl SortThrowTargets('),
+    (Extract $target 'static bool BuildThrowTargetRay('),(Extract $target 'static void* __fastcall QueryThrowTarget('),
     (Extract $protected 'static bool ResolveProtectedThrowVelocity('),(Extract $protected 'static void ApplyProtectedLeftThrow('))
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_protected_throw_under_test.inl'),($bodies -join "`r`n"),[Text.Encoding]::UTF8)
 $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

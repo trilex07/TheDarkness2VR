@@ -13,14 +13,17 @@ namespace detail {
 inline Getter original=nullptr;
 inline uintptr_t caller=0;
 inline Resolve resolve=nullptr;
+inline Resolve scopedResolve=nullptr;
+inline uintptr_t scopedCaller=0;
 inline thread_local bool resolving=false;
 inline __declspec(align(16)) thread_local float result[16];
-static float* __cdecl Apply(float* base,void* self) {
+static float* __cdecl Apply(float* base,void* self,uintptr_t from) {
     const auto error=GetLastError();
     float* output=base;
     if(!resolving) {
         resolving=true;
-        if(resolve(self,base,result))output=result;
+        const auto selected=from==caller ? resolve : scopedResolve;
+        if(selected && selected(self,base,result))output=result;
         resolving=false;
     }
     SetLastError(error);return output;
@@ -32,7 +35,14 @@ static __declspec(naked) float* __fastcall Entry(void*,void*) {
         pushfd
         mov eax,[esp+4]
         cmp eax,caller
+        je matched
+        cmp eax,64FDACh
+        je matched
+        cmp eax,0BF2769h
+        je matched
+        cmp eax,scopedCaller
         jne untouched
+    matched:
         popfd
         call dword ptr [original]
         pushfd
@@ -42,10 +52,11 @@ static __declspec(naked) float* __fastcall Entry(void*,void*) {
         and esp,-16
         fxsave [esp]
         fninit
+        push dword ptr [esi+36] // original caller return address
         push dword ptr [esi+24] // original ECX receiver
         push dword ptr [esi+28] // native EAX matrix pointer
         call Apply
-        add esp,8
+        add esp,12
         mov [esi+28],eax        // only EAX may differ from the native leaf
         fxrstor [esp]
         mov esp,esi
@@ -78,5 +89,11 @@ public:
         detail::original=original;detail::caller=caller;detail::resolve=resolve;return true;
     }
     static void* Entry(){return reinterpret_cast<void*>(&detail::Entry);}
+    static bool Scoped(Resolve resolve,uintptr_t caller,const d2vr_native_image::Guard& guard) {
+        if(!resolve || !caller || !guard.enabled || !guard.Allows(caller,1) ||
+           !guard.Allows(reinterpret_cast<uintptr_t>(resolve),1))return false;
+        if(detail::scopedResolve)return detail::scopedResolve==resolve && detail::scopedCaller==caller;
+        detail::scopedResolve=resolve;detail::scopedCaller=caller;return true;
+    }
 };
 }

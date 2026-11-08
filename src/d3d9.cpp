@@ -90,6 +90,7 @@ static bool g_cameraEventRumble=false; // Diagnostics/CameraEventRumble, default
 #include "native_view_clone_plan.h"
 #include "native_view_instance.h"
 #include "native_throw_clone_plan.h"
+#include "native_throw_target_plan.h"
 #include "native_throw_compare.h"
 #include "native_weapon_bridge.h"
 #include "native_weapon_prefix_plan.h"
@@ -200,8 +201,9 @@ bool g_eyeTrackingEnabled=true;   // [EyeTracking] Enabled: read PSVR2 Toolkit g
 bool g_simulatorGaze=false;       // isolated synthetic gaze section, simulator lab only
 bool g_gazeDotEnabled=false;      // [EyeTracking] GazeDot: debug ring at the gaze (axes verified 2026-11-01)
 bool g_gazeGrab=true;             // [EyeTracking] GazeGrab: tentacle grab acquires the gazed target
+bool g_throwTargetAssist=true;
 bool g_gazeThrow=true;            // [EyeTracking] GazeThrow: thrown objects fly towards the gaze
-float g_gazeThrowAssist=.85f;     // [EyeTracking] GazeThrowAssist (percent): gaze share of the throw direction
+float g_gazeThrowAssist=1.f;     // [EyeTracking] GazeThrowAssist (percent): gaze share of the throw direction
 bool g_gazeMenu=false;            // [EyeTracking] GazeMenu: menu cursor follows the gaze (experimental, off: user 01:01)
 bool g_gazeWheel=true;            // [EyeTracking] GazeWheel: weapon wheel item under the gaze is selected
 bool g_gazeMenuForceCursor=true;  // [EyeTracking] GazeMenuForceCursor: put the top Flash movie in cursor mode while gazing
@@ -215,7 +217,7 @@ static bool g_nativeHandsPackInstalled=false;
 #ifdef D2VR_MATCHED_CAPTURE
 static PVOID volatile g_nativeHandsSelectedResource=nullptr;
 #endif
-float g_throwAimAssist=.20f;
+float g_throwAimAssist=1.f;
 static void ResetNativeAim();
 static void ResetNativeThrow();
 static void RecordRecenterDiagnostic(const char* source);
@@ -957,8 +959,9 @@ void LoadConfig() {
     g_eyeTrackingEnabled = GetPrivateProfileIntA("EyeTracking", "Enabled", 1, chosenIni) != 0;
     g_gazeDotEnabled = GetPrivateProfileIntA("EyeTracking", "GazeDot", 0, chosenIni) != 0;
     g_gazeGrab = GetPrivateProfileIntA("EyeTracking", "GazeGrab", 1, chosenIni) != 0;
+    g_throwTargetAssist = GetPrivateProfileIntA("Input", "ThrowTargetAssist", 1, chosenIni) != 0;
     g_gazeThrow = GetPrivateProfileIntA("EyeTracking", "GazeThrow", 1, chosenIni) != 0;
-    g_gazeThrowAssist = std::min(100u,GetPrivateProfileIntA("EyeTracking", "GazeThrowAssist", 85, chosenIni))*.01f;
+    g_gazeThrowAssist = std::min(100u,GetPrivateProfileIntA("EyeTracking", "GazeThrowAssist", 100, chosenIni))*.01f;
     g_gazeMenu = GetPrivateProfileIntA("EyeTracking", "GazeMenu", 0, chosenIni) != 0;
     g_gazeWheel = GetPrivateProfileIntA("EyeTracking", "GazeWheel", 1, chosenIni) != 0;
     g_gazeMenuMode = GetPrivateProfileIntA("EyeTracking", "GazeMenuMode", 2, chosenIni)==1 ? 1 : 2;
@@ -970,7 +973,7 @@ void LoadConfig() {
     Log("[StickFlick] CrouchStickDown=%d (right stick Y never pitches the camera; up -> [Input] JumpButton default A, down -> CrouchButton default R3; physical A -> AButton default X)",(int)g_crouchStickDown);
     g_nativeHandsEnabled = GetPrivateProfileIntA("Input", "NativeTrackedHands", 1, chosenIni) != 0;
     g_nativeHandsDirtyBoth = GetPrivateProfileIntA("Input", "NativeHandsDirtyBoth", 0, chosenIni) != 0;
-    g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 20, chosenIni))*.01f;
+    g_throwAimAssist = std::min(100u,GetPrivateProfileIntA("Input", "ThrowAimAssist", 100, chosenIni))*.01f;
     g_headGeometry = GetPrivateProfileIntA("Render", "HeadGeometry", 1, chosenIni) != 0;
     g_worldObjectiveMarkers=GetPrivateProfileIntA("Render","WorldObjectiveMarkers",0,chosenIni)!=0;
     Log("[WorldMarker] requested=%d",int(g_worldObjectiveMarkers));
@@ -4419,6 +4422,7 @@ static bool TentacleGazeWorldRay(XrVector3f& origin,XrVector3f& direction);
 static bool TentacleGazeWorldDirection(XrVector3f& direction);
 #include "protected_left_aim.inl"
 #include "native_throw.inl"
+#include "throw_target.inl"
 #include "protected_left_throw.inl"
 #include "native_weapon.inl"
 #include "native_hands.inl"

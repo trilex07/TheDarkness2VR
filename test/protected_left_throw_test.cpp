@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include "../src/vr_input.h"
 #include "../src/native_aim_math.h"
+#include "../src/throw_target_math.h"
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line%d %s\n",__LINE__,#x);exit(1);}}while(0)
 static void Log(const char*,...){}
@@ -16,13 +17,13 @@ static bool g_protectedLeftThrow=true,g_protectedLeftAim=true,g_protectedGesture
 static bool g_imagePreservingInput=true,g_protectedThrowPrivateReady=true,g_haveViews=true,g_in3DGameplayMode=true;
 static bool g_headGeometry=true,g_headGeometryReferenceValid=true,g_nativeLeftAim=false,g_nativeThrowInstalled=false;
 static struct {bool enabled=true;} g_nativeImageGuard;
-static float g_throwAimAssist=.2f;
+static float g_throwAimAssist=.2f,g_gameUnitsPerMeter=1.f;
 static DWORD g_renderThreadId=GetCurrentThreadId();
 static d2vr_input::Tentacles g_protectedLeftTentacle,g_protectedRightTentacle;
 static DWORD g_protectedThrowInputOwner[3]{};
 static XrPosef g_headGeometryReference{{0,0,0,1},{}};
 static struct {bool open=true;XrViewStateFlags flags=3|12;struct {XrTime predictedDisplayTime=1000000000;} state;} g_trackedFrame;
-static struct {bool valid=true;float squeeze=0;XrPosef grip{{0,0,0,1},{}},aim{{0,0,0,1},{}};
+static struct {bool valid=true,aimValid=false;float squeeze=0;XrPosef grip{{0,0,0,1},{}},aim{{0,0,0,1},{}};
     struct {d2vr_input::Vec3 velocity{};} motion;} g_hands[2];
 static __declspec(align(16)) BYTE camera[0xB00],avatar[0x2000],inventory[0x600],weapon[0xB00],parts[0xC0],fire[0xD00],entity[0x100];
 static void* refs[32];static unsigned nextRef=0;
@@ -40,12 +41,24 @@ static bool cinemaScene=false;
 static bool CinemaSceneThisFrame(){return cinemaScene;}
 static bool g_gazeThrow=false;static float g_gazeThrowAssist=.85f;
 static bool testGaze=false;
-static bool TentacleGazeWorldDirection(XrVector3f& d){d={0,0,-1};return testGaze;}
+static bool TentacleGazeWorldRay(XrVector3f& o,XrVector3f& d){o={};d={0,0,-1};return testGaze;}
 static const float* StabilizedCameraWorld(const void* p,float (&)[16]){return reinterpret_cast<const float*>(static_cast<const BYTE*>(p)+0x80);}
 static NativeGameplaySample gameplay;
 static bool copyOK=true;
 static bool CopyNativeGameplay(NativeGameplaySample& sample){sample=gameplay;return copyOK;}
 #include "d2vr_protected_throw_types.inl"
+static thread_local ThrowTargetScope* g_throwTargetScope=nullptr;
+static bool g_throwTargetAssist=false;
+using ThrowTargetTypeCheck=bool(__thiscall*)(void*,const void*);
+static ThrowTargetTypeCheck g_throwTargetTypeCheck=nullptr;
+using ThrowTargetFilter=bool(__thiscall*)(void*,void*,void*,int,int,unsigned,const float*);
+static ThrowTargetFilter g_throwTargetFilter=nullptr;
+using ThrowTargetSort=void(__cdecl*)(BYTE*,BYTE*,int,unsigned);
+static ThrowTargetSort g_throwTargetSort=nullptr;
+using ThrowTargetQuery=void*(__thiscall*)(void*,void*,void*,float,float,unsigned,void*,unsigned);
+static ThrowTargetQuery g_throwTargetQuery=nullptr;
+static void* g_throwTargetTrajectory=nullptr;
+static struct {void* entry=nullptr;void* Entry(unsigned){return entry;}} g_throwTargetCode;
 static NativeThrowToken g_nativeThrowToken;
 static ULONGLONG g_nativeThrowSequence=0;
 static SRWLOCK g_nativeThrowLock=SRWLOCK_INIT;
@@ -173,6 +186,117 @@ static void CharacterCases(){
     float velocity[4]={3,4,0,.5f};CHECK(ResolveProtectedThrowVelocity(fire,velocity,CharacterRef()));
     CHECK(!(Step(400,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));CHECK(!g_nativeThrowToken.until);
 }
+static bool targetFound=false,queryScoped=false,queryThrows=false;
+static unsigned sorted=0;
+static void __cdecl FakeSort(BYTE* first,BYTE* last,int,unsigned) {
+    ++sorted;CHECK(last-first==0x60);
+    CHECK(*reinterpret_cast<float*>(first)>*reinterpret_cast<float*>(first+0x30));
+}
+static void* __fastcall FakeQuery(void* self,void*,void* result,void*,float cone,float,unsigned,void*,unsigned) {
+    CHECK(self==fire);queryScoped=g_throwTargetScope!=nullptr;
+    if(queryScoped) {
+        CHECK(cone==12);float ray[16];CHECK(ResolveThrowTargetRay(camera,nullptr,ray));
+        CHECK(!ResolveThrowTargetRay(entity,nullptr,ray));
+        CHECK(std::fabs(ray[8]-g_nativeThrowToken.direction[0])<1e-5f &&
+              std::fabs(ray[10]-g_nativeThrowToken.direction[2])<1e-5f);
+        if(queryThrows)RaiseException(0xE0001234,0,0,nullptr);
+    }
+    *static_cast<void**>(result)=targetFound ? refs[0] : nullptr;
+    return result;
+}
+static bool testNpc=true,testFilter=true;static unsigned filterCalls=0;
+static bool __fastcall FakeType(void* object,void*,const void* type){CHECK(object==camera || object==avatar);CHECK(type==reinterpret_cast<void*>(0x1110508));return testNpc;}
+static bool __fastcall FakeFilter(void*,void*,void*,void*,int,int,unsigned,const float*){++filterCalls;return testFilter;}
+static DWORD trajectoryArgs[5]{};
+static __declspec(naked) void FakeTrajectory() {
+    __asm {
+        mov trajectoryArgs[0],ecx
+        mov trajectoryArgs[4],esi
+        mov eax,[esp+4]
+        mov trajectoryArgs[8],eax
+        mov eax,[esp+8]
+        mov trajectoryArgs[12],eax
+        mov eax,[esp+12]
+        mov trajectoryArgs[16],eax
+        mov eax,12340001h
+        push 247h
+        popfd
+        ret
+    }
+}
+static void TrajectoryCases() {
+    Reset();Arm();g_nativeThrowToken.targetSelected=true;
+    g_throwTargetTrajectory=reinterpret_cast<void*>(FakeTrajectory);
+    DWORD before=0,after=0,result=0,flags=0;
+    SetLastError(0x56781234);
+    __asm {
+        push edi
+        push esi
+        mov edi,offset fire
+        mov esi,offset entity
+        mov ecx,offset avatar
+        mov before,esp
+        push 33
+        push 22
+        push 11
+        call ThrowTargetTrajectory
+        lea esp,[esp+12]
+        mov after,esp
+        mov result,eax
+        pushfd
+        pop flags
+        pop esi
+        pop edi
+    }
+    CHECK(before==after && result==0x12340001 && (flags&0x8d5)==(0x247&0x8d5));
+    CHECK(trajectoryArgs[0]==Ptr(avatar) && trajectoryArgs[1]==Ptr(entity));
+    CHECK(trajectoryArgs[2]==11 && trajectoryArgs[3]==22 && trajectoryArgs[4]==33);
+    CHECK(g_nativeThrowToken.targetApplied && GetLastError()==0x56781234);
+}
+static void TargetCases() {
+    const float origin[3]{},axis[3]={0,0,1},nearSide[3]={1,0,3},farCenter[3]={0,0,100};
+    CHECK(d2vr_throw_target::Score(origin,axis,farCenter)<d2vr_throw_target::Score(origin,axis,nearSide));
+    const float behind[3]={0,0,-2},nan[3]={NAN,0,2};
+    CHECK(d2vr_throw_target::Score(origin,axis,behind)>1e10f);
+    CHECK(d2vr_throw_target::Score(origin,axis,nan)>1e10f);
+    Reset();Arm();g_throwTargetAssist=true;g_throwTargetQuery=reinterpret_cast<ThrowTargetQuery>(FakeQuery);
+    g_throwTargetCode.entry=reinterpret_cast<void*>(FakeQuery);g_throwTargetSort=FakeSort;
+    g_throwTargetTypeCheck=reinterpret_cast<ThrowTargetTypeCheck>(FakeType);
+    g_throwTargetFilter=reinterpret_cast<ThrowTargetFilter>(FakeFilter);
+    void* result=nullptr;targetFound=true;
+    QueryThrowTarget(fire,nullptr,&result,nullptr,45,100,1,nullptr,1);
+    CHECK(queryScoped && !g_throwTargetScope && g_nativeThrowToken.targetSelected);
+    CHECK(!g_nativeThrowToken.targetApplied);
+    MarkThrowTargetTrajectory(fire,0);CHECK(!g_nativeThrowToken.targetApplied);
+    MarkThrowTargetTrajectory(entity,1);CHECK(!g_nativeThrowToken.targetApplied);
+    MarkThrowTargetTrajectory(fire,1);CHECK(g_nativeThrowToken.targetApplied);
+    float v[4]={3,4,0,.75f};CHECK(ResolveProtectedThrowVelocity(fire,v));
+    CHECK(v[0]==3 && v[1]==4 && v[2]==0 && v[3]==.75f);
+    Reset();Arm();targetFound=false;
+    QueryThrowTarget(fire,nullptr,&result,nullptr,45,100,1,nullptr,1);
+    CHECK(queryScoped && !g_nativeThrowToken.targetApplied);
+    CHECK(ResolveProtectedThrowVelocity(fire,v));CHECK(std::fabs(v[0])<1e-5f && v[2]>4.99f);
+    Reset();Arm();clockMs+=650;
+    QueryThrowTarget(fire,nullptr,&result,nullptr,45,100,1,nullptr,1);CHECK(!queryScoped);
+    Reset();Arm();g_throwTargetAssist=false;
+    QueryThrowTarget(fire,nullptr,&result,nullptr,45,100,1,nullptr,1);CHECK(!queryScoped);g_throwTargetAssist=true;
+    Reset();Arm();queryThrows=true;bool caught=false;
+    __try {QueryThrowTarget(fire,nullptr,&result,nullptr,45,100,1,nullptr,1);}
+    __except(EXCEPTION_EXECUTE_HANDLER) {caught=true;}
+    CHECK(caught && !g_throwTargetScope);queryThrows=false;
+    ThrowTargetScope scope;scope.ray[10]=1;g_throwTargetScope=&scope;
+    __declspec(align(16)) BYTE records[0x60]{};
+    reinterpret_cast<float*>(records+0x10)[0]=1;reinterpret_cast<float*>(records+0x10)[2]=3;
+    reinterpret_cast<float*>(records+0x40)[2]=100;
+    SortThrowTargets(records,records+sizeof(records),1,0);CHECK(sorted==1);
+    void* npc=camera;
+    CHECK(FilterThrowTarget(fire,nullptr,nullptr,&npc,0,0,1,nullptr));
+    testNpc=false;CHECK(!FilterThrowTarget(fire,nullptr,nullptr,&npc,0,0,1,nullptr));
+    testNpc=true;testFilter=false;CHECK(!FilterThrowTarget(fire,nullptr,nullptr,&npc,0,0,1,nullptr));
+    CHECK(filterCalls==3);testFilter=true;
+    CHECK(!SkipThrowProjectile(camera,nullptr,nullptr));
+    g_throwTargetScope=nullptr;g_throwTargetAssist=false;
+}
 int main(int argc,char** argv) {
     CHECK(argc==2);LoadCharacterConsumer(argv[1]);
     Reset();gameplay.alternateHeldTarget=true;SetRef(fire,0x584,avatar);
@@ -265,6 +389,17 @@ int main(int argc,char** argv) {
     Reset();g_gazeThrow=true;testGaze=false;
     PublishNativeThrow(true,false,true,{2,0,0},{1,0,0},true);
     CHECK(g_nativeThrowToken.direction[0]>.99f);
+    Reset();g_hands[0].aimValid=true;g_throwAimAssist=1;
+    PublishNativeThrow(true,false,true,{2,0,0},{1,0,0},true);
+    CHECK(std::fabs(g_nativeThrowToken.direction[0])<1e-5f && g_nativeThrowToken.direction[2]>.999f);
+    TrajectoryCases();
+    TargetCases();
+    Reset();g_hands[0].aim.position={.2f,.4f,-.1f};Arm();
+    float ray[16];g_gameUnitsPerMeter=100;
+    CHECK(BuildThrowTargetRay(g_nativeThrowToken,ray));
+    CHECK(std::fabs(ray[12]-30)<1e-4f && std::fabs(ray[13]-60)<1e-4f && std::fabs(ray[14]-40)<1e-4f);
+    g_gameUnitsPerMeter=NAN;CHECK(!BuildThrowTargetRay(g_nativeThrowToken,ray));g_gameUnitsPerMeter=1;
+    g_nativeThrowToken.camera=1;CHECK(!BuildThrowTargetRay(g_nativeThrowToken,ray));
     CharacterCases();
     CHECK(VirtualFree(reinterpret_cast<void*>(characterConsumer),0,MEM_RELEASE));
     printf("PASS protected throw actual bodies: %u checks; live owner/entity/character/retained-receiver gates,one-shot token,native speed/W preserved,left stroke+aim,enemy release direction,neutral LB gap,right inputs independent\n",checks);

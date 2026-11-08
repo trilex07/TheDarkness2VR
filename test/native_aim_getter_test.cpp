@@ -85,5 +85,16 @@ int main(int argc,char** argv){
     for(unsigned i=0;i<1000;++i){SetLastError(0x1234);
         Check(other(&camera,camera.table[0x9c/4])==camera.matrix);Check(GetLastError()==0x1234);}
     Check(calls==seen && TextHash(module)==hash && !memcmp(table,savedTable,sizeof(table)));
+    auto scopeGuard=guard;scopeGuard.base=0x10000;scopeGuard.bytes=0x10000;
+    Check(d2vr_aim_getter::Bridge::Scoped(Resolve,caller,scopeGuard));
+    d2vr_aim_getter::detail::caller=caller+1;nest=false;callbackAccepted=true;
+    for(unsigned i=0;i<1000;++i){
+        before={};after={};SetLastError(0x13572468);
+        Check(run(&camera,camera.table[0x9c/4],&before,&after,&caller)==d2vr_aim_getter::detail::result);
+        Check(GetLastError()==0x13572468);
+        for(unsigned r=0;r<9;++r)if(r!=7)Check(before.regs[r]==after.regs[r]);
+        Check(!memcmp(before.floating,after.floating,288));
+    }
+    Check(TextHash(module)==hash);
     std::printf("Private aim getter exact caller/ABI/x87/SSE/reentry/LastError/image preservation: %u checks PASS\n",checks);
 }

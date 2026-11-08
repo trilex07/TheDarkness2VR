@@ -8,6 +8,8 @@
 struct NativeThrowToken {
     ULONGLONG until=0,sequence=0;
     DWORD camera=0,inventory=0,fire=0,entity=0,character=0;
+    bool targetSelected=false,targetApplied=false;
+    float origin[3]{}; // reference-local metres; selector origin only
     float direction[3]{}; // reference-local LH unit direction, independent of gaze
 };
 static SRWLOCK g_nativeThrowLock=SRWLOCK_INIT;
@@ -54,13 +56,22 @@ static bool ReadNativeThrowTarget(void* self,DWORD entity,bool protectedPath,DWO
     } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_input::Vec3 velocity,d2vr_input::Vec3 aim={},bool protectedPath=false) {
+    XrVector3f origin=g_hands[0].aim.position;
+    // Use the actual left aim pose at release, rather than the wrist direction
+    // captured at peak swing. The stroke still decides when a throw is valid.
+    if(requested && g_hands[0].aimValid) {
+        const auto forward=RotVec(g_hands[0].aim.orientation,0,0,-1);
+        aim={forward.x,forward.y,forward.z};
+    }
     // [EyeTracking] GazeThrow: aim the release at the gaze; the swing keeps
     // (1-GazeThrowAssist) of the direction. Controller aim without gaze.
-    float assist=g_throwAimAssist;
+    float assist=g_throwTargetAssist ? 1.f : g_throwAimAssist;
     if(requested && g_gazeThrow) {
         XrVector3f gaze{};
-        const bool usedGaze=TentacleGazeWorldDirection(gaze);
-        if(usedGaze) { aim={gaze.x,gaze.y,gaze.z}; assist=g_gazeThrowAssist; }
+        XrVector3f gazeOrigin{};
+        const bool usedGaze=TentacleGazeWorldRay(gazeOrigin,gaze);
+        if(usedGaze)origin=gazeOrigin;
+        if(usedGaze) { aim={gaze.x,gaze.y,gaze.z}; assist=g_throwTargetAssist ? 1.f : g_gazeThrowAssist; }
         Log("[GazeThrow] release aim from %s assist=%.2f",usedGaze ? "gaze" : "controller",assist);
     }
     if(!context || newGrab || !g_hands[0].valid || !g_headGeometry || !g_headGeometryReferenceValid) {
@@ -79,6 +90,9 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
        sample.alternateHeldTarget==(character!=0)) {
         const auto& q=g_headGeometryReference.orientation;
         const auto v=RotVec({-q.x,-q.y,-q.z,q.w},direction.x,direction.y,direction.z);
+        const auto from=RotVec({-q.x,-q.y,-q.z,q.w},origin.x-g_headGeometryReference.position.x,
+            origin.y-g_headGeometryReference.position.y,origin.z-g_headGeometryReference.position.z);
+        token.origin[0]=from.x;token.origin[1]=from.y;token.origin[2]=-from.z;
         token.direction[0]=v.x; token.direction[1]=v.y; token.direction[2]=-v.z;
         token.camera=sample.camera; token.inventory=sample.inventory;
         token.fire=sample.grabFire; token.entity=sample.grabEntity;
@@ -129,7 +143,10 @@ static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0
         if(consume) g_nativeThrowToken={}; // one gesture cannot steer a later object
         ReleaseSRWLockExclusive(&g_nativeThrowLock);
         if(!consume) return false;
-        for(int c=0;c<3;++c) velocity[c]=ray[8+c]/directionLength*speed;
+        // A scoped native target solver already computed the trajectory from
+        // this aim ray. Keep its launch-point/gravity correction intact.
+        if(!token.targetApplied)
+            for(int c=0;c<3;++c) velocity[c]=ray[8+c]/directionLength*speed;
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
     Log("[NativeThrow] APPLIED request=%llu entity=%p character=%p stockVelocity=(%.3f,%.3f,%.3f) swingVelocity=(%.3f,%.3f,%.3f) nativeSpeed=%.3f",
         token.sequence,(void*)token.entity,(void*)token.character,original[0],original[1],original[2],velocity[0],velocity[1],velocity[2],speed);

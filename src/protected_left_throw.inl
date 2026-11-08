@@ -37,6 +37,9 @@ static void PrepareProtectedThrowForCamera(void* camera) {
     __try {if(*static_cast<DWORD*>(fire)!=0x1004FE8)return;}
     __except(EXCEPTION_EXECUTE_HANDLER){return;}
     if(!g_protectedThrowPrivateReady) {
+        const bool targetReady=g_throwTargetAssist && PrepareThrowTarget();
+        if(g_throwTargetAssist && !targetReady)
+            Log("[ThrowTarget] selector preparation refused; retain direct gaze/controller throw");
         if(!d2vr_native_clone::MatchesDigest(reinterpret_cast<void*>(0x1004FE4),
             (d2vr_native_clone::throwTableCount+1)*4,d2vr_native_clone::throwTableDigest))return;
         HMODULE self=nullptr;
@@ -44,10 +47,13 @@ static void PrepareProtectedThrowForCamera(void* camera) {
             reinterpret_cast<LPCSTR>(d2vr_throw_compare::Bridge::Entry()),&self) ||
            !d2vr_throw_compare::Bridge::Prepare(reinterpret_cast<d2vr_throw_compare::Compare>(0x6DA050),
                ResolveProtectedThrowVelocity,g_nativeImageGuard))return;
-        const d2vr_native_clone::Override replacement={1,0x879C88-0x878930,d2vr_throw_compare::Bridge::Entry()};
+        const d2vr_native_clone::Override replacement[]={
+            {1,0x879C88-0x878930,d2vr_throw_compare::Bridge::Entry()},
+            {1,0x878B35-0x878930,reinterpret_cast<void*>(QueryThrowTarget)},
+            {1,0x878D12-0x878930,reinterpret_cast<void*>(ThrowTargetTrajectory)}};
         if(!g_protectedThrowCode.Entry(0) && !g_protectedThrowCode.Prepare(
             d2vr_native_clone::throwBlocks,2,d2vr_native_clone::throwCalls,
-            sizeof(d2vr_native_clone::throwCalls)/sizeof(d2vr_native_clone::throwCalls[0]),&replacement,g_nativeImageGuard)) {
+            sizeof(d2vr_native_clone::throwCalls)/sizeof(d2vr_native_clone::throwCalls[0]),replacement,g_nativeImageGuard,nullptr,nullptr,targetReady?3:1)) {
             Log("[ProtectedLeftThrow] private release preparation refused: %s",g_protectedThrowCode.Status());return;
         }
         if(!g_protectedThrowTable.Prepare(reinterpret_cast<void**>(0x1004FE8),d2vr_native_clone::throwTableCount,

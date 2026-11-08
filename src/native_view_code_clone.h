@@ -79,7 +79,7 @@ public:
     // this object for the entire callable lifetime. Fixtures destroy at quiescence.
     bool Prepare(const Block* blocks,unsigned count,const Call* calls,size_t callCount,
                  const Override* replacement,const d2vr_native_image::Guard& guard,const CallSpan* span=nullptr,
-                 const Prefix* prefix=nullptr) {
+                 const Prefix* prefix=nullptr,size_t replacementCount=1) {
         static_assert(sizeof(void*)==4,"x86 only");
         if(memory_)return Fail("already-prepared");
         if(!blocks || !count || count>8 || (!calls && callCount) || callCount>4096)
@@ -105,7 +105,13 @@ public:
             }
         } catch(...) {return Fail("snapshot-allocation");}
         if(!total || total>65536)return Fail("code-size");
+        if(replacement && (!replacementCount || replacementCount>8))return Fail("override-count");
         unsigned replacements=0;
+        for(size_t i=0;replacement && i<replacementCount;++i) {
+            if(!replacement[i].target)return Fail("override-contract");
+            for(size_t j=0;j<i;++j)if(replacement[i].block==replacement[j].block &&
+                replacement[i].offset==replacement[j].offset)return Fail("override-duplicate");
+        }
         for(size_t i=0;i<callCount;++i) {
             const auto& call=calls[i];
             if(call.block>=count || blocks[call.block].bytes<5 || call.offset>blocks[call.block].bytes-5)
@@ -117,9 +123,10 @@ public:
             uint32_t relative=0;std::memcpy(&relative,instruction+1,4);
             const uint32_t target=uint32_t(reinterpret_cast<uintptr_t>(blocks[call.block].source)+call.offset+5)+relative;
             if(instruction[0]!=0xe8 || target!=call.originalTarget)return Fail("call-contract");
-            if(replacement && replacement->block==call.block && replacement->offset==call.offset)++replacements;
+            for(size_t j=0;replacement && j<replacementCount;++j)
+                if(replacement[j].block==call.block && replacement[j].offset==call.offset)++replacements;
         }
-        if(replacement && (!replacement->target || replacements!=1))return Fail("override-contract");
+        if(replacement && replacements!=replacementCount)return Fail("override-contract");
         if(prefix) {
             const auto source=reinterpret_cast<uintptr_t>(blocks[0].source);
             for(size_t i=0;i<prefix->exitCount;++i) {
@@ -158,8 +165,9 @@ public:
                     target=reinterpret_cast<uintptr_t>(output)+offsets[j]+target-original;break;
                 }
             }
-            if(replacement && replacement->block==call.block && replacement->offset==call.offset)
-                target=reinterpret_cast<uintptr_t>(replacement->target);
+            for(size_t j=0;replacement && j<replacementCount;++j)
+                if(replacement[j].block==call.block && replacement[j].offset==call.offset)
+                    target=reinterpret_cast<uintptr_t>(replacement[j].target);
             auto* site=output+offsets[call.block]+call.offset;
             const uint32_t relative=uint32_t(target)-uint32_t(reinterpret_cast<uintptr_t>(site)+5);
             std::memcpy(site+1,&relative,4);

@@ -181,6 +181,13 @@ int main() {
     CHECK(before.Dr0==after.Dr0 && before.Dr1==after.Dr1 && before.Dr2==after.Dr2 &&
         before.Dr3==after.Dr3 && before.Dr7==after.Dr7);
     CHECK(Hash(reinterpret_cast<void*>(&Outer),outerSize)==outerHash && Hash(reinterpret_cast<void*>(&Inner),innerSize)==innerHash);
+    const Override multi[]={
+        {0,calls[0].offset,reinterpret_cast<void*>(&Inner)},replacement};
+    Code multiple;CHECK(multiple.Prepare(blocks,2,calls.data(),calls.size(),multi,guard,nullptr,nullptr,2));
+    CHECK(reinterpret_cast<Fn>(multiple.Entry(1))(&owner,3)==owner.value+3);
+    const Override duplicate[]={replacement,replacement};Code duplicateCode;
+    CHECK(!duplicateCode.Prepare(blocks,2,calls.data(),calls.size(),duplicate,guard,nullptr,nullptr,2));
+    CHECK(!strcmp(duplicateCode.Status(),"override-duplicate"));
     Code rejected;
     CHECK(!rejected.Prepare(blocks,2,calls.data(),calls.size(),&replacement,{}));
     CHECK(!rejected.Entry(0) && !strcmp(rejected.Status(),"source-image"));
