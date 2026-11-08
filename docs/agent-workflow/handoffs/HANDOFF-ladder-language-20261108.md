@@ -75,7 +75,11 @@ Read-only PE section parsing / Capstone disassembly found:
 
 ## Deployment and next steps
 
-Source validated; freeze/install pending at this checkpoint.
+Source commit 292491a1c921796cba083d2a0acfc78829eac460 frozen and installed
+as MAIN. Package: build/language-fix-steam-20261108. Install succeeded and
+post-install VerifyOnly PASS: both payload hashes match, exact rollback payloads
+match and all nine protected files are unchanged. Receipt: installed.json.
+Game/headset execution remains NOT RUN. Public installer changes remain local.
 tools/prepare-language-fix-candidate.ps1 pins exact current DLL 642704E5 and
 helper 5937C0B7, provides both rollback payloads and protects nine other files,
 including INIs, caches and language manifest. It changes only DLL + helper.
