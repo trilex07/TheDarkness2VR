@@ -60,10 +60,14 @@ Build uses D2VR_MATCHED_CAPTURE, /Z7 and /DEBUG:NONE for known MSPDB mismatch.
 
 ## Deployment
 
-Source ready; exact DLL-only freeze/install pending at this checkpoint.
+Source implementation committed as 45533917. Exact DLL-only package frozen,
+installed as user-authorized MAIN and -VerifyOnly PASS.
 tools/prepare-gameplay-options-candidate.ps1 pins installed F98BFEFD and backs
-it up with eight protected files hashed. Intended frozen package:
+it up with eight protected files hashed. Frozen package:
 build/gameplay-options-steam-20261108/Install.ps1. -Restore returns F98BFEFD.
+Receipt: installed.json in the same package. Installed SHA256 is the
+642704E5 hash above. Configs, EXE, loader and caches stayed byte-identical.
+Simulator OFF; game closed throughout installation.
 
 ## Remaining acceptance
 
