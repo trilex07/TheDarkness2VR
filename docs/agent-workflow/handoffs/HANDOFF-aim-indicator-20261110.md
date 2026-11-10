@@ -197,3 +197,54 @@ Latest coordination: Singularity preflight aborted; MAIN now owns Wonderlands
 501e8088 acquired15:28:14Z for its bounded slot. Darkness is CPU-only until a
 new explicit grant, with no pre-acquisition, install, GPU or process input.
 The bounded8minute recipe above remains a proposal, not authorization.
+
+## Coordination checkpoint and preflight, 15:35:48Z
+
+HEAD5378c77d; branch codex/aim-indicator-20261110; clean worktree before this
+checkpoint. Relative to installed source6a6f1f2b: five production files changed
+(settings preference/config/renderer, gameplay Dot helper, layer mode selection),
+three test files, two CPU proof tools and this handoff. No native menu mapping,
+fire resolver, reload/gesture or throw source is changed.
+
+Private captures/aim-indicator/preflight-cpu-v1/readiness.json records a fresh
+read-only check: all33 existing main-a-review30 packet pins still match; installed
+DLL81FDDEBA, mainINI761F827A, diagnostic117230AC, loaderD4DD992E, EXED46BB6CB
+match the actual current files; DoubleShakeReload/DeferredGripRetry/
+ThrowSolverFailElevation are each1. This is NOT a backup or runtime receipt.
+MAIN reports501e8088 closed/restored29SHA/released. No Darkness lease acquired.
+
+Exact outstanding preflight difference: the existing lifecycle adapter's
+darkness_session_backup.PROFILE_HASHES still pins39D/228625/117230, and the
+adapter candidate constant still pinsBFE. The old executable invocation is NOT
+ready for the current installed81FD/mainINI761F827A or Dot4C2A8EA6. Before any
+grant/acquisition, bind ONLY those exact current baseline hashes and the new
+candidate/bounds in a private copy/in-process descriptor, as the S18 isolated
+product binding did; shared helpers and old frozen packets must remain unchanged.
+Recheck pins, actual CLI/import resolution and inert default before reserving.
+If current files change, review the difference; never blindly refresh hashes.
+No broad policy change or new runner framework is needed or authorized here.
+
+Preparation gates for the next reviewed packet, in order:
+1. Pin Dot4C2A8EA6/manifestD7A5158B plus unchanged A76 descriptor/settings,
+   helper639c and the current lifecycle/focus/same-object UI helper bytes.
+2. Privately bind the exact CURRENT profile above, keep mainINI byte-for-byte
+   during installation and preserve input options1; diagnostic Simulator-only
+   overlay remains process-local. Check every intended command's parser and
+   dependency imports inertly before acquisition. No historical session root.
+3. After a NEW explicit grant only: atomic FREE/no-games acquire, publish A/token,
+   inputA+360, early close350, cleanup/releaseA+480. Fresh bounded inventory and
+   backup CURRENT mutable state+absences, EXE/loader/XR/Steam protected receipts
+   and deadline check before the first mutation/launch.
+4. ONE reviewed scope: Dot settings-panel cycle, or actual native-menu scale
+   diagnosis, or world-ray comparison as detailed above. Do not silently combine
+   extra controls when a gate fails. Read-only Flash639c needs explicit admission;
+   no new hook/collision call, clamp relaxation or cursor-mode change.
+5. Owned normal close, exact fresh restoration and absence/new-file checks,
+   independent hashes/protected state/no-games verification, release. Exit code
+   remains UNKNOWN unless a real retained process handle yields it. Installed
+   rollback target is CURRENT81FD and CURRENTINI, never historical39D/228625.
+
+Build/review ready: Dot-only product. Runtime orchestration readiness: blocked on
+the narrow private current-profile binding and its inert invocation verification;
+do not consume a slot to discover that stale baseline refusal. Product cause
+blockers remain actual native Flash scales and live world/eye/impact evidence.
