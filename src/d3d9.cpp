@@ -32,6 +32,7 @@
 #include "adaptive_fps.h"
 #include "app_half_rate.h"
 #include "vr_settings.h"
+#include "double_shake_reload.h"
 #include "vr_gameplay_options.h"
 
 #include <xinput.h>
@@ -193,6 +194,7 @@ bool g_clipScaledUi = true;
 bool g_fixMotionVectorProjection = false;
 bool g_worldDiffuseAnisotropy = false;
 bool g_skinMipFilter=false;
+bool g_doubleShakeReload=false; // Input/DoubleShakeReload, opt-in; buttons unchanged
 bool g_gestureBridge = false; // diagnostic detection until native context/weapon state is verified
 bool g_adaptiveTriggers = true;
 bool g_tentacleBridge = false; // separate, opt-in stock-game action bridge
@@ -948,6 +950,8 @@ void LoadConfig() {
     if(g_stereoTransferMode<0 || g_stereoTransferMode>4) g_stereoTransferMode=0;
     Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control; 3=owner waits before handoff; 4=single-owner overlap, native D3D9 flags)",g_stereoTransferMode);
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
+    g_doubleShakeReload=GetPrivateProfileIntA("Input","DoubleShakeReload",0,chosenIni)!=0;
+    Log("[DoubleShakeReload] enabled=%d; either hand, stock shared reload, buttons unchanged",int(g_doubleShakeReload));
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
     g_adaptiveTriggers = GetPrivateProfileIntA("Input", "AdaptiveTriggers", 1, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
@@ -4323,9 +4327,10 @@ d2vr_input::ChoicePauseButton g_triangleRecenter;
 d2vr_input::ObjectiveButton g_objectiveButton;
 struct GestureState {
     d2vr_input::DwellZone objective,reload[2];
+    d2vr_input::DoubleShakeReload doubleShake[2];
     d2vr_input::Slash slash;
     ULONGLONG objectiveUntil=0,reloadUntil=0,slashUntil=0;
-    ULONGLONG reloadUntilByHand[2]{};
+    ULONGLONG reloadUntilByHand[2]{},doubleShakeUntilByHand[2]{};
     bool grabbed=false;
 };
 static GestureState g_gestures;
@@ -4828,7 +4833,8 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
     else if (!xSince) xSince = now ? now : 1;
     const bool xHeld = xSince && now - xSince >= 280;
     const bool hipReload = g_gestures.reloadUntil && now < g_gestures.reloadUntil;
-    const bool individualReload=now<g_gestures.reloadUntilByHand[0] || now<g_gestures.reloadUntilByHand[1];
+    const bool individualReload=now<g_gestures.reloadUntilByHand[0] || now<g_gestures.reloadUntilByHand[1] ||
+        now<g_gestures.doubleShakeUntilByHand[0] || now<g_gestures.doubleShakeUntilByHand[1];
     if (hipReload || (xDown && !xHeld && !characterHeld && !individualReload)) reloadUntil = now + 400;
     if (xHeld || (characterHeld && xDown)) reloadUntil = 0;
     if (characterHeld && gp && (gp->wButtons & XINPUT_GAMEPAD_A) != 0)
@@ -4884,7 +4890,7 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
         if (!pulled) fireSince[hand] = 0;
         else if (!fireSince[hand]) fireSince[hand] = now ? now : 1;
         const auto held = fireSince[hand] ? now - fireSince[hand] : 0;
-        const bool handReloading=reloading || now<g_gestures.reloadUntilByHand[hand];
+        const bool handReloading=reloading || now<g_gestures.reloadUntilByHand[hand] || now<g_gestures.doubleShakeUntilByHand[hand];
         const bool vibratingShot=nativeShots ? now<shotUntil[hand] : pulled;
         GripHaptic haptic = tentacleHaptic(cues[hand]);
         static ULONGLONG stickTurnUntil=0;
@@ -5272,6 +5278,26 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     return true;
 }
 
+// No action is queued across input owners or stale native/tracking samples.
+static bool DoubleShakeReloadGesture(int h,bool enabled,const XINPUT_GAMEPAD& gp,double time) {
+    bool allowed=false;
+#ifdef D2VR_MATCHED_CAPTURE
+    NativeGameplaySample owner;
+    const auto& hand=g_hands[h];
+    allowed=g_doubleShakeReload && enabled && g_inputContext && g_protectedGestureActions && g_imagePreservingInput &&
+        g_xrSessionState==XR_SESSION_STATE_FOCUSED && !MenuConfirmActive() && !g_wheelGate.open &&
+        !CinemaSceneThisFrame() && !g_heartPull.down && !g_heartPull.consumed &&
+        !InterlockedCompareExchange(&g_twoHandSupportIntent,0,0) &&
+        hand.gripValid && hand.aimValid && hand.motion.valid &&
+        std::isfinite(hand.squeeze) && hand.squeeze>=0 && hand.squeeze<.25f &&
+        !gp.wButtons && gp.bLeftTrigger<30 && gp.bRightTrigger<30 &&
+        std::isfinite(hand.motion.lastTime) && std::abs(time-hand.motion.lastTime)<.001 &&
+        CopyNativeGameplay(owner) && owner.grab==d2vr_input::GrabFeedback::Empty &&
+        !owner.alternateHeldTarget && !owner.demonHold && owner.firearm[h?0:1]!=0;
+#endif
+    if(!allowed)g_gestures.doubleShakeUntilByHand[h]=0;
+    return g_gestures.doubleShake[h].Update(allowed,g_hands[h].motion.velocity,time);
+}
 static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
     bool gestureBridge=g_gestureBridge;
     bool protectedActions=false,protectedPaused=false;
@@ -5322,6 +5348,11 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
                 else reloadUntil=now+120;
             }
         }
+        if(DoubleShakeReloadGesture(h,enabled,gp,time)) {
+            // Reuse the existing hand-tagged reload/haptic pulse, not a new native call.
+            g_gestures.doubleShakeUntilByHand[h]=now+120;
+            Log("[DoubleShakeReload] hand=%s -> stock X pulse120ms",h?"right":"left");
+        }
     }
     if(protectedActions) {
         // Only the stock objective/reload buttons are shared with this path.
@@ -5330,7 +5361,8 @@ static WORD GestureButtons(const XINPUT_GAMEPAD& gp) {
         reloadUntil=0; // protected pulses retain the emitting hand's identity
         WORD buttons=0;
         if(now<objectiveUntil) buttons|=XINPUT_GAMEPAD_BACK;
-        if(now<g_gestures.reloadUntilByHand[0] || now<g_gestures.reloadUntilByHand[1]) buttons|=XINPUT_GAMEPAD_X;
+        if(now<g_gestures.reloadUntilByHand[0] || now<g_gestures.reloadUntilByHand[1] ||
+        now<g_gestures.doubleShakeUntilByHand[0] || now<g_gestures.doubleShakeUntilByHand[1]) buttons|=XINPUT_GAMEPAD_X;
         return buttons;
     }
     if(slash.Update(enabled && g_hands[1].valid,g_hands[1].squeeze>.65f,
