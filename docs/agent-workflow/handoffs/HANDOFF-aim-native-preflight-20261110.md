@@ -117,13 +117,15 @@ Bootstrap-only image (not a key basis), unused observation directory:
 python -B $AimKeys --bootstrap-capture --focus-deadline $AimFocusDeadline --owned $AimOwned --client $AimP.client --runtime-json $AimP.runtime_json --observation "$AimSession/bootstrap"
 ```
 
-From actual owned-window receipt take token,pid,created_ticks,exe,hwnd; from that
-fresh capture metadata take actual geometry.session_id. Write focus-expected.json
-with EXACT fields token/deadline/pid/created_ticks/exe/hwnd/session_id, deadline
-$AimFocusDeadline. No hard-coded historical HWND/session and no guessed session.
+Bootstrap ALREADY writes bootstrap/both.json, bootstrap/both.png and
+bootstrap/focus-expected.json. Use that emitted expected receipt directly; do
+NOT seek capture.json or reconstruct a second expected receipt. Its exact fields
+token/deadline/pid/created_ticks/exe/hwnd/session_id bind the current owned window,
+actual geometry.session_id and original $AimFocusDeadline. Verify these recorded
+values agree before use. No hard-coded historical HWND/session or guessed session.
 
 ```powershell
-python -B "$AimTools/darkness_focus_only.py" --live --expected "$AimSession/focus-expected.json" --output "$AimSession/focus.json"
+python -B "$AimTools/darkness_focus_only.py" --live --expected "$AimSession/bootstrap/focus-expected.json" --output "$AimSession/focus.json"
 python -B $AimKeys --live-capture --owned $AimOwned --client $AimP.client --runtime-json $AimP.runtime_json --observation "$AimSession/native-pre"
 ```
 
