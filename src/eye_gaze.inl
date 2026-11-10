@@ -175,11 +175,19 @@ static bool TentacleGazeWorldDirection(XrVector3f& direction) {
 // game's own pad handling. Cursor setter MouseDeviceWin vtable FC00C8 +0x70 ->
 // C4B690 (thiscall x,y client pixels: ClientToScreen, SetCursorPos when
 // acquired, stores +21C/+220). Runs only on the native window thread.
-struct MenuSurface { bool valid=false,submitted=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; uint64_t frame=0; };
+struct MenuSurface { bool valid=false,submitted=false; XrPosef pose{}; float width=0,height=0; ULONGLONG time=0; XrSpace space=XR_NULL_HANDLE; uint64_t frame=0;
+    bool flashTexture=false; d2vr_flash_cursor::Image flashImage;
+};
 static SRWLOCK g_menuSurfaceLock=SRWLOCK_INIT;
 static MenuSurface g_menuSurface;
 static std::atomic<uint64_t> g_controllerMenuCursorTime{0};
 static std::atomic<uint64_t> g_controllerMenuCursorXY{0};
+#ifdef D2VR_MATCHED_CAPTURE
+static bool NativeFlashCursorReady();
+static bool InstallNativeFlashCursor();
+#else
+static bool NativeFlashCursorReady(){return false;}
+#endif
 static bool ControllerMenuEnabled() {
     DWORD foreground=0;GetWindowThreadProcessId(GetForegroundWindow(),&foreground);
     return foreground==GetCurrentProcessId() && g_xrSessionState==XR_SESSION_STATE_FOCUSED && g_haveViews &&
@@ -199,6 +207,7 @@ static bool ControllerMenuHit(const MenuSurface& source,d2vr_menu::Surface& surf
 }
 static bool ControllerMenuConfirmReady() {
     if(!ControllerMenuEnabled())return true; // preserve ordinary pad navigation
+    if(g_nativeFlashRayCursor)return NativeFlashCursorReady();
     MenuSurface source;
     AcquireSRWLockShared(&g_menuSurfaceLock);source=g_menuSurface;ReleaseSRWLockShared(&g_menuSurfaceLock);
     d2vr_menu::Surface surface;d2vr_menu::Hit hit;
@@ -234,10 +243,19 @@ static bool MenuConfirmActiveThisFrame() {
     const uint64_t frame=(uint64_t(uint32_t(g_frameId))<<32)|uint32_t(g_backupFrameCounter);
     return d2vr_input::FrameBoolSnapshot::Read(key,frame,GetTickCount64(),50,ObserveMenuConfirmActive);
 }
-static void RecordMenuSurface(const XrCompositionLayerQuad& quad) {
+static void RecordMenuSurface(const XrCompositionLayerQuad& quad,bool flashTexture=false) {
     MenuSurface s; s.valid=true; s.pose=quad.pose; s.width=quad.size.width; s.height=quad.size.height;
     s.time=GetTickCount64(); s.space=quad.space;
     s.frame=g_trackedFrame.id;
+    if(flashTexture && g_srcW && g_srcH && g_scW && g_scH) {
+        const auto& r=quad.subImage.imageRect;
+        if(r.offset.x>=0 && r.offset.y>=0 && r.extent.width>0 && r.extent.height>0 &&
+           int64_t(r.offset.x)+r.extent.width<=g_scW && int64_t(r.offset.y)+r.extent.height<=g_scH) {
+            s.flashTexture=true;
+            s.flashImage={int(g_srcW),int(g_srcH),double(r.offset.x)/g_scW,double(r.offset.y)/g_scH,
+                double(r.extent.width)/g_scW,double(r.extent.height)/g_scH};
+        }
+    }
     AcquireSRWLockExclusive(&g_menuSurfaceLock); g_menuSurface=s; ReleaseSRWLockExclusive(&g_menuSurfaceLock);
     g_vrSettings.AnchorMenu(s.pose,s.width,s.height,s.space);
 }
@@ -336,6 +354,12 @@ static void ApplyGazeMenuCursor() {
         lastGate=int(gate);
         Log("[GazeMenu] menu cursor %s (pause=%d flashCursor=%d world=%d manager=%08X)",gate ? "ON" : "off",
             int(paused),int(cursorWanted),int(g_in3DGameplayMode),unsigned(g_nativeRegionManager));
+    }
+    if(g_nativeFlashRayCursor) {
+        // Route at the actual movie-event transform, not the HWND clamp.
+        filter.Reset();RestoreMenuClamp();
+        if(gate && controllerFeature)InstallNativeFlashCursor();
+        return;
     }
     if(!gate || !cursorFeature) { filter.Reset(); RestoreMenuClamp(); return; }
     if(!contractChecked) {

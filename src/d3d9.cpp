@@ -56,6 +56,7 @@
 #include "native_image_guard.h"
 #include "native_view_code_clone.h"
 #include "native_menu_input_snapshot.h"
+#include "native_flash_cursor.h"
 #include "input_poll_snapshot.h"
 #include "native_menu_pointer_bridge.h"
 #include "controller_menu_pointer.h"
@@ -215,6 +216,7 @@ float g_gazeThrowAssist=1.f;     // [EyeTracking] GazeThrowAssist (percent): gaz
 bool g_gazeMenu=false;            // [EyeTracking] GazeMenu: menu cursor follows the gaze (experimental, off: user 01:01)
 bool g_gazeWheel=true;            // [EyeTracking] GazeWheel: weapon wheel item under the gaze is selected
 bool g_gazeMenuForceCursor=true;  // [EyeTracking] GazeMenuForceCursor: put the top Flash movie in cursor mode while gazing
+bool g_nativeFlashRayCursor=false; // [Input] NativeFlashRayCursor: submitted Main quad -> native Flash event
 int g_gazeMenuMode=2;             // [EyeTracking] GazeMenuMode: 2 relative mouse input (events), 1 native setter
 bool g_ammoHudEnabled=true;       // [Input] AmmoHud: magazine counter on the back of each armed hand
 bool g_crouchStickDown=true;      // [Input] CrouchStickDown: right stick Y -> jump/crouch flicks, never camera pitch
@@ -976,6 +978,7 @@ void LoadConfig() {
     g_gazeThrow = GetPrivateProfileIntA("EyeTracking", "GazeThrow", 1, chosenIni) != 0;
     g_gazeThrowAssist = std::min(100u,GetPrivateProfileIntA("EyeTracking", "GazeThrowAssist", 100, chosenIni))*.01f;
     g_gazeMenu = GetPrivateProfileIntA("EyeTracking", "GazeMenu", 0, chosenIni) != 0;
+    g_nativeFlashRayCursor = GetPrivateProfileIntA("Input", "NativeFlashRayCursor", 0, chosenIni) != 0;
     g_gazeWheel = GetPrivateProfileIntA("EyeTracking", "GazeWheel", 1, chosenIni) != 0;
     g_gazeMenuMode = GetPrivateProfileIntA("EyeTracking", "GazeMenuMode", 2, chosenIni)==1 ? 1 : 2;
     g_gazeMenuForceCursor = GetPrivateProfileIntA("EyeTracking", "GazeMenuForceCursor", 1, chosenIni) != 0;
@@ -4933,6 +4936,9 @@ static void PublishAdaptiveTriggers(const XINPUT_GAMEPAD* gp, bool focused) {
 
 #include "weapon_wheel_input.inl"
 #include "eye_gaze.inl"
+#ifdef D2VR_MATCHED_CAPTURE
+#include "native_flash_cursor.inl"
+#endif
 #include "gaze_lod_diagnostic.inl"
 #include "engine_frame_cap.inl"
 #include "native_sleep_timing.inl"
@@ -6606,7 +6612,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
                             const int w=std::max(1,int(g_scW*cx)),h=std::max(1,int(g_scH*cy));
                             q.subImage.imageRect={{(int(g_scW)-w)/2,(int(g_scH)-h)/2},{w,h}};
                             q.size={g_cinemaWidthM,g_cinemaWidthM/screenAspect};
-                            if(e==0 && frontMenu)RecordMenuSurface(q);
+                            if(e==0 && frontMenu)RecordMenuSurface(q,video);
                             layers[e]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
                         }
                         layerCount=2;

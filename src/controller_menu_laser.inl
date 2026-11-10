@@ -19,6 +19,7 @@ static void AppendControllerMenuLaser(const XrCompositionLayerBaseHeader** layer
     if(!shouldRender || !count || !ControllerMenuEnabled())return;
     MenuSurface source;
     AcquireSRWLockShared(&g_menuSurfaceLock);source=g_menuSurface;ReleaseSRWLockShared(&g_menuSurfaceLock);
+    if(g_nativeFlashRayCursor && !source.flashTexture)return;
     if(!source.valid || source.frame!=g_trackedFrame.id || source.space!=g_xrSpace ||
        !g_eyeCacheW || !g_eyeCacheH)return;
     d2vr_menu::Surface surface;surface.identity=1;surface.frame=source.frame;surface.space=source.space;
