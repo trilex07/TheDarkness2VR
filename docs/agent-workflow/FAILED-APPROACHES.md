@@ -1,5 +1,16 @@
 # Failed Approaches Index
 
+### A pinned603190 prologue does not exempt a native inline detour
+- **Date**: 2026-11-10; native-menu getter admission, CPU-only.
+- **Exact refusal**: production Guard::Allows(603190,5) and Allows(60318B,80)
+  are false inside the enabled main-image interval400000..11EC000. Matching
+  method bytes, native vtable contents and caller ownership do not change it.
+  No installer/guard bypass was implemented. Actual guard controls PASS.
+- **Correction**: old9A5D90 range178 omitted two RET04 bytes; complete range17A,
+  SHA67e02e71a4e562cd5c8ce6e55708d4e1c3f15e65495187ffe9be3724cc170515.
+  Existing two CRC profiles do not cover603190; this is not a global exemption.
+- **Evidence**: handoffs/HANDOFF-native-menu-getter-admission-20261110.md.
+
 ### Shrine asset names and partial draw deltas did not identify the symbols
 - **Date**: 2026-11-05
 - **Scope**: MAIN, user-confirmed purple angular shrine symbols.

@@ -31,14 +31,21 @@ def main():
     methods=[('transform',0x6D56B0,0xB9,'a9e058beb6f77c70f5a36ad6b7e32c6030f63c02230d70f2f94874954be1c792'),
              ('position',0x591650,0x58,'6ae74f091f5ad4fcbbd483fef25dadc06726d5541e827d4fd17751f251f88e51'),
              ('updater',0xCB70C0,0x291,'e17dff6e0f5ab7232943a73943c1a3588e8ebd735e95fe040d50c2a26b7cebcd'),
-             ('viewport',0xCEDC30,0x5D,'a0ef759f22b528a5d641546324725454c025e3742b4424d6b07dee21b90bd5ef')]
+             ('viewport',0xCEDC30,0x5D,'a0ef759f22b528a5d641546324725454c025e3742b4424d6b07dee21b90bd5ef'),
+             ('mouse_getter',0x603190,0x1B,'e9c127f7d17c85159bc87d51c7aec652cb00fec8ab9114a7072931508bb045f2'),
+             ('input_getter',0x43E160,0x17,'ace6e45967527155cce8426c6b949ac6dbd9e4e37d4eeb0b6dbc7b27e6418764'),
+             ('mouse_poll',0x9A5D90,0x17A,'67e02e71a4e562cd5c8ce6e55708d4e1c3f15e65495187ffe9be3724cc170515'),
+             ('mouse_constructor',0x821400,0x79,'abd98e7652244d6eb61ebac0a5f879044829789a86845f257631fca3f07511a5')]
     a.out.mkdir(parents=True,exist_ok=True)
     blobs={}
     for name,va,n,digest in methods:
         blob=read(va,n)
         if hashlib.sha256(blob).hexdigest()!=digest:raise ValueError('Changed '+name)
         blobs[name]=blob
-    for table,slot,target in [(0xFDA6E8,0x80,0xCB70C0),(0xFDA6E8,0x148,0x6D56B0)]:
+    for name,tail in [('mouse_poll','c20400'),('mouse_getter','c20800'),
+                      ('input_getter','c20800'),('mouse_constructor','c20800')]:
+        if blobs[name][-3:]!=bytes.fromhex(tail):raise ValueError('Incomplete RET boundary '+name)
+    for table,slot,target in [(0xFDA6E8,0x80,0xCB70C0),(0xFDA6E8,0x148,0x6D56B0),(0xFC00C8,0x6C,0x603190)]:
         if struct.unpack('<I',read(table+slot,4))[0]!=target:raise ValueError('Changed slot')
     for name in ('transform','position'):(a.out/(name+'.bin')).write_bytes(blobs[name])
     reloc=[]
@@ -72,7 +79,7 @@ def main():
                  event_call_relocation_offset=0x4e,production_source_sha256=hashlib.sha256(source.encode()).hexdigest(),
                  scope='CPU fake owners + actual transform/event bodies (original target rebased); no native updater execution or real XR/hover')
     (a.out/'fixture-inputs.json').write_text(json.dumps(receipt,indent=2))
-    print('4 full native methods +2 slots +4 rounding constants PASS; fixture exported')
+    print('8 full native methods +3 slots +4 rounding constants PASS; mouse poll full RET04 boundary17A; fixture exported')
 
 
 if __name__=='__main__':main()

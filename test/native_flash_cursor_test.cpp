@@ -147,6 +147,16 @@ int main(int argc,char** argv) {
     const d2vr_native_image::Guard protectedProfile{true,0x400000,0xDEC000};
     Check(!protectedProfile.Allows(0xFDA6E8+0x148,4),"production guard rejects prototype static table publication");
     Check(!protectedProfile.Allows(0x6D56B0,5),"production guard rejects transform code patch too");
+    // Exact method-byte pins do not admit writes inside the main image.
+    // Guard is interval-based; it does not inspect a matched prologue.
+    Check(!protectedProfile.Allows(0x603190,5),"pinned603190 detour remains forbidden");
+    Check(!protectedProfile.Allows(0x603190,0x1b),"full pinned603190 body remains main image");
+    Check(!protectedProfile.Allows(0x603190-5,80),"external interceptor span rejects603190");
+    Check(!protectedProfile.Allows(0x43E160,5),"input getter detour also forbidden");
+    Check(!protectedProfile.Allows(0xCB7259,5),"caller detour also forbidden");
+    Check(protectedProfile.Allows(0x20000000,80),"external span admitted; not an always-refuse mock");
+    const d2vr_native_image::Guard legacyProfile{false,0x400000,0xDEC000};
+    Check(legacyProfile.Allows(0x603190,5),"only guard OFF admits native span; not authorized");
     g_fixtureTransform=reinterpret_cast<FixtureTransform>(Code(argv[1],true));using Position=void(__thiscall*)(void*,int,int,int);
     const auto position=reinterpret_cast<Position>(Code(argv[2],false));
     Setup();d2vr_flash_cursor::Point correct;
