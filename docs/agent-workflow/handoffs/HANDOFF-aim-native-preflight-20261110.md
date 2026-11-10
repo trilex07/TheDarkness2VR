@@ -102,6 +102,15 @@ $AimTools=$AimP.tools. Use the EXACT recovered6432 path from packet pins as
 $AimKeys, not the different outer keyboard file. No PYTHONPATH C adapter.
 Use originalA+240 Unix timestamp as $AimFocusDeadline, never A+350/360/600.
 
+```powershell
+$AimKeys = ($AimP.pins | Where-Object { $_.path.EndsWith('darkness_standard_keys.py') }).path
+$env:PYTHONPATH = "$(Split-Path -Parent $AimKeys);$AimTools"
+```
+
+This is the command process's Python import path ONLY, not an XR/runtime setting.
+Recovered6432 imports the pinned outer backup/navigation modules; its directory
+alone does not contain them. No C adapter directory is placed on sys.path.
+
 Bootstrap-only image (not a key basis), unused observation directory:
 
 ```powershell
@@ -180,3 +189,12 @@ which Flash viewport/scale is active. Compare these actual fields and external
 client/clip with existing desired/native cursor log rows BEFORE proposing any
 source remap. Cursor visible endpoint is separately drawn from projected UV;
 this explains the observed possibility of divergence, not a completed repair.
+
+Actual installed-source sites: src/eye_gaze.inl:190 ControllerMenuHit projects
+against g_eyeCache; :257 ApplyGazeMenuCursor, :381 selects surfW/H from eyeCache,
+:384 converts UV into desiredXY and :413 widens native bounds to that assumed
+space. src/controller_menu_laser.inl:16 AppendControllerMenuLaser draws from the
+surface hit independently of the eventual clamped/Flash-transformed cursor.
+Those production sites are UNCHANGED by Dot4C2A. Native read code remains
+.unattended-audit-20261110/tools/native-camera/flash_native_receipt.py:66 snapshot,
+:102 decodes the exact movie+48..+6F block and :120 collect checks the equal pair.

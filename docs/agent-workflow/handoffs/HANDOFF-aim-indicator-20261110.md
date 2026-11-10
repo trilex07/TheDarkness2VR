@@ -248,3 +248,17 @@ Build/review ready: Dot-only product. Runtime orchestration readiness: blocked o
 the narrow private current-profile binding and its inert invocation verification;
 do not consume a slot to discover that stale baseline refusal. Product cause
 blockers remain actual native Flash scales and live world/eye/impact evidence.
+
+### Current preflight blocker resolved in separate binding72c097d7
+
+The preceding checkpoint is historical. See
+HANDOFF-aim-native-preflight-20261110.md for the COMPLETE current81FD/INI761F
+binding, exact invocation/import paths, native field map and unchanged639c scope.
+Packet captures/aim-indicator/runtime-preflight-v1/packet.json SHA
+9A962FF06603E335D7140528AA4A91204A02CB266046782D5C667C7508757E1A,
+28pins, actual read-only preflight PASS14existing+1absence/20,404,936bytes.
+11binding+19existingadapter+17native tests PASS;7real parsers inertly checked.
+No shared helper/C packet/product freeze changed. Source of existing reload,
+retry/elevation and native menu/shot behavior remains unchanged. MAIN review
+and NEW explicit runtime grant still required; Singularity433c owns its slot.
+Next proposed scope is native Flash scales ONLY, no Dot cycle/world shots.
