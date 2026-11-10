@@ -165,3 +165,35 @@ positive native ammo+impact and both-eye/native images. Keep gesture/retry/eleva
 options1 untouched but do not exercise reload/bar in this laser-only scenario.
 Without an already-qualified same-frame ray receipt, impact comparison remains
 visual evidence only and must not be advertised as a measured native one-ray fix.
+
+## Actual resolver CPU follow-up (no product rebuild)
+
+`tools/build_weapon_indicator_ray.ps1` builds the existing actual x86 weapon
+fixture and `tools/verify_weapon_indicator_ray.cpp`. Run from this worktree:
+`./tools/build_weapon_indicator_ray.ps1` (CPU child only; no live game).
+Result test-output/ray-proof/result-v2.log: existing125256 owner/bridge checks,
+3200 exact native-body invocations, plus9600 additional assertions over640
+camera-pitch/recenter-yaw/hand/scale cases PASS. Scales1 and100, both firearm
+slots, nontrivial hand yaw/pitch/roll and recenter position are covered.
+
+The test calls actual ResolveProtectedWeaponFire and CopyProtectedWeaponHandPose,
+then maps the native row2 endpoint back through inverse camera and the scaled
+recenter reference. This equals the XR Dot endpoint. StabilizedCameraWorld is
+the existing fixture's explicit camera+80 stub: this is a transform composition
+proof, NOT verification of the real stabilized camera, actual rendered eye
+projection, native spread/collision, two-hand support or live sample timing.
+The native camera/eye path and same-frame sample identity remain candidate
+boundaries to measure, not established root causes. No gameplay ray fix follows
+from this negative evidence.
+
+Initial result.log exited after all original fixture checks without reaching
+the added assertions: renaming C++ main to an ordinary int function removed its
+implicit return0 guarantee. The new script generates a private fixture include
+changing ONLY that entry signature to void and preserving every statement;
+original pinned test/product sources and the frozen Dot manifest are unchanged.
+This was test setup, not a game failure. No failure log is removed.
+
+Latest coordination: Singularity preflight aborted; MAIN now owns Wonderlands
+501e8088 acquired15:28:14Z for its bounded slot. Darkness is CPU-only until a
+new explicit grant, with no pre-acquisition, install, GPU or process input.
+The bounded8minute recipe above remains a proposal, not authorization.
