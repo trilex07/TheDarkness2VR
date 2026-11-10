@@ -14,6 +14,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--exe',type=Path,required=True)
     p.add_argument('--out',type=Path,required=True)
+    p.add_argument('--com-receipt',type=Path)
     a=p.parse_args()
     # Minimal PE reader; a whole-file identity is evidence, method/slot bytes
     # are the actual compatibility gates (also independently checked in DLL).
@@ -47,7 +48,7 @@ def main():
         if blobs[name][-3:]!=bytes.fromhex(tail):raise ValueError('Incomplete RET boundary '+name)
     for table,slot,target in [(0xFDA6E8,0x80,0xCB70C0),(0xFDA6E8,0x148,0x6D56B0),(0xFC00C8,0x6C,0x603190)]:
         if struct.unpack('<I',read(table+slot,4))[0]!=target:raise ValueError('Changed slot')
-    for name in ('transform','position'):(a.out/(name+'.bin')).write_bytes(blobs[name])
+    for name in ('transform','position','mouse_getter'):(a.out/(name+'.bin')).write_bytes(blobs[name])
     reloc=[]
     for va,bits in [(0xFFBA08,0x3f000000),(0xF67A58,0x80000000),(0xFA8660,0x4b000000),(0xF72094,0x3f800000)]:
         if struct.unpack('<I',read(va,4))[0]!=bits:raise ValueError('Changed native rounding constant')
@@ -58,6 +59,14 @@ def main():
         raise ValueError('Event dispatch call')
     header='struct FixtureConstant {unsigned offset,bits;};\nstatic FixtureConstant constants[]={'+','.join('{%d,0x%08xu}'%x for x in reloc)+'};\n'
     (a.out/'fixture_contract.h').write_text(header)
+    if a.com_receipt:
+        receipt=json.loads(a.com_receipt.read_text())
+        if receipt['status']!='READ_ONLY_EQUAL_PAIR' or receipt['loaded_methods']!=41 or len(receipt['raw']['snapshots'])!=2 or receipt['raw']['snapshots'][0]!=receipt['raw']['snapshots'][1]:
+            raise ValueError('Not actual equal-pair mouse COM evidence')
+        method=receipt['snapshot']['method'];code=bytes.fromhex(method['method_span_hex'])[5:]
+        if len(code)!=96 or method['method_rva']!=0x823D0 or method['pe_timestamp']!=0x6AD92A09 or method['image_size']!=0x18C000 or hashlib.sha256(code).hexdigest()!=method['method_sha256']:
+            raise ValueError('Changed external method receipt')
+        (a.out/'external_com_fixture.h').write_text('static const uintptr_t overlayBase=0x%x;\nstatic const unsigned char overlayBytes[96]={%s};\n'%(method['module_base'],','.join('0x%02x'%v for v in code)))
     root=Path(__file__).resolve().parents[1]
     source=(root/'src/native_flash_cursor.inl').read_text()
     # Actual production callback/context implementation, no rewritten guards.
@@ -66,7 +75,9 @@ def main():
     if callback.count(binding)!=1:raise ValueError('Changed original transform binding')
     # ASLR-safe CPU original-body relocation only; all actual guards, mapping,
     # publications and calling convention remain the production implementation.
-    (a.out/'actual_flash_callback.inl').write_text(callback.replace(binding,'g_fixtureTransform'))
+    getter='reinterpret_cast<Getter>(0x603190)'
+    if callback.count(getter)!=1:raise ValueError('Changed original getter binding')
+    (a.out/'actual_flash_callback.inl').write_text(callback.replace(binding,'g_fixtureTransform').replace(getter,'g_fixtureGetter'))
     eye=(root/'src/eye_gaze.inl').read_text()
     start=eye.index('static bool ControllerMenuHit(')
     end=eye.index('static bool ControllerMenuConfirmReady()',start)

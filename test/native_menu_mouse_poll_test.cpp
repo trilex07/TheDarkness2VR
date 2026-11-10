@@ -89,6 +89,27 @@ int main(){
         actual=good;CHECK(!AdmitMousePoll(bad,window,read,actual));CHECK(actual.owner==good.owner&&actual.countAddress==good.countAddress);
     }
     CHECK(!AdmitMousePoll(call,0,read,actual));CHECK(!AdmitMousePoll(call,window+1,read,actual));
+    memory[call.countAddress]=256;
+    unsigned forwarded=0,published=0;
+    const auto transaction=[&](MousePollCall c,bool thread,HRESULT status,auto mutate){
+        memory[call.countAddress]=256;
+        const auto beforeF=forwarded,beforeP=published;
+        const auto r=ForwardBorrowedMouse(c,window,0,thread,read,[&](){
+            ++forwarded;memory[call.countAddress]=2;mutate();return status;
+        },[&](uint32_t p){CHECK(p==owner);++published;});
+        CHECK(r==status && forwarded==beforeF+1);return published-beforeP;
+    };
+    CHECK(transaction(call,true,S_OK,[](){})==1);
+    CHECK(transaction(call,true,S_FALSE,[](){})==1);
+    CHECK(transaction(call,true,E_FAIL,[](){})==0);
+    CHECK(transaction(call,false,S_OK,[](){})==0);
+    auto foreign=call;foreign.caller++;CHECK(transaction(foreign,true,S_OK,[](){})==0);
+    CHECK(transaction(call,true,S_OK,[&](){memory[owner+0x1A4]+=4;})==0);memory[owner+0x1A4]=call.device;
+    CHECK(transaction(call,true,S_OK,[&](){memory[owner+0x1E8]+=4;})==0);memory[owner+0x1E8]=window;
+    CHECK(transaction(call,true,S_OK,[&](){memory[call.countAddress]=257;})==0);
+    memory[owner]=0x543210;CHECK(!AdmitMousePoll(call,window,read,actual));
+    CHECK(AdmitMousePoll(call,window,read,actual,0x543210));
+    CHECK(!AdmitMousePoll(call,window,read,actual,0x543214));memory[owner]=0xFC00C8;
     MouseEvent events[256]{};uint32_t count;
     expectedDevice=reinterpret_cast<void*>(0x123400);expectedEvents=events;expectedCount=&count;
     for(HRESULT status:{S_OK,S_FALSE,HRESULT(0x8007001eu)}){

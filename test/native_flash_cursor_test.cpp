@@ -49,6 +49,9 @@ static void* Code(const char* file,bool transform) {
 static bool g_nativeFlashRayCursor=true,controllerEnabled=true;
 using FixtureTransform=void(__thiscall*)(void*,int*,int*);
 static FixtureTransform g_fixtureTransform=nullptr;
+using FixtureGetter=void(__thiscall*)(void*,int*,int*);
+static FixtureGetter g_fixtureGetter=nullptr;
+static d2vr_native_image::Guard g_nativeImageGuard{true,0x400000,0xDEC000};
 static HWND g_renderSizeHwnd=reinterpret_cast<HWND>(0x9998),foreground=g_renderSizeHwnd;
 static XrSpace g_xrSpace=(XrSpace)0x7770;
 static unsigned g_eyeCacheW=1280,g_eyeCacheH=1400;
@@ -91,6 +94,7 @@ struct Settings {void AnchorMenu(const XrPosef&,float,float,XrSpace){}};static S
 #include "actual_record_menu_surface.inl"
 #include "actual_controller_hit.inl"
 #include "actual_flash_callback.inl"
+#include "external_com_fixture.h"
 #undef ReadProcessMemory
 #undef GetForegroundWindow
 #undef GetWindowThreadProcessId
@@ -157,8 +161,24 @@ int main(int argc,char** argv) {
     Check(protectedProfile.Allows(0x20000000,80),"external span admitted; not an always-refuse mock");
     const d2vr_native_image::Guard legacyProfile{false,0x400000,0xDEC000};
     Check(legacyProfile.Allows(0x603190,5),"only guard OFF admits native span; not authorized");
+    Check(protectedProfile.Allows(overlayBase+0x823D0-5,101),"actual external COM span allowed under UNCHANGED guard");
+    Check(d2vr_menu_external::MethodMatches(overlayBytes,overlayBase),"actual MAIN external method full normalized96byte pin");
+    Check(!d2vr_menu_external::MethodMatches(overlayBytes,overlayBase+0x10000),"wrong relocation owner refused");
+    for(unsigned i=0;i<96;++i) {
+        unsigned char altered[96];std::memcpy(altered,overlayBytes,96);altered[i]^=1;
+        Check(!d2vr_menu_external::MethodMatches(altered,overlayBase),"every method byte including operands pinned");
+    }
     g_fixtureTransform=reinterpret_cast<FixtureTransform>(Code(argv[1],true));using Position=void(__thiscall*)(void*,int,int,int);
     const auto position=reinterpret_cast<Position>(Code(argv[2],false));
+    std::string getterPath=argv[1];const auto slash=getterPath.find_last_of("/\\");
+    getterPath=(slash==std::string::npos?"":getterPath.substr(0,slash+1))+"mouse_getter.bin";
+    const auto getterBytes=Read(getterPath.c_str());
+    Check(getterBytes.size()==0x1B && d2vr_native_clone::MatchesDigest(getterBytes.data(),getterBytes.size(),
+        "e9c127f7d17c85159bc87d51c7aec652cb00fec8ab9114a7072931508bb045f2"),"actual native getter fixture");
+    void* getterCode=VirtualAlloc(nullptr,4096,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
+    Check(getterCode!=nullptr,"getter CPU storage");std::memcpy(getterCode,getterBytes.data(),getterBytes.size());
+    DWORD getterOld=0;Check(VirtualProtect(getterCode,4096,PAGE_EXECUTE_READ,&getterOld)!=FALSE,"getter seal RX");
+    FlushInstructionCache(GetCurrentProcess(),getterCode,getterBytes.size());g_fixtureGetter=reinterpret_cast<FixtureGetter>(getterCode);
     Setup();d2vr_flash_cursor::Point correct;
     Check(d2vr_flash_cursor::Map(g_menuSurface.flashImage,Measured(),.595,.871,correct),"measured map");
     Check(correct.x==666 && correct.y==509,"render extent -> measured movie extent");
@@ -224,6 +244,40 @@ int main(int argc,char** argv) {
     RecordMenuSurface(quad,true);g_menuSurface.submitted=true;p=Hook();
     Check(p.x==666 && p.y==509,"actual new submitted size restores correct event point");
     g_srcW=3345;g_srcH=3410;Setup();
+    // Actual private-instance publication and actual production getter; native
+    //603190 runs first, native6D56B0 and591650 run afterwards unchanged.
+    // Allocation admission uses this fixture's ACTUAL ASLR image extent.
+    // The exact D46 address-denial controls above keep their pinned range.
+    const auto ownImage=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    const auto ownDos=reinterpret_cast<const IMAGE_DOS_HEADER*>(ownImage);
+    const auto ownNt=reinterpret_cast<const IMAGE_NT_HEADERS32*>(ownImage+ownDos->e_lfanew);
+    g_nativeImageGuard={true,ownImage,ownNt->OptionalHeader.SizeOfImage};
+    auto mouse=static_cast<unsigned char*>(VirtualAlloc(reinterpret_cast<void*>(0x30000000),4096,
+        MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));Check(mouse!=nullptr,"private native-owner fixture outside EXE interval");
+    void* sourceTable[31]{};sourceTable[28]=getterCode;
+    *reinterpret_cast<void***>(mouse)=sourceTable+1;
+    *reinterpret_cast<int*>(mouse+0x21C)=761;*reinterpret_cast<int*>(mouse+0x220)=1071;
+    Check(g_nativeFlashMouseTable.Prepare(sourceTable+1,30,27,reinterpret_cast<void*>(&NativeFlashMousePosition),g_nativeImageGuard),"prepare owned table");
+    Check(g_nativeFlashMouseTable.Publish(mouse,g_nativeImageGuard),"borrowed owner instance publication");
+    Check(sourceTable[28]==getterCode,"source table stays byte-identical");
+    const auto ma=uint32_t(reinterpret_cast<uintptr_t>(mouse));
+    Set(0x17000,ma);Set(ma,uint32_t(reinterpret_cast<uintptr_t>(g_nativeFlashMouseTable.Table())));
+    Set(ma+4,0x01000000);Set(ma+0x1A4,0x19000);testCaller=0xCB7259;
+    auto px=reinterpret_cast<int*>(movieStorage+0xE0),py=reinterpret_cast<int*>(movieStorage+0xE4);
+    reinterpret_cast<FixtureGetter>((*reinterpret_cast<void***>(mouse))[27])(mouse,px,py);
+    Check(*px==1990 && *py==2970,"CB7259 raw native movie outputs bypass HWND clamp");
+    int finalX=*px,finalY=*py;g_fixtureTransform(movieStorage,&finalX,&finalY);
+    Check(finalX==666 && finalY==509,"native transform applies ONCE after new getter");
+    Check(NativeFlashCursorReady(),"known own instance table preserves readiness ownership");
+    Check(*reinterpret_cast<int*>(mouse+0x21C)==761 && *reinterpret_cast<int*>(mouse+0x220)==1071,"native mouse state untouched");
+    testCaller=0xCB725A;NativeFlashMousePosition(mouse,nullptr,px,py);
+    Check(*px==761 && *py==1071,"other getter caller unchanged");testCaller=0xCB7259;
+    int otherX=0,otherY=0;NativeFlashMousePosition(mouse,nullptr,&otherX,&otherY);
+    Check(otherX==761 && otherY==1071,"stack outputs are not a native movie");
+    phase=2;NativeFlashMousePosition(mouse,nullptr,px,py);Check(*px==761 && *py==1071,"Title getter untouched");phase=1;
+    g_nativeFlashRayCursor=false;NativeFlashMousePosition(mouse,nullptr,px,py);Check(*px==761 && *py==1071,"OFF getter unchanged");g_nativeFlashRayCursor=true;
+    Set(0x17000,0x18000);NativeFlashMousePosition(mouse,nullptr,px,py);Check(*px==761 && *py==1071,"replaced native mouse owner refuses");
+    Setup();
     d2vr_flash_cursor::Point unchanged{123,456};auto image=g_menuSurface.flashImage;
     Check(!d2vr_flash_cursor::Map(image,Measured(),-0.01,.5,unchanged) && unchanged.x==123,"outside ray untouched");
     image.x=.5;image.w=.6;Check(!d2vr_flash_cursor::Map(image,Measured(),.5,.5,unchanged),"invalid crop refusal");

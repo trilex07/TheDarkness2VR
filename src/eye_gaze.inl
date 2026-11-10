@@ -356,7 +356,7 @@ static void ApplyGazeMenuCursor() {
             int(paused),int(cursorWanted),int(g_in3DGameplayMode),unsigned(g_nativeRegionManager));
     }
     if(g_nativeFlashRayCursor) {
-        // Route at the actual movie-event transform, not the HWND clamp.
+        // Route at the raw movie-input recipient; native transform stays native.
         filter.Reset();RestoreMenuClamp();
         if(gate && controllerFeature)InstallNativeFlashCursor();
         return;

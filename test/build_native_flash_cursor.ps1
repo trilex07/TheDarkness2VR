@@ -4,7 +4,7 @@ $root=Split-Path -Parent $PSScriptRoot
 if(!$OutputDir){$OutputDir=Join-Path $root 'test-output/native-flash-cursor-v1'}
 $OutputDir=[IO.Path]::GetFullPath($OutputDir)
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-python -B (Join-Path $root 'tools/prepare_native_flash_fixture.py') --exe 'C:/Program Files (x86)/Steam/steamapps/common/Darkness II/DarknessII.exe' --out $OutputDir
+python -B (Join-Path $root 'tools/prepare_native_flash_fixture.py') --exe 'C:/Program Files (x86)/Steam/steamapps/common/Darkness II/DarknessII.exe' --out $OutputDir --com-receipt 'C:/Users/Trilex/Tiny Tina VR/captures/darkness-mouse-com-main-20261110/run/mouse-com-once.json'
 if($LASTEXITCODE){throw 'Native fixture contract failed'}
 $vs=& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'

@@ -135,8 +135,11 @@ struct Refusal {
 };
 // ownedFrameworkTable must come from our pinned immutable framework clone,
 // never from an observed unknown instance. All other graph/type checks remain.
+// ownedMouseTable likewise must be our prepared immutable30-slot clone, never
+// an address learned by reading an unknown/foreign receiver's current vptr.
 template<class Read> bool Observe(uint32_t hwnd,uint32_t framework,Read read,Snapshot& output,
-                                  uint32_t ownedFrameworkTable=0,Refusal* refusal=nullptr) {
+                                  uint32_t ownedFrameworkTable=0,Refusal* refusal=nullptr,
+                                  uint32_t ownedMouseTable=0) {
     Snapshot s;s.framework=framework;
     Refusal failure;
     const auto field=[&](const char* stage,uint32_t base,uint32_t offset,uint32_t& value,
@@ -160,7 +163,8 @@ template<class Read> bool Observe(uint32_t hwnd,uint32_t framework,Read read,Sna
        !field("input-type",s.input,0,s.inputTable,0xFBFCD0) || !InputTable(s.inputTable) ||
        !field("mouse-reference",s.input,0xA44,s.mouseRef) ||
        !field("mouse",s.mouseRef,0,s.mouse) ||
-       !field("mouse-type",s.mouse,0,table,0xFC00C8) || table!=0xFC00C8 ||
+       !field("mouse-type",s.mouse,0,table,0xFC00C8) ||
+       (table!=0xFC00C8 && (!ownedMouseTable || table!=ownedMouseTable)) ||
        !field("direct-input-device",s.mouse,0x1A4,s.device) ||
        !field("direct-input-table",s.device,0,s.deviceTable) ||
        !field("get-device-state",s.deviceTable,0x24,s.getState) || !s.getState ||

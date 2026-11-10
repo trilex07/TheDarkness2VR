@@ -35,7 +35,7 @@ inline Point Convert(Point raw,const Movie& movie) {
     const float y=(float(raw.y)+float(movie.offsetY)*.5f)*movie.scaleY;
     return {int(std::floor(x+.5f)),int(std::floor(y+.5f))};
 }
-inline bool Map(const Image& image,const Movie& movie,double u,double v,Point& output) {
+inline bool MapRaw(const Image& image,const Movie& movie,double u,double v,Point& output) {
     if(!Valid(image,movie) || !std::isfinite(u) || !std::isfinite(v) ||
        u<0 || v<0 || u>1 || v>1)return false;
     // Map the displayed crop back to the complete native render viewport.
@@ -45,6 +45,10 @@ inline bool Map(const Image& image,const Movie& movie,double u,double v,Point& o
     Point raw{int(std::floor(x+.5)),int(std::floor(y+.5))};
     if(raw.x>=image.width)raw.x=image.width-1;
     if(raw.y>=image.height)raw.y=image.height-1;
+    output=raw;return true;
+}
+inline bool Map(const Image& image,const Movie& movie,double u,double v,Point& output) {
+    Point raw;if(!MapRaw(image,movie,u,v,raw))return false;
     output=Convert(raw,movie);return true;
 }
 // Production dispatch contract, also used by the CPU actual-body fixture.

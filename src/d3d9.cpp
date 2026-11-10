@@ -57,6 +57,10 @@
 #include "native_view_code_clone.h"
 #include "native_menu_input_snapshot.h"
 #include "native_flash_cursor.h"
+#include "native_menu_mouse_poll.h"
+#ifdef D2VR_MATCHED_CAPTURE
+#include "native_menu_external_mouse.h"
+#endif
 #include "input_poll_snapshot.h"
 #include "native_menu_pointer_bridge.h"
 #include "controller_menu_pointer.h"

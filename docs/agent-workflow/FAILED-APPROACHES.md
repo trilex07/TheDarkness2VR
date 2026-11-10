@@ -1,5 +1,15 @@
 # Failed Approaches Index
 
+### Native mouse COM target is a Steam wrapper, not a guessed dinput export
+- **Date**: 2026-11-10; actual MAIN receipt4755, CPU product implementation.
+- GetDeviceData COM+28 resolves GameOverlayRenderer.dll RVA823D0. Pin its full
+  observed96-byte method with exact PE HIGHLOW normalization at823D5/823E5.
+  Do not guess dinput8 exports, inline-patch603190, or publish a static native
+  vtable. New route uses only external code + borrowed private heap instance.
+- CPU build/actual native getter/transform/poll ABI PASS; runtime NOT RUN.
+  See HANDOFF-native-menu-external-com-20261110.md. Known own clone is explicit;
+  unchanged639c is expected to refuse the opt-in changed instance vptr.
+
 ### A pinned603190 prologue does not exempt a native inline detour
 - **Date**: 2026-11-10; native-menu getter admission, CPU-only.
 - **Exact refusal**: production Guard::Allows(603190,5) and Allows(60318B,80)

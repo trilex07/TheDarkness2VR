@@ -16,7 +16,7 @@ struct MousePollView {
 // synchronously inside that native API call, before returning to 9A5E70.
 // Do not call arbitrary virtual methods or retain the returned addresses.
 template<class Read> bool AdmitMousePoll(const MousePollCall& call,uint32_t window,
-                                        Read read,MousePollView& output) {
+                                        Read read,MousePollView& output,uint32_t ownedTable=0) {
     if(call.caller!=0x9A5E70 || call.eventBytes!=20 || call.flags || !window ||
        call.owner<0x10000 || (call.owner&3) || call.owner>UINT32_MAX-0x244 ||
        call.device<0x10000 || (call.device&3) || call.events<0x10000 ||
@@ -25,7 +25,7 @@ template<class Read> bool AdmitMousePoll(const MousePollCall& call,uint32_t wind
        call.capacityAtEntry>256 || call.returned>call.capacityAtEntry ||
        call.events>UINT32_MAX-call.capacityAtEntry*20)return false;
     uint32_t table=0,device=0,events=0,capacity=0,bytes=0,current=0,previous=0,hwnd=0,index=0;
-    if(!read(call.owner,table) || table!=0xFC00C8 ||
+    if(!read(call.owner,table) || (table!=0xFC00C8 && (!ownedTable || table!=ownedTable)) ||
        !read(call.owner+0x1A4,device) || device!=call.device ||
        !read(call.owner+0x1A8,events) || events!=call.events ||
        !read(call.owner+0x1BC,capacity) || capacity!=call.capacityAtEntry ||
@@ -35,6 +35,21 @@ template<class Read> bool AdmitMousePoll(const MousePollCall& call,uint32_t wind
        !read(call.owner+0x1E8,hwnd) || hwnd!=window ||
        !read(call.owner+0x1CC,index) || index)return false;
     output={call.owner,current,events,call.countAddress,capacity};return true;
+}
+// Current-call lease only; no object cache. Forward always runs exactly once.
+template<class Read,class Forward,class Publish>
+auto ForwardBorrowedMouse(MousePollCall call,uint32_t window,uint32_t ownedTable,
+                         bool ownerThread,Read read,Forward forward,Publish publish) {
+    MousePollView before,after;
+    const bool admitted=ownerThread && call.caller==0x9A5E70 &&
+        read(call.countAddress,call.capacityAtEntry) &&
+        AdmitMousePoll(call,window,read,before,ownedTable);
+    const auto result=forward();
+    if(admitted && (result==0 || result==1) && read(call.countAddress,call.returned) &&
+       AdmitMousePoll(call,window,read,after,ownedTable) && before.owner==after.owner &&
+       before.events==after.events && before.immediate==after.immediate &&
+       before.countAddress==after.countAddress && before.capacity==after.capacity)publish(call.owner);
+    return result;
 }
 }
 
