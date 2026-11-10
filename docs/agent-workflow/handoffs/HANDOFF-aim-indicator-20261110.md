@@ -91,8 +91,7 @@ covers legacy fallback, explicitOFF, persistence, invalid modes and failed write
 layer/geometry fixture covers both modes and all previous ownership gates.
 One temporary duplicate fixture variable caused a compile error, corrected by
 scoping the repeated swatch assertions; no production workaround.
-Private logs test-output/dot-cpu/final-run-v3.log. Product Release build/freeze
-follows this source review; no runtime/headset acceptance inferred.
+Private logs test-output/dot-cpu/final-run-v3.log. Product Release build/freeze completed below; no runtime/headset acceptance inferred.
 
 ## Proposed bounded next emulator scenario, requires MAIN grant
 
@@ -116,3 +115,53 @@ accepted shot matrix/direction if an existing qualified receipt provides them.
 No new observer/hook or unknown-address read is authorized by this recipe;
 omit unqualified data, report limitation, never invent ray/impact equivalence.
 Normal owned close and fresh CURRENT restore by deadline, no final retention.
+
+
+## Frozen Dot-only product review packet
+
+Product source494e2b43 (parent6a6f1f2b). Build `CL=/showIncludes;
+./build.ps1 -DiagnosticCapture`, NO Install. x86 protected-native profile gate
+PASS with CURRENT main/diagnostic INIs. Missing14 ignored build inputs were
+copied only after matching the independent81FD frozen input manifest; no arbitrary
+root edits or assets were copied. DLL/PDB CodeView GUID matches, age1.
+
+Private immutable directory: captures/aim-indicator/dot-frozen-v1.
+
+| Artifact | SHA256 |
+|---|---|
+|d3d9.dll|4C2A8EA69AB8A2785CAB64DEE3DEBA76612FBCBA61F7B9ED38DD6A3FDBCB2B79|
+|d3d9.pdb|3509BA07344D9B7F6D3F26256D101B0FFB3F81118BB149F61CDF84A0E6350A95|
+|d3d9.map|5361E42A76958BDDD6E3C60A8ADE0D720C6AA8C16E7FB7C5F2C4E6E2AD7DEFA4|
+|manifest.json|D7A5158B382956392FF91415A1356EB68EFB7A068152A91986DD9624D27DCB4C|
+
+Manifest pins570 build/include/tool/library inputs,438 tracked source/test inputs,
+3 artifacts and3 evidence files. Its conservative dependency scope is explicit;
+not a complete Windows process dependency claim. All records freshly verified.
+Build log release-build.log, profile-gate.log, final7fixture log final-run-v3.log
+are copied into this directory. No source change to reload/retry/elevation, no
+ray/muzzle/menu behavior change and no candidate installation.
+
+### Runtime proposal clarification for MAIN (no grant currently)
+
+MAIN owns Wonderlands13348 until its cleanup; do not acquire before NEW grant.
+Current81FD and the CURRENT user-modified INI, not old39D/E317/228625 bytes, are
+the restore target for any diagnostic session. Keep Input/DoubleShakeReload,
+DeferredGripRetry and ThrowSolverFailElevation1 unless user explicitly changes.
+
+Suggested first bounded session8minutes total (input+360, early close350,
+restore/release480) can review this Dot-only build's actual640x360 Controls row
+Off/Laser/Dot with right-trigger release and INI outcomes. Also qualify the
+actual native-menu dimensions/scale snapshot at an observed Main menu if the
+unchanged639c read-only helper is expressly admitted. Dot does not change native
+cursor mapping and cannot be called a native-menu or shot alignment fix.
+
+For the actual world scenario, use observed native Title->Main transitions,
+max2 released TitleEnter in20seconds; Main requires actual visible intended
+selection before ordinary native A/Enter. At most one Main confirmation, then
+fresh actual image. NewGame chooser/Quit/changed phase stops further confirms.
+If world is not reached, record that limit and close early; no blind arrow loop.
+If world is reached, static wall/HMD and at most one released shot per hand,
+positive native ammo+impact and both-eye/native images. Keep gesture/retry/elevation
+options1 untouched but do not exercise reload/bar in this laser-only scenario.
+Without an already-qualified same-frame ray receipt, impact comparison remains
+visual evidence only and must not be advertised as a measured native one-ray fix.
