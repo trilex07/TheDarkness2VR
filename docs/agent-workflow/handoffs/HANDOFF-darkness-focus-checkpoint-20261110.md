@@ -89,3 +89,36 @@ zero-spread cheat, muzzle offset or guessed visual rotation is implemented.
   or precise evidence blockers reviewed. No installable candidate claim.
 - Current install freshly rehashed81FD/761F/1172 unchanged; gesture/retry/elevation1
   retained. Future MAIN-only install must back up CURRENT, never historical state.
+
+## Bounded continuation after MAIN review of234d5e07
+
+Only three product obligations remain; there is no further live/runtime or
+native Flash orchestration work. No build is currently running.
+
+1. Horizon: close B59D50 argument2 ->5F8C30 LOOK_Y ->BBD640 pitch writer.
+   Current user evidence proves native pitch60->0 at recenter, not the input
+   writer. A bounded .text search of direct camera+62C loads followed within170
+   bytes by virtual+68 dispatch found zero matches; this is a narrow negative,
+   not exhaustive proof of absent dispatch. Existing inactive-XR/reset paths and
+   HeadGeometry1 exclude only the already documented simple local/head-stick
+   latch. Preserve gestures/buttons; no pitch clamp or guessed sample timeout.
+2. Menu: replace the rejected static-table prototype only if the existing
+   borrowed mouse-call lease can support a fully pinned private instance table
+   and actual getter callerCB7259/output movieE0/E4 ownership. Keep native
+   transform/event/buttons, OS pointer and ClipCursor untouched. If safe
+   publication cannot be proved, retain an explicit blocker rather than ship
+   the compiled prototype. No new runtime helper framework.
+3. Gameplay: compare actual production native shot composition against render
+   inverse/base/reference for the SAME owner/scale/support/recenter case,
+   including nonzero native pitch. Existing synthetic native-fire tests do not
+   establish the user's visible mismatch cause. No visual-only offset guess.
+
+Next checkpoint budget: one additional30-minute CPU/source slice, reporting
+exact implemented source changes or a closed evidence blocker for each item.
+That is a checkpoint estimate, NOT an installable-DLL promise. Candidate ETA
+is BLOCKED on pitch-writer cause and protected menu publication; once those
+are justified, reserve one bounded build/regression/freeze pass (about20minutes,
+not including MAIN review). Do not silently expand the investigation or label
+an unresolved issue fixed to meet an ETA. A frozen combined Steam candidate
+must retain working81FD gestures/retry/elevation/Cinema and current userINI;
+MAIN alone installs with a new CURRENT rollback, then SIDE freezes work.
