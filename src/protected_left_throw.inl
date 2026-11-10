@@ -63,7 +63,7 @@ static void PrepareProtectedThrowForCamera(void* camera) {
     if(g_protectedThrowTable.Publish(fire,g_nativeImageGuard))
         Log("[ProtectedLeftThrow] owned fire event published fire=%p; private D23220->878930, native magnitude/spin/physics retained; EXE/static tables unchanged",fire);
 }
-static void ApplyProtectedLeftThrow(XINPUT_GAMEPAD& gp) {
+static void ApplyProtectedLeftThrow(XINPUT_GAMEPAD& gp,const d2vr_input::GripRetryContext& retry={}) {
     if(!g_protectedLeftThrow)return;
     if(!ProtectedThrowAvailable()) {ResetProtectedLeftThrow();ResetNativeThrow();return;}
     NativeGameplaySample owner;
@@ -92,7 +92,7 @@ static void ApplyProtectedLeftThrow(XINPUT_GAMEPAD& gp) {
     const auto out=g_protectedLeftTentacle.Update(context,false,
         g_hands[0].valid,false,g_hands[0].squeeze,0,{p.x,p.y,p.z},g_hands[0].motion.velocity,{},
         g_trackedFrame.state.predictedDisplayTime*1e-9,context?owner.grab:d2vr_input::GrabFeedback::Unknown,
-        {forward.x,forward.y,forward.z});
+        {forward.x,forward.y,forward.z},g_deferredGripRetry && retry.Allows());
     // Only LB belongs to this recognizer. Right slash and stick stay untouched.
     gp.wButtons&=~XINPUT_GAMEPAD_LEFT_SHOULDER;
     if(out.leftButton)gp.wButtons|=XINPUT_GAMEPAD_LEFT_SHOULDER;

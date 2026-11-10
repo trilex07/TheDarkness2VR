@@ -208,6 +208,7 @@ bool g_simulatorGaze=false;       // isolated synthetic gaze section, simulator 
 bool g_gazeDotEnabled=false;      // [EyeTracking] GazeDot: debug ring at the gaze (axes verified 2026-11-01)
 bool g_gazeGrab=true;             // [EyeTracking] GazeGrab: tentacle grab acquires the gazed target
 bool g_throwTargetAssist=true;
+static bool g_deferredGripRetry=false; // [Input] DeferredGripRetry, protected path only
 bool g_gazeThrow=true;            // [EyeTracking] GazeThrow: thrown objects fly towards the gaze
 float g_gazeThrowAssist=1.f;     // [EyeTracking] GazeThrowAssist (percent): gaze share of the throw direction
 bool g_gazeMenu=false;            // [EyeTracking] GazeMenu: menu cursor follows the gaze (experimental, off: user 01:01)
@@ -968,6 +969,8 @@ void LoadConfig() {
     g_gazeDotEnabled = GetPrivateProfileIntA("EyeTracking", "GazeDot", 0, chosenIni) != 0;
     g_gazeGrab = GetPrivateProfileIntA("EyeTracking", "GazeGrab", 1, chosenIni) != 0;
     g_throwTargetAssist = GetPrivateProfileIntA("Input", "ThrowTargetAssist", 1, chosenIni) != 0;
+    g_deferredGripRetry = GetPrivateProfileIntA("Input", "DeferredGripRetry", 0, chosenIni) != 0;
+    Log("[DeferredGripRetry] enabled=%d; new edge only, native650ms grace retained",int(g_deferredGripRetry));
     g_gazeThrow = GetPrivateProfileIntA("EyeTracking", "GazeThrow", 1, chosenIni) != 0;
     g_gazeThrowAssist = std::min(100u,GetPrivateProfileIntA("EyeTracking", "GazeThrowAssist", 100, chosenIni))*.01f;
     g_gazeMenu = GetPrivateProfileIntA("EyeTracking", "GazeMenu", 0, chosenIni) != 0;
@@ -5187,6 +5190,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     ApplyWeaponWheel(gp); // wheel owns triggers/right stick while open; crouch flick; equip pulses
     ApplyUnarmedTriggerDpad(gp); // before gestures/throw/haptics so they see the rewritten triggers
 #ifdef D2VR_MATCHED_CAPTURE
+    bool supportOwnsLeftGrip=false;
     if(g_imagePreservingInput) {
         // The left squeeze can support the equipped two-handed firearm near its
         // fore-end. Latch ownership until release so moving the hand away does
@@ -5207,6 +5211,7 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
                 d2vr_twohand::Pose(g_hands[1].aim,a,supported);
         }
         InterlockedExchange(&g_twoHandSupportIntent,swallowLeftGrip && supportContext?1:0);
+        supportOwnsLeftGrip=swallowLeftGrip; // full latch, even after supportContext drops
         WORD grips=g_protectedGrips.Update(g_hands[0].squeeze,g_hands[1].squeeze,
             g_hands[0].gripValid,g_hands[1].gripValid);
         if(swallowLeftGrip)grips &= ~XINPUT_GAMEPAD_LEFT_SHOULDER;
@@ -5245,7 +5250,8 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
         if(heart.ownsGrip) {
             gp.wButtons&=~XINPUT_GAMEPAD_LEFT_SHOULDER;
             ResetProtectedLeftThrow();ResetNativeThrow();
-        } else ApplyProtectedLeftThrow(gp);
+        } else ApplyProtectedLeftThrow(gp,{focused,MenuConfirmActive(),g_wheelGate.open,
+            heart.ownsGrip,supportOwnsLeftGrip});
     } else {
         // Do not carry a queued stroke/throw into or out of native choices.
         g_protectedRightTentacle={};ResetProtectedLeftThrow();ResetNativeThrow();

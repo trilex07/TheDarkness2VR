@@ -303,10 +303,17 @@ struct TentacleOutput {
     bool leftButton=false, rightButton=false, ownsRightStick=false;
     float slashX=0,slashY=0;
 };
+// Only the opt-in deferred edge uses this ownership receipt. Existing native
+// grab/throw, support, heart and menu routing retain their separate policies.
+struct GripRetryContext {
+    bool focused=false,menu=false,wheel=false,heart=false,support=false;
+    bool Allows() const {return focused && !menu && !wheel && !heart && !support;}
+};
 struct Tentacles {
     bool leftArmed=false,leftDown=false,holdingIntent=false,rightArmed=false,rightDown=false;
     bool pauseDown=false,paused=false,rightReady=false;
     bool awaitingThrowAck=false;
+    bool deferredGrab=false;
     double lastTime=-1,leftUntil=0,throwAt=0,recentMotion=-10;
     double slashStart=-10,lastSlash=-10;
     double grabAt=-10,ignoreFeedbackUntil=0;
@@ -324,7 +331,7 @@ struct Tentacles {
     }
     TentacleOutput Update(bool context,bool pause,bool leftValid,bool rightValid,
         float leftGrip,float rightGrip,Vec3 leftPosition,Vec3 leftVelocity,
-        Vec3 rightVelocity,double time,GrabFeedback feedback=GrabFeedback::Unknown,Vec3 leftAim={}) {
+        Vec3 rightVelocity,double time,GrabFeedback feedback=GrabFeedback::Unknown,Vec3 leftAim={},bool allowDeferredGrab=false) {
         TentacleOutput out;
         if(pause && !pauseDown) paused=!paused;
         pauseDown=pause;
@@ -336,7 +343,7 @@ struct Tentacles {
             leftUntil=throwAt=0; recentMotion=slashStart=lastSlash=-10;
             slashTravel={};
             grabAt=-10; ignoreFeedbackUntil=0;
-            awaitingThrowAck=false;
+            awaitingThrowAck=deferredGrab=false;
             recentVelocity=pendingThrowVelocity={};
             pendingThrowAim={}; throwStroke.Reset();
             return out;
@@ -344,12 +351,16 @@ struct Tentacles {
         if(!leftValid) {
             leftArmed=leftDown=holdingIntent=false; leftUntil=throwAt=0; recentMotion=-10;
             grabAt=-10; ignoreFeedbackUntil=0;
-            awaitingThrowAck=false;
+            awaitingThrowAck=deferredGrab=false;
             recentVelocity=pendingThrowVelocity={};
             pendingThrowAim={}; throwStroke.Reset();
         } else {
-            // Give the native animation/query time to acquire. Never retry on a
-            // timer: an EMPTY acknowledgement only permits the next grip press.
+            const bool wasDeferredGrab=deferredGrab;
+            if(!allowDeferredGrab || feedback!=GrabFeedback::Empty || awaitingThrowAck || throwAt)
+                deferredGrab=false;
+            // Give the native animation/query time to acquire. By default an
+            // EMPTY acknowledgement only permits the next grip press. Opt-in
+            // retry retains only a distinct new edge until this same grace ends.
             // A delayed native BUSY after a throw is still the old object.
             // It cannot silently become a new hold. A deliberate grip press
             // can retry a failed throw; EMPTY acknowledges a completed one.
@@ -359,6 +370,7 @@ struct Tentacles {
                time>=ignoreFeedbackUntil && time>=leftUntil && !throwAt) holdingIntent=false;
             if(leftGrip<.35f) leftArmed=true;
             const bool down=leftGrip>(leftDown ? .35f:.65f);
+            if(!down)deferredGrab=false;
             if(leftArmed && down && !leftDown && !throwAt) {
                 if(awaitingThrowAck) {
                     holdingIntent=feedback==GrabFeedback::Busy;
@@ -366,12 +378,25 @@ struct Tentacles {
                 }
                 if(!holdingIntent) {
                     out.grab=true; leftUntil=time+.12; holdingIntent=true; grabAt=time;
+                    deferredGrab=false;
+                } else if(allowDeferredGrab && feedback==GrabFeedback::Empty &&
+                          !awaitingThrowAck && time>=grabAt && time-grabAt<.65) {
+                    // A distinct deliberate regrip was swallowed by the native
+                    // acquisition grace. Never infer a retry from the first hold.
+                    deferredGrab=true;
                 }
                 grabPosition=leftPosition; recentMotion=-10;
                 recentVelocity=pendingThrowVelocity={};
                 pendingThrowAim={}; throwStroke.Reset();
             }
-            if(leftDown && Length(leftVelocity)>.8f &&
+            if(deferredGrab && down && leftDown && !holdingIntent &&
+               time-grabAt>=.65 && time>=leftUntil && !throwAt) {
+                deferredGrab=false;out.grab=true;leftUntil=time+.12;
+                holdingIntent=true;grabAt=time;grabPosition=leftPosition;
+                recentMotion=-10;recentVelocity=pendingThrowVelocity={};
+                pendingThrowAim={};throwStroke.Reset();
+            }
+            if(!deferredGrab && !wasDeferredGrab && leftDown && Length(leftVelocity)>.8f &&
                 Length(Difference(leftPosition,grabPosition))>.12f) {
                 recentMotion=time; recentVelocity=leftVelocity;
                 throwStroke.Add(leftVelocity,leftAim,time,dt);

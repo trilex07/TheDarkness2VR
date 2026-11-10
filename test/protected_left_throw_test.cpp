@@ -14,6 +14,8 @@ static void Log(const char*,...){}
 static ULONGLONG clockMs=1000;
 static ULONGLONG Clock(){return clockMs;}
 static bool g_protectedLeftThrow=true,g_protectedLeftAim=true,g_protectedGestureActions=true;
+static bool g_deferredGripRetry=false;
+static d2vr_input::GripRetryContext retryContext{true};
 static bool g_imagePreservingInput=true,g_protectedThrowPrivateReady=true,g_haveViews=true,g_in3DGameplayMode=true;
 static bool g_headGeometry=true,g_headGeometryReferenceValid=true,g_nativeLeftAim=false,g_nativeThrowInstalled=false;
 static struct {bool enabled=true;} g_nativeImageGuard;
@@ -23,7 +25,7 @@ static d2vr_input::Tentacles g_protectedLeftTentacle,g_protectedRightTentacle;
 static DWORD g_protectedThrowInputOwner[3]{};
 static XrPosef g_headGeometryReference{{0,0,0,1},{}};
 static struct {bool open=true;XrViewStateFlags flags=3|12;struct {XrTime predictedDisplayTime=1000000000;} state;} g_trackedFrame;
-static struct {bool valid=true,aimValid=false;float squeeze=0;XrPosef grip{{0,0,0,1},{}},aim{{0,0,0,1},{}};
+static struct {bool valid=true,aimValid=false,gripValid=true;float squeeze=0;XrPosef grip{{0,0,0,1},{}},aim{{0,0,0,1},{}};
     struct {d2vr_input::Vec3 velocity{};} motion;} g_hands[2];
 static __declspec(align(16)) BYTE camera[0xB00],avatar[0x2000],inventory[0x600],weapon[0xB00],parts[0xC0],fire[0xD00],entity[0x100];
 static void* refs[32];static unsigned nextRef=0;
@@ -34,7 +36,8 @@ static void SetRef(BYTE* p,unsigned o,void* value){**reinterpret_cast<void***>(p
 static bool ProtectedAimCameraOwned(void* p){return p==camera&&*reinterpret_cast<DWORD*>(camera)==0x20000010;}
 static bool ProtectedThrowFireOwned(void* p){return p==fire&&*reinterpret_cast<DWORD*>(fire)==0x20000000;}
 struct NativeGameplaySample {DWORD camera=0,inventory=0,grabFire=0,grabEntity=0;
-    unsigned char demonHold=0;bool alternateHeldTarget=false;d2vr_input::GrabFeedback grab=d2vr_input::GrabFeedback::Busy;};
+    unsigned char demonHold=0;bool alternateHeldTarget=false;d2vr_input::GrabFeedback grab=d2vr_input::GrabFeedback::Busy;
+    ULONGLONG time=1000;};
 // Production dependencies added after this fixture was written: no cinema scene,
 // gaze throw off (controller aim path), camera stabilizer off (native 0x80 matrix).
 static bool cinemaScene=false;
@@ -43,9 +46,15 @@ static bool g_gazeThrow=false;static float g_gazeThrowAssist=.85f;
 static bool testGaze=false;
 static bool TentacleGazeWorldRay(XrVector3f& o,XrVector3f& d){o={};d={0,0,-1};return testGaze;}
 static const float* StabilizedCameraWorld(const void* p,float (&)[16]){return reinterpret_cast<const float*>(static_cast<const BYTE*>(p)+0x80);}
-static NativeGameplaySample gameplay;
+static NativeGameplaySample g_nativeGameplay;
+static auto& gameplay=g_nativeGameplay;
+static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
+#define GetTickCount64 Clock
+#include "d2vr_native_sample_freshness.inl"
+#undef GetTickCount64
 static bool copyOK=true;
-static bool CopyNativeGameplay(NativeGameplaySample& sample){sample=gameplay;return copyOK;}
+static bool freshSample=true;
+static bool CopyNativeGameplay(NativeGameplaySample& sample){return copyOK && CopyNativeGameplayFresh(sample);}
 #include "d2vr_protected_throw_types.inl"
 static thread_local ThrowTargetScope* g_throwTargetScope=nullptr;
 static bool g_throwTargetAssist=false;
@@ -66,6 +75,8 @@ static SRWLOCK g_nativeThrowLock=SRWLOCK_INIT;
 #include "d2vr_protected_throw_under_test.inl"
 #undef GetTickCount64
 static void Reset() {
+    g_deferredGripRetry=false;retryContext={true};
+    freshSample=true;
     clockMs=1000;nextRef=0;copyOK=true;testGaze=false;g_gazeThrow=false;
     memset(camera,0,sizeof(camera));memset(avatar,0,sizeof(avatar));memset(inventory,0,sizeof(inventory));
     memset(weapon,0,sizeof(weapon));memset(parts,0,sizeof(parts));memset(fire,0,sizeof(fire));memset(entity,0,sizeof(entity));
@@ -94,10 +105,11 @@ template<class F> static void Reject(F change) {
 }
 static XINPUT_GAMEPAD Step(unsigned ms,float grip,float x,float velocity) {
     clockMs=1000+ms;g_trackedFrame.state.predictedDisplayTime=clockMs*1000000;
+    if(freshSample)gameplay.time=clockMs;
     g_hands[0].squeeze=grip;g_hands[0].grip.position.x=x;g_hands[0].motion.velocity={velocity,0,0};
     const WORD untouched=XINPUT_GAMEPAD_RIGHT_SHOULDER|XINPUT_GAMEPAD_A|XINPUT_GAMEPAD_B|XINPUT_GAMEPAD_X|XINPUT_GAMEPAD_Y;
     XINPUT_GAMEPAD gp{};gp.wButtons=untouched;
-    gp.sThumbRX=12345;gp.sThumbRY=-5432;ApplyProtectedLeftThrow(gp);
+    gp.sThumbRX=12345;gp.sThumbRY=-5432;ApplyProtectedLeftThrow(gp,retryContext);
     CHECK((gp.wButtons&untouched)==untouched);
     CHECK(gp.sThumbRX==12345&&gp.sThumbRY==-5432);return gp;
 }
@@ -297,6 +309,79 @@ static void TargetCases() {
     CHECK(!SkipThrowProjectile(camera,nullptr,nullptr));
     g_throwTargetScope=nullptr;g_throwTargetAssist=false;
 }
+static void QueueRetry(bool enabled=true) {
+    Reset();g_deferredGripRetry=enabled;gameplay.grab=d2vr_input::GrabFeedback::Empty;
+    Step(0,0,0,0);CHECK(Step(20,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);
+    Step(40,0,0,0);Step(140,0,0,0);
+    CHECK(!(Step(210,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+}
+static void HoldToGrace() {
+    for(unsigned ms=310;ms<=610;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!(Step(660,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+}
+static void DeferredRetryCases() {
+    QueueRetry();HoldToGrace();
+    CHECK(Step(680,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);
+    for(unsigned ms=820;ms<=1520;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    QueueRetry(false);HoldToGrace();CHECK(!(Step(680,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    // Continuous original hold never acquired a second deliberate edge.
+    Reset();g_deferredGripRetry=true;gameplay.grab=d2vr_input::GrabFeedback::Empty;
+    Step(0,0,0,0);Step(20,1,0,0);
+    for(unsigned ms=160;ms<=1460;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    // Every conflicting owner cancels the pending edge rather than pausing it.
+    for(int owner=0;owner<5;++owner) {
+        QueueRetry();
+        if(owner==0)retryContext.focused=false;
+        if(owner==1)retryContext.menu=true;
+        if(owner==2)retryContext.wheel=true;
+        if(owner==3)retryContext.heart=true;
+        if(owner==4)retryContext.support=true;
+        CHECK(!(Step(310,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+        retryContext={true};
+        for(unsigned ms=410;ms<=710;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    }
+    for(int reason=0;reason<8;++reason) {
+        QueueRetry();
+        if(reason==0)gameplay.grab=d2vr_input::GrabFeedback::Busy;
+        if(reason==1)gameplay.grab=d2vr_input::GrabFeedback::Unknown;
+        if(reason==2)g_hands[0].valid=false;
+        if(reason==3)copyOK=false;
+        if(reason==4)g_in3DGameplayMode=false;
+        if(reason==5)g_deferredGripRetry=false;
+        if(reason==6)gameplay.inventory+=4;
+        if(reason==7)g_trackedFrame.flags=0;
+        CHECK(!(Step(310,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+        gameplay.grab=d2vr_input::GrabFeedback::Empty;g_hands[0].valid=true;
+        copyOK=true;g_in3DGameplayMode=true;g_deferredGripRetry=true;g_trackedFrame.flags=3|12;
+        if(reason==6)gameplay.inventory-=4;
+        for(unsigned ms=410;ms<=710;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    }
+    QueueRetry();
+    for(unsigned ms=310;ms<=710;ms+=100)CHECK(!(Step(ms,0,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    QueueRetry();CHECK(!(Step(290,0,.3f,2).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!g_nativeThrowToken.until); // cancelling a pending retry cannot become a throw
+    // Actual CopyNativeGameplay body: sample goes stale while input polling
+    // itself remains timely. A later fresh sample cannot resurrect the edge.
+    QueueRetry();freshSample=false;Step(310,1,0,0);
+    CHECK(CopyNativeGameplayFresh(gameplay)); // 100ms old
+    CHECK(!(Step(361,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER)); // 151ms old
+    CHECK(!CopyNativeGameplayFresh(gameplay));
+    freshSample=true;
+    for(unsigned ms=461;ms<=761;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    // Producer contract is verified in the builder: valid=gripValid&&aimValid.
+    for(int invalid=0;invalid<2;++invalid) {
+        QueueRetry();g_hands[0].gripValid=invalid!=0;g_hands[0].aimValid=invalid!=1;
+        g_hands[0].valid=g_hands[0].gripValid && g_hands[0].aimValid;
+        CHECK(!(Step(310,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+        g_hands[0].gripValid=g_hands[0].aimValid=g_hands[0].valid=true;
+        for(unsigned ms=410;ms<=710;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    }
+    QueueRetry();g_protectedLeftTentacle.throwAt=1.31;
+    Step(310,1,0,0);CHECK(!g_protectedLeftTentacle.deferredGrab);
+    for(unsigned ms=450;ms<=750;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    QueueRetry();CHECK(!(Step(500,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER)); // stale clock
+    Step(600,1,0,0);CHECK(!(Step(700,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+}
 int main(int argc,char** argv) {
     CHECK(argc==2);LoadCharacterConsumer(argv[1]);
     Reset();gameplay.alternateHeldTarget=true;SetRef(fire,0x584,avatar);
@@ -401,6 +486,7 @@ int main(int argc,char** argv) {
     g_gameUnitsPerMeter=NAN;CHECK(!BuildThrowTargetRay(g_nativeThrowToken,ray));g_gameUnitsPerMeter=1;
     g_nativeThrowToken.camera=1;CHECK(!BuildThrowTargetRay(g_nativeThrowToken,ray));
     CharacterCases();
+    DeferredRetryCases();
     CHECK(VirtualFree(reinterpret_cast<void*>(characterConsumer),0,MEM_RELEASE));
     printf("PASS protected throw actual bodies: %u checks; live owner/entity/character/retained-receiver gates,one-shot token,native speed/W preserved,left stroke+aim,enemy release direction,neutral LB gap,right inputs independent\n",checks);
 }

@@ -24,6 +24,10 @@ $aim=Get-Content (Join-Path $repo 'src\native_aim.inl') -Raw
 $throw=Get-Content (Join-Path $repo 'src\native_throw.inl') -Raw
 $target=Get-Content (Join-Path $repo 'src\throw_target.inl') -Raw
 $protected=Get-Content (Join-Path $repo 'src\protected_left_throw.inl') -Raw
+$fresh=Extract $aim 'static bool CopyNativeGameplay('
+[IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_native_sample_freshness.inl'),$fresh.Replace('CopyNativeGameplay(', 'CopyNativeGameplayFresh('),[Text.Encoding]::UTF8)
+if(!$main.Contains('hand.valid=hand.gripValid && hand.aimValid;')){throw 'Tracking producer changed; revisit separate grip/aim fixtures'}
+if(!$main.Contains('supportOwnsLeftGrip=swallowLeftGrip;')){throw 'Full support-latch ownership receipt missing'}
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_protected_throw_types.inl'),(Extract $throw 'struct NativeThrowToken {')+';'+(Extract $target 'struct ThrowTargetScope {')+';',[Text.Encoding]::UTF8)
 $bodies=@((Extract $main 'static XrVector3f RotVec('),(Extract $aim 'static bool NativeAimOwnerMatches('),
     (Extract $throw 'static void ResetNativeThrow() {'),(Extract $throw 'static bool NativeThrowFireOwnerMatches('),
