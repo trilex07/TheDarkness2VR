@@ -389,6 +389,7 @@ static void DeferredRetryCases() {
     for(unsigned ms=450;ms<=750;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
     QueueRetry();CHECK(!(Step(500,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER)); // stale clock
     Step(600,1,0,0);CHECK(!(Step(700,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+}
 static void SolverFailElevationCases() {
     // Actual publisher records measured units; native observer distinguishes a
     // failed solver call from no target/no call. Actual consumer preserves speed/W.
@@ -477,6 +478,32 @@ static void SolverFailElevationCases() {
     Reject([]{g_throwSolverFailElevation=true;g_nativeThrowToken.targetSolverFailed=true;copyOK=false;});
     Reject([]{g_throwSolverFailElevation=true;g_nativeThrowToken.targetSolverFailed=true;gameplay.inventory+=4;});
     Reject([]{g_throwSolverFailElevation=true;g_nativeThrowToken.targetSolverFailed=true;clockMs+=650;});
+}
+static void CombinedOptionalCases() {
+    // Both reviewed opt-ins coexist: the retry still owns only its new grip
+    // edge; only a separately selected failed solver may change elevation.
+    for(int success=0;success<2;++success) {
+        QueueRetry();g_throwSolverFailElevation=true;HoldToGrace();
+        CHECK(Step(680,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER);
+        CHECK(!(Step(820,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+        gameplay.grab=d2vr_input::GrabFeedback::Busy;
+        Step(840,1,0,0);g_hands[0].aimValid=true;g_throwAimAssist=1;
+        PublishNativeThrow(true,false,true,{0,2,-2},{},true);
+        CHECK(g_nativeThrowToken.swingElevationValid);
+        g_nativeThrowToken.targetSelected=true;MarkThrowTargetTrajectory(fire,success);
+        float velocity[4]={3,4,0,.375f};
+        CHECK(ResolveProtectedThrowVelocity(fire,velocity));
+        CHECK(std::fabs(d2vr_input::Length({velocity[0],velocity[1],velocity[2]})-5)<1e-5f);
+        CHECK(velocity[3]==.375f);
+        if(success)CHECK(velocity[0]==3 && velocity[1]==4 && velocity[2]==0);
+        else CHECK(std::fabs(velocity[1]-3.5355339f)<1e-5f);
+    }
+    QueueRetry();g_throwSolverFailElevation=true;retryContext.support=true;
+    CHECK(!(Step(310,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    retryContext.support=false;
+    for(unsigned ms=410;ms<=710;ms+=100)
+        CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+    CHECK(!g_nativeThrowToken.until);
 }
 int main(int argc,char** argv) {
     CHECK(argc==2);LoadCharacterConsumer(argv[1]);
@@ -584,6 +611,7 @@ int main(int argc,char** argv) {
     CharacterCases();
     DeferredRetryCases();
     SolverFailElevationCases();
+    CombinedOptionalCases();
     CHECK(VirtualFree(reinterpret_cast<void*>(characterConsumer),0,MEM_RELEASE));
     printf("PASS protected throw actual bodies: %u checks; live owner/entity/character/retained-receiver gates,one-shot token,native speed/W preserved,left stroke+aim,enemy release direction,neutral LB gap,right inputs independent\n",checks);
 }
