@@ -37,14 +37,29 @@ int main(){
         ApplyVrSettingsAction(action);CHECK(!g_vrSettings.Options().failed);
     }
     CHECK(GetPrivateProfileIntA("VRSettings","HeadRelativeMovement",0,g_activeIni)==1);
-    CHECK(GetPrivateProfileIntA("VRSettings","WeaponLaser",0,g_activeIni)==1);
+    CHECK(GetPrivateProfileIntA("VRSettings","AimIndicator",0,g_activeIni)==1);
     g_vrSettings.Options()={};LoadVrPreferences(g_activeIni);
     CHECK(g_vrSettings.Options().headRelativeMovement&&g_vrSettings.Options().weaponLaser);
     ApplyVrSettingsAction(Action::HeadRelativeMovement);
     CHECK(!g_vrSettings.Options().headRelativeMovement&&g_vrSettings.Options().weaponLaser);
     ApplyVrSettingsAction(Action::WeaponLaser);
+    CHECK(g_vrSettings.Options().weaponLaser==2);
+    g_vrSettings.Options()={};LoadVrPreferences(g_activeIni);
+    CHECK(g_vrSettings.Options().weaponLaser==2);
+    ApplyVrSettingsAction(Action::WeaponLaser);
     g_vrSettings.Options()={};LoadVrPreferences(g_activeIni);
     CHECK(!g_vrSettings.Options().headRelativeMovement&&!g_vrSettings.Options().weaponLaser);
+    // Legacy opt-in survives when no new key exists; invalid explicit modes fail closed.
+    CHECK(WritePrivateProfileStringA("VRSettings","AimIndicator",nullptr,g_activeIni));
+    CHECK(WritePrivateProfileStringA("VRSettings","WeaponLaser","1",g_activeIni));
+    LoadVrPreferences(g_activeIni);CHECK(g_vrSettings.Options().weaponLaser==1);
+    for(const char* invalid:{"3","-1","4294967295"}) {
+        CHECK(WritePrivateProfileStringA("VRSettings","AimIndicator",invalid,g_activeIni));
+        LoadVrPreferences(g_activeIni);CHECK(g_vrSettings.Options().weaponLaser==0);
+    }
+    CHECK(WritePrivateProfileStringA("VRSettings","AimIndicator","0",g_activeIni));
+    LoadVrPreferences(g_activeIni);CHECK(g_vrSettings.Options().weaponLaser==0);
+    CHECK(GetPrivateProfileIntA("VRSettings","WeaponLaser",0,g_activeIni)==1);
     CHECK(g_vrSettings.Options().cinemaMode==0 && g_vrCinemaMode.load()==0);
     for(unsigned expected:{1u,2u,0u}) {
         g_cinemaOverrideRequest=12345;

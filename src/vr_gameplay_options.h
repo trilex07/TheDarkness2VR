@@ -29,4 +29,16 @@ inline bool WeaponBeam(const XrPosef& aim,const XrPosef& head,XrSpace space,
     d2vr_menu::Aim ray;ray.frame=1;ray.space=space;ray.tracked=ray.menu=true;ray.pose=aim;
     return d2vr_settings::Laser(surface,ray,head,pose,size);
 }
+// Finite direction marker, not a native collision/impact result. It shares
+// the beam's eight-metre point and faces the current head in the same XR space.
+inline bool WeaponDot(const XrPosef& aim,const XrPosef& head,XrSpace space,
+                      XrPosef& pose,XrExtent2Df& size) {
+    double aq[4],hq[4];
+    if(!space || !d2vr_menu::detail::Pose(aim,aq) || !d2vr_menu::detail::Pose(head,hq))return false;
+    const auto f=d2vr_menu::detail::Rotate(aq,{0,0,-8});
+    XrPosef result=head;
+    result.position={aim.position.x+float(f.x),aim.position.y+float(f.y),aim.position.z+float(f.z)};
+    if(!d2vr_menu::detail::Pose(result,hq))return false;
+    pose=result;size={.018f,.018f};return true;
+}
 }

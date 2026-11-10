@@ -113,7 +113,7 @@ struct VrSettingsRenderer {
                    !Text(28,222,tr(L"J\u0119zyk i supersampling: po restarcie gry.",L"Game language / supersampling: restart game.")))return false;
             } else {
                 if(!button(SettingRect(0),options.headRelativeMovement?tr(L"[x] Ruch wzgl\u0119dem g\u0142owy",L"[x] Head-relative movement"):tr(L"[ ] Ruch wzgl\u0119dem g\u0142owy",L"[ ] Head-relative movement")) ||
-                   !button(SettingRect(1),options.weaponLaser?tr(L"[x] Laser broni",L"[x] Weapon laser"):tr(L"[ ] Laser broni",L"[ ] Weapon laser")) ||
+                   !button(SettingRect(1),options.weaponLaser==2?tr(L"Celowanie: Punkt",L"Aim indicator: Dot"):options.weaponLaser==1?tr(L"Celowanie: Laser",L"Aim indicator: Laser"):tr(L"Celowanie: Wy\u0142.",L"Aim indicator: Off")) ||
                    !button(SettingRect(2),options.cinemaMode==2?tr(L"Tryb: Kino (zapisany)",L"Mode: Cinema (saved)"):
                        options.cinemaMode==1?tr(L"Tryb: VR (zapisany)",L"Mode: VR (saved)"):
                        tr(L"Tryb: Automatyczny",L"Mode: Automatic")))return false;
@@ -146,7 +146,14 @@ struct VrSettingsRenderer {
     bool Render(XrCompositionLayerQuad& quad,bool solidBeam=false) {
         pending=false;
         if(!g_ctx11 || !Ensure() || !Draw())return false;
-        if(solidBeam)static_cast<uint32_t*>(pixels)[0]=0xFFFF4030;
+        if(solidBeam) {
+            auto texels=static_cast<uint32_t*>(pixels);texels[0]=0xFFFF4030;
+            // A separate round swatch; the legacy beam still samples texel0.
+            for(int y=0;y<16;++y)for(int x=0;x<16;++x) {
+                const float dx=x-7.5f,dy=y-7.5f;
+                texels[y*d2vr_settings::Width+32+x]=dx*dx+dy*dy<=49.f?0xFFFF4030:0;
+            }
+        }
         if(!acquired) {
             XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
             const auto result=xrAcquireSwapchainImage(chain,&ai,&index);

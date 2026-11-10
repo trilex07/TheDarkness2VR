@@ -109,6 +109,9 @@ int main(){
     CHECK(RenderVrSettings(warmup)==VrSettingsRender::Ready);
     Reset();CHECK(g_weaponLaserRenderer.Render(warmup,true));
     CHECK(sink.firstPixel==0xFFFF4030);CHECK(!owned);
+    {const auto dotPixels=static_cast<const uint32_t*>(g_weaponLaserRenderer.pixels);
+    CHECK(dotPixels[32]==0 && dotPixels[32+15]==0);
+    CHECK(dotPixels[8*640+32+8]==0xFFFF4030);}
     ReleaseVrSettingsRenderer();
     CHECK(GdiFlush());
     const DWORD resources=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
@@ -211,10 +214,20 @@ int main(){
         const wchar_t* pl[]={L"Tryb: Automatyczny",L"Tryb: VR (zapisany)",L"Tryb: Kino (zapisany)"};
         CHECK(std::find(drawnText.begin(),drawnText.end(),polish?pl[value]:en[value])!=drawnText.end());
     }
+    for(bool polish:{false,true})for(unsigned value:{0u,1u,2u}) {
+        Reset();auto& o=g_vrSettings.Options();o.polishText=polish;o.page=2;o.weaponLaser=value;++o.revision;
+        drawnText.clear();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+        const wchar_t* en[]={L"Aim indicator: Off",L"Aim indicator: Laser",L"Aim indicator: Dot"};
+        const wchar_t* pl[]={L"Celowanie: Wy\u0142.",L"Celowanie: Laser",L"Celowanie: Punkt"};
+        CHECK(std::find(drawnText.begin(),drawnText.end(),polish?pl[value]:en[value])!=drawnText.end());
+    }
     // Repeated opens/stops must release GDI handles, without a GPU/runtime.
     for(unsigned i=0;i<30;++i){Reset();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);}
     Reset();CHECK(g_weaponLaserRenderer.Render(quad,true));
     CHECK(sink.firstPixel==0xFFFF4030);CHECK(!owned);
+    {const auto dotPixels=static_cast<const uint32_t*>(g_weaponLaserRenderer.pixels);
+    CHECK(dotPixels[32]==0 && dotPixels[32+15]==0);
+    CHECK(dotPixels[8*640+32+8]==0xFFFF4030);}
     ReleaseVrSettingsRenderer();
     CHECK(GdiFlush());
     const auto after=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);

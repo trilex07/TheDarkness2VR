@@ -15,7 +15,9 @@ static void AppendWeaponLaserLayers(const XrCompositionLayerBaseHeader** layers,
         // Same owned firearm, controller space and optional support-hand pose
         // as ResolveProtectedWeapon. Empty/unknown/stock-aim weapons get no ray.
         visible[h]=CopyProtectedWeaponHandPose(owner.camera,h,aim) &&
-            d2vr_gameplay::WeaponBeam(aim,head,g_xrSpace,poses[h],sizes[h]);
+            (g_vrSettings.Options().weaponLaser==2 ?
+                d2vr_gameplay::WeaponDot(aim,head,g_xrSpace,poses[h],sizes[h]):
+                d2vr_gameplay::WeaponBeam(aim,head,g_xrSpace,poses[h],sizes[h]));
     }
     if(!visible[0]&&!visible[1])return;
     XrCompositionLayerQuad texture{XR_TYPE_COMPOSITION_LAYER_QUAD};
@@ -23,7 +25,11 @@ static void AppendWeaponLaserLayers(const XrCompositionLayerBaseHeader** layers,
     const unsigned limit=std::min(capacity,g_weaponLaserRenderer.maxLayers);
     for(unsigned h=0;h<2 && count<limit;++h)if(visible[h]) {
         auto& beam=beams[h];beam=texture;beam.space=g_xrSpace;
-        beam.pose=poses[h];beam.size=sizes[h];beam.subImage.imageRect={{0,0},{1,1}};
+        beam.pose=poses[h];beam.size=sizes[h];
+        if(g_vrSettings.Options().weaponLaser==2) {
+            beam.layerFlags|=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+            beam.subImage.imageRect={{32,0},{16,16}};
+        } else beam.subImage.imageRect={{0,0},{1,1}};
         layers[count++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&beam);
     }
 #endif

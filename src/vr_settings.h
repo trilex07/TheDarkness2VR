@@ -43,7 +43,8 @@ inline unsigned NextSupersample(unsigned width,unsigned height,unsigned current)
 struct Preferences {
     unsigned page=0,nisPercent=20,supersample=100,cinemaMode=0;
     bool nis=true,polishVoice=false,polishText=false,pending=false,failed=false;
-    bool headRelativeMovement=false,weaponLaser=false;
+    bool headRelativeMovement=false;
+    unsigned weaponLaser=0; // 0 Off, 1 Laser, 2 Dot; legacy WeaponLaser INI is fallback only
     uint64_t revision=1;
 };
 inline Rect TabRect(unsigned i){return {24+int(i)*200,66,192,42};}
