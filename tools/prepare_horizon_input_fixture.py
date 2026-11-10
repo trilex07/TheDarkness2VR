@@ -15,6 +15,7 @@ METHODS = [
     ('tick', 0x458100, 0x36, '30cafca5d516df2b727241fb8146ce110e74570926c65144eb1c9df375b3e253'),
     ('reset', 0x9DBE80, 0x34, 'dc89ee664206cbe1290c9bc618c4f463c98f97082e506e92c05981b22998f4e8'),
     ('event', 0x93E990, 0x4B, '6ff817f2fc1e03ff71ad5850a1e738edf31d6c3bed014eacc57286a2f490d0f5'),
+    ('poll', 0x89B9E0, 0x14B, '61312d3a06416e296be7d94cd5a45efe0bedef2db65e2b52c0ccb7ddea9c9726'),
 ]
 
 
@@ -77,6 +78,31 @@ def main():
     (a.out/'horizon_relocations.h').write_text(
         'struct Relocation {unsigned offset,constant;};\nstatic Relocation relocations[]={'+
         ','.join('{%d,%d}' % x for x in reloc)+'};\n')
+    poll_reloc = []
+    for i in md.disasm(bodies['poll'], 0x89B9E0):
+        if i.mnemonic == 'call' and i.operands[0].type == capstone.x86.X86_OP_IMM:
+            target = i.operands[0].imm
+            assert target in (0x89AF20, 0x4DA250, 0x874790, 0x47DB10, 0xE441D2, 0x55FC60)
+            poll_reloc.append((i.address-0x89B9E0+1, target))
+    assert len(poll_reloc) == 7
+    with (a.out/'horizon_relocations.h').open('a') as stream:
+        stream.write('struct PollRelocation {unsigned offset,target;};\nstatic PollRelocation pollRelocations[]={'+
+                     ','.join('{%d,0x%x}' % x for x in poll_reloc)+'};\n')
+    root = Path(__file__).resolve().parents[1]
+    source = (root/'src/d3d9.cpp').read_text()
+    start = source.index('static void FinalizePadPacket(')
+    end = source.index('DWORD WINAPI Hook_XInputGetState(', start)
+    (a.out/'actual_packet_finalizer.inl').write_text(source[start:end])
+    hook = source[end:source.index('static bool HookDelayIATOrdinal(', end)]
+    assert hook.count('FinalizePadPacket(userIndex,ERROR_SUCCESS,state);') == 1
+    assert hook.count('FinalizePadPacket(userIndex,r,state);') == 1
+    assert hook.index('state->Gamepad.sThumbRY = (SHORT)') < hook.index('FinalizePadPacket(userIndex,ERROR_SUCCESS,state);')
+    select_start = hook.index('    DWORD res = ERROR_DEVICE_NOT_CONNECTED;')
+    select_end = hook.index('    if (res == ERROR_SUCCESS)', select_start)
+    predicate_start = source.index('static bool PadHasInput(')
+    predicate_end = source.index('void UpdateCachedXrPad()', predicate_start)
+    actual_selector = source[predicate_start:predicate_end] + '\nstatic DWORD ActualSelect(DWORD userIndex,const XINPUT_STATE& real,DWORD r,XINPUT_STATE* state) {\n' + hook[select_start:select_end] + '\nreturn res;\n}\n'
+    (a.out/'actual_packet_selector.inl').write_text(actual_selector)
 
     for call, target in [(0x93E9A3, 0x9DBE80), (0x93E9B8, 0x93A950)]:
         b = read(call, 5)
@@ -86,10 +112,12 @@ def main():
     for slot, target in slots:
         assert struct.unpack('<I', read(slot, 4))[0] == target
     receipt = dict(exe_sha256=hashlib.sha256(d).hexdigest(), methods=METHODS,
-                   slots=slots, axis_constant_relocations=reloc,
-                   scope='CPU typed analog/store/tick/reset/event only. Fake descriptors and null downstream owner. No native camera integration, actual mapping profile, game, XR, GPU or installation.')
+                   slots=slots, axis_constant_relocations=reloc,poll_call_relocations=poll_reloc,
+                   finalizer_source_sha256=hashlib.sha256(source[start:end].encode()).hexdigest(),
+                   selector_source_sha256=hashlib.sha256(actual_selector.encode()).hexdigest(),
+                   scope='CPU typed analog/store/tick/reset/event + actual native poller. External API/raw builder callbacks are fakes; builder invokes actual analog/event bodies. Fake descriptors/null downstream owner. No native camera integration, actual mapping profile, game, XR, GPU or installation.')
     (a.out/'inputs.json').write_text(json.dumps(receipt, indent=2))
-    print('PASS 5 full methods/mutations, 4 owner slots, complete RET boundaries; CPU fixture export')
+    print('PASS 6 full methods/mutations, 4 owner slots, complete RET boundaries; CPU fixture export')
 
 
 if __name__ == '__main__':

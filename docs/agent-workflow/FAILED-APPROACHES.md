@@ -1,5 +1,15 @@
 # Failed Approaches Index
 
+### A combined menu/packet build does not prove the reported horizon cause
+- **Date**: 2026-11-10; isolated B3F + UnifiedPadPackets integration.
+- Physical/XR equal source packet IDs reproduce a dropped neutral typed LOOK_Y
+  through actual89BB0F. The optional output finalizer fixes that CPU sequence.
+  The user's physical/XR handoff was not observed, so do not label this a
+  confirmed horizon fix. Do not clamp camera pitch or change native bindings.
+- B3F's actual one-point Main hover PASS is inherited evidence, not runtime
+  proof of this new binary or Continue/gameplay. Both new keys remain OFF.
+- See handoffs/HANDOFF-b3f-unified-pad-20261110.md.
+
 ### Native mouse COM target is a Steam wrapper, not a guessed dinput export
 - **Date**: 2026-11-10; actual MAIN receipt4755, CPU product implementation.
 - GetDeviceData COM+28 resolves GameOverlayRenderer.dll RVA823D0. Pin its full

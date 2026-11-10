@@ -36,6 +36,7 @@
 #include "vr_gameplay_options.h"
 
 #include <xinput.h>
+#include "pad_packet_sequence.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -405,6 +406,7 @@ static XrPosef g_cinematicScreenPose{};
 static bool g_cinematicScreenValid=false;
 float g_cinemaWidthM = 2.1f;
 int g_enableVRGamepad = 1;
+bool g_unifiedPadPackets = false; // opt-in physical/XR packet-number namespace
 static int g_vrSettingsToggleKey=VK_INSERT; // [Input] VRSettingsKey; 0 disables
 int g_remapPhysical = 1;
 int g_forceWindowedReset = 0;
@@ -1164,6 +1166,7 @@ void LoadConfig() {
         if (v > 0.5f && v < 20.0f) g_cinemaWidthM = v;
     }
     g_enableVRGamepad = GetPrivateProfileIntA("Input", "EnableVRGamepad", 1, chosenIni);
+    g_unifiedPadPackets = GetPrivateProfileIntA("Input", "UnifiedPadPackets", 0, chosenIni) != 0;
     g_vrSettingsToggleKey=GetPrivateProfileIntA("Input","VRSettingsKey",VK_INSERT,chosenIni);
     if(g_vrSettingsToggleKey<0 || g_vrSettingsToggleKey>254 ||
        (g_vrSettingsToggleKey>=VK_F1 && g_vrSettingsToggleKey<=VK_F12)) {
@@ -5511,6 +5514,16 @@ volatile LONG g_xinputHooked = 0;
 volatile LONG g_xinputAttempted = 0;
 volatile LONG g_xinputRemapLogged = 0;
 
+static void FinalizePadPacket(DWORD port,DWORD result,XINPUT_STATE* state) {
+    if(!g_unifiedPadPackets || !g_enableVRGamepad || port || !state)return;
+    static SRWLOCK lock=SRWLOCK_INIT;
+    static d2vr_input::PadPacketSequence sequence;
+    AcquireSRWLockExclusive(&lock);
+    if(result==ERROR_SUCCESS)sequence.Apply(*state);
+    else sequence.Reset();
+    ReleaseSRWLockExclusive(&lock);
+}
+
 DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
     if (!state) return ERROR_DEVICE_NOT_CONNECTED;
 #ifdef D2VR_MATCHED_CAPTURE
@@ -5615,8 +5628,10 @@ DWORD WINAPI Hook_XInputGetState(DWORD userIndex, XINPUT_STATE* state) {
                 state->Gamepad.sThumbRY = (SHORT)std::max(-32767, std::min(32767, newRY));
             }
         }
+        FinalizePadPacket(userIndex,ERROR_SUCCESS,state);
         return ERROR_SUCCESS;
     }
+    FinalizePadPacket(userIndex,r,state);
     return r;
 }
 

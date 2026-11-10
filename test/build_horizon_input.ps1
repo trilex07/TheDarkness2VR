@@ -11,7 +11,7 @@ $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 $source=Join-Path $PSScriptRoot 'native_horizon_input_test.cpp'
 Push-Location $OutputDir
 try {
-    cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 /I`"$OutputDir`" `"$source`" /Fe:native_horizon_input_test.exe"
+    cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /O2 /MD /std:c++17 /I`"$OutputDir`" /I`"$root/src`" `"$source`" /Fe:native_horizon_input_test.exe"
     if($LASTEXITCODE){throw 'CPU test compile failed'}
     & ./native_horizon_input_test.exe
     if($LASTEXITCODE){throw 'Native input sequence failed'}
