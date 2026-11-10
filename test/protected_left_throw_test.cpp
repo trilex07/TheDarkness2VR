@@ -8,6 +8,7 @@
 #include "../src/vr_input.h"
 #include "../src/native_aim_math.h"
 #include "../src/throw_target_math.h"
+#include "../src/stereo_math.h"
 static unsigned checks=0;
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL line%d %s\n",__LINE__,#x);exit(1);}}while(0)
 static void Log(const char*,...){}
@@ -16,6 +17,7 @@ static ULONGLONG Clock(){return clockMs;}
 static bool g_protectedLeftThrow=true,g_protectedLeftAim=true,g_protectedGestureActions=true;
 static bool g_deferredGripRetry=false;
 static d2vr_input::GripRetryContext retryContext{true};
+static bool g_throwSolverFailElevation=false;
 static bool g_imagePreservingInput=true,g_protectedThrowPrivateReady=true,g_haveViews=true,g_in3DGameplayMode=true;
 static bool g_headGeometry=true,g_headGeometryReferenceValid=true,g_nativeLeftAim=false,g_nativeThrowInstalled=false;
 static struct {bool enabled=true;} g_nativeImageGuard;
@@ -24,7 +26,7 @@ static DWORD g_renderThreadId=GetCurrentThreadId();
 static d2vr_input::Tentacles g_protectedLeftTentacle,g_protectedRightTentacle;
 static DWORD g_protectedThrowInputOwner[3]{};
 static XrPosef g_headGeometryReference{{0,0,0,1},{}};
-static struct {bool open=true;XrViewStateFlags flags=3|12;struct {XrTime predictedDisplayTime=1000000000;} state;} g_trackedFrame;
+static struct {bool open=true;ULONGLONG id=0;XrViewStateFlags flags=3|12;struct {XrTime predictedDisplayTime=1000000000;} state;} g_trackedFrame;
 static struct {bool valid=true,aimValid=false,gripValid=true;float squeeze=0;XrPosef grip{{0,0,0,1},{}},aim{{0,0,0,1},{}};
     struct {d2vr_input::Vec3 velocity{};} motion;} g_hands[2];
 static __declspec(align(16)) BYTE camera[0xB00],avatar[0x2000],inventory[0x600],weapon[0xB00],parts[0xC0],fire[0xD00],entity[0x100];
@@ -45,13 +47,17 @@ static bool CinemaSceneThisFrame(){return cinemaScene;}
 static bool g_gazeThrow=false;static float g_gazeThrowAssist=.85f;
 static bool testGaze=false;
 static bool TentacleGazeWorldRay(XrVector3f& o,XrVector3f& d){o={};d={0,0,-1};return testGaze;}
-static const float* StabilizedCameraWorld(const void* p,float (&)[16]){return reinterpret_cast<const float*>(static_cast<const BYTE*>(p)+0x80);}
 static NativeGameplaySample g_nativeGameplay;
 static auto& gameplay=g_nativeGameplay;
 static SRWLOCK g_nativeGameplayLock=SRWLOCK_INIT;
 #define GetTickCount64 Clock
 #include "d2vr_native_sample_freshness.inl"
 #undef GetTickCount64
+static bool g_cameraAnimStabilize=false;
+static SRWLOCK g_cameraAnimStabilizerLock=SRWLOCK_INIT;
+static struct {bool valid=false;DWORD camera=0;ULONGLONG time=0,frame=0;
+    float correction[16]{};volatile LONG handSame=0,handStale=0;} g_cameraAnimStabilizer;
+static void EnsureCameraStabilizerFrame() {} // prepublished CPU snapshot; no engine/GPU producer
 static bool copyOK=true;
 static bool freshSample=true;
 static bool CopyNativeGameplay(NativeGameplaySample& sample){return copyOK && CopyNativeGameplayFresh(sample);}
@@ -77,6 +83,8 @@ static SRWLOCK g_nativeThrowLock=SRWLOCK_INIT;
 static void Reset() {
     g_deferredGripRetry=false;retryContext={true};
     freshSample=true;
+    g_throwSolverFailElevation=false;
+    g_cameraAnimStabilize=false;g_cameraAnimStabilizer.valid=false;
     clockMs=1000;nextRef=0;copyOK=true;testGaze=false;g_gazeThrow=false;
     memset(camera,0,sizeof(camera));memset(avatar,0,sizeof(avatar));memset(inventory,0,sizeof(inventory));
     memset(weapon,0,sizeof(weapon));memset(parts,0,sizeof(parts));memset(fire,0,sizeof(fire));memset(entity,0,sizeof(entity));
@@ -381,6 +389,94 @@ static void DeferredRetryCases() {
     for(unsigned ms=450;ms<=750;ms+=100)CHECK(!(Step(ms,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
     QueueRetry();CHECK(!(Step(500,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER)); // stale clock
     Step(600,1,0,0);CHECK(!(Step(700,1,0,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));
+static void SolverFailElevationCases() {
+    // Actual publisher records measured units; native observer distinguishes a
+    // failed solver call from no target/no call. Actual consumer preserves speed/W.
+    for(int state=0;state<5;++state) {
+        Reset();g_throwAimAssist=1;g_hands[0].aimValid=true;g_throwSolverFailElevation=state!=0;
+        PublishNativeThrow(true,false,true,{0,2,-2},{},true);
+        CHECK(g_nativeThrowToken.until && g_nativeThrowToken.swingElevationValid);
+        CHECK(std::fabs(g_nativeThrowToken.swingElevation-.70710678f)<1e-5f);
+        if(state!=1)g_nativeThrowToken.targetSelected=true;
+        if(state!=2)MarkThrowTargetTrajectory(fire,state==3 ? 1:0);
+        CHECK(g_nativeThrowToken.targetSolverFailed==(state==0 || state==4));
+        float v[4]={3,4,0,.375f};CHECK(ResolveProtectedThrowVelocity(fire,v));
+        CHECK(std::fabs(d2vr_input::Length({v[0],v[1],v[2]})-5)<1e-5f && v[3]==.375f);
+        if(state==4)CHECK(std::fabs(v[1]-3.5355339f)<1e-5f && std::fabs(v[2]-3.5355339f)<1e-5f);
+        else if(state==3)CHECK(v[0]==3 && v[1]==4 && v[2]==0); // native success untouched
+        else CHECK(v[0]==0 && v[1]==0 && v[2]==5); // OFF / no target / no call unchanged
+    }
+    for(float elevation:{-.8f,0.f,.8f}) {
+        d2vr_input::Vec3 ray{};
+        CHECK(d2vr_input::AimAzimuthSwingElevation({3,.4f,4},elevation,ray));
+        CHECK(std::fabs(ray.y-elevation)<1e-5f && std::fabs(d2vr_input::Length(ray)-1)<1e-5f);
+        CHECK(std::fabs(ray.x*4-ray.z*3)<1e-5f); // aim azimuth, not stroke azimuth
+    }
+    d2vr_input::Vec3 out{8,9,10};
+    CHECK(!d2vr_input::AimAzimuthSwingElevation({0,1,0},.5f,out));
+    CHECK(out.x==8 && out.y==9 && out.z==10);
+    CHECK(!d2vr_input::AimAzimuthSwingElevation({1,0,0},NAN,out));
+    CHECK(!d2vr_input::AimAzimuthSwingElevation({1,0,0},1.1f,out));
+    // Located XR grip velocity is metres/sec in reference space. Observe it
+    // before ThrowDirection; ratio Y/length is dimensionless and yaw-invariant.
+    d2vr_input::Motion motion;d2vr_input::Vec3 measured{1,2,-2};
+    motion.Update(true,{},0);motion.Update(true,{.02f,.04f,-.04f},.02,&measured);
+    CHECK(motion.velocity.x==1 && motion.velocity.y==2 && motion.velocity.z==-2);
+    for(int stable=0;stable<3;++stable) {
+        Reset();g_throwSolverFailElevation=true;g_throwAimAssist=1;g_hands[0].aimValid=true;
+        // Real orthonormal native camera with pitch30/roll45. Its forward has
+        // a negative world-Y component; measured elevation must remain positive.
+        const float cp=.8660254f,sp=.5f,cr=.70710678f,sr=.70710678f;
+        const float tilted[16]={cr,sr,0,0,-cp*sr,cp*cr,sp,0,sp*sr,-sp*cr,cp,0,10,20,30,1};
+        memcpy(camera+0x80,tilted,sizeof(tilted));
+        if(stable) {
+            g_cameraAnimStabilize=true;g_cameraAnimStabilizer.valid=true;
+            g_cameraAnimStabilizer.camera=Ptr(camera);g_cameraAnimStabilizer.time=clockMs;
+            const float correction[16]={0,0,-1,0,0,1,0,0,1,0,0,0,0,0,0,1}; // yaw90 correction
+            memcpy(g_cameraAnimStabilizer.correction,correction,sizeof(correction));
+            if(stable==2)g_cameraAnimStabilizer.time-=101; // actual stale-cache native fallback
+        }
+        PublishNativeThrow(true,false,true,motion.velocity,{},true);
+        CHECK(std::fabs(g_nativeThrowToken.swingElevation-2.f/3)<1e-5f);
+        g_nativeThrowToken.targetSelected=true;MarkThrowTargetTrajectory(fire,0);
+        float scratch[16],ray[16];const float zero[3]{};
+        const auto base=StabilizedCameraWorld(camera,scratch);
+        CHECK(d2vr_aim::BuildRayMatrix(base,zero,g_nativeThrowToken.direction,ray));
+        const float azX=ray[8],azZ=ray[10];
+        CHECK(std::fabs(ray[9]-2.f/3)>.01f); // differs from measured world elevation
+        if(stable!=1)CHECK(ray[9]<0);
+        BYTE saved[sizeof(camera)];memcpy(saved,camera,sizeof(camera));
+        float v[4]={3,4,0,.625f};CHECK(ResolveProtectedThrowVelocity(fire,v));
+        CHECK(std::fabs(v[1]-10.f/3)<1e-5f && std::fabs(d2vr_input::Length({v[0],v[1],v[2]})-5)<1e-5f);
+        CHECK(std::fabs(v[0]*azZ-v[2]*azX)<1e-5f && v[3]==.625f);
+        CHECK(!memcmp(saved,camera,sizeof(camera))); // release origin/native matrix untouched
+    }
+    for(float speed:{0.f,16.f,INFINITY,NAN}) {
+        Reset();g_throwSolverFailElevation=true;g_throwAimAssist=1;g_hands[0].aimValid=true;
+        PublishNativeThrow(true,false,true,{0,speed,0},{},true);
+        CHECK(!g_nativeThrowToken.swingElevationValid);
+        if(g_nativeThrowToken.until) {
+            g_nativeThrowToken.targetSelected=true;MarkThrowTargetTrajectory(fire,0);
+            float v[4]={3,4,0,.75f};CHECK(ResolveProtectedThrowVelocity(fire,v));
+            CHECK(v[1]==0 && v[2]==5 && v[3]==.75f);
+        }
+    }
+    for(float measuredY:{-2.f,0.f}) {
+        Reset();g_throwSolverFailElevation=true;g_throwAimAssist=1;g_hands[0].aimValid=true;
+        PublishNativeThrow(true,false,true,{0,measuredY,-2},{},true);
+        g_nativeThrowToken.targetSelected=true;MarkThrowTargetTrajectory(fire,0);
+        float v[4]={3,4,0,.125f};CHECK(ResolveProtectedThrowVelocity(fire,v));
+        CHECK(std::fabs(v[1]-5*measuredY/std::sqrt(measuredY*measuredY+4))<1e-5f);
+        CHECK(std::fabs(d2vr_input::Length({v[0],v[1],v[2]})-5)<1e-5f && v[3]==.125f);
+    }
+    Reset();g_throwSolverFailElevation=true;Arm();
+    g_nativeThrowToken.targetSelected=true;MarkThrowTargetTrajectory(fire,0);
+    g_nativeThrowToken.swingElevation=NAN;g_nativeThrowToken.swingElevationValid=true;
+    float corrupt[4]={3,4,0,.25f};CHECK(ResolveProtectedThrowVelocity(fire,corrupt));
+    CHECK(std::fabs(d2vr_input::Length({corrupt[0],corrupt[1],corrupt[2]})-5)<1e-5f && corrupt[3]==.25f && corrupt[1]==0);
+    Reject([]{g_throwSolverFailElevation=true;g_nativeThrowToken.targetSolverFailed=true;copyOK=false;});
+    Reject([]{g_throwSolverFailElevation=true;g_nativeThrowToken.targetSolverFailed=true;gameplay.inventory+=4;});
+    Reject([]{g_throwSolverFailElevation=true;g_nativeThrowToken.targetSolverFailed=true;clockMs+=650;});
 }
 int main(int argc,char** argv) {
     CHECK(argc==2);LoadCharacterConsumer(argv[1]);
@@ -487,6 +583,7 @@ int main(int argc,char** argv) {
     g_nativeThrowToken.camera=1;CHECK(!BuildThrowTargetRay(g_nativeThrowToken,ray));
     CharacterCases();
     DeferredRetryCases();
+    SolverFailElevationCases();
     CHECK(VirtualFree(reinterpret_cast<void*>(characterConsumer),0,MEM_RELEASE));
     printf("PASS protected throw actual bodies: %u checks; live owner/entity/character/retained-receiver gates,one-shot token,native speed/W preserved,left stroke+aim,enemy release direction,neutral LB gap,right inputs independent\n",checks);
 }

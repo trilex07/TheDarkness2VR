@@ -9,6 +9,8 @@ struct NativeThrowToken {
     ULONGLONG until=0,sequence=0;
     DWORD camera=0,inventory=0,fire=0,entity=0,character=0;
     bool targetSelected=false,targetApplied=false;
+    bool targetSolverFailed=false,swingElevationValid=false;
+    float swingElevation=0; // normalized measured stroke Y; dimensionless
     float origin[3]{}; // reference-local metres; selector origin only
     float direction[3]{}; // reference-local LH unit direction, independent of gaze
 };
@@ -97,6 +99,9 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
         token.camera=sample.camera; token.inventory=sample.inventory;
         token.fire=sample.grabFire; token.entity=sample.grabEntity;
         token.character=character;
+        const float swingSpeed=d2vr_input::Length(velocity);
+        token.swingElevationValid=std::isfinite(swingSpeed) && swingSpeed>=.8f && swingSpeed<=15.f;
+        if(token.swingElevationValid)token.swingElevation=velocity.y/swingSpeed;
         token.until=GetTickCount64()+650;
     }
     AcquireSRWLockExclusive(&g_nativeThrowLock);
@@ -130,8 +135,14 @@ static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0
         const float zero[3]{};
         float stableCamera[16];
         if(!d2vr_aim::BuildRayMatrix(StabilizedCameraWorld(reinterpret_cast<const void*>(token.camera),stableCamera),zero,token.direction,ray)) return false;
-        const float directionLength=std::sqrt(ray[8]*ray[8]+ray[9]*ray[9]+ray[10]*ray[10]);
+        float directionLength=std::sqrt(ray[8]*ray[8]+ray[9]*ray[9]+ray[10]*ray[10]);
         if(!std::isfinite(directionLength) || directionLength<.5f || directionLength>2.f)return false;
+        if(g_throwSolverFailElevation && token.targetSolverFailed && !token.targetApplied && token.swingElevationValid) {
+            d2vr_input::Vec3 fallback{};
+            if(d2vr_input::AimAzimuthSwingElevation({ray[8],ray[9],ray[10]},token.swingElevation,fallback)) {
+                ray[8]=fallback.x;ray[9]=fallback.y;ray[10]=fallback.z;directionLength=1.f;
+            }
+        }
         memcpy(original,velocity,sizeof(original));
         for(int c=0;c<4;++c) if(!std::isfinite(original[c])) return false;
         for(int c=0;c<3;++c) speed+=original[c]*original[c];

@@ -99,8 +99,10 @@ static void __cdecl MarkThrowTargetTrajectory(void* fire,unsigned success) {
     if(GetCurrentThreadId()!=g_renderThreadId)return;
     AcquireSRWLockExclusive(&g_nativeThrowLock);
     if(g_nativeThrowToken.fire==DWORD(reinterpret_cast<uintptr_t>(fire)) &&
-       g_nativeThrowToken.until>GetTickCount64() && g_nativeThrowToken.targetSelected)
+       g_nativeThrowToken.until>GetTickCount64() && g_nativeThrowToken.targetSelected) {
         g_nativeThrowToken.targetApplied=(success&0xff)!=0;
+        g_nativeThrowToken.targetSolverFailed=(success&0xff)==0;
+    }
     ReleaseSRWLockExclusive(&g_nativeThrowLock);
     SetLastError(error);
 }

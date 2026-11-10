@@ -28,8 +28,9 @@ $fresh=Extract $aim 'static bool CopyNativeGameplay('
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_native_sample_freshness.inl'),$fresh.Replace('CopyNativeGameplay(', 'CopyNativeGameplayFresh('),[Text.Encoding]::UTF8)
 if(!$main.Contains('hand.valid=hand.gripValid && hand.aimValid;')){throw 'Tracking producer changed; revisit separate grip/aim fixtures'}
 if(!$main.Contains('supportOwnsLeftGrip=swallowLeftGrip;')){throw 'Full support-latch ownership receipt missing'}
+$stabilizer=Get-Content (Join-Path $repo 'src\camera_anim_stabilizer.inl') -Raw
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'd2vr_protected_throw_types.inl'),(Extract $throw 'struct NativeThrowToken {')+';'+(Extract $target 'struct ThrowTargetScope {')+';',[Text.Encoding]::UTF8)
-$bodies=@((Extract $main 'static XrVector3f RotVec('),(Extract $aim 'static bool NativeAimOwnerMatches('),
+$bodies=@((Extract $main 'static XrVector3f RotVec('),(Extract $stabilizer 'static const float* StabilizedCameraWorld('),(Extract $aim 'static bool NativeAimOwnerMatches('),
     (Extract $throw 'static void ResetNativeThrow() {'),(Extract $throw 'static bool NativeThrowFireOwnerMatches('),
     (Extract $aim 'static bool NativeHeldActionContext() {'),
     (Extract $protected 'static bool ProtectedThrowAvailable() {'),

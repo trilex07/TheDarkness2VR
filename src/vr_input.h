@@ -297,6 +297,15 @@ inline bool ThrowDirection(Vec3 velocity,Vec3 aim,float assist,Vec3& out) {
     out={out.x/length,out.y/length,out.z/length}; return true;
 }
 // Busy includes native acquisition/attachment, not just a fully settled hold.
+// Unit direction only: measured elevation is sin(angle), not metres/sec or
+// native velocity units. Native world and XR reference share gravity +Y.
+inline bool AimAzimuthSwingElevation(Vec3 aim,float elevation,Vec3& out) {
+    const float horizontal=std::sqrt(aim.x*aim.x+aim.z*aim.z);
+    if(!std::isfinite(horizontal) || horizontal<1e-5f || !std::isfinite(elevation) ||
+       elevation<-1.f || elevation>1.f)return false; // no invented azimuth/loft
+    const float planar=std::sqrt(std::max(0.f,1.f-elevation*elevation));
+    out={aim.x/horizontal*planar,elevation,aim.z/horizontal*planar};return true;
+}
 struct TentacleOutput {
     bool grab=false, throwObject=false, slash=false;
     Vec3 throwVelocity{},throwAim{}; // powered stroke and controller aim, frozen at release

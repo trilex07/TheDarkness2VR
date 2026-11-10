@@ -209,6 +209,7 @@ bool g_gazeDotEnabled=false;      // [EyeTracking] GazeDot: debug ring at the ga
 bool g_gazeGrab=true;             // [EyeTracking] GazeGrab: tentacle grab acquires the gazed target
 bool g_throwTargetAssist=true;
 static bool g_deferredGripRetry=false; // [Input] DeferredGripRetry, protected path only
+static bool g_throwSolverFailElevation=false; // [Input] ThrowSolverFailElevation, default OFF
 bool g_gazeThrow=true;            // [EyeTracking] GazeThrow: thrown objects fly towards the gaze
 float g_gazeThrowAssist=1.f;     // [EyeTracking] GazeThrowAssist (percent): gaze share of the throw direction
 bool g_gazeMenu=false;            // [EyeTracking] GazeMenu: menu cursor follows the gaze (experimental, off: user 01:01)
@@ -971,6 +972,7 @@ void LoadConfig() {
     g_throwTargetAssist = GetPrivateProfileIntA("Input", "ThrowTargetAssist", 1, chosenIni) != 0;
     g_deferredGripRetry = GetPrivateProfileIntA("Input", "DeferredGripRetry", 0, chosenIni) != 0;
     Log("[DeferredGripRetry] enabled=%d; new edge only, native650ms grace retained",int(g_deferredGripRetry));
+    g_throwSolverFailElevation = GetPrivateProfileIntA("Input", "ThrowSolverFailElevation", 0, chosenIni) != 0;
     g_gazeThrow = GetPrivateProfileIntA("EyeTracking", "GazeThrow", 1, chosenIni) != 0;
     g_gazeThrowAssist = std::min(100u,GetPrivateProfileIntA("EyeTracking", "GazeThrowAssist", 100, chosenIni))*.01f;
     g_gazeMenu = GetPrivateProfileIntA("EyeTracking", "GazeMenu", 0, chosenIni) != 0;
