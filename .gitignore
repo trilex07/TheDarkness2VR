@@ -24,3 +24,7 @@ __pycache__/
 # test harness build outputs
 tools/**/*.exe
 test/**/*.exe
+
+# Private evidence and CPU outputs; never game-derived committed content.
+/captures/
+/test-output/

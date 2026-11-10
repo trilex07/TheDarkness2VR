@@ -90,6 +90,7 @@ int main(){
     CHECK(click(500,85)==Action::None);CHECK(settings.Options().page==2);
     CHECK(click(80,135)==Action::HeadRelativeMovement);
     CHECK(click(80,181)==Action::WeaponLaser);
+    CHECK(click(80,227)==Action::CinemaMode);
     settings.Close();CHECK(!settings.OwnInput(true));
     settings.ShowEntry(true,head,space);CHECK(settings.Entry()&&!settings.Open());
     CHECK(!settings.OwnInput(true));CHECK(settings.Surface().cursor.height==80);

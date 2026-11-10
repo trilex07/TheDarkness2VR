@@ -13,6 +13,15 @@ inline Override TemporaryOverride(uint64_t request,uint64_t nowMs) {
 inline uint64_t RequestOpposite(Mode current,uint64_t nowMs) {
     return ((nowMs+60000) << 1) | (current==Mode::Gameplay ? 1 : 0);
 }
+// Persistent preference is independent of the short-lived controller chord.
+// Invalid/missing values retain the accepted automatic behavior.
+inline Override PersistentOverride(unsigned preference) {
+    return preference==1 ? Override::Gameplay : preference==2 ? Override::Scene3D : Override::Auto;
+}
+inline Override ResolveOverride(uint64_t request,uint64_t nowMs,unsigned preference) {
+    const auto temporary=TemporaryOverride(request,nowMs);
+    return temporary!=Override::Auto ? temporary : PersistentOverride(preference);
+}
 struct Playback {
     uintptr_t handles[16]{};
     void Observe(uintptr_t handle,bool playing) {

@@ -114,8 +114,9 @@ struct VrSettingsRenderer {
             } else {
                 if(!button(SettingRect(0),options.headRelativeMovement?tr(L"[x] Ruch wzgl\u0119dem g\u0142owy",L"[x] Head-relative movement"):tr(L"[ ] Ruch wzgl\u0119dem g\u0142owy",L"[ ] Head-relative movement")) ||
                    !button(SettingRect(1),options.weaponLaser?tr(L"[x] Laser broni",L"[x] Weapon laser"):tr(L"[ ] Laser broni",L"[ ] Weapon laser")) ||
-                   !Text(28,214,tr(L"Spust: wybierz    K\u00f3\u0142ko: powr\u00f3t",L"Trigger: select    B / Circle: back")) ||
-                   !Text(28,244,tr(L"L3+R3: centrowanie / kino",L"L3+R3: recenter / cinema")))return false;
+                   !button(SettingRect(2),options.cinemaMode==2?tr(L"Tryb: Kino (zapisany)",L"Mode: Cinema (saved)"):
+                       options.cinemaMode==1?tr(L"Tryb: VR (zapisany)",L"Mode: VR (saved)"):
+                       tr(L"Tryb: Automatyczny",L"Mode: Automatic")))return false;
             }
             if(!Text(24,280,options.failed?tr(L"B\u0142\u0105d zapisu ustawie\u0144",L"Could not save/apply settings"):
                 options.pending?tr(L"Zapisano. Uruchom gr\u0119 ponownie.",L"Saved. Restart the game."):L"INSERT: VR settings") ||

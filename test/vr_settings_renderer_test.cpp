@@ -204,6 +204,13 @@ int main(){
         CHECK(has(polish?L"B\u0142\u0105d zapisu ustawie\u0144":L"Could not save/apply settings"));
         o.failed=false;
     }
+    for(bool polish:{false,true})for(unsigned value:{0u,1u,2u}) {
+        Reset();auto& o=g_vrSettings.Options();o.polishText=polish;o.page=2;o.cinemaMode=value;++o.revision;
+        drawnText.clear();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+        const wchar_t* en[]={L"Mode: Automatic",L"Mode: VR (saved)",L"Mode: Cinema (saved)"};
+        const wchar_t* pl[]={L"Tryb: Automatyczny",L"Tryb: VR (zapisany)",L"Tryb: Kino (zapisany)"};
+        CHECK(std::find(drawnText.begin(),drawnText.end(),polish?pl[value]:en[value])!=drawnText.end());
+    }
     // Repeated opens/stops must release GDI handles, without a GPU/runtime.
     for(unsigned i=0;i<30;++i){Reset();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);}
     Reset();CHECK(g_weaponLaserRenderer.Render(quad,true));

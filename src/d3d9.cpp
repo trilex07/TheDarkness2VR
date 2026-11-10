@@ -4397,10 +4397,14 @@ static void ResetPoseInput() {
 #include "gaze_lod_runtime_observer.inl"
 #include "native_aim.inl"
 static d2vr_cinema::Override CinemaOverride() {
-    return d2vr_cinema::TemporaryOverride(g_cinemaOverrideRequest.load(std::memory_order_acquire),GetTickCount64());
+    return d2vr_cinema::ResolveOverride(g_cinemaOverrideRequest.load(std::memory_order_acquire),GetTickCount64(),
+        g_vrCinemaMode.load(std::memory_order_acquire));
+}
+static bool CinemaEnabled() {
+    return g_cinematicTheater || g_vrCinemaMode.load(std::memory_order_acquire)!=0;
 }
 static bool CinemaSceneThisFrame() {
-    if(!g_cinematicTheater || g_submitMode!=4 || g_stereoMode!=1)return false;
+    if(!CinemaEnabled() || g_submitMode!=4 || g_stereoMode!=1)return false;
     const auto manual=CinemaOverride();
     if(manual==d2vr_cinema::Override::Gameplay)return false;
     if(manual==d2vr_cinema::Override::Scene3D)
@@ -4410,10 +4414,10 @@ static bool CinemaSceneThisFrame() {
 #include "bink_playback.inl"
 static std::atomic<d2vr_cinema::Mode> g_presentedCinemaMode{d2vr_cinema::Mode::Gameplay};
 static void ToggleCinemaForMinute(const char* source) {
-    if(!g_cinematicTheater || g_submitMode!=4 || g_stereoMode!=1)return;
+    if(!CinemaEnabled() || g_submitMode!=4 || g_stereoMode!=1)return;
     const auto request=d2vr_cinema::RequestOpposite(g_presentedCinemaMode.load(std::memory_order_acquire),GetTickCount64());
     g_cinemaOverrideRequest.store(request,std::memory_order_release);
-    Log("[CinemaOverride] %s mode=%s duration=60s; automatic detection resumes on expiry",source,
+    Log("[CinemaOverride] %s mode=%s duration=60s; saved preference / automatic detection resumes on expiry",source,
         (request&1)?"cinema3D":"VR");
 }
 #include "camera_anim_stabilizer.inl"
@@ -6375,8 +6379,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
         const bool decoderActive=g_binkVideo.load(std::memory_order_acquire);
         const bool presentedVideo=PresentedVideoThisFrame();
         const bool frontMenu=!g_in3DGameplayMode || (NativeVrMenuFlags()&(d2vr_action_movies::Main|d2vr_action_movies::Title));
-        const auto cinemaMode=frontMenu && g_cinematicTheater && g_submitMode==4 && g_stereoMode==1 ?
-            d2vr_cinema::Mode::Video2D : d2vr_cinema::Select(g_cinematicTheater && g_submitMode==4 && g_stereoMode==1,true,CinemaSceneThisFrame(),
+        const auto cinemaMode=frontMenu && CinemaEnabled() && g_submitMode==4 && g_stereoMode==1 ?
+            d2vr_cinema::Mode::Video2D : d2vr_cinema::Select(CinemaEnabled() && g_submitMode==4 && g_stereoMode==1,true,CinemaSceneThisFrame(),
             presentedVideo,
             CinemaOverride());
         g_presentedCinemaMode.store(cinemaMode,std::memory_order_release);

@@ -1,3 +1,5 @@
+#include <atomic>
+static std::atomic<unsigned> g_vrCinemaMode{0};
 // Settings persist to the same absolute INI selected by LoadConfig. Resource
 // dimensions are startup-only; no resize is attempted from controller polling.
 static int g_vrBaseWidth=0,g_vrBaseHeight=0,g_vrNisMode=2;
@@ -17,6 +19,9 @@ static void LoadVrPreferences(const char* ini) {
     if(o.supersample!=100 && o.supersample!=125 && o.supersample!=150)o.supersample=100;
     o.headRelativeMovement=GetPrivateProfileIntA("VRSettings","HeadRelativeMovement",0,ini)!=0;
     o.weaponLaser=GetPrivateProfileIntA("VRSettings","WeaponLaser",0,ini)!=0;
+    o.cinemaMode=GetPrivateProfileIntA("VRSettings","CinemaMode",0,ini);
+    if(o.cinemaMode>2)o.cinemaMode=0;
+    g_vrCinemaMode.store(o.cinemaMode,std::memory_order_release);
     o.polishVoice=GetPrivateProfileIntA("VRSettings","PolishVoice",0,ini)!=0;
     o.polishText=GetPrivateProfileIntA("VRSettings","PolishText",0,ini)!=0;
 #ifdef D2VR_MATCHED_CAPTURE
@@ -34,6 +39,7 @@ static void LoadVrPreferences(const char* ini) {
         (GetPrivateProfileIntA("VRSettings","AppliedPolishText",0,ini)!=0)!=o.polishText;
     o.failed=o.failed || GetPrivateProfileIntA("VRSettings","LanguageError",0,ini)!=0;
     ++o.revision;
+    Log("[VRSettings] CinemaMode=%u (0=auto 1=VR 2=cinema; saved preference)",o.cinemaMode);
     Log("[VRSettings] loaded NIS=%d strength=%u SS=%u source=%dx%d voicePL=%d textPL=%d headMove=%d gunLaser=%d",
         int(o.nis),o.nisPercent,o.supersample,g_renderW,g_renderH,int(o.polishVoice),int(o.polishText),int(o.headRelativeMovement),int(o.weaponLaser));
 }
@@ -78,6 +84,7 @@ static void ApplyVrSettingsAction(d2vr_settings::Action action) {
         break;}
     case Action::HeadRelativeMovement:o.headRelativeMovement=!o.headRelativeMovement;ok=VrWrite("HeadRelativeMovement",o.headRelativeMovement);break;
     case Action::WeaponLaser:o.weaponLaser=!o.weaponLaser;ok=VrWrite("WeaponLaser",o.weaponLaser);break;
+    case Action::CinemaMode:o.cinemaMode=(o.cinemaMode+1)%3;ok=VrWrite("CinemaMode",o.cinemaMode);break;
     case Action::Voice:case Action::Text: {
         if(!StartVrLanguageHelper()){ok=false;break;}
         if(action==Action::Voice){o.polishVoice=!o.polishVoice;ok=VrWrite("PolishVoice",o.polishVoice);}
@@ -85,8 +92,10 @@ static void ApplyVrSettingsAction(d2vr_settings::Action action) {
         o.pending=true;break;}
     default:break;
     }
+    if(ok && action==Action::CinemaMode)g_cinemaOverrideRequest.store(0,std::memory_order_release);
     if(!ok)o=previous;
     o.failed=!ok;++o.revision;
-    if(ok){g_nisMode=o.nis?g_vrNisMode:0;g_nisSharpness=g_foveaSharpness=o.nisPercent*.01f;}
+    if(ok){g_vrCinemaMode.store(o.cinemaMode,std::memory_order_release);g_nisMode=o.nis?g_vrNisMode:0;g_nisSharpness=g_foveaSharpness=o.nisPercent*.01f;}
+    if(action==Action::CinemaMode)Log("[VRSettings] CinemaMode=%u saved=%d (0=auto 1=VR 2=cinema; no expiry)",o.cinemaMode,int(ok));
     Log("[VRSettings] action=%u saved=%d NIS=%d strength=%u SS=%u voicePL=%d textPL=%d headMove=%d gunLaser=%d",unsigned(action),int(ok),int(o.nis),o.nisPercent,o.supersample,int(o.polishVoice),int(o.polishText),int(o.headRelativeMovement),int(o.weaponLaser));
 }
