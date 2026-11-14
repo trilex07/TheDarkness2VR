@@ -60,3 +60,27 @@ Select-String -LiteralPath $log -Pattern '\[Startup\]|\[EffectiveConfig\]|\[XRSt
 | `first game layer submitted` | Ask for actual per-eye menu/world visibility before marking acceptance. |
 
 Sources: production `src/image_present_runtime.inl` (`ImagePresentBefore`), `src/d3d9.cpp` (`InitXR`, `VrFrame`, `ApplyBoundaryDecision` and end-frame path), [public audit handoff](HANDOFF-darkness-public-audit-20261114.md), and [E6B8 follow-up at 0dbfbdbe](https://github.com/trilex07/TheDarkness2VR/blob/0dbfbdbe/docs/agent-workflow/handoffs/HANDOFF-headset-followups-20261110.md). No new Steam launch, source/installed binary changes or headset test took place in phase 0/1.
+
+## Offline deliverables and next physical check
+
+- P1 Main menu: separate source branch `codex/darkness-main-menu-20261114`
+  based on the exact public runtime. The configuration is off by default;
+  enable only for a planned Main-menu check. The patch does not add cursor
+  ownership to Options or Pause. See that branch's handoff for its DLL identity
+  and fixture details. Neither the patch nor diagnostics shipped to 1.1.1.
+- P0 support: installer `2a4ec38` on `codex/darkness-local-diagnostics-20261114`
+  adds an explicit local, curated startup report (109 Core tests, 8 WPF layouts).
+  It still needs a fresh report from an affected player, and is not itself an XR fix.
+- Historical phase 3A visual appender: 49,455 assertions rerun from
+  `0dbfbdbe` with appender/test files identical to `75e245ca`. This does not
+  verify the current public line or a Pause click. Phase 3B still needs a
+  same-frame join of the visible native pause movie and that instance's input.
+- Historical phase 4 shot witness: 698 checks rerun from `bb90f327`. Existing
+  diagnostic tests are sound at this scope; the real shot/render join, horizon
+  and ladder remain open. No gameplay or performance patch applied.
+
+Once the headset is available, do one manual baseline check followed by one
+off/on Main candidate check against the suitable exact profile and rollback.
+Verify OPTIONS highlight in both eyes, one R2 action, ordinary pad/mouse,
+miss/hold and focus-loss/held-trigger refusal, a fresh press after release, and
+Continue into the world. Leave Pause unrouted until independently proven.
