@@ -10,6 +10,7 @@
 #include <openxr/openxr_platform.h>
 #include <algorithm>
 #include <vector>
+#include <string>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -81,9 +82,15 @@ static BOOL CheckedDelete(HGDIOBJ object){
     return result;
 }
 static BOOL CheckedDeleteDC(HDC dc){const auto result=DeleteDC(dc);CHECK(result);return result;}
+static std::vector<std::wstring> drawnText;
+static BOOL CheckedTextOut(HDC dc,int x,int y,LPCWSTR text,int length){
+    drawnText.emplace_back(text,length);return TextOutW(dc,x,y,text,length);
+}
+#define TextOutW CheckedTextOut
 #define DeleteObject CheckedDelete
 #define DeleteDC CheckedDeleteDC
 #include "../src/vr_settings_renderer.inl"
+#undef TextOutW
 #undef DeleteObject
 #undef DeleteDC
 static void Reset(){
@@ -181,6 +188,19 @@ int main(){
     Reset();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
     destroyResult=XR_ERROR_RUNTIME_FAILURE;g_vrSettingsRenderer.Reset();CHECK(g_vrSettingsRenderer.chain!=XR_NULL_HANDLE);
     destroyResult=XR_SUCCESS;g_vrSettingsRenderer.Reset();CHECK(!g_vrSettingsRenderer.chain);
+    // Exercise actual TextOut calls for every page and language, including errors.
+    for(bool polish:{false,true})for(unsigned page=0;page<3;++page) {
+        Reset();auto& o=g_vrSettings.Options();o.polishText=polish;o.page=page;++o.revision;
+        drawnText.clear();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+        auto has=[&](const wchar_t* label){return std::find(drawnText.begin(),drawnText.end(),label)!=drawnText.end();};
+        CHECK(has(polish?L"Obraz":L"Video"));CHECK(has(polish?L"Sterowanie":L"Controls"));
+        CHECK(has(polish?L"Zamknij":L"Close"));CHECK(!has(polish?L"Close":L"Zamknij"));
+        if(page==1)CHECK(has(polish?L"[x] Polski tekst gry i menu VR":L"[ ] Polish game text and VR menu"));
+        if(!polish)for(const auto& text:drawnText)for(wchar_t c:text)CHECK(c<128);
+        o.failed=true;++o.revision;drawnText.clear();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+        CHECK(has(polish?L"B\u0142\u0105d zapisu ustawie\u0144":L"Could not save/apply settings"));
+        o.failed=false;
+    }
     // Repeated opens/stops must release GDI handles, without a GPU/runtime.
     for(unsigned i=0;i<30;++i){Reset();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);}
     ReleaseVrSettingsRenderer();

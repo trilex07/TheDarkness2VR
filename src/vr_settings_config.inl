@@ -15,8 +15,8 @@ static void LoadVrPreferences(const char* ini) {
         unsigned((g_foveatedSharpen?g_foveaSharpness:g_nisSharpness)*100+.5f),ini),0u,100u);
     o.supersample=GetPrivateProfileIntA("VRSettings","Supersampling",100,ini);
     if(o.supersample!=100 && o.supersample!=125 && o.supersample!=150)o.supersample=100;
-    o.polishVoice=GetPrivateProfileIntA("VRSettings","PolishVoice",1,ini)!=0;
-    o.polishText=GetPrivateProfileIntA("VRSettings","PolishText",1,ini)!=0;
+    o.polishVoice=GetPrivateProfileIntA("VRSettings","PolishVoice",0,ini)!=0;
+    o.polishText=GetPrivateProfileIntA("VRSettings","PolishText",0,ini)!=0;
 #ifdef D2VR_MATCHED_CAPTURE
     const unsigned width=unsigned(g_vrBaseWidth)*o.supersample/100;
     const unsigned height=unsigned(g_vrBaseHeight)*o.supersample/100;
@@ -28,8 +28,8 @@ static void LoadVrPreferences(const char* ini) {
 #endif
     g_nisMode=o.nis?g_vrNisMode:0;
     g_nisSharpness=g_foveaSharpness=o.nisPercent*.01f;
-    o.pending=(GetPrivateProfileIntA("VRSettings","AppliedPolishVoice",1,ini)!=0)!=o.polishVoice ||
-        (GetPrivateProfileIntA("VRSettings","AppliedPolishText",1,ini)!=0)!=o.polishText;
+    o.pending=(GetPrivateProfileIntA("VRSettings","AppliedPolishVoice",0,ini)!=0)!=o.polishVoice ||
+        (GetPrivateProfileIntA("VRSettings","AppliedPolishText",0,ini)!=0)!=o.polishText;
     o.failed=o.failed || GetPrivateProfileIntA("VRSettings","LanguageError",0,ini)!=0;
     ++o.revision;
     Log("[VRSettings] loaded NIS=%d strength=%u SS=%u source=%dx%d voicePL=%d textPL=%d",

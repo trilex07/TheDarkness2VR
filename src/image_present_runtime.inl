@@ -36,6 +36,13 @@ static void ImagePresentBefore(IDirect3DSwapChain9* sc,uintptr_t caller,bool qua
     state.adaptiveSerial=BeginAdaptivePresentation();
     g_presentCaller=caller;
     const auto decision=g_frameBoundary.OnEvent(MakePipelineEvent(d2vr_frame::EventType::SwapChainPresent));
+    static bool loggedDecision=false;
+    if(!loggedDecision) {
+        loggedDecision=true;
+        Log("[XRStartup] readyPresent boundaryRequest=%d reason=%s policy=%d submit=%d stereo=%d disabled=%d",
+            int(decision.requestVrFrame),decision.reason?decision.reason:"none",g_frameBoundaryPolicy,
+            g_submitMode,g_stereoMode,g_disableOpenXR);
+    }
     {
         d2vr_cpu_sync::Scope cpuBoundary(d2vr_cpu_sync::BoundaryWork);
         ApplyBoundaryDecision(state.owner,decision);

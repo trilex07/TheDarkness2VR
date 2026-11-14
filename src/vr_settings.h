@@ -42,7 +42,7 @@ inline unsigned NextSupersample(unsigned width,unsigned height,unsigned current)
 }
 struct Preferences {
     unsigned page=0,nisPercent=20,supersample=100;
-    bool nis=true,polishVoice=true,polishText=true,pending=false,failed=false;
+    bool nis=true,polishVoice=false,polishText=false,pending=false,failed=false;
     uint64_t revision=1;
 };
 inline Rect TabRect(unsigned i){return {24+int(i)*200,66,192,42};}

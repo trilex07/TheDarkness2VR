@@ -81,6 +81,7 @@ struct VrSettingsRenderer {
     bool Draw() {
         using namespace d2vr_settings;
         const auto& options=g_vrSettings.Options();
+        auto tr=[&](const wchar_t* pl,const wchar_t* en){return options.polishText?pl:en;};
         const auto& pointer=g_vrSettings.Pointer();
         const int px=pointer.visible?std::clamp(pointer.hit.x,0,Width-1):-1;
         const int py=pointer.visible?std::clamp(pointer.hit.y,0,Height-1):-1;
@@ -97,28 +98,28 @@ struct VrSettingsRenderer {
             if(!Text(210,24,L"VR settings"))return false;
         } else {
             if(!Text(24,22,L"DARKNESS II VR settings"))return false;
-            const wchar_t* tabs[]={L"Obraz",L"J\u0119zyk",L"Sterowanie"};
+            const wchar_t* tabs[]={tr(L"Obraz",L"Video"),tr(L"J\u0119zyk",L"Language"),tr(L"Sterowanie",L"Controls")};
             for(unsigned i=0;i<3;++i)if(!button(TabRect(i),tabs[i],options.page==i))return false;
             wchar_t label[160]{};
             if(options.page==0) {
-                if(!button(SettingRect(0),options.nis?L"NIS: W\u0141.":L"NIS: WY\u0141."))return false;
-                swprintf_s(label,L"-   Ostro\u015b\u0107 NIS: %u%%                         +",options.nisPercent);
+                if(!button(SettingRect(0),options.nis?tr(L"NIS: W\u0141.",L"NIS: ON"):tr(L"NIS: WY\u0141.",L"NIS: OFF")))return false;
+                swprintf_s(label,tr(L"-   Ostro\u015b\u0107 NIS: %u%%                         +",L"-   NIS sharpness: %u%%                         +"),options.nisPercent);
                 if(!button(SettingRect(1),label))return false;
-                swprintf_s(label,L"Supersampling: %u%%   (kliknij, aby zmieni\u0107)",options.supersample);
+                swprintf_s(label,tr(L"Supersampling: %u%%   (kliknij, aby zmieni\u0107)",L"Supersampling: %u%%   (click to change)"),options.supersample);
                 if(!button(SettingRect(2),label))return false;
             } else if(options.page==1) {
-                if(!button(SettingRect(0),options.polishVoice?L"Dubbing: polski":L"Dubbing: angielski") ||
-                   !button(SettingRect(1),options.polishText?L"Tekst: polski":L"Tekst: angielski") ||
-                   !Text(28,222,L"J\u0119zyk i supersampling: po restarcie gry."))return false;
+                if(!button(SettingRect(0),options.polishVoice?tr(L"[x] Polski dubbing",L"[x] Polish voice"):tr(L"[ ] Polski dubbing",L"[ ] Polish voice")) ||
+                   !button(SettingRect(1),options.polishText?tr(L"[x] Polski tekst gry i menu VR",L"[x] Polish game text and VR menu"):tr(L"[ ] Polski tekst gry i menu VR",L"[ ] Polish game text and VR menu")) ||
+                   !Text(28,222,tr(L"J\u0119zyk i supersampling: po restarcie gry.",L"Game language / supersampling: restart game.")))return false;
             } else {
-                if(!Text(28,120,L"Spust: wybierz    K\u00f3\u0142ko: powr\u00f3t") ||
-                   !Text(28,151,L"2x tr\u00f3jk\u0105t: pauza    K\u00f3\u0142ko (1 s): cel misji") ||
-                   !Text(28,182,L"L3+R3: centrowanie; przytrzymaj: kino / VR") ||
-                   !Text(28,213,L"Ruch: lewa ga\u0142ka    Obr\u00f3t: prawa ga\u0142ka"))return false;
+                if(!Text(28,120,tr(L"Spust: wybierz    K\u00f3\u0142ko: powr\u00f3t",L"Trigger: select    B / Circle: back")) ||
+                   !Text(28,151,tr(L"2x tr\u00f3jk\u0105t: pauza    K\u00f3\u0142ko (1 s): cel misji",L"Triangle twice: pause    Hold Circle (1 s): objective")) ||
+                   !Text(28,182,tr(L"L3+R3: centrowanie; przytrzymaj: kino / VR",L"L3+R3: recenter; hold: cinema / VR")) ||
+                   !Text(28,213,tr(L"Ruch: lewa ga\u0142ka    Obr\u00f3t: prawa ga\u0142ka",L"Move: left stick    Turn: right stick")))return false;
             }
-            if(!Text(24,280,options.failed?L"B\u0142\u0105d zapisu ustawie\u0144":
-                options.pending?L"Zapisano. Uruchom gr\u0119 ponownie.":L"INSERT: VR settings") ||
-               !button(CloseRect,L"Zamknij"))return false;
+            if(!Text(24,280,options.failed?tr(L"B\u0142\u0105d zapisu ustawie\u0144",L"Could not save/apply settings"):
+                options.pending?tr(L"Zapisano. Uruchom gr\u0119 ponownie.",L"Saved. Restart the game."):L"INSERT: VR settings") ||
+               !button(CloseRect,tr(L"Zamknij",L"Close")))return false;
         }
         if(pointer.visible && !Fill({std::max(0,px-3),std::max(0,py-3),
            std::min(7,Width-std::max(0,px-3)),std::min(7,Height-std::max(0,py-3))},RGB(80,240,255)))return false;

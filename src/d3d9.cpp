@@ -5670,6 +5670,8 @@ void TryInstallXInputHook() {
 
 // ---------------------------------------------------------------- OpenXR Setup
 bool InitXR() {
+    Log("[XRStartup] initAttempt processBits=%u loaderLoaded=%d",
+        unsigned(sizeof(void*)*8),GetModuleHandleW(L"openxr_loader.dll")!=nullptr);
     // Explicit unattended-lab opt-in. Steam does not forward the invoking
     // shell's environment to a game launched by an already-running client.
     // Configure only this process before the first OpenXR loader call.
@@ -5691,7 +5693,11 @@ bool InitXR() {
         }
     }
 #ifdef D2VR_MATCHED_CAPTURE
-    if(g_imagePreservingPresent && (!g_nativeImageGuard.enabled || !g_imagePresent.Ready() || !g_imagePresent.InPresentation())) return false;
+    if(g_imagePreservingPresent && (!g_nativeImageGuard.enabled || !g_imagePresent.Ready() || !g_imagePresent.InPresentation())) {
+        Log("[XRStartup] initRejected nativeGuard=%d ready=%d inPresent=%d",
+            g_nativeImageGuard.enabled,g_imagePresent.Ready(),g_imagePresent.InPresentation());
+        return false;
+    }
 #endif
     const bool refreshAdvertised=g_displayRefresh.Discover(&xrEnumerateInstanceExtensionProperties);
     const char* exts[] = { XR_KHR_D3D11_ENABLE_EXTENSION_NAME,XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME };
@@ -5717,23 +5723,34 @@ bool InitXR() {
         return false;
     }
 
+    XrInstanceProperties runtime{XR_TYPE_INSTANCE_PROPERTIES};
+    const XrResult propertiesResult=xrGetInstanceProperties(g_xrInstance,&runtime);
+    Log("[XRStartup] instance result=%d runtime=%s propertiesResult=%d",
+        int(r),propertiesResult==XR_SUCCESS?runtime.runtimeName:"unknown",int(propertiesResult));
+
     XrSystemGetInfo sgi{ XR_TYPE_SYSTEM_GET_INFO };
     sgi.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
-    if (XR_FAILED(xrGetSystem(g_xrInstance, &sgi, &g_xrSystem))) {
+    r=xrGetSystem(g_xrInstance, &sgi, &g_xrSystem);
+    Log("[XRStartup] xrGetSystem result=%d",int(r));
+    if (XR_FAILED(r)) {
         Log("xrGetSystem failed â€” no HMD");
         return false;
     }
 
     PFN_xrGetD3D11GraphicsRequirementsKHR pfn = nullptr;
-    xrGetInstanceProcAddr(g_xrInstance, "xrGetD3D11GraphicsRequirementsKHR",
+    r=xrGetInstanceProcAddr(g_xrInstance, "xrGetD3D11GraphicsRequirementsKHR",
                           reinterpret_cast<PFN_xrVoidFunction*>(&pfn));
-    if (!pfn) return false;
+    if (!pfn) {
+        Log("[XRStartup] graphicsRequirementsProc result=%d noFunction=1",int(r));
+        return false;
+    }
     XrGraphicsRequirementsD3D11KHR req{ XR_TYPE_GRAPHICS_REQUIREMENTS_D3D11_KHR };
-    if (XR_FAILED(pfn(g_xrInstance, g_xrSystem, &req))) return false;
+    r=pfn(g_xrInstance, g_xrSystem, &req);
+    if (XR_FAILED(r)) {Log("[XRStartup] graphicsRequirements result=%d",int(r));return false;}
 
     IDXGIFactory1* fac = nullptr;
-    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&fac))))
-        return false;
+    HRESULT graphicsHr=CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&fac));
+    if (FAILED(graphicsHr)) {Log("[XRStartup] CreateDXGIFactory1 hr=%08lX",graphicsHr);return false;}
     IDXGIAdapter1* ad = nullptr;
     IDXGIAdapter1* pick = nullptr;
     for (UINT i = 0; fac->EnumAdapters1(i, &ad) != DXGI_ERROR_NOT_FOUND; ++i) {
@@ -5752,25 +5769,26 @@ bool InitXR() {
         return false;
     }
     D3D_FEATURE_LEVEL fl[] = { D3D_FEATURE_LEVEL_11_0 }, got{};
-    if (FAILED(D3D11CreateDevice(pick, D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+    graphicsHr=D3D11CreateDevice(pick, D3D_DRIVER_TYPE_UNKNOWN, nullptr,
                                  D3D11_CREATE_DEVICE_BGRA_SUPPORT, fl, 1, D3D11_SDK_VERSION,
-                                 &g_dev11, &got, &g_ctx11))) {
-        pick->Release();
-        return false;
-    }
+                                 &g_dev11, &got, &g_ctx11);
     pick->Release();
+    if (FAILED(graphicsHr)) {Log("[XRStartup] D3D11CreateDevice hr=%08lX",graphicsHr);return false;}
 
     XrGraphicsBindingD3D11KHR bind{ XR_TYPE_GRAPHICS_BINDING_D3D11_KHR };
     bind.device = g_dev11;
     XrSessionCreateInfo sci{ XR_TYPE_SESSION_CREATE_INFO };
     sci.next = &bind;
     sci.systemId = g_xrSystem;
-    if (XR_FAILED(xrCreateSession(g_xrInstance, &sci, &g_xrSession))) return false;
+    r=xrCreateSession(g_xrInstance, &sci, &g_xrSession);
+    Log("[XRStartup] xrCreateSession result=%d",int(r));
+    if (XR_FAILED(r)) return false;
 
     XrReferenceSpaceCreateInfo rs{ XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
     rs.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     rs.poseInReferenceSpace.orientation.w = 1.f;
-    if (XR_FAILED(xrCreateReferenceSpace(g_xrSession, &rs, &g_xrSpace))) return false;
+    r=xrCreateReferenceSpace(g_xrSession, &rs, &g_xrSpace);
+    if (XR_FAILED(r)) {Log("[XRStartup] xrCreateReferenceSpace LOCAL result=%d",int(r));return false;}
 
     XrReferenceSpaceCreateInfo viewRs{ XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
     viewRs.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
@@ -5827,7 +5845,9 @@ void PumpXR() {
             if (s->state == XR_SESSION_STATE_READY) {
                 XrSessionBeginInfo bi{ XR_TYPE_SESSION_BEGIN_INFO };
                 bi.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-                if (XR_SUCCEEDED(xrBeginSession(g_xrSession, &bi))) {
+                const XrResult begin=xrBeginSession(g_xrSession, &bi);
+                Log("[XRStartup] xrBeginSession result=%d",int(begin));
+                if (XR_SUCCEEDED(begin)) {
                     g_xrRunning = true;
                     g_steamRefresh.Stop();
                     if(!g_displayRefresh.Start(g_xrInstance,g_xrSession,&xrGetInstanceProcAddr)) {
@@ -6734,6 +6754,17 @@ void SubmitXR(IDirect3DDevice9* dev) {
     }
     if(settingsSubmitted)g_vrSettings.Submitted(endR==XR_SUCCESS);
     AdaptiveStereoSubmitted(endR,havePixels,worldLayerCount);
+    static bool firstEndLogged=false,firstGameLayerLogged=false;
+    if(!firstEndLogged) {
+        firstEndLogged=true;
+        Log("[XRStartup] first xrEndFrame result=%d layers=%u gameLayers=%u sessionState=%d",
+            int(endR),layerCount,worldLayerCount,int(g_xrSessionState));
+    }
+    if(!firstGameLayerLogged && XR_SUCCEEDED(endR) && worldLayerCount) {
+        firstGameLayerLogged=true;
+        Log("[XRStartup] first game layer submitted result=%d gameLayers=%u sessionState=%d",
+            int(endR),worldLayerCount,int(g_xrSessionState));
+    }
 #ifdef D2VR_MATCHED_CAPTURE
     matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1 && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
 #endif
@@ -6797,9 +6828,18 @@ static void BeginTrackedFrame() {
 #endif
         r=xrWaitFrame(g_xrSession, nullptr, &fs);
     }
+    static bool firstWaitLogged=false,firstBeginLogged=false,waitErrorLogged=false,beginErrorLogged=false;
+    if(!firstWaitLogged || (XR_FAILED(r) && !waitErrorLogged)) {
+        firstWaitLogged=true;waitErrorLogged|=XR_FAILED(r);
+        Log("[XRStartup] xrWaitFrame result=%d shouldRender=%d",int(r),int(fs.shouldRender));
+    }
     if (XR_FAILED(r)) { g_haveViews = false; return; }
     r = xrBeginFrame(g_xrSession, nullptr);
-    if (XR_FAILED(r)) { g_haveViews = false; Log("[FrameContext] begin failed %d", (int)r); return; }
+    if(!firstBeginLogged || (XR_FAILED(r) && !beginErrorLogged)) {
+        firstBeginLogged=true;beginErrorLogged|=XR_FAILED(r);
+        Log("[XRStartup] xrBeginFrame result=%d",int(r));
+    }
+    if (XR_FAILED(r)) { g_haveViews = false; return; }
     g_trackedFrame.state = fs;
     g_trackedFrame.open = true;
     ++g_trackedFrame.id;
