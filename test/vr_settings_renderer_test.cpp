@@ -83,7 +83,13 @@ static BOOL CheckedDelete(HGDIOBJ object){
 }
 static BOOL CheckedDeleteDC(HDC dc){const auto result=DeleteDC(dc);CHECK(result);return result;}
 static std::vector<std::wstring> drawnText;
+static bool checkGuideBounds=false;
 static BOOL CheckedTextOut(HDC dc,int x,int y,LPCWSTR text,int length){
+    if(checkGuideBounds) {
+        SIZE size{};CHECK(GetTextExtentPoint32W(dc,text,length,&size));
+        CHECK(x+size.cx<=616&&y+size.cy<=360);
+        if(y>=116&&y<300)CHECK(y+size.cy<=298);
+    }
     drawnText.emplace_back(text,length);return TextOutW(dc,x,y,text,length);
 }
 #define TextOutW CheckedTextOut
@@ -189,11 +195,11 @@ int main(){
     destroyResult=XR_ERROR_RUNTIME_FAILURE;g_vrSettingsRenderer.Reset();CHECK(g_vrSettingsRenderer.chain!=XR_NULL_HANDLE);
     destroyResult=XR_SUCCESS;g_vrSettingsRenderer.Reset();CHECK(!g_vrSettingsRenderer.chain);
     // Exercise actual TextOut calls for every page and language, including errors.
-    for(bool polish:{false,true})for(unsigned page=0;page<3;++page) {
+    for(bool polish:{false,true})for(unsigned page=0;page<2;++page) {
         Reset();auto& o=g_vrSettings.Options();o.polishText=polish;o.page=page;++o.revision;
         drawnText.clear();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
         auto has=[&](const wchar_t* label){return std::find(drawnText.begin(),drawnText.end(),label)!=drawnText.end();};
-        CHECK(has(polish?L"Obraz":L"Video"));CHECK(has(polish?L"Sterowanie":L"Controls"));
+        CHECK(has(polish?L"Obraz":L"Video"));CHECK(has(L"VR Controls"));
         CHECK(has(polish?L"Zamknij":L"Close"));CHECK(!has(polish?L"Close":L"Zamknij"));
         if(page==1)CHECK(has(polish?L"[x] Polski tekst gry i menu VR":L"[ ] Polish game text and VR menu"));
         if(!polish)for(const auto& text:drawnText)for(wchar_t c:text)CHECK(c<128);
@@ -208,5 +214,41 @@ int main(){
     const auto after=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
     std::printf("GDI baseline=%lu after=%lu\n",resources,after);
     CHECK(after==resources);
+    // Both entry buttons share the submitted strip. The guide stays English
+    // even with Polish game text and fits the actual GDI font.
+    {
+        Reset();g_vrSettings.Close();
+        const XrPosef head{{0,0,0,1},{0,1.6f,0}};
+        g_vrSettings.ShowEntry(true,head,(XrSpace)4);
+        drawnText.clear();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+        CHECK(quad.subImage.imageRect.extent.height==d2vr_settings::EntryHeight);
+        CHECK(drawnText==std::vector<std::wstring>({L"VR Settings",L"VR Controls"}));
+        g_vrSettings.Submitted(true);
+        d2vr_menu::Aim a{};a.space=(XrSpace)4;a.menu=a.tracked=true;
+        auto click=[&](int x,int y){
+            const auto& s=g_vrSettings.Surface();
+            a.pose={{0,0,0,1},{float((x+.25)/s.cursor.width-.5)*s.width,
+                s.pose.position.y+float(.5-(y+.25)/s.cursor.height)*s.height,0}};
+            for(float trigger:{0.f,1.f}){
+                ++a.frame;a.time=a.frame/90.;a.trigger=trigger;
+                CHECK(g_vrSettings.InputSettings(a)==d2vr_settings::Action::None);
+            }
+        };
+        click(470,40);CHECK(g_vrSettings.Options().page==2);
+        g_vrSettings.Submitted(true);
+        g_vrSettings.Options().polishText=true;
+        checkGuideBounds=true;
+        for(unsigned family=0;family<2;++family)for(unsigned topic=0;topic<4;++topic){
+            click(100+int(family)*300,34);
+            click(85+int(topic)*150,86);
+            drawnText.clear();CHECK(RenderVrSettings(quad)==VrSettingsRender::Ready);
+            CHECK(drawnText.size()==15);
+            if(topic==0)CHECK(drawnText[10]==(family?L"Objective: hold B (right hand) for 1 second.":
+                L"Objective: hold Circle (right hand) for 1 second."));
+            for(const auto& label:drawnText)for(wchar_t c:label)CHECK(c<128);
+        }
+        checkGuideBounds=false;
+    }
+    ReleaseVrSettingsRenderer();
     std::printf("PASS actual VR settings renderer %u checks\n",checks);
 }

@@ -1,9 +1,11 @@
 #pragma once
 #include "vr_menu_pointer.h"
 #include "adaptive_fps.h"
+#include "vr_controls_guide.h"
 
 namespace d2vr_settings {
 constexpr int Width=640,Height=360;
+constexpr int EntryHeight=80;
 // One layout drives drawing and hit testing. Coordinates belong to the actual
 // compositor quad, never the native game's unknown menu surface.
 struct Rect {
@@ -12,6 +14,10 @@ struct Rect {
 };
 inline Rect ModeRect(unsigned i){return {32+int(i)*192,144,176,56};}
 constexpr Rect CloseRect{480,276,128,48};
+constexpr Rect EntrySettingsRect{24,12,288,56},EntryControlsRect{328,12,288,56};
+constexpr Rect GuideCloseRect{480,300,136,44},GuideSettingsRect{24,300,176,44};
+inline Rect GuideFamilyRect(unsigned i){return {24+int(i)*300,16,292,42};}
+inline Rect GuideTopicRect(unsigned i){return {24+int(i)*150,68,142,38};}
 // Reacquisition must see release before accepting a new toggle edge.
 class ToggleAction {
     bool armed_=false;
@@ -56,12 +62,15 @@ class Panel {
     bool open_=false,presented_=false,lease_=false,entry_=false;
     XrPosef entryHead_{};
     Preferences preferences_;
+    unsigned guideFamily_=0,guideTopic_=0;
     uint64_t identity_=0;
     uint64_t inputFrame_=0;
 public:
     bool Open()const{return open_;}
     bool Visible()const{return open_||entry_;}
     bool Entry()const{return entry_;}
+    unsigned GuideFamily()const{return guideFamily_;}
+    unsigned GuideTopic()const{return guideTopic_;}
     Preferences& Options(){return preferences_;}
     const Preferences& Options()const{return preferences_;}
     void ShowEntry(bool enabled,const XrPosef& head,XrSpace space) {
@@ -70,7 +79,7 @@ public:
         if(entry_ && surface_.space==space)return;
         if(!Toggle(head,space))return;
         entryHead_=head;open_=false;entry_=true;lease_=false;
-        surface_.width=.64f;surface_.height=.08f;surface_.cursor={0,0,Width,80};
+        surface_.width=.64f;surface_.height=.08f;surface_.cursor={0,0,Width,EntryHeight};
         surface_.pose.position.y-=.48f;
     }
     bool Presented()const{return presented_;}
@@ -113,6 +122,7 @@ public:
         surface_.pose.position={head.position.x+float(forward.x/length*1.5),
             head.position.y,head.position.z+float(forward.z/length*1.5)};
         capture_.Reset();navigation_.Reset();pointer_={};inputFrame_=0;
+        preferences_.page=0;++preferences_.revision;
         open_=lease_=true;presented_=false;return true;
     }
     // A panel that failed submission must not retain a clickable surface.
@@ -149,8 +159,24 @@ public:
     }
     Action InputSettings(const d2vr_menu::Aim& aim) {
         if(!InputPointer(aim))return Action::None;
-        if(entry_){Toggle(entryHead_,surface_.space);return Action::None;}
         const auto hit=pointer_.hit;
+        if(entry_) {
+            const bool controls=EntryControlsRect.Contains(hit.x,hit.y);
+            if((controls || EntrySettingsRect.Contains(hit.x,hit.y)) &&
+               Toggle(entryHead_,surface_.space) && controls) preferences_.page=2;
+            return Action::None;
+        }
+        if(preferences_.page==2) {
+            if(GuideCloseRect.Contains(hit.x,hit.y)){Close();return Action::None;}
+            if(GuideSettingsRect.Contains(hit.x,hit.y)){preferences_.page=0;++preferences_.revision;return Action::None;}
+            for(unsigned i=0;i<2;++i)if(GuideFamilyRect(i).Contains(hit.x,hit.y)){
+                guideFamily_=i;++preferences_.revision;return Action::None;
+            }
+            for(unsigned i=0;i<4;++i)if(GuideTopicRect(i).Contains(hit.x,hit.y)){
+                guideTopic_=i;++preferences_.revision;return Action::None;
+            }
+            return Action::None;
+        }
         if(CloseRect.Contains(hit.x,hit.y)){Close();return Action::None;}
         for(unsigned i=0;i<3;++i)if(TabRect(i).Contains(hit.x,hit.y)) {
             preferences_.page=i;++preferences_.revision;return Action::None;

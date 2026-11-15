@@ -12,7 +12,7 @@ static void AimAt(Panel& panel,int x,int y,float trigger=0,bool back=false) {
     const auto& s=panel.Surface();
     aim.frame++;aim.space=space;aim.menu=aim.tracked=true;
     aim.pose={{0,0,0,1},{float((x+.25)/Width-.5)*s.width,
-        head.position.y+float(.5-(y+.25)/Height)*s.height,0}};
+        s.pose.position.y+float(.5-(y+.25)/s.cursor.height)*s.height,0}};
     aim.trigger=trigger;aim.back=back;aim.time=aim.frame/90.;
 }
 int main(){
@@ -86,15 +86,25 @@ int main(){
     CHECK(click(80,135)==Action::Voice);CHECK(click(80,181)==Action::Text);
     CHECK(click(500,85)==Action::None);CHECK(settings.Options().page==2);
     CHECK(click(80,135)==Action::None); // controls are information, not settings
+    CHECK(click(430,36)==Action::None);CHECK(settings.GuideFamily()==1);
+    CHECK(click(390,85)==Action::None);CHECK(settings.GuideTopic()==2);
+    CHECK(click(95,323)==Action::None);CHECK(settings.Options().page==0);
     settings.Close();CHECK(!settings.OwnInput(true));
-    settings.ShowEntry(true,head,space);CHECK(settings.Entry()&&!settings.Open());
-    CHECK(!settings.OwnInput(true));CHECK(settings.Surface().cursor.height==80);
-    settings.Submitted(true);
-    aim={};aim.frame=100;aim.menu=aim.tracked=true;aim.space=space;
-    aim.pose={{0,0,0,1},{0,head.position.y-.48f,0}};
-    CHECK(settings.InputSettings(aim)==Action::None);aim.frame++;aim.trigger=1;
-    CHECK(settings.InputSettings(aim)==Action::None);CHECK(settings.Open()&&!settings.Entry());
-    CHECK(settings.OwnInput(false));settings.Close();settings.ShowEntry(false,head,space);
+    for(bool controls:{false,true}) {
+        settings.ShowEntry(true,head,space);CHECK(settings.Entry()&&!settings.Open());
+        CHECK(!settings.OwnInput(true));CHECK(settings.Surface().cursor.height==EntryHeight);
+        settings.Submitted(true);
+        CHECK(click(320,40)==Action::None);CHECK(settings.Entry()); // gap between buttons
+        CHECK(click(controls?475:160,40)==Action::None);
+        CHECK(settings.Open()&&!settings.Entry()&&settings.Options().page==(controls?2u:0u));
+        CHECK(settings.OwnInput(false));
+        if(controls) {
+            settings.Submitted(true);
+            CHECK(click(530,320)==Action::None);CHECK(!settings.Open());
+        }
+        settings.Close();
+    }
+    settings.ShowEntry(false,head,space);
     CHECK(!settings.Visible());
     CHECK(Neutral(true,0,0,0,0,0,0,0,0,0));
     for(unsigned i=0;i<8;++i){float values[8]{};values[i]=NAN;

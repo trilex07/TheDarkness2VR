@@ -95,10 +95,21 @@ struct VrSettingsRenderer {
                 Text(r.x+12,r.y+8,name);
         };
         if(entry) {
-            if(!Text(210,24,L"VR settings"))return false;
+            if(!button(EntrySettingsRect,L"VR Settings") ||
+               !button(EntryControlsRect,L"VR Controls"))return false;
+        } else if(options.page==2) {
+            const auto family=g_vrSettings.GuideFamily(),topic=g_vrSettings.GuideTopic();
+            for(unsigned i=0;i<2;++i)if(!button(GuideFamilyRect(i),GuideFamilies[i],family==i))return false;
+            for(unsigned i=0;i<4;++i)if(!button(GuideTopicRect(i),GuideTopics[i],topic==i))return false;
+            int y=116;
+            for(const auto& line:GuideLines[topic]) {
+                if(!Text(24,y,line.Label(family)))return false;
+                y+=25;
+            }
+            if(!button(GuideSettingsRect,L"VR Settings") || !button(GuideCloseRect,L"Close"))return false;
         } else {
             if(!Text(24,22,L"DARKNESS II VR settings"))return false;
-            const wchar_t* tabs[]={tr(L"Obraz",L"Video"),tr(L"J\u0119zyk",L"Language"),tr(L"Sterowanie",L"Controls")};
+            const wchar_t* tabs[]={tr(L"Obraz",L"Video"),tr(L"J\u0119zyk",L"Language"),L"VR Controls"};
             for(unsigned i=0;i<3;++i)if(!button(TabRect(i),tabs[i],options.page==i))return false;
             wchar_t label[160]{};
             if(options.page==0) {
@@ -111,11 +122,6 @@ struct VrSettingsRenderer {
                 if(!button(SettingRect(0),options.polishVoice?tr(L"[x] Polski dubbing",L"[x] Polish voice"):tr(L"[ ] Polski dubbing",L"[ ] Polish voice")) ||
                    !button(SettingRect(1),options.polishText?tr(L"[x] Polski tekst gry i menu VR",L"[x] Polish game text and VR menu"):tr(L"[ ] Polski tekst gry i menu VR",L"[ ] Polish game text and VR menu")) ||
                    !Text(28,222,tr(L"J\u0119zyk i supersampling: po restarcie gry.",L"Game language / supersampling: restart game.")))return false;
-            } else {
-                if(!Text(28,120,tr(L"Spust: wybierz    K\u00f3\u0142ko: powr\u00f3t",L"Trigger: select    B / Circle: back")) ||
-                   !Text(28,151,tr(L"2x tr\u00f3jk\u0105t: pauza    K\u00f3\u0142ko (1 s): cel misji",L"Triangle twice: pause    Hold Circle (1 s): objective")) ||
-                   !Text(28,182,tr(L"L3+R3: centrowanie; przytrzymaj: kino / VR",L"L3+R3: recenter; hold: cinema / VR")) ||
-                   !Text(28,213,tr(L"Ruch: lewa ga\u0142ka    Obr\u00f3t: prawa ga\u0142ka",L"Move: left stick    Turn: right stick")))return false;
             }
             if(!Text(24,280,options.failed?tr(L"B\u0142\u0105d zapisu ustawie\u0144",L"Could not save/apply settings"):
                 options.pending?tr(L"Zapisano. Uruchom gr\u0119 ponownie.",L"Saved. Restart the game."):L"INSERT: VR settings") ||
@@ -171,7 +177,7 @@ struct VrSettingsRenderer {
         quad={XR_TYPE_COMPOSITION_LAYER_QUAD};quad.space=s.space;quad.pose=s.pose;
         quad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;quad.size={s.width,s.height};
         quad.subImage.swapchain=chain;
-        quad.subImage.imageRect={{0,0},{d2vr_settings::Width,g_vrSettings.Entry()?80:d2vr_settings::Height}};
+        quad.subImage.imageRect={{0,0},{d2vr_settings::Width,g_vrSettings.Entry()?d2vr_settings::EntryHeight:d2vr_settings::Height}};
         return true;
     }
 };

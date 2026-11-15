@@ -7,7 +7,9 @@ Mono cinema screen / projection + VR controller to XInput mapping.
 VR settings (menu glowne oraz pauza)
 ----------------------------------
   Wybierz dodatkowy przycisk "VR settings" prawym spustem, celujac
-  kontrolerem. Zakladki: Obraz, Jezyk oraz Sterowanie. Kolko zamyka panel;
+  kontrolerem. Obok znajdziesz "VR Controls": angielska instrukcja dla
+  PS VR2 Sense i Meta Quest Touch, dostepna tez z zakladki w ustawieniach.
+  Kolko (Sense) / B (Touch) zamyka panel;
   panel przejmuje wejscie do puszczenia przyciskow, aby nie wybrac opcji gry.
   INSERT otwiera ten sam panel z klawiatury.
   NIS: wlacz/wylacz oraz ostrosc 0-100%, zmiana od razu. Procent oznacza
