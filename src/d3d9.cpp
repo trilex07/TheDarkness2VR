@@ -6,6 +6,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include "movement_stick_range.h"
 #include "shared_reader_fence.h"
 #include <delayimp.h>
 #include <shlobj.h>
@@ -194,6 +195,8 @@ bool g_tentacleBridge = false; // separate, opt-in stock-game action bridge
 bool g_tentacleAimMarker=true,g_tentacleAimVisible=false;
 bool g_nativeLeftAim=false;
 bool g_nativeWeaponPose=false;
+static int g_movementStickOuterPercent=0;
+static bool g_movementStickProbe=false;
 char g_activeIni[MAX_PATH]={}; // absolute INI LoadConfig used; live-read settings
 bool g_weaponWheelEnabled=true;   // [Input] WeaponWheel: hold R3 -> dual weapon wheels
 bool g_eyeTrackingEnabled=true;   // [EyeTracking] Enabled: read PSVR2 Toolkit gaze from the bridge
@@ -941,6 +944,10 @@ void LoadConfig() {
     if(g_stereoTransferMode<0 || g_stereoTransferMode>4) g_stereoTransferMode=0;
     Log("[StereoTransferWorker] requestedMode=%d (startup only; 2=serial MT control; 3=owner waits before handoff; 4=single-owner overlap, native D3D9 flags)",g_stereoTransferMode);
     Log("[SharedReader] lastConsumerFence=%d (0=legacy overwrite-time fence)",(int)g_lastConsumerReaderFence);
+    g_movementStickOuterPercent=trilex::input::ClampOuterPercent(static_cast<int>(
+        GetPrivateProfileIntA("Input","MoveStickOuterDeadzonePercent",0,chosenIni)));
+    g_movementStickProbe=GetPrivateProfileIntA("Diagnostics","MovementStickProbe",0,chosenIni)!=0;
+    Log("[MovementStickRange] outer=%d%% (0=unchanged), probe=%d",g_movementStickOuterPercent,int(g_movementStickProbe));
     g_gestureBridge = GetPrivateProfileIntA("Input", "GestureGamepadBridge", 0, chosenIni) != 0;
     g_adaptiveTriggers = GetPrivateProfileIntA("Input", "AdaptiveTriggers", 1, chosenIni) != 0;
     g_tentacleBridge = GetPrivateProfileIntA("Input", "TentacleGestureBridge", 0, chosenIni) != 0;
@@ -5048,6 +5055,13 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
     ReadFloat(g_actLeftTrig, g_pathHandLeft, &lt);
     ReadFloat(g_actRightTrig, g_pathHandRight, &rt);
 
+    const float rawMoveX=lx,rawMoveY=ly;
+    trilex::input::CalibrateMovementStick(lx,ly,g_movementStickOuterPercent);
+    static trilex::input::MovementStickProbe movementProbe;
+    if(g_movementStickProbe && movementProbe.Observe(rawMoveX,rawMoveY,GetTickCount64()))
+        Log("[MovementStickRange] raw %.3f %.3f mapped %.3f %.3f outer=%d peaks F/B/L/R %.3f %.3f %.3f %.3f",
+            rawMoveX,rawMoveY,lx,ly,g_movementStickOuterPercent,movementProbe.peakForward,
+            movementProbe.peakBack,movementProbe.peakLeft,movementProbe.peakRight);
     XINPUT_GAMEPAD gp{};
     gp.sThumbLX = StickShort(lx);
     gp.sThumbLY = StickShort(ly);

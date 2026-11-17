@@ -20,3 +20,6 @@ __pycache__/
 /tools-local/
 /test-output/simulator-lab-20261103/
 /test-output/combined-scenes-input-20261103/
+
+# Generated movement-stick host tests
+/test/movement_stick_range_test.exe
