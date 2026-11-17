@@ -683,6 +683,7 @@ static bool g_isolatedEyeOutput = false; // opt-in persistent right output; no f
 static d2vr_eye_output::Output g_rightOutput;
 static bool g_pipelineVariantLearning=false; // actual-state sampler; startup-only, default OFF
 static bool g_reuseSharedCaptureColor = false; // startup-only; split eye slots double as pair color backups
+static bool g_stereoTransferTiming = false; // opt-in CPU wall attribution, no synchronization changes
 static int g_stereoTransferMode = 0; // 0 baseline,1 D3D9/11 worker,2 serial MT control,3 owner-wait D3D11 worker,4 single-owner overlap
 static bool g_sharedCaptureRotation=false; // opt-in: alternate fenced input pairs, never eye/frame history
 static bool g_specularFootprint=false; // exact skin shader derivative experiment, default OFF
@@ -915,6 +916,8 @@ void LoadConfig() {
     if(g_replayConstantBatch) Log("[ReplayConstantBatch] enabled: adjacent float4 packets only; capture keeps original calls");
     g_lastConsumerReaderFence = GetPrivateProfileIntA("Render", "LastConsumerReaderFence", 0, chosenIni)!=0;
     g_stereoTransferMode = GetPrivateProfileIntA("Render", "StereoTransferWorker", 0, chosenIni);
+    g_stereoTransferTiming = GetPrivateProfileIntA("Diagnostics", "StereoTransferTiming", 0, chosenIni)!=0;
+    Log("[StereoTransferTiming] enabled=%d; CPU wall producer drain/publish/finish attribution only",int(g_stereoTransferTiming));
     g_sharedCaptureRotation=GetPrivateProfileIntA("Render","SharedCaptureRotation",0,chosenIni)!=0;
     g_sharedReaderSleepUs=GetPrivateProfileIntA("Render","SharedReaderSleepUs",0,chosenIni);
 #ifdef D2VR_MATCHED_CAPTURE
@@ -3600,24 +3603,48 @@ static bool FinishStereoTransfer(d2vr_transfer::Pending& pending,
     // Include residual owner-producer wait in the same join metric as mode 1.
     const auto begin=d2vr_transfer::Job::Clock();
     bool ready=true;
-    if(pending.Staged()) {
+    LONGLONG drainEnd=begin,publishEnd=begin;
+    const bool timed=g_stereoTransferTiming;
+    const bool wasStaged=pending.Staged();
+    if(wasStaged) {
         // Residual only: replay, history and restore already overlapped this
         // flushed event. This is not the mode-3 wait placed before that work.
         if(!DrainOwnerProducer(pending)) return false;
+        if(timed)drainEnd=d2vr_transfer::Job::Clock();
         ready=ArmStereoTransfer(pending,job,capture);
+        if(timed)publishEnd=d2vr_transfer::Job::Clock();
     }
     if(!pending.Active()) return false;
     const bool ok=pending.Finish();
     const auto end=d2vr_transfer::Job::Clock();
+    static double drainMs=0,publishMs=0,finishMs=0,drainPeak=0,publishPeak=0,finishPeak=0;
+    static unsigned timedCount=0,stagedCount=0;
     static unsigned count=0; static double joinMs=0,workerMs=0; static LARGE_INTEGER frequency{};
     if(!frequency.QuadPart) QueryPerformanceFrequency(&frequency);
     if(frequency.QuadPart) {
         joinMs+=(end-begin)*1000.0/frequency.QuadPart;
         workerMs+=(job->end-job->start)*1000.0/frequency.QuadPart;
+        if(timed) {
+            const double scale=1000.0/frequency.QuadPart;
+            const double drain=(drainEnd-begin)*scale;
+            const double publish=(publishEnd-drainEnd)*scale;
+            const double finish=(end-publishEnd)*scale;
+            drainMs+=drain;publishMs+=publish;finishMs+=finish;
+            drainPeak=(std::max)(drainPeak,drain);publishPeak=(std::max)(publishPeak,publish);
+            finishPeak=(std::max)(finishPeak,finish);
+            ++timedCount;if(wasStaged)++stagedCount;
+        }
     }
     if(++count==240 || !ok || !ready) {
         Log("[StereoTransferWorker] jobs=%u workerTid=%lu mainJoinMean=%.3fms workerMean=%.3fms ok=%d hr=0x%08lX; overlapping scopes, not additive",
             count,job->thread,joinMs/count,workerMs/count,int(ok && ready),job->result);
+        if(timedCount) {
+            Log("[StereoTransferTiming] jobs=%u staged=%u producerDrain=%.3f/%.3f publish=%.3f/%.3f workerFinish=%.3f/%.3f ms mean/peak; partitions mainJoin per job; workerMean overlaps, NOT additive; no GPU Busy claim",
+                timedCount,stagedCount,drainMs/timedCount,drainPeak,publishMs/timedCount,publishPeak,
+                finishMs/timedCount,finishPeak);
+            timedCount=stagedCount=0;
+            drainMs=publishMs=finishMs=drainPeak=publishPeak=finishPeak=0;
+        }
         count=0; joinMs=workerMs=0;
     }
     return ok && ready;
