@@ -199,3 +199,13 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   its mapping. The later ladder climb/dismount and villa highlights remain
   open. The simulator run closed normally with verified restoration of the
   original DLL, INIs, saves and protected Steam/OpenXR state.
+- The next diagnostic is separately built in
+  `C:/Users/Trilex/Darkness2VR-grab-diagnosis-20261128`, detached commit
+  `d8372669`, DLL SHA-256
+  `4271BE0B23B710B2A8B4A4088072CAFF8EBD8DC1F3FAE65610E787D37607C2F2`.
+  `LeftGrabRayWitness=1` logs the exact native getter input/result and any
+  same-frame native render view/projection submission during left squeeze.
+  It preserves target selection, movement and gameplay. The private
+  `session.py left-grab-witness` preset stages only that flag on the existing
+  profile. The x86 build passed. The exact cylinder acquisition on this
+  diagnostic remains untested.
