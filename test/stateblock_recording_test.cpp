@@ -34,6 +34,12 @@ int main(){
     CHECK(begins==3000 && ends==2000 && patches==1000);
     d2vr_stateblock::Began(device,S_OK);d2vr_stateblock::Ended(other,S_OK);
     CHECK(d2vr_stateblock::Active(device));
+    CHECK(!d2vr_stateblock::Restoring(device));
+    {
+        d2vr_stateblock::InternalRestore snapshot(device);
+        CHECK(d2vr_stateblock::Restoring(device) && !d2vr_stateblock::Restoring(other));
+    }
+    CHECK(!d2vr_stateblock::Restoring(device) && d2vr_stateblock::Active(device));
     d2vr_stateblock::Ended(device,D3DERR_DEVICELOST);CHECK(d2vr_stateblock::Active(device));
     d2vr_stateblock::Ended(device,S_OK);CHECK(!d2vr_stateblock::Active(device));
     d2vr_submission::requested=true;d2vr_submission::gate.Configure(true);

@@ -416,7 +416,7 @@ static const char* SaveIntzDepth(IDirect3DDevice9* dev,IDirect3DBaseTexture9* so
             const bool beforeOk=SUCCEEDED(dev->GetPixelShaderConstantF(0,beforePs,224)) &&
                 SUCCEEDED(dev->GetVertexShaderConstantF(0,beforeVs,vsCount));
             const auto check=[&](HRESULT result){if(FAILED(result) && SUCCEEDED(hr))hr=result;};
-            check(dev->SetDepthStencilSurface(nullptr));
+            check(g_origSetDepthStencilSurface(dev,nullptr));
             for(DWORD i=1;i<saved.targetCount;++i)check(d2vr_replay::g_orig.SetRenderTarget(dev,i,nullptr));
             check(d2vr_replay::g_orig.SetRenderTarget(dev,0,target));
             D3DVIEWPORT9 viewport{0,0,desc.Width,desc.Height,0,1};

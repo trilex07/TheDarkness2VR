@@ -2742,6 +2742,7 @@ static void CaptureIntzDepthToD11(IDirect3DDevice9* dev) {
 }
 
 HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurface(IDirect3DDevice9* dev, IDirect3DSurface9* pNewZStencil) {
+    if(d2vr_stateblock::Restoring(dev))return g_origSetDepthStencilSurface(dev,pNewZStencil);
     // Publish only accepted binds, as the VS/PS hooks do. A rejected native
     // bind leaves the live resource unchanged and must not become a successful
     // later replay bind or replace the observed hardware-depth texture.

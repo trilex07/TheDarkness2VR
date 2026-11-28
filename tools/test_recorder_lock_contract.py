@@ -25,6 +25,10 @@ need("EyeParamsRef(0))) {" in replay, "PS constant hook must not copy StereoPara
 build = d3d9[d3d9.index("static d2vr_replay::StereoParams MakeEyeParams(int eye) {"):][:900]
 need("g_frameEyeParamsValid ? g_frameEyeParams[eye ? 1:0] : BuildEyeParams(eye)" in build, "MakeEyeParams unchanged")
 need("built[e]=BuildEyeParams(e);" in build, "EyeParamsRef must rebuild identically when no frame cache")
+target = replay.split("static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(", 1)[1].split("static HRESULT", 1)[0]
+guard = "if(d2vr_stateblock::Restoring(dev))return g_orig.SetRenderTarget(dev,idx,s);"
+need(guard in target and target.index(guard) < target.index("d2vr_record_sync::NativeMutation()"),
+     "paired depth snapshot restoration must bypass the external replay mutation gate")
 if fails:
     print("\n".join("FAIL: " + f for f in fails)); sys.exit(1)
 print("recorder lock / eye params contract: ok")

@@ -1483,6 +1483,8 @@ typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateSurface)(IDirect3DDevice9*, IDirect
 typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateTexture)(IDirect3DDevice9*, IDirect3DBaseTexture9*, IDirect3DBaseTexture9*);
 
 static HRESULT STDMETHODCALLTYPE Hook_SetRenderTarget(IDirect3DDevice9* dev, DWORD idx, IDirect3DSurface9* s) {
+    // A depth capture restores the same snapshot before resuming replay.
+    if(d2vr_stateblock::Restoring(dev))return g_orig.SetRenderTarget(dev,idx,s);
     d2vr_record_sync::NativeMutation();
     if(idx==0) InvalidateShadowAtlasPass();
     if (d2vr_trace::g_enabled) {

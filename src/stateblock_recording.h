@@ -16,8 +16,11 @@ public:
     ~InternalRestore(){restoringDevice=previous_;}
     InternalRestore(const InternalRestore&)=delete;
 };
+inline bool Restoring(const void* device) {
+    return device && restoringDevice==device;
+}
 inline bool Active(const void* device) {
-    return device && (restoringDevice==device || recordingDevice.load(std::memory_order_acquire)==device);
+    return Restoring(device) || (device && recordingDevice.load(std::memory_order_acquire)==device);
 }
 inline void Began(const void* device,long result) {
     if(result>=0)recordingDevice.store(device,std::memory_order_release);
