@@ -39,3 +39,10 @@ candidate has not been installed. In the next lab session capture the exact
 Villa consumer and its fog multiplier in both eyes at the elevator and in the
 lobby, then compare the reported highlight while moving the headset. The
 separate Villa shadow measurement remains open.
+
+At the elevator the retained shadow frame 10118 had three `C4D1FB10`
+draws per eye. Ordinal zero gave exactly unity at all 22,227,532 valid
+samples across both eyes. After moving into the lobby, frame 13298 had
+just one draw per eye, so requesting ordinal one could not capture anything.
+Request ordinals one and two from the elevator before moving. Details are
+in `chapter-private-map-villa/villa-shadow-ordinal-analysis.json`.
