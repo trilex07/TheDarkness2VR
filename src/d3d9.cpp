@@ -1265,7 +1265,6 @@ void RequestRecenter(const char* source) {
     RecordRecenterDiagnostic(source);
     RequestNativeCameraLevel();
     ResetNativeAim();
-    g_headGeometryReferenceValid = false;
     CaptureClickRecenterReference();
     g_lastWorldHeadContextValid = false;
     g_recenterHeadLock = true;
@@ -1856,6 +1855,8 @@ static float g_headDeltaView[16]{};
 static bool g_headDeltaValid=false;
 static bool CameraStabilizerDelta(float out[16]);
 static XrPosef g_headGeometryReference{};
+static XrPosef g_clickHeadGeometryReference{};
+static bool g_clickHeadGeometryReferenceValid=false;
 static void UpdateHeadGeometry(const XrPosef& head);
 
 static XrVector3f RotVec(const XrQuaternionf& q, float x, float y, float z) {
@@ -2093,18 +2094,30 @@ static void UpdateHeadGeometry(const XrPosef& head) {
 }
 
 static void CaptureClickRecenterReference() {
+    g_clickHeadGeometryReferenceValid=false;
     const auto tracked=XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
     if(!g_trackedFrame.open || !g_headGeometry || !g_haveViews || !g_in3DGameplayMode ||
        (g_trackedFrame.flags & tracked)!=tracked) return;
     const auto head=HeadCenterPose(g_eyePose[0],g_eyePose[1]);
     const float yaw=ComputeHorizontalYaw(head.orientation);
-    g_headGeometryReference=head;
-    g_headGeometryReference.orientation={0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)};
-    g_headGeometryReferenceValid=true;
-    // Keep this pair's already frozen eye matrices. Only the next frame uses
-    // the new reference, but moving/removing the HMD cannot change its origin.
-    Log("[HeadGeometry] LEVEL reference latched on recenter click frame=%llu position=(%.4f,%.4f,%.4f) yaw=%.2fdeg",
+    g_clickHeadGeometryReference=head;
+    g_clickHeadGeometryReference.orientation={0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)};
+    g_clickHeadGeometryReferenceValid=true;
+    Log("[HeadGeometry] LEVEL reference queued on recenter click frame=%llu position=(%.4f,%.4f,%.4f) yaw=%.2fdeg",
         (unsigned long long)g_trackedFrame.id,head.position.x,head.position.y,head.position.z,yaw*57.29578f);
+}
+
+static void ApplyClickRecenterReference() {
+    // The open frame's eye matrices and controller rays share one reference.
+    // Install the click pose only when beginning the next tracked frame.
+    g_headGeometryReferenceValid=g_clickHeadGeometryReferenceValid;
+    if(g_headGeometryReferenceValid)g_headGeometryReference=g_clickHeadGeometryReference;
+    g_clickHeadGeometryReferenceValid=false;
+}
+
+static void InvalidateHeadGeometryReference() {
+    g_headGeometryReferenceValid=false;
+    g_clickHeadGeometryReferenceValid=false;
 }
 
 // Builds the per-eye transform parameters. Eye sign: left eye positive shift by default.
@@ -5979,6 +5992,7 @@ void PumpXR() {
                 g_displayRefresh.Stop();
                 g_steamRefresh.Stop();
                 g_trackedFrame.open=false;
+                InvalidateHeadGeometryReference();
                 PublishXrPad(nullptr);
                 for(auto& hand:g_hands) { hand.valid=hand.gripValid=hand.aimValid=false; hand.motion.valid=false; }
             }
@@ -5993,7 +6007,7 @@ void PumpXR() {
             g_vrSettings.Close();
             g_vrSettingsToggle.Update(false,false);
             g_vrRefValid=false; g_anchorValid=false; g_cinematicScreenValid=false; g_lockedHeadValid=false;
-            g_headGeometryReferenceValid=false; ResetPoseInput();
+            InvalidateHeadGeometryReference(); ResetPoseInput();
             g_lastWorldHeadContextValid=false;
             g_recenterChord={};g_triangleRecenter={};g_objectiveButton={};
             for(auto& hand:g_hands) hand.motion.valid=false;
@@ -6391,7 +6405,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
     const bool wasWorldActive=g_in3DGameplayMode;
     g_in3DGameplayMode=g_worldActivity.Update(g_had3DCameraThisFrame,GetTickCount64()*.001);
     if(g_in3DGameplayMode!=wasWorldActive) {
-        g_vrRefValid=false; g_lockedHeadValid=false; g_headGeometryReferenceValid=false;
+        g_vrRefValid=false; g_lockedHeadValid=false; InvalidateHeadGeometryReference();
         ResetPoseInput();
         Log("[WorldActivity] active=%d (render heuristic; native gameplay/menu state unverified)",(int)g_in3DGameplayMode);
     }
@@ -6457,7 +6471,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
         if(cinemaMode!=previousCinema) {
             Log("[CinematicTheater] mode=%u frame=%llu native=%d video=%d presentedVideo=%d",unsigned(cinemaMode),
                 g_trackedFrame.id,int(NativeCinematicPlaying()),int(decoderActive),int(presentedVideo));
-            g_headGeometryReferenceValid=false;g_headLookReset=true;
+            InvalidateHeadGeometryReference();g_headLookReset=true;
             previousCinema=cinemaMode;
         }
         const bool cinema=cinemaMode!=d2vr_cinema::Mode::Gameplay;
@@ -6947,7 +6961,11 @@ static void BeginTrackedFrame() {
     d2vr_cpu_sync::timing.MarkFrame(g_trackedFrame.id);
 #endif
     g_trackedFrame.startedMs = GetTickCount64();
-    if(g_recenterHeadLock) { g_lockedHeadValid=false; g_recenterHeadLock=false; }
+    if(g_recenterHeadLock) {
+        g_lockedHeadValid=false;
+        ApplyClickRecenterReference();
+        g_recenterHeadLock=false;
+    }
     XrView views[2] = {{ XR_TYPE_VIEW }, { XR_TYPE_VIEW }};
     XrViewLocateInfo li{ XR_TYPE_VIEW_LOCATE_INFO };
     li.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
