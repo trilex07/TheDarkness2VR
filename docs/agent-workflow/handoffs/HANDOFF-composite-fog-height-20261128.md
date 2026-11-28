@@ -46,3 +46,40 @@ samples across both eyes. After moving into the lobby, frame 13298 had
 just one draw per eye, so requesting ordinal one could not capture anything.
 Request ordinals one and two from the elevator before moving. Details are
 in `chapter-private-map-villa/villa-shadow-ordinal-analysis.json`.
+
+## Villa runtime comparison
+
+The private `chapter-private-map-villa-fog` run loaded `PokerHub.level` with
+the exact candidate `5D962CEF`. Both eyes captured the original sampler 2
+depth and the exact corrected composite bytecode, shader `FB479D02` with
+SHA-256 `2DB8BE720362CA81D1890378AD2A442CA8A1C34C1932D223C114D91F6C43DC4A`.
+The effect remained enabled. The actual depth captures and independently
+disassembled shader support these reconstruction results:
+
+- Elevator frame 6488, 128,534 matched samples. The median error against
+  independently reconstructed height was 0.0638751 with scaled x/y
+  and 0.00009874 with unscaled x/y.
+- Foyer frame 12045, 129,699 matches. The corresponding values were
+  0.0632917 and 0.00035235.
+- Shifted-head corridor frame 15841, 129,490 matches. The values were
+  0.0630266 and 0.00023832.
+
+The candidate was viewed at the elevator, in the foyer and in the brighter
+window corridor. The captures establish the draw pair and shader bytecode.
+They did not record the live c223 register or provide physical headset
+acceptance.
+
+Shadow ordinals 1 and 2 at the elevator (frames 8804 and 9017) and
+ordinal 0 in the foyer and window corridor (12139 and 15586) all produced
+complete draw pairs. The shadow audit found no change in the selected
+multiply-blended target. A separate count checked each of the four target
+channels in each eye and also found zero changed valid samples. Choose a
+different Villa light with a measurable mask before making any further
+projection change for this issue.
+
+Representative `villa-drawing-room-light.jpg` SHA-256
+`5AD4CAE09DBDBB25A0A9AD50959E03C8CBF322042E1F0F741627CA85A93622F3`.
+The private evidence includes the three height audits and the full capture
+inventory `retained-captures.json`. The seven completed captures were moved
+out of TEMP and all files rechecked by SHA-256. The private process closed
+normally, verified the original Steam paths and released the lab.
