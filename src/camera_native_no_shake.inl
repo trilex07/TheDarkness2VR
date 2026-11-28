@@ -57,8 +57,12 @@ static void __fastcall CameraSourceDispatchBridge(void* self,void*,void* cameraR
     __try {
         // Preserve alternate/cinematic camera branches. The owned dispatch keeps
         // all their native calls; only ordinary FP camera-channel composition differs.
+        uint32_t traversalMode=0;
         admit=CameraSourceOwnerMatches(DWORD(reinterpret_cast<uintptr_t>(self)),avatar) &&
-            !owner[0x10AF] && !owner[0x8A4] && !owner[0x10AD] && !owner[0x10AE];
+            !owner[0x10AF] && !owner[0x8A4] && !owner[0x10AD] && !owner[0x10AE] &&
+            CameraSourceRead(avatar+0x540,traversalMode) && traversalMode!=6;
+        // D2LadderAction ends the climb using this owner's animated transform.
+        // Keep stock composition until the engine has completed the dismount.
     } __except(EXCEPTION_EXECUTE_HANDLER){}
     if(!admit) {
         g_cameraSourceOriginalDispatch(self,cameraReference);return;
