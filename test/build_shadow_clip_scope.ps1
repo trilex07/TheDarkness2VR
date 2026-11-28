@@ -28,6 +28,7 @@ struct IDirect3DDevice9 {bool fail=false;float current[4]={7,8,9,10};int reads=0
  HRESULT GetPixelShaderConstantF(unsigned r,float* out,unsigned n){assert(r==223&&n==1);++reads;if(fail)return E_FAIL;memcpy(out,current,16);return S_OK;}};
 bool g_shadowClipCoordinates=true,g_noInvProj=false;
 struct VsInfo {unsigned hash;};
+const VsInfo* g_activeVs=nullptr;
 int g_skipLightVsShift=0;
 #define XR_SUCCEEDED(result) ((result)>=0)
 using XrResult=int;
@@ -42,7 +43,7 @@ ACTUAL_CAPTURE_FINISH
 }
 int g_replayEye=-1,g_projectionFix=3,g_lightingPreset=0,g_activePsInverse=27;
 const void* g_boundPs=nullptr;
-struct Metadata {bool shadowClip=true;} metadata;
+struct Metadata {bool shadowClip=true,compositeHeightCoordinates=false;} metadata;
 struct Bank {Metadata Lookup(const void*){return metadata;}} g_pixelShaders;
 struct Params {bool headGeometry=true;int mode=0;} params;
 Params MakeEyeParams(int){return params;}
@@ -90,7 +91,13 @@ int main(){IDirect3DDevice9 d;
  int writes=g_orig.writes;metadata.shadowClip=false;{ShadowClipScope s(&d);}assert(writes==g_orig.writes);
  metadata.shadowClip=true;g_shadowClipCoordinates=false;{ShadowClipScope s(&d);}assert(writes==g_orig.writes);
  g_shadowClipCoordinates=true;d.fail=true;{ShadowClipScope s(&d);}assert(writes==g_orig.writes);
- puts("PASS shadow scope, both-eye light-volume gate and matched capture with ammo/aim overlays");
+ d.fail=false;metadata.shadowClip=false;metadata.compositeHeightCoordinates=true;
+ const VsInfo composite{0x24E3903D};g_activeVs=&composite;g_activePsInverse=10;
+ for(int eye=-1;eye<=1;++eye){g_replayEye=eye;run(d,1);params.headGeometry=false;run(d,0);params.headGeometry=true;}
+ g_activeVs=&other;run(d,0);g_activeVs=nullptr;run(d,0);g_activeVs=&composite;
+ g_activePsInverse=27;run(d,0);g_activePsInverse=10;
+ g_noInvProj=true;run(d,0);g_noInvProj=false;g_lightingPreset=4;run(d,0);
+ puts("PASS shadow and fog selectors, both-eye light-volume gate and matched capture with ammo/aim overlays");
 }
 '@
 [IO.File]::WriteAllText((Join-Path $out 'scope.cpp'),$prefix.Replace('ACTUAL_CAPTURE_FINISH',$captureFinish.Value.Trim())+$gate+$src.Substring($start,$end-$start)+$suffix)

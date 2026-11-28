@@ -42,7 +42,7 @@ static void StructuralTests() {
     const size_t fog=FindUniqueInstruction(fixture.data(),fixture.size(),kFog);
     Check(fog<fixture.size(),"blend located at an instruction boundary");
     std::vector<DWORD> result;
-    Check(Build(fixture.data(),fixture.size(),true,true,result)==None && result.empty(),
+    Check(Build(fixture.data(),fixture.size(),true,true,true,result)==None && result.empty(),
         "unknown shader is never accepted by production hash gate");
     auto duplicate=fixture;duplicate.insert(duplicate.end()-1,kFog,kFog+5);
     Check(FindUniqueInstruction(duplicate.data(),duplicate.size(),kFog)==duplicate.size(),"duplicate rejected");
@@ -70,21 +70,28 @@ static void CheckPrivateShader(IDirect3DDevice9* dev,const char* path) {
     const auto saved=original;
     const uint32_t hash=Hash(original.data(),original.size());
     Check(hash==0x33DE98C1 || hash==0x75F88E11,"original complete shader identity");
-    for(unsigned flags=0;flags<4;++flags) {
+    for(unsigned flags=0;flags<8;++flags) {
         std::vector<DWORD> patched;
-        const unsigned expected=(flags&Dof)|((hash==0x33DE98C1)?(flags&HeightFog):0);
-        Check(Build(original.data(),original.size(),(flags&Dof)!=0,(flags&HeightFog)!=0,patched)==expected,"independent production options");
+        unsigned expected=flags&Dof;
+        if(hash==0x33DE98C1) expected|=(flags&HeightFog) ? HeightFog : (flags&HeightCoordinates);
+        Check(Build(original.data(),original.size(),(flags&Dof)!=0,(flags&HeightFog)!=0,
+                    (flags&HeightCoordinates)!=0,patched)==expected,"independent production options");
         Check(original==saved,"original bytecode immutable");
         if(!expected) {Check(patched.empty(),"disabled/unsupported option produces no replacement");continue;}
         if(hash==0x33DE98C1 && flags==Dof)
             Check(Hash(patched.data(),patched.size())==0xA69BDC80,"fog OFF matches captured historical DOF shader exactly");
-        Check(patched.size()==original.size(),"CTAB/token offsets preserved");
+        const size_t inserted=(expected&HeightCoordinates) ? 8 : 0;
+        Check(patched.size()==original.size()+inserted,"only the clip selector adds instructions");
         const size_t dof=FindUniqueInstruction(original.data(),original.size(),kDof);
         const size_t fog=FindUniqueInstruction(original.data(),original.size(),kFog);
         for(size_t i=0;i<original.size();++i) {
             const bool edited=((expected&Dof) && i>=dof && i<dof+5 && i!=dof+1) ||
                               ((expected&HeightFog) && i>=fog && i<fog+5 && i!=fog+1);
-            if(!edited) Check(patched[i]==original[i],"only requested blend tokens change");
+            if(inserted && i==214) {
+                Check(patched[i+inserted]==0x8000000fu,"depth multiplier uses the scoped selector");
+            } else if(!edited) {
+                Check(patched[i+(i>=212 ? inserted : 0)]==original[i],"unrelated shader tokens are identical");
+            }
         }
         IDirect3DPixelShader9* shader=nullptr;
         Check(SUCCEEDED(dev->CreatePixelShader(patched.data(),&shader)),"actual game candidate validated by D3D9 driver");
@@ -93,7 +100,7 @@ static void CheckPrivateShader(IDirect3DDevice9* dev,const char* path) {
     }
     original[original.size()-2]^=1;
     std::vector<DWORD> rejected;
-    Check(Build(original.data(),original.size(),true,true,rejected)==None && rejected.empty(),"mutated whole-shader identity rejected");
+    Check(Build(original.data(),original.size(),true,true,true,rejected)==None && rejected.empty(),"mutated whole-shader identity rejected");
 }
 
 static void PixelTests(IDirect3DDevice9* dev) {

@@ -26,6 +26,7 @@ struct Pixel {
     bool skinnedSpecularEye=false; // captured crane SH-light material, VS1CB7CEE2 c8
     bool auditedMaterialEye=false; // exact SHA; observed pair still required at draw
     bool shadowClip=false; // replacement created successfully; draw owns c223 selector
+    bool compositeHeightCoordinates=false; // exact fog replacement with a scoped c223 selector
 };
 
 // Creation may run on an engine worker while the render thread binds/replays.

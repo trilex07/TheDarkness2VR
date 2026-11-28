@@ -886,13 +886,15 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         originalWords && d2vr_shadow_clip::Build(reinterpret_cast<const uint32_t*>(fn),originalWords+1,shadowClip);
     const unsigned compositePatch = !screenDepthOverride && g_submitMode == 4 && originalWords ?
         d2vr_composite::Build(fn, originalWords + 1,
-            g_disableDepthOfField, g_disableCompositeHeightFog, composite) : 0;
+            g_disableDepthOfField, g_disableCompositeHeightFog,
+            g_nativeStereoHeadGeometry && g_stereoMode==1, composite) : 0;
     const bool fxaaOverride = !screenDepthOverride && !compositePatch && g_disableFxaa &&
         g_submitMode == 4 && originalWords && BuildUnfilteredFxaa(fn, originalWords + 1, sharp);
     HRESULT hr = d2vr_shader_preload::Create(dev,
         outlinePatch ? outline.data() : specularPatch ? specular.data() : compositePatch ? composite.data() :
         fxaaOverride ? sharp.data() : shadowClipPatch ? reinterpret_cast<const DWORD*>(shadowClip.data()) :
         (screenDepthOverride ? replacement : fn), out,g_orig.CreatePixelShader);
+    const bool compositeHeightCreated = (compositePatch & d2vr_composite::HeightCoordinates) && SUCCEEDED(hr);
     if(outlinePatch) {
         Log("[OutlineCoverage] exact E345B150 four subpixel coverage evaluations result=%08X",unsigned(hr));
         if(FAILED(hr))hr=d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
@@ -914,10 +916,12 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         if (compositePatch & d2vr_composite::HeightFog)
             Log("[Composite] height-fog blend bypass hash=%08X result=%08X (bloom/grade retained)",
                 HashBytes(fn, (originalWords + 1)*4), (unsigned)hr);
-        if (FAILED(hr) && (compositePatch & d2vr_composite::HeightFog) && g_disableDepthOfField &&
-            d2vr_composite::Build(fn, originalWords + 1, true, false, composite)) {
+        if (compositePatch & d2vr_composite::HeightCoordinates)
+            Log("[Composite] tracked height-fog clip coordinates hash=33DE98C1 result=%08X", unsigned(hr));
+        if (FAILED(hr) && (compositePatch & (d2vr_composite::HeightFog | d2vr_composite::HeightCoordinates)) &&
+            g_disableDepthOfField && d2vr_composite::Build(fn, originalWords + 1, true, false, false, composite)) {
             hr = d2vr_shader_preload::Create(dev,composite.data(),out,g_orig.CreatePixelShader);
-            Log("[Composite] fog bypass rejected; previous DOF-only shader result=%08X", (unsigned)hr);
+            Log("[Composite] fog replacement rejected; previous DOF-only shader result=%08X", (unsigned)hr);
         }
         if (FAILED(hr)) hr = d2vr_shader_preload::Create(dev,fn,out,g_orig.CreatePixelShader);
     }
@@ -932,6 +936,7 @@ static HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* dev, c
         // after the complete analysis, outside any driver or recorder lock.
         d2vr_shader_metadata::Pixel metadata;
         metadata.shadowClip=shadowClipCreated;
+        metadata.compositeHeightCoordinates=compositeHeightCreated;
         const size_t psWords = SafeShaderTokenCount(fn);
         if (psWords) {
             const uint32_t psHash = HashBytes(fn, (psWords + 1) * 4);
@@ -1772,11 +1777,16 @@ struct ShadowClipScope {
     float original[4]{};
     bool touched=false;
     explicit ShadowClipScope(IDirect3DDevice9* device):dev(device) {
-        if(!g_shadowClipCoordinates || !g_pixelShaders.Lookup(g_boundPs).shadowClip)return;
+        const auto pixel=g_pixelShaders.Lookup(g_boundPs);
+        const bool shadow=g_shadowClipCoordinates && pixel.shadowClip;
+        const bool fog=pixel.compositeHeightCoordinates;
+        if(!shadow && !fog)return;
         if(FAILED(dev->GetPixelShaderConstantF(223,original,1)))return;
         const auto sp=MakeEyeParams(g_replayEye<0?0:g_replayEye);
+        const bool matchingInverse=(shadow && g_activePsInverse==27) ||
+            (fog && g_activePsInverse==10 && g_activeVs && g_activeVs->hash==0x24E3903Du);
         const float selector[4]={sp.headGeometry && sp.mode==0 && (g_projectionFix&2) &&
-            !g_noInvProj && (g_lightingPreset==-1 || g_lightingPreset==0) && g_activePsInverse==27 ? 1.f : 0.f,0,0,0};
+            !g_noInvProj && (g_lightingPreset==-1 || g_lightingPreset==0) && matchingInverse ? 1.f : 0.f,0,0,0};
         d2vr_submission::Invalidate();
         touched=true;
         g_orig.SetPixelShaderConstantF(dev,223,selector,1);
