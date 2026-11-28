@@ -21,25 +21,33 @@ def pair_body():
 class SharedCaptureColorReuse(unittest.TestCase):
     def test_pair_ordering(self):
         b = pair_body()
+        slots = b.index('const unsigned rightCapture=leftCapture+(splitCapture?1u:0u);')
         serial = b.index('const uint64_t pairCaptureSerial = g_sharedCaptureSerial;')
-        left = b.index('StartStereoTransfer(dev,0,leftTransfer,leftJob)')
+        left = b.index('StartStereoTransfer(dev,0,leftTransfer,leftJob,leftCapture)')
+        pump = b.index('PumpStereoProducer(leftTransfer,leftJob,leftCapture)')
         decide = b.index('const bool colorReuse =')
-        backup = b.index('if (!colorReuse && !BackupLiveColor(')
-        seed = b.index('const bool historyOk = SeedRightEyeBackground(')
+        backup = b.index('!colorReuse && !BackupLiveColor(')
+        seed = b.index('SeedRightEyeBackground(dev, liveEnd.targets[0]')
         defer = b.index('g_rightHistoryFromCapture = colorReuse;')
         replay = b.index('d2vr_replay::ReplayStream(dev, 1, sp1)')
-        publish = b.index('bool eye1Ok = FinishRightEyeHistory(')
+        publish = b.index('FinishRightEyeHistory(dev, liveEnd.targets[0]')
         right = b.index('StartStereoTransfer(dev,1,rightTransfer,rightJob,rightCapture)')
         complete = b.index('CompleteRightEyeHistory(dev, liveEnd.targets[0], rightCopy)')
         restore = b.index('dev->StretchRect(liveBackup, nullptr, liveEnd.targets[0]')
         apply_ = b.index('if(!liveEnd.Apply(dev))')
-        self.assertTrue(serial < left < decide < backup < seed < defer < replay < publish < right < complete < restore < apply_)
+        self.assertTrue(slots < serial < left < pump < decide < backup < seed < defer <
+                        replay < publish < right < complete < restore < apply_)
         # Seed must run with the flag cleared, and the flag is cleared before the right capture.
         self.assertLess(b.index('g_rightHistoryFromCapture = false;'), left)
         self.assertLess(b.index('const bool deferredHistory = g_rightHistoryFromCapture && eye1Ok;'), right)
         self.assertIn('splitCapture && eye0Ok', b[decide:backup])
-        self.assertIn('rightCapture == 1', b[right:complete])
-        self.assertIn('d2vr_color_reuse::Unchanged(g_sharedCapture[0].mirror, liveEnd.targets[0], liveBackupSerial)', b[complete:restore])
+        self.assertIn('Mirrors(g_sharedCapture[leftCapture].mirror, liveEnd.targets[0], pairCaptureSerial,',
+                      b[decide:backup])
+        self.assertIn('Mirrors(g_sharedCapture[rightCapture].mirror, liveEnd.targets[0], liveBackupSerial,',
+                      b[right:complete])
+        self.assertIn('rightCopy = g_sharedCapture[rightCapture].surface9;', b[right:complete])
+        self.assertIn('Unchanged(g_sharedCapture[leftCapture].mirror, liveEnd.targets[0], liveBackupSerial)',
+                      b[complete:restore])
 
     def test_capture_certifies_only_successful_copy(self):
         s = (ROOT / 'src/shared_capture.inl').read_text(encoding='utf-8')
