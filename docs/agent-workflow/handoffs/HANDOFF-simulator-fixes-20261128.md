@@ -461,3 +461,29 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   `8.8112e-8`. Private `grab_native_angles_oracle.py` uses Unicorn 2.1.4.
   The result `grab-native-angles-proof.json` SHA-256 is
   `65B0D897886479CED95DE4ECB097C1CBB1E134B011142B2BAAB672432F2D48A3`.
+
+## Isolated chapter selection fixture
+
+- The mutually exclusive runtime lease was occupied when the collision
+  probe launcher reached its wait limit. It did not launch or install the
+  probe. The DLL remains pinned for the same-pose test.
+- A completed PC save fixture is available privately from the
+  [BESen save listing](https://savegame.pro/pc-the-darkness-ii-savegame/).
+  Archive SHA-256
+  `7FF7961832A98E268EDBA9010E74BDC10E3B119DA00596D51A7E16FB2D1B79AB`.
+  The only extracted member is the 15,220-byte `CONTINUE.SAV`, SHA-256
+  `E9826A420436CEA2663F7C56320D2B848F115E09ED190B80561077B8A93070E8`.
+  The archive settings and shortcuts were excluded.
+- `captures/simulator-20261128/chapter_session.py --prepare-only` passed
+  with the main test DLL `247FCC4C`. The launcher sets `USERPROFILE`,
+  `APPDATA` and `LOCALAPPDATA` only for its child. A separate Win32 call
+  to the game's imported `SHGetFolderPathA` resolved both folders inside
+  the private profile. The test fixture is under that profile's account
+  directory. The real player save has never received the fixture.
+- Launch the private chapter fixture with the same guarded lab lease,
+  exact candidate digest, and existing restore workflow. Unlike the Steam
+  URI, the direct child receives the isolated profile. The title PID must
+  match the retained child handle before navigation. The Steam-authorized
+  direct launch and the fixture's chapter menu remain to be established
+  in the simulator. Use `chapter_nav.py` to inspect the title and native
+  menu without automatically choosing Continue.
