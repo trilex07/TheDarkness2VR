@@ -17,11 +17,13 @@ if(([regex]::Matches($src,'const ShadowClipScope shadowClip\(dev\);')).Count -ne
 $out=Join-Path $root 'test-output/edge-shadow-20261104/scope'
 New-Item -ItemType Directory -Force $out|Out-Null
 $prefix=@'
+#define NOMINMAX
 #include <windows.h>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include "vr_input.h"
 struct IDirect3DDevice9 {bool fail=false;float current[4]={7,8,9,10};int reads=0;
  HRESULT GetPixelShaderConstantF(unsigned r,float* out,unsigned n){assert(r==223&&n==1);++reads;if(fail)return E_FAIL;memcpy(out,current,16);return S_OK;}};
 bool g_shadowClipCoordinates=true,g_noInvProj=false;
@@ -54,7 +56,20 @@ bool capture(unsigned worldLayerCount,unsigned weaponLaserLayerCount,unsigned am
  matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount);
  return matched_capture::complete;
 }
+void testCaptureWorldActivity() {
+ d2vr_input::WorldActivity world;
+ assert(!world.Update(true,1.0));
+ assert(!world.Update(true,1.81,.8)); // capture time does not satisfy startup dwell
+ assert(world.Update(true,1.97));
+ assert(world.Update(true,2.90,.9)); // a verified world frame spent 900ms capturing
+ assert(world.Update(true,2.92));   // the following frame also stays in gameplay
+ assert(!world.Update(false,3.50,.5)); // genuine loss of world observations expires
+ assert(!world.Update(true,3.51));
+ assert(world.Update(true,3.70));
+ assert(!world.Update(true,4.40)); // a genuine gap still requires renewed dwell
+}
 int main(){IDirect3DDevice9 d;
+ testCaptureWorldActivity();
  assert(capture(1,2,0,0));
  assert(capture(1,2,2,0));
  assert(!capture(1,2,2,1) && !capture(1,0,0,0,-1));
@@ -79,7 +94,7 @@ $vs=& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 Push-Location $out
 try {
- cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /WX /O2 /MD /std:c++17 scope.cpp /Fe:scope.exe"
+ cmd /c "`"$vc`" x86 && cl /nologo /EHsc /W4 /WX /O2 /MD /std:c++17 /I`"$root/src`" scope.cpp /Fe:scope.exe"
  if($LASTEXITCODE){throw 'Compile failed'}
  & ./scope.exe
  if($LASTEXITCODE){throw 'Scope regression failed'}

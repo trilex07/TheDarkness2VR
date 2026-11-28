@@ -197,6 +197,11 @@ static void FinishSubmission(XrResult result, uint32_t worldLayers, uint32_t lay
     }
     Finish(XR_SUCCEEDED(result) && world && overlays && pair);
 }
+static ULONGLONG captureStartedMs;
+static double WorldObservationDelay(ULONGLONG now) {
+    if (!active || frame!=g_trackedFrame.id || now<captureStartedMs) return 0;
+    return (now-captureStartedMs)*.001;
+}
 static void Begin() {
     if (pendingPresent) return; // do not overwrite a staged capture before its return
     if (active) { Reject("frame expired before complete submission"); Finish(false); }
@@ -237,6 +242,7 @@ static void Begin() {
     char* hashEnd=nullptr;selectedPs=strtoul(selectedHash,&hashEnd,16);
     const bool validSelectedHash=*selectedHash && hashEnd && !*hashEnd && strlen(selectedHash)<=8;
     postInputsSaved=shadowInputsSaved=shadowOutputPending=false;
+    captureStartedMs=now;
     frame=g_trackedFrame.id; active=true; failed=false; headerPending=true; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     skinUploadsSeen=skinUploadsSaved=0;
     pendingPresent=false; presentSerial=g_capturePresent.serial+1; presentEpoch=g_capturePresent.epoch;

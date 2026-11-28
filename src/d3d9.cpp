@@ -6404,7 +6404,13 @@ void SubmitXR(IDirect3DDevice9* dev) {
     const XrFrameState fs = g_trackedFrame.state;
 
     const bool wasWorldActive=g_in3DGameplayMode;
-    g_in3DGameplayMode=g_worldActivity.Update(g_had3DCameraThisFrame,GetTickCount64()*.001);
+    const auto now=GetTickCount64();
+#ifdef D2VR_MATCHED_CAPTURE
+    const double observationDelay=matched_capture::WorldObservationDelay(now);
+#else
+    const double observationDelay=0;
+#endif
+    g_in3DGameplayMode=g_worldActivity.Update(g_had3DCameraThisFrame,now*.001,observationDelay);
     if(g_in3DGameplayMode!=wasWorldActive) {
         g_vrRefValid=false; g_lockedHeadValid=false; InvalidateHeadGeometryReference();
         ResetPoseInput();

@@ -30,7 +30,13 @@ inline Vec3 Difference(Vec3 a, Vec3 b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 struct WorldActivity {
     bool active=false, observing=false;
     double first=0,last=0;
-    bool Update(bool world, double time) {
+    bool Update(bool world, double time, double observationDelay=0) {
+        // An opt-in readback can hold a verified world frame past the timeout.
+        // Move both timestamps so the readback counts toward neither timeout nor dwell.
+        if(observing && world && observationDelay>0 && observationDelay<=time-last) {
+            first+=observationDelay;
+            last+=observationDelay;
+        }
         if(observing && (time<last || time-last>.5)) { observing=false; active=false; }
         if(world) {
             if(!observing) { first=time; observing=true; }
