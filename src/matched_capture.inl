@@ -17,9 +17,13 @@ static uintptr_t sourceIdentities[2];
 static unsigned projectionObserved;
 static std::vector<uintptr_t> geometrySaved;
 // Optional one-frame pass localization. No reads or allocations when disabled.
-static bool passStages, postStagesOnly, postInputsSaved, shadowStagesOnly, shadowInputsSaved;
-static bool shadowOutputPending;
-static unsigned shadowOutputDraw, shadowOutputVs;
+static bool passStages, postStagesOnly, postInputsSaved, shadowStagesOnly, shadowPair;
+struct ShadowStage {
+    bool inputsStarted, outputPending, complete;
+    unsigned seen, draw, vs;
+    uintptr_t target;
+};
+static ShadowStage shadow[2];
 // Explicit one-draw pixel provenance, independent of the shadow-depth experiment.
 static bool selectedDrawOnly, selectedDrawPending, selectedDrawSaved;
 static unsigned selectedPs, selectedOrdinal, selectedSeen, selectedDraw, selectedVs;
@@ -28,6 +32,9 @@ static void ReleaseSelectedTarget() { if(selectedTarget)selectedTarget->Release(
 static IDirect3DSurface9* stageTarget;
 static unsigned stagesSaved, stageLastDraw, stageVs, stagePs;
 static uint64_t stageBytes;
+static uint64_t StageByteLimit() {
+    return (shadowPair ? 512ull : 256ull)*1024*1024;
+}
 static std::unordered_set<uint64_t> shadersSaved;
 static void FlushStage(IDirect3DDevice9* dev);
 static void ReleaseStage() { if(stageTarget) stageTarget->Release(); stageTarget=nullptr; }
@@ -146,6 +153,8 @@ static void Finish(bool submitted) {
     Current();
     ReleaseStage();
     if(selectedDrawOnly && !selectedDrawSaved) Reject("selected pixel-provenance draw not completed");
+    if(shadowPair && (!shadow[0].complete || !shadow[1].complete))
+        Reject("paired shadow draws did not complete");
     ReleaseSelectedTarget();
     if(g_nativeCameraCoverInstalled) {
         if(!g_nativeCameraCoverConfirmed || g_nativeCoveredFrame!=frame || projectionObserved!=3)
@@ -168,7 +177,7 @@ static void Finish(bool submitted) {
     if (meta) {
         fprintf(meta,"{\"kind\":\"hand_skin_upload_summary\",\"frame\":%llu,\"seen\":%u,\"saved\":%u,\"truncated\":%s}\n",
             frame,skinUploadsSeen,skinUploadsSaved,skinUploadsSeen>skinUploadsSaved?"true":"false");
-        if(passStages) fprintf(meta,"{\"kind\":\"pass_stage_summary\",\"frame\":%llu,\"attempts\":%u,\"bytes_budgeted\":%llu,\"attempt_limit\":8,\"byte_limit\":268435456}\n",frame,stagesSaved,stageBytes);
+        if(passStages) fprintf(meta,"{\"kind\":\"pass_stage_summary\",\"frame\":%llu,\"attempts\":%u,\"bytes_budgeted\":%llu,\"attempt_limit\":8,\"byte_limit\":%llu}\n",frame,stagesSaved,stageBytes,StageByteLimit());
         fprintf(meta,"{\"kind\":\"staged_result\",\"frame\":%llu,\"complete\":%s,\"mask\":%u,\"draws\":[%u,%u]}\n",
             frame,complete&&!failed?"true":"false",mask,draws[0],draws[1]);
         const bool error=ferror(meta)!=0;
@@ -232,17 +241,20 @@ static void Begin() {
     fopen_s(&banks,(directory+"/vs-banks.bin").c_str(),"wb");
     configToken=ConfigToken(); geometrySaved.clear();
     ReleaseStage(); stagesSaved=0; stageBytes=0; shadersSaved.clear();
-    passStages=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)!=0;
-    postStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==2;
-    shadowStagesOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==3;
-    selectedDrawOnly=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request)==4;
+    const UINT stageMode=GetPrivateProfileIntA("Diagnostics","CapturePassStages",0,request);
+    passStages=stageMode!=0;
+    postStagesOnly=stageMode==2;
+    shadowPair=stageMode==5;
+    shadowStagesOnly=stageMode==3 || shadowPair;
+    selectedDrawOnly=stageMode==4;
     ReleaseSelectedTarget();selectedDrawSaved=false;selectedSeen=0;
     selectedOrdinal=GetPrivateProfileIntA("Diagnostics","CaptureDrawOrdinal",0,request);
     char selectedHash[32]{};
     GetPrivateProfileStringA("Diagnostics","CaptureDrawPS","",selectedHash,sizeof(selectedHash),request);
     char* hashEnd=nullptr;selectedPs=strtoul(selectedHash,&hashEnd,16);
     const bool validSelectedHash=*selectedHash && hashEnd && !*hashEnd && strlen(selectedHash)<=8;
-    postInputsSaved=shadowInputsSaved=shadowOutputPending=false;
+    postInputsSaved=false;
+    shadow[0]={};shadow[1]={};
     captureStartedMs=now;
     frame=g_trackedFrame.id; active=true; failed=false; headerPending=true; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     skinUploadsSeen=skinUploadsSaved=0;
@@ -251,6 +263,7 @@ static void Begin() {
     presentDevice=g_capturePresent.device;
     if (!meta || !banks) { Reject("file creation failed"); Finish(false); return; }
     if(selectedDrawOnly && (!validSelectedHash || selectedOrdinal>=16384)) Reject("invalid selected pixel-provenance request");
+    if(shadowPair && selectedOrdinal>=16384) Reject("invalid paired shadow ordinal");
 }
 static void WriteHeader() {
     // Called only by Current, inside the same-frame/device/epoch witness.
@@ -267,6 +280,7 @@ static void WriteHeader() {
         frame,g_trackedFrame.state.predictedDisplayTime,dh.c_str(),eh.c_str(),ih.c_str(),rh.c_str(),
         (g_restoredTrackedGameplay||g_nativeCameraCoverInstalled||g_protectedTrackedHands)?"false":"true",g_submitMode,g_stereoMode,g_stereoShiftMode,g_stereoLayerPose,g_stereoIPD);
     if(selectedDrawOnly) fprintf(meta,"{\"kind\":\"selected_draw_request\",\"frame\":%llu,\"eye\":0,\"ps_hash\":%u,\"ordinal\":%u}\n",frame,selectedPs,selectedOrdinal);
+    if(shadowPair) fprintf(meta,"{\"kind\":\"shadow_pair_request\",\"frame\":%llu,\"ps_hash\":%u,\"ordinal\":%u}\n",frame,0xC4D1FB10u,selectedOrdinal);
     fprintf(meta,"{\"kind\":\"protected_hands_policy\",\"frame\":%llu,\"requested\":%s,\"visible_consumption_verified\":false}\n",
         frame,g_protectedTrackedHands?"true":"false");
     fprintf(meta,"{\"kind\":\"capture_arm\",\"frame\":%llu,\"expected_serial\":%llu,\"epoch\":%llu,\"expected_game_frame\":%llu,\"reset_generation\":%ld,\"thread\":%lu,\"device\":\"%p\"}\n",
@@ -311,7 +325,7 @@ static bool Bmp(const char* name, UINT w, UINT h, const void* data, UINT pitch, 
     const bool closed=fclose(f)==0; return ok&&closed;
 }
 static const char* SaveStageSurface(IDirect3DDevice9* dev,IDirect3DSurface9* target,unsigned draw,
-                             unsigned vs,unsigned ps,const char* phase,int sampler=-1) {
+                             unsigned vs,unsigned ps,const char* phase,int sampler=-1,int eye=0) {
     if(!passStages || !target || stagesSaved>=8) return "unavailable_or_budget";
     D3DSURFACE_DESC d{};
     if(FAILED(target->GetDesc(&d))) return "get_desc_failed";
@@ -323,7 +337,7 @@ static const char* SaveStageSurface(IDirect3DDevice9* dev,IDirect3DSurface9* tar
     if(d.Format==D3DFMT_A16B16G16R16F) bytesPerPixel=8;
     const uint64_t size=(uint64_t)d.Width*d.Height*bytesPerPixel;
     if(!size) return "unsupported_format";
-    if(size>256u*1024u*1024u-stageBytes) return "byte_budget";
+    if(size>StageByteLimit()-stageBytes) return "byte_budget";
     ++stagesSaved; stageBytes+=size; // attempts bounded too, including failures
     IDirect3DSurface9* sys=nullptr; D3DLOCKED_RECT lock{};
     HRESULT hr=dev->CreateOffscreenPlainSurface(d.Width,d.Height,d.Format,D3DPOOL_SYSTEMMEM,&sys,nullptr);
@@ -347,8 +361,8 @@ static const char* SaveStageSurface(IDirect3DDevice9* dev,IDirect3DSurface9* tar
         sys->UnlockRect();
     }
     if(sys) sys->Release();
-    fprintf(meta,"{\"kind\":\"pass_stage\",\"frame\":%llu,\"eye\":0,\"last_draw\":%u,\"rt\":\"%p\",\"width\":%u,\"height\":%u,\"format\":%u,\"vs_hash\":%u,\"ps_hash\":%u,\"phase\":\"%s\",\"sampler\":%d,\"file\":\"%s\",\"saved\":%s,\"hr\":%ld,\"sha256\":\"%s\"}\n",
-        frame,draw,target,d.Width,d.Height,(unsigned)d.Format,vs,ps,phase,sampler,name,
+    fprintf(meta,"{\"kind\":\"pass_stage\",\"frame\":%llu,\"eye\":%d,\"last_draw\":%u,\"rt\":\"%p\",\"width\":%u,\"height\":%u,\"format\":%u,\"vs_hash\":%u,\"ps_hash\":%u,\"phase\":\"%s\",\"sampler\":%d,\"file\":\"%s\",\"saved\":%s,\"hr\":%ld,\"sha256\":\"%s\"}\n",
+        frame,eye,draw,target,d.Width,d.Height,(unsigned)d.Format,vs,ps,phase,sampler,name,
         saved?"true":"false",hr,saved?HashFile((directory+"/"+name).c_str()).c_str():"unavailable");
     return saved?"saved":"readback_failed";
 }
@@ -365,7 +379,7 @@ static void FlushStage(IDirect3DDevice9* dev) {
 // sample the exact retained input into full-resolution R32F with point filtering.
 // Use original draw/setter entry points so the copy never enters replay/history.
 static const char* SaveShadowDepth(IDirect3DDevice9* dev,IDirect3DBaseTexture9* source,
-                                  IDirect3DSurface9* input,unsigned draw,unsigned vs,unsigned ps) {
+                                  IDirect3DSurface9* input,unsigned draw,unsigned vs,unsigned ps,int eye) {
     D3DSURFACE_DESC desc{};
     if(!source || !input || FAILED(input->GetDesc(&desc)) ||
        desc.Format!=static_cast<D3DFORMAT>(0x5a544e49u) || desc.MultiSampleType!=D3DMULTISAMPLE_NONE)
@@ -430,23 +444,25 @@ static const char* SaveShadowDepth(IDirect3DDevice9* dev,IDirect3DBaseTexture9* 
                 SUCCEEDED(dev->GetVertexShaderConstantF(0,afterVs,vsCount));
             const bool psEqual=beforeOk && afterOk && !memcmp(beforePs,afterPs,sizeof(beforePs));
             const bool vsEqual=beforeOk && afterOk && !memcmp(beforeVs,afterVs,vsCount*4*sizeof(float));
-            fprintf(meta,"{\"kind\":\"shadow_copy_constants_restore\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"valid\":%s,\"ps_equal\":%s,\"vs_equal\":%s,\"ps_c27_before\":",frame,draw,beforeOk && afterOk?"true":"false",psEqual?"true":"false",vsEqual?"true":"false");
+            fprintf(meta,"{\"kind\":\"shadow_copy_constants_restore\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"ps_equal\":%s,\"vs_equal\":%s,\"ps_c27_before\":",frame,eye,draw,beforeOk && afterOk?"true":"false",psEqual?"true":"false",vsEqual?"true":"false");
             Floats(beforePs+27*4,16);fprintf(meta,",\"ps_c27_after\":");Floats(afterPs+27*4,16);fprintf(meta,"}\n");
             if(!psEqual || !vsEqual){Reject("shadow depth copy changed constant banks");hr=E_FAIL;}
-            if(SUCCEEDED(hr))status=SaveStageSurface(dev,target,draw,vs,ps,"before_draw_input",0);
+            if(SUCCEEDED(hr))status=SaveStageSurface(dev,target,draw,vs,ps,"before_draw_input",0,eye);
         }
     }
-    fprintf(meta,"{\"kind\":\"shadow_depth_copy\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"source\":\"%p\",\"target\":\"%p\",\"hr\":%ld,\"status\":\"%s\"}\n",frame,draw,input,target,hr,status);
+    fprintf(meta,"{\"kind\":\"shadow_depth_copy\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"source\":\"%p\",\"target\":\"%p\",\"hr\":%ld,\"status\":\"%s\"}\n",frame,eye,draw,input,target,hr,status);
     if(pixelCode)pixelCode->Release();if(vertexCode)vertexCode->Release();
     if(pixel)pixel->Release();if(vertex)vertex->Release();if(target)target->Release();if(texture)texture->Release();
     return status;
 }
-static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,unsigned ps) {
-    const bool shadow=shadowStagesOnly && !shadowInputsSaved && ps==0xC4D1FB10u;
-    if(!shadow && (!postStagesOnly || postInputsSaved || (ps!=0x33DE98C1u && ps!=0x75F88E11u))) return;
-    if(shadow) {
-        shadowInputsSaved=true;
-        shadowOutputPending=true;shadowOutputDraw=draw;shadowOutputVs=vs;
+static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,unsigned ps,int eye) {
+    auto& stage=shadow[eye];
+    const bool shadowDraw=shadowStagesOnly && !stage.inputsStarted && ps==0xC4D1FB10u &&
+        (!shadowPair || stage.seen++==selectedOrdinal);
+    if(!shadowDraw && (eye!=0 || !postStagesOnly || postInputsSaved || (ps!=0x33DE98C1u && ps!=0x75F88E11u))) return;
+    if(shadowDraw) {
+        stage.inputsStarted=true;
+        stage.outputPending=true;stage.draw=draw;stage.vs=vs;
         // This target already contains lighting. Preserve its input and blend
         // contract so a later comparison can isolate this draw's contribution
         // rather than accidentally measuring pre-existing dark RGB pixels.
@@ -455,21 +471,28 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
             D3DRS_SRCBLENDALPHA,D3DRS_DESTBLENDALPHA,D3DRS_BLENDOPALPHA};
         DWORD values[9]{};bool valid=true;
         for(unsigned i=0;i<9;++i)valid=SUCCEEDED(dev->GetRenderState(states[i],&values[i])) && valid;
-        fprintf(meta,"{\"kind\":\"shadow_blend\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"valid\":%s,\"write_enable_src_dst_op_separate_asrc_adst_aop\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}\n",
-            frame,draw,valid?"true":"false",values[0],values[1],values[2],values[3],values[4],values[5],values[6],values[7],values[8]);
+        fprintf(meta,"{\"kind\":\"shadow_blend\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"write_enable_src_dst_op_separate_asrc_adst_aop\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}\n",
+            frame,eye,draw,valid?"true":"false",values[0],values[1],values[2],values[3],values[4],values[5],values[6],values[7],values[8]);
         IDirect3DSurface9* prior=nullptr;
+        const char* status="missing_target";
         if(SUCCEEDED(dev->GetRenderTarget(0,&prior)) && prior) {
-            SaveStageSurface(dev,prior,draw,vs,ps,"shadow_before_draw");prior->Release();
+            stage.target=reinterpret_cast<uintptr_t>(prior);
+            status=SaveStageSurface(dev,prior,draw,vs,ps,"shadow_before_draw",-1,eye);
+            prior->Release();
+        }
+        if(shadowPair && (!valid || strcmp(status,"saved"))) {
+            Reject("paired shadow input target unavailable");
+            return;
         }
     } else postInputsSaved=true;
     float values[16*4]{};
     const HRESULT hr=dev->GetPixelShaderConstantF(0,values,16);
-    fprintf(meta,"{\"kind\":\"post_constants\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"ps_hash\":%u,\"hr\":%ld,\"c0_to_c15\":",frame,draw,ps,hr);
+    fprintf(meta,"{\"kind\":\"post_constants\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"ps_hash\":%u,\"hr\":%ld,\"c0_to_c15\":",frame,eye,draw,ps,hr);
     Floats(values,64);fprintf(meta,"}\n");
     // Exact composite's CTAB: Frame=s0, Depth=s2, DOFScene=s3. Read its inputs
     // before the draw; never infer them from an opaque texture pointer alone.
     for(unsigned slot:{0u,2u,3u}) {
-        if(shadow && slot!=0)continue; // exact shadow CTAB: DepthBuffer=s0
+        if(shadowDraw && slot!=0)continue; // exact shadow CTAB: DepthBuffer=s0
         IDirect3DBaseTexture9* base=nullptr;IDirect3DSurface9* surface=nullptr;
         D3DSURFACE_DESC desc{};
         const HRESULT textureHr=dev->GetTexture(slot,&base);
@@ -480,15 +503,16 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
             surfaceHr=static_cast<IDirect3DTexture9*>(base)->GetSurfaceLevel(0,&surface);
             if(SUCCEEDED(surfaceHr) && surface) {
                 descHr=surface->GetDesc(&desc);
-                status=FAILED(descHr)?"get_desc_failed":shadow?SaveShadowDepth(dev,base,surface,draw,vs,ps):SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
+                status=FAILED(descHr)?"get_desc_failed":shadowDraw?SaveShadowDepth(dev,base,surface,draw,vs,ps,eye):SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
             }
         }
         // Even unsupported depth formats must leave an identity/status record.
         // No readback/conversion is invented when the format cannot be copied.
-        fprintf(meta,"{\"kind\":\"post_input\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"ps_hash\":%u,\"sampler\":%u,\"texture\":\"%p\",\"texture_type\":%u,\"surface\":\"%p\",\"surface_available\":%s,\"texture_hr\":%ld,\"surface_hr\":%ld,\"desc_hr\":%ld,\"width\":%u,\"height\":%u,\"format\":%u,\"usage\":%u,\"pool\":%u,\"multisample\":%u,\"readback_status\":\"%s\"}\n",
-            frame,draw,ps,slot,base,type,surface,SUCCEEDED(descHr)?"true":"false",textureHr,surfaceHr,descHr,
+        fprintf(meta,"{\"kind\":\"post_input\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"ps_hash\":%u,\"sampler\":%u,\"texture\":\"%p\",\"texture_type\":%u,\"surface\":\"%p\",\"surface_available\":%s,\"texture_hr\":%ld,\"surface_hr\":%ld,\"desc_hr\":%ld,\"width\":%u,\"height\":%u,\"format\":%u,\"usage\":%u,\"pool\":%u,\"multisample\":%u,\"readback_status\":\"%s\"}\n",
+            frame,eye,draw,ps,slot,base,type,surface,SUCCEEDED(descHr)?"true":"false",textureHr,surfaceHr,descHr,
             desc.Width,desc.Height,(unsigned)desc.Format,desc.Usage,(unsigned)desc.Pool,(unsigned)desc.MultiSampleType,status);
         if(surface)surface->Release();if(base)base->Release();
+        if(shadowPair && strcmp(status,"saved")) Reject("paired shadow depth unavailable");
     }
 }
 template<class Shader> static void SaveStageShader(Shader* shader,unsigned declaredHash,bool pixel,bool lighting=false) {
@@ -594,17 +618,24 @@ static void MatchedCaptureDrawReturned(IDirect3DDevice9* dev,HRESULT result) {
     // One explicit matched-frame diagnostic only: retain the actual first
     // shadow consumer's output, not the later composite containing animation.
     // Readback does not set device state; its stall is not a performance sample.
-    if(matched_capture::shadowOutputPending && d2vr_replay::g_replayEye<0 &&
+    const int shadowEye=d2vr_replay::g_replayEye<0?0:d2vr_replay::g_replayEye;
+    if(shadowEye<=1 && matched_capture::shadow[shadowEye].outputPending &&
        GetCurrentThreadId()==g_renderThreadId && matched_capture::Current()) {
         using namespace matched_capture;
-        shadowOutputPending=false;
+        auto& stage=shadow[shadowEye];
+        stage.outputPending=false;
         if(FAILED(result))Reject("shadow consumer draw failed");
         else {
             IDirect3DSurface9* target=nullptr;
             if(SUCCEEDED(dev->GetRenderTarget(0,&target)) && target) {
-                const char* status=SaveStageSurface(dev,target,shadowOutputDraw,
-                    shadowOutputVs,0xC4D1FB10u,"after_draw");
-                if(strcmp(status,"saved"))Reject("shadow output readback failed");
+                if(shadowPair && reinterpret_cast<uintptr_t>(target)!=stage.target)
+                    Reject("paired shadow target changed during draw");
+                else {
+                    const char* status=SaveStageSurface(dev,target,stage.draw,
+                        stage.vs,0xC4D1FB10u,"after_draw",-1,shadowEye);
+                    stage.complete=!strcmp(status,"saved");
+                    if(!stage.complete)Reject("shadow output readback failed");
+                }
             } else Reject("shadow output target unavailable");
             if(target)target->Release();
         }
@@ -625,12 +656,12 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
     if (vertexMetadata) { wvp=vertexMetadata->wvpBase; stp=vertexMetadata->stpBase; hash=vertexMetadata->hash; }
     fprintf(meta,"{\"kind\":\"draw\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"rt\":\"%p\",\"vs\":\"%p\",\"shader_hash\":%u,\"wvp_register\":%d,\"stp_register\":%d,\"bank_offset\":%ld,\"viewport\":[%u,%u,%u,%u,%.9g,%.9g]}\n",
         frame,eye,draws[eye]++,rt,vs,hash,wvp,stp,offset,vp.X,vp.Y,vp.Width,vp.Height,vp.MinZ,vp.MaxZ);
-    if(shadowStagesOnly && eye==0) {
+    if(shadowStagesOnly && (eye==0 || shadowPair)) {
         IDirect3DSurface9* depth=nullptr;DWORD enable=0,write=0;D3DSURFACE_DESC desc{};
         const HRESULT depthHr=dev->GetDepthStencilSurface(&depth);
         const HRESULT descHr=depth?depth->GetDesc(&desc):E_FAIL;
         const HRESULT enableHr=dev->GetRenderState(D3DRS_ZENABLE,&enable),writeHr=dev->GetRenderState(D3DRS_ZWRITEENABLE,&write);
-        fprintf(meta,"{\"kind\":\"depth_attachment\",\"frame\":%llu,\"eye\":0,\"draw\":%u,\"surface\":\"%p\",\"format\":%u,\"depth_hr\":%ld,\"desc_hr\":%ld,\"enable_hr\":%ld,\"write_hr\":%ld,\"enabled\":%lu,\"write\":%lu}\n",frame,draws[eye]-1,depth,unsigned(desc.Format),depthHr,descHr,enableHr,writeHr,enable,write);
+        fprintf(meta,"{\"kind\":\"depth_attachment\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"surface\":\"%p\",\"format\":%u,\"depth_hr\":%ld,\"desc_hr\":%ld,\"enable_hr\":%ld,\"write_hr\":%ld,\"enabled\":%lu,\"write\":%lu}\n",frame,eye,draws[eye]-1,depth,unsigned(desc.Format),depthHr,descHr,enableHr,writeHr,enable,write);
         if(depth)depth->Release();
     }
     IDirect3DVertexBuffer9* vb=nullptr;IDirect3DIndexBuffer9* ib=nullptr;IDirect3DPixelShader9* ps=nullptr;
@@ -686,8 +717,9 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
         if(!postStagesOnly || IsPostStage(pixelHash) || d2vr_sampling::IsWorldDiffuseMaterial(hash,pixelHash)) {
             SaveStageShader(vs,hash,false,lighting); SaveStageShader(ps,pixelHash,true,lighting);
         }
-        CapturePostInputs(dev,draws[eye]-1,hash,pixelHash);
     }
+    if(passStages && !selectedDrawOnly && (eye==0 || shadowPair))
+        CapturePostInputs(dev,draws[eye]-1,hash,pixelHash,eye);
     DWORD cull=0,scissor=0;RECT clip{};
     dev->GetRenderState(D3DRS_CULLMODE,&cull);dev->GetRenderState(D3DRS_SCISSORTESTENABLE,&scissor);dev->GetScissorRect(&clip);
     fprintf(meta,"{\"kind\":\"draw_geometry\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"vb\":\"%p\",\"ib\":\"%p\",\"ps\":\"%p\",\"texture0\":\"%p\",\"stream_offset\":%u,\"stride\":%u,\"cull\":%lu,\"scissor\":%lu,\"clip\":[%ld,%ld,%ld,%ld]}\n",

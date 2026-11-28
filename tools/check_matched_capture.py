@@ -16,21 +16,26 @@ FILES = {"manifest.jsonl", "vs-banks.bin", "effective-config.json",
          "source-eye0.bmp", "source-eye1.bmp", "final-eye0.bmp", "final-eye1.bmp"}
 
 
-def validate_shadow_conversion(records, post_inputs, auxiliary, position):
+def validate_shadow_conversion(records, post_inputs, auxiliary, position, paired=False):
     copies = [r for r in records if r["kind"] == "shadow_depth_copy"]
-    if len(copies) > 1:
+    expected_eyes = {0, 1} if paired else {0}
+    if len(copies) > len(expected_eyes) or len({r.get("eye") for r in copies}) != len(copies):
         raise ValueError("duplicate shadow depth conversion")
+    if paired and {r.get("eye") for r in copies if r.get("status") == "saved"} != expected_eyes:
+        raise ValueError("missing paired shadow depth conversion")
+    legacy_eye = None if paired else 0
     for copy in copies:
         if copy.get("status") != "saved":
             continue  # failed conversion is not readable image evidence
-        draw = copy.get("draw")
-        identities = [r for r in post_inputs if r.get("draw") == draw and
+        eye, draw = copy.get("eye"), copy.get("draw")
+        identities = [r for r in post_inputs if r.get("draw") == draw and r.get("eye", legacy_eye) == eye and
                       r.get("ps_hash") == 0xC4D1FB10 and r.get("sampler") == 0]
         stages = [r for r in auxiliary if r["kind"] == "pass_stage" and
-                  r.get("last_draw") == draw and r.get("phase") == "before_draw_input" and
+                  r.get("last_draw") == draw and r.get("eye", legacy_eye) == eye and r.get("phase") == "before_draw_input" and
                   r.get("ps_hash") == 0xC4D1FB10 and r.get("sampler") == 0 and r.get("saved")]
-        restored = [r for r in records if r["kind"] == "shadow_copy_constants_restore" and r.get("draw") == draw]
-        if (copy.get("eye") != 0 or copy.get("hr") != 0 or len(identities) != 1 or
+        restored = [r for r in records if r["kind"] == "shadow_copy_constants_restore" and
+                    r.get("draw") == draw and r.get("eye", legacy_eye) == eye]
+        if (eye not in expected_eyes or copy.get("hr") != 0 or len(identities) != 1 or
                 len(stages) != 1 or len(restored) != 1):
             raise ValueError("incomplete shadow depth conversion")
         identity, stage, restore = identities[0], stages[0], restored[0]
@@ -44,13 +49,53 @@ def validate_shadow_conversion(records, post_inputs, auxiliary, position):
         if not position(restore) < position(stage) < position(copy) < position(identity):
             raise ValueError("invalid shadow depth conversion order")
         producers = [r for r in records if r["kind"] == "depth_attachment" and
-                     r.get("eye") == 0 and isinstance(r.get("draw"),int) and r["draw"] < draw and
+                     r.get("eye") == eye and isinstance(r.get("draw"),int) and r["draw"] < draw and
                      r.get("surface") == copy.get("source") and r.get("format") == 0x5A544E49 and
                      r.get("enabled") in (1,2) and r.get("write") == 1 and
                      all(r.get(k) == 0 for k in ("depth_hr","desc_hr","enable_hr","write_hr")) and
                      position(r) < position(restore)]
         if not producers:
             raise ValueError("missing native shadow depth producer")
+
+
+def validate_shadow_pair(request, records, stages, position):
+    ps = 0xC4D1FB10
+    phases = {"shadow_before_draw", "before_draw_input", "after_draw"}
+    ordinal = request.get("ordinal")
+    if (type(ordinal) is not int or not 0 <= ordinal < 16384 or request.get("ps_hash") != ps or
+            len(stages) != 6 or len({r.get("file") for r in stages}) != 6):
+        raise ValueError("incomplete paired shadow stages")
+    vertex_shaders = set()
+    for eye in (0, 1):
+        owned = [r for r in stages if r.get("eye") == eye]
+        by_phase = {r.get("phase"): r for r in owned}
+        if len(owned) != 3 or set(by_phase) != phases or any(
+                r.get("ps_hash") != ps or r.get("saved") is not True for r in owned):
+            raise ValueError("missing paired shadow stage for eye")
+        before = by_phase["shadow_before_draw"]
+        depth = by_phase["before_draw_input"]
+        after = by_phase["after_draw"]
+        pixels = [r for r in records if r["kind"] == "draw_ps" and r.get("eye") == eye and r.get("shader_hash") == ps]
+        draw = before.get("last_draw")
+        witnesses = [r for r in records if r["kind"] == "draw" and r.get("eye") == eye and r.get("draw") == draw]
+        if len(pixels) <= ordinal or pixels[ordinal].get("draw") != draw or len(witnesses) != 1:
+            raise ValueError("paired shadow consumer was not witnessed")
+        witness = witnesses[0]
+        viewport = witness.get("viewport", [])
+        if (len(viewport) != 6 or viewport[:4] != [0, 0, depth.get("width"), depth.get("height")] or
+                not 0 <= viewport[4] < viewport[5] <= 1):
+            raise ValueError("paired shadow depth requires a full consumer viewport")
+        if (any(r.get("last_draw") != draw or r.get("vs_hash") != witness.get("shader_hash") or
+                (r.get("width"), r.get("height")) != (depth.get("width"), depth.get("height")) for r in owned) or
+                before.get("rt") != after.get("rt") or before.get("rt") != witness.get("rt") or
+                (before.get("format"), depth.get("format"), after.get("format")) != (113, 114, 113) or
+                (before.get("sampler"), depth.get("sampler"), after.get("sampler")) != (-1, 0, -1) or
+                not position(request) < position(witness) < position(before) < position(depth) <
+                    position(pixels[ordinal]) < position(after)):
+            raise ValueError("mismatched paired shadow stage provenance")
+        vertex_shaders.add(witness.get("shader_hash"))
+    if len(vertex_shaders) != 1:
+        raise ValueError("paired shadow consumers use different vertex shaders")
 
 
 def validate_selected_draw(records, position):
@@ -106,16 +151,25 @@ def validate(folder):
         raise ValueError("mixed frame IDs")
     if any(r["kind"] == "rejection" for r in records) or not records[-1]["complete"]:
         raise ValueError("runtime rejected capture")
+    pair_requests = [r for r in records if r["kind"] == "shadow_pair_request"]
+    if len(pair_requests) > 1:
+        raise ValueError("duplicate paired shadow request")
+    paired_shadow = bool(pair_requests)
+    allowed_stage_eyes = {0, 1} if paired_shadow else {0}
     post_inputs = [r for r in records if r["kind"] == "post_input"]
+    if paired_shadow and (len(post_inputs) != 2 or {r.get("eye") for r in post_inputs} != allowed_stage_eyes or
+                          any(r.get("ps_hash") != 0xC4D1FB10 or r.get("sampler") != 0 for r in post_inputs)):
+        raise ValueError("incomplete paired shadow input identities")
     if post_inputs:
         shadow_inputs = len(post_inputs)==1 and post_inputs[0].get("ps_hash")==0xC4D1FB10 and post_inputs[0].get("sampler")==0
         # Older receipts have no identity rows. New ones must explicitly report
         # every requested slot, including an unsupported/missing depth image.
-        if (not shadow_inputs and (len(post_inputs) != 3 or {r.get("sampler") for r in post_inputs} != {0, 2, 3}) or
+        if not paired_shadow and (
+                (not shadow_inputs and (len(post_inputs) != 3 or {r.get("sampler") for r in post_inputs} != {0, 2, 3})) or
                 len({(r.get("draw"), r.get("ps_hash")) for r in post_inputs}) != 1):
             raise ValueError("incomplete postprocess input identities")
         for r in post_inputs:
-            if (r.get("eye") != 0 or r.get("ps_hash") not in (0x33DE98C1, 0x75F88E11, 0xC4D1FB10) or
+            if (r.get("eye") not in allowed_stage_eyes or r.get("ps_hash") not in (0x33DE98C1, 0x75F88E11, 0xC4D1FB10) or
                     not r.get("readback_status")):
                 raise ValueError("invalid postprocess input identity")
             if r.get("surface_available"):
@@ -138,7 +192,7 @@ def validate(folder):
         if hashlib.sha256(payload).hexdigest() != record.get("sha256"):
             raise ValueError(f"auxiliary hash mismatch: {name}")
         if record["kind"] == "pass_stage":
-            if record.get("eye") != 0 or record.get("hr") != 0:
+            if record.get("eye") not in allowed_stage_eyes or record.get("hr") != 0:
                 raise ValueError("invalid pass stage eye or HRESULT")
             phase = record.get("phase", "after_draw")
             if (phase not in ("after_draw", "before_draw_input", "shadow_before_draw", "selected_before_draw", "selected_after_draw") or
@@ -149,7 +203,7 @@ def validate(folder):
                 raise ValueError("invalid postprocess input identity")
             if phase == "shadow_before_draw":
                 matching = [r for r in records if r["kind"] == "shadow_blend" and
-                            r.get("eye") == 0 and r.get("draw") == record.get("last_draw") and
+                            r.get("eye") == record.get("eye") and r.get("draw") == record.get("last_draw") and
                             r.get("frame") == record.get("frame")]
                 if (record.get("ps_hash") != 0xC4D1FB10 or len(matching) != 1 or
                         not matching[0].get("valid") or
@@ -163,7 +217,9 @@ def validate(folder):
                 raise ValueError("unsupported or truncated pass stage")
     entries=[r for r in records if r["kind"]=="present_entry"]
     arms=[r for r in records if r["kind"]=="capture_arm"]
-    validate_shadow_conversion(records, post_inputs, auxiliary, position)
+    validate_shadow_conversion(records, post_inputs, auxiliary, position, paired=paired_shadow)
+    if paired_shadow:
+        validate_shadow_pair(pair_requests[0], records, [r for r in auxiliary if r["kind"] == "pass_stage"], position)
     validate_selected_draw(records, position)
     completions=[r for r in records if r["kind"]=="present_completion"]
     staged=[r for r in records if r["kind"]=="staged_result"]

@@ -404,6 +404,132 @@ class MatchedCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"incomplete postprocess input"):
             validate(self.folder)
 
+    def add_shadow_pair(self):
+        ps = 0xC4D1FB10
+        vs = 0x68EECC9C
+        request = dict(kind="shadow_pair_request", frame=7, ps_hash=ps, ordinal=1)
+        self.records.insert(1, request)
+        for eye in (0, 1):
+            original = next(r for r in self.records if r["kind"] == "draw" and r["eye"] == eye)
+            common = dict(frame=7, eye=eye, draw=1)
+            target = "reused-lighting-target"
+            depth = "reused-depth-target"
+            copy = f"float-depth-eye{eye}"
+            stages = []
+            for ordinal, (phase, fmt, rt, sampler, pixel_bytes) in enumerate((
+                    ("shadow_before_draw", 113, target, -1, 8),
+                    ("before_draw_input", 114, copy, 0, 4),
+                    ("after_draw", 113, target, -1, 8))):
+                name = f"stage-{eye*3+ordinal+1:02}-draw-1.bin"
+                payload = bytes(512*512*pixel_bytes)
+                (self.folder / name).write_bytes(payload)
+                stages.append(dict(kind="pass_stage", frame=7, eye=eye, last_draw=1, phase=phase,
+                                   width=512, height=512, format=fmt, rt=rt, sampler=sampler, vs_hash=vs,
+                                   ps_hash=ps, file=name, saved=True, hr=0, sha256=hashlib.sha256(payload).hexdigest()))
+            i = self.records.index(original)
+            self.records[i+1:i+1] = [
+                dict(kind="depth_attachment", frame=7, eye=eye, draw=0, surface=depth, format=0x5A544E49,
+                     enabled=1, write=1, depth_hr=0, desc_hr=0, enable_hr=0, write_hr=0),
+                dict(kind="draw_ps", frame=7, eye=eye, draw=0, shader_hash=ps),
+                dict(kind="draw", **common, rt=target, shader_hash=vs, viewport=[0, 0, 512, 512, .05, 1]),
+                dict(kind="shadow_blend", **common, valid=True,
+                     write_enable_src_dst_op_separate_asrc_adst_aop=[15, 1, 9, 1, 1, 0, 2, 2, 1]),
+                stages[0],
+                dict(kind="shadow_copy_constants_restore", **common, valid=True, ps_equal=True, vs_equal=True),
+                stages[1],
+                dict(kind="shadow_depth_copy", **common, status="saved", hr=0, source=depth, target=copy),
+                dict(kind="post_input", **common, ps_hash=ps, sampler=0, surface=depth, surface_available=True,
+                     texture_hr=0, surface_hr=0, desc_hr=0, texture_type=3, width=512, height=512,
+                     format=0x5A544E49, readback_status="saved"),
+                dict(kind="draw_ps", **common, shader_hash=ps),
+                stages[2],
+            ]
+        for i, record in enumerate(r for r in self.records if r["kind"] == "draw"):
+            record["bank_offset"] = 4096*i
+        (self.folder / "vs-banks.bin").write_bytes(bytes(4*4096))
+        self.records[-1]["draws"] = [2, 2]
+        return request
+
+    def test_shadow_pair_passes_at_same_ordinal_in_both_eyes(self):
+        self.add_shadow_pair()
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"], 7)
+
+    def test_shadow_pair_requires_right_eye_depth_producer(self):
+        self.add_shadow_pair()
+        right = next(r for r in self.records if r["kind"] == "depth_attachment" and r["eye"] == 1)
+        self.records.remove(right)
+        self.save()
+        with self.assertRaisesRegex(ValueError, "missing native shadow depth producer"):
+            validate(self.folder)
+
+    def test_shadow_pair_requires_matching_draw_and_target(self):
+        request = self.add_shadow_pair()
+        request["ordinal"] = 0
+        self.save()
+        with self.assertRaisesRegex(ValueError, "consumer was not witnessed"):
+            validate(self.folder)
+        request["ordinal"] = 1
+        after = next(r for r in self.records if r.get("phase") == "after_draw" and r["eye"] == 1)
+        after["rt"] = "different-lighting-target"
+        self.save()
+        with self.assertRaisesRegex(ValueError, "mismatched paired shadow stage provenance"):
+            validate(self.folder)
+
+    def test_shadow_pair_requires_all_six_stages(self):
+        self.add_shadow_pair()
+        after = next(r for r in self.records if r.get("phase") == "after_draw" and r["eye"] == 1)
+        self.records.remove(after)
+        self.save()
+        with self.assertRaisesRegex(ValueError, "incomplete paired shadow stages"):
+            validate(self.folder)
+
+    def test_same_frame_shadow_audit_projects_into_the_other_eye(self):
+        from audit_shadow_temporal import compare
+
+        self.add_shadow_pair()
+        identity = [int(i % 5 == 0) for i in range(16)]
+        self.config["native_camera_cover"] = True
+        self.config["eye_params"] = [
+            dict(head_geometry=True, head_clip=identity, values=[0, 0, shift/256, 0, 1, 1, 0])
+            for shift in (0, 16)]
+        payload = json.dumps(self.config).encode()
+        (self.folder / "effective-config.json").write_bytes(payload)
+        next(r for r in self.records if r["kind"] == "config_identity")["effective_config_sha256"] = hashlib.sha256(payload).hexdigest()
+        self.records.insert(3, dict(kind="selected_native_camera", frame=7, camera_frame=7,
+                                    projection=identity, view_projection=identity))
+        witnesses = []
+        for eye, shift in enumerate((0, 16)):
+            source = next(r for r in self.records if r["kind"] == "source" and r["eye"] == eye)
+            source["native_px_py_candidate"] = [1, 1]
+            witness = dict(kind="lighting_ps_constants", frame=7, eye=eye, draw=1, shader_hash=0xC4D1FB10,
+                           valid=True, inverse_register=27, extents_register=-1, values=[0.0]*896)
+            self.records.insert(self.records.index(source), witness)
+            witnesses.append(witness)
+            bright = struct.pack("<4e", .75, .75, .75, 1)
+            dark = struct.pack("<4e", .375, .375, .375, 1)
+            row = bright*(128+shift) + dark*128 + bright*(256-shift)
+            capture_pixels = {
+                "shadow_before_draw": bright * (512*512),
+                "before_draw_input": struct.pack("<f", .5) * (512*512),
+                "after_draw": row * 512,
+            }
+            for record in self.records:
+                if record["kind"] != "pass_stage" or record["eye"] != eye:
+                    continue
+                image = capture_pixels[record["phase"]]
+                (self.folder / record["file"]).write_bytes(image)
+                record["sha256"] = hashlib.sha256(image).hexdigest()
+        self.save()
+        result = compare(self.folder)
+        self.assertEqual(result["eyes"], [0, 1])
+        self.assertGreater(result["samples"], 100)
+        self.assertEqual(result["absolute_mask_error"]["max"], 0)
+        witnesses[1]["values"][0] = 1e-8
+        self.save()
+        with self.assertRaisesRegex(ValueError, "different light or shadow projection"):
+            compare(self.folder)
+
     def test_incomplete_or_inconsistent_post_inputs_rejected(self):
         rows = self.add_post_inputs()
         self.records.remove(rows[1]); self.save()
