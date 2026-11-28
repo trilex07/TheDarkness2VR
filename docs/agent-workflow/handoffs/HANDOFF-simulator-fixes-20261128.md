@@ -512,3 +512,10 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   `C:/Users/Trilex/Darkness2VR-shadow-pair-20261128/d3d9.dll` for the
   isolated chapter trial. The lab was still reserved, and the first live
   ladder and Villa captures have not run.
+- The three-minute paired-candidate launch wait expired before acquiring
+  the lab. It did not create a chapter session directory. The protected
+  Steam DLL, both Steam INIs and player save matched their prior receipt.
+- The shared-color regression test still matched hard-coded slot zero and
+  one after slot rotation was added. The updated test verifies the selected
+  slots and both freshness checks. All top-level Python suites passed,
+  93 on the task branch and 98 on the paired diagnostic branch.
