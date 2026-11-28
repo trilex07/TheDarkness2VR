@@ -69,7 +69,8 @@ def audit_sampled_depth(folder):
     forward[3, 0] += projection[0, 0] * sx * tx
     forward[3, 1] += projection[1, 1] * sy * ty
     stage = next(x for x in records if x["kind"] == "pass_stage" and
-                 x.get("ps_hash") == 0xC4D1FB10 and x.get("saved"))
+                 x["eye"] == 0 and x.get("ps_hash") == 0xC4D1FB10 and x.get("saved") and
+                 x["phase"] == "before_draw_input" and x["sampler"] == 0 and x["format"] == 114)
     width, height = stage["width"], stage["height"]
     depth = np.fromfile(folder / stage["file"], dtype="<f4").reshape(height, width)
     yy, xx = np.mgrid[32:height-32:16, 32:width-32:16]
@@ -90,7 +91,8 @@ def audit_sampled_depth(folder):
     expected = native_clip @ np.linalg.inv(forward)
     expected /= expected[:, 3, None]
     constants = next(x for x in records if x["kind"] == "lighting_ps_constants" and
-                     x["eye"] == 0 and x["shader_hash"] == 0xC4D1FB10 and x["valid"])
+                     x["eye"] == 0 and x["shader_hash"] == 0xC4D1FB10 and x["valid"] and
+                     x["draw"] == stage["last_draw"])
     inverse = np.asarray(constants["values"][108:124]).reshape(4, 4)
     results = {}
     for name, multiply_depth in (("original", True), ("candidate", False)):

@@ -14,15 +14,25 @@ import numpy as np
 from check_matched_capture import validate
 
 
+SHADOW_SHADER = 0xC4D1FB10
+SHADER_BYTES = {
+    SHADOW_SHADER: "7fb0cc4d119b3f93336344f4d44bb3907d79465371fa3ef5d67c4062734bb751",
+    # Exact NDC-input replacement produced by shadow_clip_coordinates.h.
+    0x4CC96C08: "873eaee6fa84663e2d854055c1f6cbdbb643525f0a32852cd54d459aa0f38a6a",
+}
+
+
 def audit(folder):
     folder = Path(folder)
     validate(folder)
-    shader = folder / "ps-C4D1FB10.bin"
-    if hashlib.sha256(shader.read_bytes()).hexdigest() != (
-        "7fb0cc4d119b3f93336344f4d44bb3907d79465371fa3ef5d67c4062734bb751"
-    ):
-        raise ValueError("shadow shader bytecode identity differs")
     rows = [json.loads(line) for line in (folder / "manifest.jsonl").read_text().splitlines()]
+    actual_hashes = {r["actual_hash"] for r in rows if r["kind"] == "stage_shader" and
+                     r["pixel"] and r["declared_hash"] == SHADOW_SHADER and r["saved"]}
+    for actual_hash in actual_hashes or {SHADOW_SHADER}:
+        shader = folder / f"ps-{actual_hash:08X}.bin"
+        expected_shader = SHADER_BYTES.get(actual_hash)
+        if not expected_shader or not shader.is_file() or hashlib.sha256(shader.read_bytes()).hexdigest() != expected_shader:
+            raise ValueError(f"missing or unexpected shadow shader bytecode {actual_hash:08X}")
     cameras = [r for r in rows if r["kind"] == "selected_native_camera"]
     if len(cameras) != 1 or cameras[0]["camera_frame"] != cameras[0]["frame"]:
         raise ValueError("missing same-frame native camera")
@@ -34,7 +44,7 @@ def audit(folder):
     native_inverse = np.linalg.inv(projection)
     checks = []
     for row in rows:
-        if row["kind"] != "lighting_ps_constants" or row["shader_hash"] != 0xC4D1FB10:
+        if row["kind"] != "lighting_ps_constants" or row["shader_hash"] != SHADOW_SHADER:
             continue
         if row["inverse_register"] != 27:
             raise ValueError("unexpected shadow reconstruction register")
