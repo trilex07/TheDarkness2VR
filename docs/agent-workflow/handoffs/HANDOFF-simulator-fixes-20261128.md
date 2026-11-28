@@ -569,3 +569,13 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   now verifies the game PID, capture serial, frame, build and temp path
   before running the audit. Its offline checks covered successful evidence,
   duplicate serials, a foreign build and a rejected frame.
+- Diagnostic branch `codex/darkness2-composite-depth-20261128`, commit
+  `276c757cbd555becbaf883b4a815e528474e0147`, adds mode 6 to copy the
+  composite's actual sampler 2 INTZ depth in both eyes. It records each
+  producer, sampler state, constant-bank restoration and successful
+  consumer return. The Win32 build, 101 Python tests, four real legacy
+  captures and isolated chapter preflight passed. Candidate DLL SHA-256
+  `A7C28563FD1143920A55B8500C83EDD69199734E9772B314E12EF106722B890B`.
+  The private chapter helper accepts this DLL for both mode 5 and mode 6.
+  The exact source format and rendered result in the target scene still
+  require gameplay.
