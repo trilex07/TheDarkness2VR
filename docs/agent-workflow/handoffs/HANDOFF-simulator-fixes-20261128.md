@@ -704,3 +704,32 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   SteamVR reported an unfocused session and no active controller profiles.
   The user takes over from the visible main menu. The manual play lease stays
   active until the owned game exits normally.
+
+## Standard tentacle acquisition branch
+
+- The entry at `00909310` receives the fire object in ECX and the candidate
+  reference in argument two. `00909329` checks the candidate class descriptor
+  `010FB4B0`. The direct route writes the retained reference to `fire+558` at
+  `00909381`. The standard route obtains its interface from argument one via
+  `008FDDA0` and invokes vtable slot `+168` at `009096D4`.
+- Executing the native x86 bytes offline confirmed that `009096E0` rejects
+  when the interface result exceeds the value at `fire+724`, or when the
+  comparison is unordered. Equality continues. Both `00909381` and the native
+  retained-reference setter called at `0090975C` change the pending field.
+  Neither of those stores advances the held field at `+580`. The offline
+  proof JSON SHA-256 is
+  `1406557268C1F931E8963B4A35F32896CEBFC9441200F2151B85ADD0B707EB97`.
+- The private `map-grab` launcher passed preflight with the verified pre-play
+  crane checkpoint and its exact staged settings. The x86
+  `grab_acquisition_witness.exe` built at SHA-256
+  `B5734C0FBF9C3721123603BF71B87138478E81BDAB25BD92D93DB59DEF0736BD`.
+  It admits only the disposable executable, exact process creation stamp and
+  four pinned instruction sequences. An unrelated child was refused and
+  remained running. The observer is bounded and restores the thread registers
+  it acquired before detaching. No debugger was attached to the player's run.
+- Once the lab is free, open `map-grab` with the admitted comparison DLL
+  `52F993AF`, then use `grab_session_nav.py` and `grab_acquisition_window.py`
+  in the owned crane scene. Collect the entry caller, candidate vtable, limit
+  branch, pending and held fields for the matched off-axis and stock-aligned
+  grips. Keep candidate selection and actual attachment separate when deciding
+  where the fix belongs. The live failure is still open.
