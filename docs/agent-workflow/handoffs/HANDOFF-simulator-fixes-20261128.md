@@ -770,3 +770,30 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   `65BCC856F4545086D7FB1B45EA9C905832FB64F6474EC9219CA093DF8F73C262`.
   The new owned simulator trial uses the same save, staged settings, and
   exact game executable. No Steam deployment was performed.
+
+## Ladder candidate and the next isolated comparisons
+
+- `da705bd8` on `codex/darkness2-ladder-dismount-20261128` preserves
+  the native camera-source dispatch through traversal mode 6. The exact
+  comparison in `chapter-private-player-ladder-fix` completed the same
+  dismount that failed on Steam and in the control. The action finished at
+  X=121.086, then Jackie walked onto the roof and stayed still in mode 0
+  at (118.380, 0.811, 18.497). The game exited normally and released the lab.
+  See the ladder-specific handoff for build and screenshot hashes.
+- `8ae308b4` on `codex/darkness2-composite-fog-height-20261128` records
+  three successful matched Villa shader/depth captures and four complete
+  shadow captures without a measurable contribution from the selected draw.
+  The measured median reference error was between 0.0000987 and 0.0003524
+  game units with the corrected arithmetic. The stock calculation yielded
+  about 0.0630 to 0.0639. See the fog handoff for capture limits.
+- Private crane PID 40764 repeated the off-axis failure at the same actor
+  position used by its successful aligned control. At frame 8086 the
+  selected look direction was (1,0,0) and the tracked ray was
+  (-0.345766,0.446452,0.825304), a 110.2-degree offset. The collision result
+  changed, but the prop did not move. After aligning the native camera
+  without translation, frames 20151 and 20162 moved the same cylinder
+  `3B3BFD20/00FE1CF8` through pending to held.
+  `chapter-private-map-grab/grip-pair-runtime.log` SHA-256:
+  `AB9A4B9650E593009990611B5C28A47F8F4790C423D65DA8CE784DA6C0B99B45`.
+  The external observer detached cleanly in both cases with zero hits.
+  The private process exited normally, restored files and released the lab.
