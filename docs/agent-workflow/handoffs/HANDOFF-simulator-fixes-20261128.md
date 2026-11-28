@@ -579,3 +579,61 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   The private chapter helper accepts this DLL for both mode 5 and mode 6.
   The exact source format and rendered result in the target scene still
   require gameplay.
+
+## Gameplay after M12 released the lab
+
+- The archived chapter fixture launched in the private Windows profile.
+  The native title presented New Game without Continue, and the imported
+  save was removed inside that private profile. A separate isolated
+  profile with a byte-for-byte copy of the real Steam checkpoint offered
+  Continue and reached the crane yard. The player's original save was
+  protected in both runs.
+- PID 36756 used the grab-collision candidate for a fixed-position
+  comparison against the left ledge cylinder. The stock camera's forward
+  was `1,0,0` and the tracked ray was
+  `0.507305,0.6085227,0.6101982`, a 59.5-degree offset. The stock and
+  steered off-axis grips produced no pending or held cylinder. The
+  steered native collision path reported several +F24 candidates, while
+  the cylinder stayed on the ledge. After native body-camera alignment,
+  two `00FE1CF8` cylinder objects advanced from +558 to +580. Tracked
+  throws cleared both attached pointers. The encounter later reset to
+  the crane checkpoint. Evidence is under `grab-collision-comparison`,
+  including `live-grab-proof.log`, `control-settled.jpg`,
+  `steer-settled.jpg` and `native-positive-2-held.jpg`.
+- Both probe draws ran in each eye in frame 3990, but the first paired
+  fog capture and paired shadow frame 10759 invalidated right-eye replay.
+  The one-eye request 13634 succeeded. Exact-device scratch snapshot
+  restoration incorrectly went through the render-target hook's
+  external recorder mutation guard during replay.
+- `5c8e2179b7fa0e4693ac8c2fba263204bf13149e` forwards only the paired
+  capture's scoped restore through raw color and depth setters. The
+  narrowed build `F7DD2B35` completed the actual mode-6 fog depth capture
+  at frame 7133 and mode-5 shadow capture at 7251 in the isolated
+  Steam checkpoint. The shadow audit matched 21,710 points across both
+  eyes, with median mask error 0.00155 and p99 0.0182. Both renderer
+  captures used the crane yard, and the Villa still needs separate
+  testing. The branch handoff documents the build and regression tests.
+- Actual composite depth samples from the earlier repaired captures at
+  frames 2990 and 4906 support the world viewport range `[0.05,1]`.
+  Applying that range reduced median reprojection residual from
+  `2.20e-4` to `1.08e-5` and yielded 31,056 depth-consistent points.
+  These frames also changed the native camera. The sample receipt is
+  `composite-depth-replay/live-fog-viewport-probe.json`.
+- An empty private campaign with `F7DD2B35` exposed a menu regression.
+  Stock A worked through the main menu but could not leave the difficulty
+  screen. Native Flash cursor admission refused the observed Steam COM
+  method, yet the code still forced the movies into mouse mode. The
+  fallback in `2eb3b74771de70363d1ebbd1a13068804003aa55` preserves stock
+  controls on refusal. With `E23CDE3B` the same stock A inputs reached
+  brightness, the recap choice, and Dinner Out. The branch's native Flash
+  fixture passed 51,218 checks. Find the screenshots and extracted logs in
+  `chapter-new-story` and `chapter-new-story-menu-fallback`. The later
+  private campaign created a native Continue checkpoint, which passed
+  process-local profile preflight for a future resume.
+- A separate stock-body-camera trial in `chapter-player-stock-look`
+  used the locally accepted Steam checkpoint at Gangster difficulty and
+  confirmed two real throws with captured crane sparks. After the second
+  throw the game loaded the same checkpoint. Scouting the right approach
+  after reload identified cover and a native pickup prompt, but did not
+  establish the third cylinder or ladder. The closed private launches
+  each restored the seven preexisting Steam/save paths and released the lab.
