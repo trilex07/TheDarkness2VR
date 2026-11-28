@@ -24,6 +24,9 @@ struct ShadowStage {
     uintptr_t target;
 };
 static ShadowStage shadow[2];
+static bool compositeDepthPair, compositeDepthReturned[2];
+static int compositeDepthDraw[2];
+static constexpr unsigned kCompositeFogPs=0x33DE98C1u;
 // Explicit one-draw pixel provenance, independent of the shadow-depth experiment.
 static bool selectedDrawOnly, selectedDrawPending, selectedDrawSaved;
 static unsigned selectedPs, selectedOrdinal, selectedSeen, selectedDraw, selectedVs;
@@ -155,6 +158,8 @@ static void Finish(bool submitted) {
     if(selectedDrawOnly && !selectedDrawSaved) Reject("selected pixel-provenance draw not completed");
     if(shadowPair && (!shadow[0].complete || !shadow[1].complete))
         Reject("paired shadow draws did not complete");
+    if(compositeDepthPair && (!compositeDepthReturned[0] || !compositeDepthReturned[1]))
+        Reject("paired composite depth draws did not complete");
     ReleaseSelectedTarget();
     if(g_nativeCameraCoverInstalled) {
         if(!g_nativeCameraCoverConfirmed || g_nativeCoveredFrame!=frame || projectionObserved!=3)
@@ -247,6 +252,7 @@ static void Begin() {
     shadowPair=stageMode==5;
     shadowStagesOnly=stageMode==3 || shadowPair;
     selectedDrawOnly=stageMode==4;
+    compositeDepthPair=stageMode==6;
     ReleaseSelectedTarget();selectedDrawSaved=false;selectedSeen=0;
     selectedOrdinal=GetPrivateProfileIntA("Diagnostics","CaptureDrawOrdinal",0,request);
     char selectedHash[32]{};
@@ -255,6 +261,8 @@ static void Begin() {
     const bool validSelectedHash=*selectedHash && hashEnd && !*hashEnd && strlen(selectedHash)<=8;
     postInputsSaved=false;
     shadow[0]={};shadow[1]={};
+    compositeDepthDraw[0]=compositeDepthDraw[1]=-1;
+    compositeDepthReturned[0]=compositeDepthReturned[1]=false;
     captureStartedMs=now;
     frame=g_trackedFrame.id; active=true; failed=false; headerPending=true; mask=0; blits=0; inputs=0; projectionObserved=0; draws[0]=draws[1]=0;
     skinUploadsSeen=skinUploadsSaved=0;
@@ -281,6 +289,7 @@ static void WriteHeader() {
         (g_restoredTrackedGameplay||g_nativeCameraCoverInstalled||g_protectedTrackedHands)?"false":"true",g_submitMode,g_stereoMode,g_stereoShiftMode,g_stereoLayerPose,g_stereoIPD);
     if(selectedDrawOnly) fprintf(meta,"{\"kind\":\"selected_draw_request\",\"frame\":%llu,\"eye\":0,\"ps_hash\":%u,\"ordinal\":%u}\n",frame,selectedPs,selectedOrdinal);
     if(shadowPair) fprintf(meta,"{\"kind\":\"shadow_pair_request\",\"frame\":%llu,\"ps_hash\":%u,\"ordinal\":%u}\n",frame,0xC4D1FB10u,selectedOrdinal);
+    if(compositeDepthPair) fprintf(meta,"{\"kind\":\"composite_depth_pair_request\",\"frame\":%llu,\"ps_hash\":%u,\"sampler\":2}\n",frame,kCompositeFogPs);
     fprintf(meta,"{\"kind\":\"protected_hands_policy\",\"frame\":%llu,\"requested\":%s,\"visible_consumption_verified\":false}\n",
         frame,g_protectedTrackedHands?"true":"false");
     fprintf(meta,"{\"kind\":\"capture_arm\",\"frame\":%llu,\"expected_serial\":%llu,\"epoch\":%llu,\"expected_game_frame\":%llu,\"reset_generation\":%ld,\"thread\":%lu,\"device\":\"%p\"}\n",
@@ -378,8 +387,9 @@ static void FlushStage(IDirect3DDevice9* dev) {
 // Explicit single-frame diagnostic only. INTZ cannot be GetRenderTargetData'd:
 // sample the exact retained input into full-resolution R32F with point filtering.
 // Use original draw/setter entry points so the copy never enters replay/history.
-static const char* SaveShadowDepth(IDirect3DDevice9* dev,IDirect3DBaseTexture9* source,
-                                  IDirect3DSurface9* input,unsigned draw,unsigned vs,unsigned ps,int eye) {
+static const char* SaveIntzDepth(IDirect3DDevice9* dev,IDirect3DBaseTexture9* source,
+                               IDirect3DSurface9* input,unsigned draw,unsigned vs,unsigned ps,unsigned sampler,int eye) {
+    const bool composite=sampler==2;
     D3DSURFACE_DESC desc{};
     if(!source || !input || FAILED(input->GetDesc(&desc)) ||
        desc.Format!=static_cast<D3DFORMAT>(0x5a544e49u) || desc.MultiSampleType!=D3DMULTISAMPLE_NONE)
@@ -430,27 +440,32 @@ static const char* SaveShadowDepth(IDirect3DDevice9* dev,IDirect3DBaseTexture9* 
             if(SUCCEEDED(hr))hr=d2vr_replay::g_orig.DrawPrimitiveUP(dev,D3DPT_TRIANGLESTRIP,2,quad,sizeof(quad[0]));
             {
                 d2vr_stateblock::InternalRestore raw(dev);
-                if(!saved.Apply(dev)){Reject("shadow depth copy state restore failed");hr=E_FAIL;}
+                if(!saved.Apply(dev)){Reject("depth copy state restore failed");hr=E_FAIL;}
                 // D3DSBT_ALL on this runtime does not preserve every float
                 // register (including registers touched by the copy shader).
                 // Restore the full queried banks verbatim, still within the
                 // exact-device raw scope. This is explicit-capture-only work.
                 if(!beforeOk || FAILED(d2vr_replay::g_orig.SetPixelShaderConstantF(dev,0,beforePs,224)) ||
                    FAILED(g_origSetVertexShaderConstantF(dev,0,beforeVs,vsCount))) {
-                    Reject("shadow depth copy constant restore failed");hr=E_FAIL;
+                    Reject("depth copy constant restore failed");hr=E_FAIL;
                 }
             }
             const bool afterOk=SUCCEEDED(dev->GetPixelShaderConstantF(0,afterPs,224)) &&
                 SUCCEEDED(dev->GetVertexShaderConstantF(0,afterVs,vsCount));
             const bool psEqual=beforeOk && afterOk && !memcmp(beforePs,afterPs,sizeof(beforePs));
             const bool vsEqual=beforeOk && afterOk && !memcmp(beforeVs,afterVs,vsCount*4*sizeof(float));
-            fprintf(meta,"{\"kind\":\"shadow_copy_constants_restore\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"ps_equal\":%s,\"vs_equal\":%s,\"ps_c27_before\":",frame,eye,draw,beforeOk && afterOk?"true":"false",psEqual?"true":"false",vsEqual?"true":"false");
-            Floats(beforePs+27*4,16);fprintf(meta,",\"ps_c27_after\":");Floats(afterPs+27*4,16);fprintf(meta,"}\n");
-            if(!psEqual || !vsEqual){Reject("shadow depth copy changed constant banks");hr=E_FAIL;}
-            if(SUCCEEDED(hr))status=SaveStageSurface(dev,target,draw,vs,ps,"before_draw_input",0,eye);
+            const unsigned inverseRegister=composite?10:27;
+            fprintf(meta,"{\"kind\":\"%s\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"ps_equal\":%s,\"vs_equal\":%s,\"ps_c%u_before\":",
+                composite?"composite_copy_constants_restore":"shadow_copy_constants_restore",
+                frame,eye,draw,beforeOk && afterOk?"true":"false",psEqual?"true":"false",vsEqual?"true":"false",inverseRegister);
+            Floats(beforePs+inverseRegister*4,16);fprintf(meta,",\"ps_c%u_after\":",inverseRegister);
+            Floats(afterPs+inverseRegister*4,16);fprintf(meta,"}\n");
+            if(!psEqual || !vsEqual){Reject("depth copy changed constant banks");hr=E_FAIL;}
+            if(SUCCEEDED(hr))status=SaveStageSurface(dev,target,draw,vs,ps,"before_draw_input",sampler,eye);
         }
     }
-    fprintf(meta,"{\"kind\":\"shadow_depth_copy\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"source\":\"%p\",\"target\":\"%p\",\"hr\":%ld,\"status\":\"%s\"}\n",frame,eye,draw,input,target,hr,status);
+    fprintf(meta,"{\"kind\":\"%s\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"source\":\"%p\",\"target\":\"%p\",\"hr\":%ld,\"status\":\"%s\"}\n",
+        composite?"composite_depth_copy":"shadow_depth_copy",frame,eye,draw,input,target,hr,status);
     if(pixelCode)pixelCode->Release();if(vertexCode)vertexCode->Release();
     if(pixel)pixel->Release();if(vertex)vertex->Release();if(target)target->Release();if(texture)texture->Release();
     return status;
@@ -459,7 +474,9 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
     auto& stage=shadow[eye];
     const bool shadowDraw=shadowStagesOnly && !stage.inputsStarted && ps==0xC4D1FB10u &&
         (!shadowPair || stage.seen++==selectedOrdinal);
-    if(!shadowDraw && (eye!=0 || !postStagesOnly || postInputsSaved || (ps!=0x33DE98C1u && ps!=0x75F88E11u))) return;
+    const bool compositeDraw=compositeDepthPair && compositeDepthDraw[eye]<0 && ps==kCompositeFogPs;
+    if(!shadowDraw && !compositeDraw &&
+       (eye!=0 || !postStagesOnly || postInputsSaved || (ps!=kCompositeFogPs && ps!=0x75F88E11u))) return;
     if(shadowDraw) {
         stage.inputsStarted=true;
         stage.outputPending=true;stage.draw=draw;stage.vs=vs;
@@ -484,6 +501,17 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
             Reject("paired shadow input target unavailable");
             return;
         }
+    } else if(compositeDraw) {
+        compositeDepthDraw[eye]=int(draw);
+        DWORD min=0,mag=0,mip=0,u=0,v=0;
+        const bool valid=SUCCEEDED(dev->GetSamplerState(2,D3DSAMP_MINFILTER,&min)) &&
+            SUCCEEDED(dev->GetSamplerState(2,D3DSAMP_MAGFILTER,&mag)) &&
+            SUCCEEDED(dev->GetSamplerState(2,D3DSAMP_MIPFILTER,&mip)) &&
+            SUCCEEDED(dev->GetSamplerState(2,D3DSAMP_ADDRESSU,&u)) &&
+            SUCCEEDED(dev->GetSamplerState(2,D3DSAMP_ADDRESSV,&v));
+        fprintf(meta,"{\"kind\":\"composite_depth_sampler\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"valid\":%s,\"min_mag_mip_address_u_v\":[%lu,%lu,%lu,%lu,%lu]}\n",
+            frame,eye,draw,valid?"true":"false",min,mag,mip,u,v);
+        if(!valid){Reject("composite depth sampler query failed");return;}
     } else postInputsSaved=true;
     float values[16*4]{};
     const HRESULT hr=dev->GetPixelShaderConstantF(0,values,16);
@@ -493,6 +521,7 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
     // before the draw; never infer them from an opaque texture pointer alone.
     for(unsigned slot:{0u,2u,3u}) {
         if(shadowDraw && slot!=0)continue; // exact shadow CTAB: DepthBuffer=s0
+        if(compositeDraw && slot!=2)continue;
         IDirect3DBaseTexture9* base=nullptr;IDirect3DSurface9* surface=nullptr;
         D3DSURFACE_DESC desc{};
         const HRESULT textureHr=dev->GetTexture(slot,&base);
@@ -503,7 +532,9 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
             surfaceHr=static_cast<IDirect3DTexture9*>(base)->GetSurfaceLevel(0,&surface);
             if(SUCCEEDED(surfaceHr) && surface) {
                 descHr=surface->GetDesc(&desc);
-                status=FAILED(descHr)?"get_desc_failed":shadowDraw?SaveShadowDepth(dev,base,surface,draw,vs,ps,eye):SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
+                if(FAILED(descHr))status="get_desc_failed";
+                else if(shadowDraw || compositeDraw)status=SaveIntzDepth(dev,base,surface,draw,vs,ps,slot,eye);
+                else status=SaveStageSurface(dev,surface,draw,vs,ps,"before_draw_input",slot);
             }
         }
         // Even unsupported depth formats must leave an identity/status record.
@@ -513,6 +544,7 @@ static void CapturePostInputs(IDirect3DDevice9* dev,unsigned draw,unsigned vs,un
             desc.Width,desc.Height,(unsigned)desc.Format,desc.Usage,(unsigned)desc.Pool,(unsigned)desc.MultiSampleType,status);
         if(surface)surface->Release();if(base)base->Release();
         if(shadowPair && strcmp(status,"saved")) Reject("paired shadow depth unavailable");
+        if(compositeDraw && strcmp(status,"saved")) Reject("paired composite depth unavailable");
     }
 }
 template<class Shader> static void SaveStageShader(Shader* shader,unsigned declaredHash,bool pixel,bool lighting=false) {
@@ -618,11 +650,11 @@ static void MatchedCaptureDrawReturned(IDirect3DDevice9* dev,HRESULT result) {
     // One explicit matched-frame diagnostic only: retain the actual first
     // shadow consumer's output, not the later composite containing animation.
     // Readback does not set device state; its stall is not a performance sample.
-    const int shadowEye=d2vr_replay::g_replayEye<0?0:d2vr_replay::g_replayEye;
-    if(shadowEye<=1 && matched_capture::shadow[shadowEye].outputPending &&
+    const int eye=d2vr_replay::g_replayEye<0?0:d2vr_replay::g_replayEye;
+    if(eye<=1 && matched_capture::shadow[eye].outputPending &&
        GetCurrentThreadId()==g_renderThreadId && matched_capture::Current()) {
         using namespace matched_capture;
-        auto& stage=shadow[shadowEye];
+        auto& stage=shadow[eye];
         stage.outputPending=false;
         if(FAILED(result))Reject("shadow consumer draw failed");
         else {
@@ -632,13 +664,22 @@ static void MatchedCaptureDrawReturned(IDirect3DDevice9* dev,HRESULT result) {
                     Reject("paired shadow target changed during draw");
                 else {
                     const char* status=SaveStageSurface(dev,target,stage.draw,
-                        stage.vs,0xC4D1FB10u,"after_draw",-1,shadowEye);
+                        stage.vs,0xC4D1FB10u,"after_draw",-1,eye);
                     stage.complete=!strcmp(status,"saved");
                     if(!stage.complete)Reject("shadow output readback failed");
                 }
             } else Reject("shadow output target unavailable");
             if(target)target->Release();
         }
+    }
+    if(eye<=1 && matched_capture::compositeDepthPair && matched_capture::compositeDepthDraw[eye]>=0 &&
+       !matched_capture::compositeDepthReturned[eye] && GetCurrentThreadId()==g_renderThreadId &&
+       matched_capture::Current()) {
+        using namespace matched_capture;
+        fprintf(meta,"{\"kind\":\"composite_depth_consumer_return\",\"frame\":%llu,\"eye\":%d,\"draw\":%d,\"hr\":%ld}\n",
+            frame,eye,compositeDepthDraw[eye],result);
+        compositeDepthReturned[eye]=result==D3D_OK;
+        if(!compositeDepthReturned[eye])Reject("composite depth consumer draw failed");
     }
 }
 static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseApplied) {
@@ -656,7 +697,7 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
     if (vertexMetadata) { wvp=vertexMetadata->wvpBase; stp=vertexMetadata->stpBase; hash=vertexMetadata->hash; }
     fprintf(meta,"{\"kind\":\"draw\",\"frame\":%llu,\"eye\":%d,\"draw\":%u,\"rt\":\"%p\",\"vs\":\"%p\",\"shader_hash\":%u,\"wvp_register\":%d,\"stp_register\":%d,\"bank_offset\":%ld,\"viewport\":[%u,%u,%u,%u,%.9g,%.9g]}\n",
         frame,eye,draws[eye]++,rt,vs,hash,wvp,stp,offset,vp.X,vp.Y,vp.Width,vp.Height,vp.MinZ,vp.MaxZ);
-    if(shadowStagesOnly && (eye==0 || shadowPair)) {
+    if((shadowStagesOnly && (eye==0 || shadowPair)) || compositeDepthPair) {
         IDirect3DSurface9* depth=nullptr;DWORD enable=0,write=0;D3DSURFACE_DESC desc{};
         const HRESULT depthHr=dev->GetDepthStencilSurface(&depth);
         const HRESULT descHr=depth?depth->GetDesc(&desc):E_FAIL;
@@ -709,7 +750,10 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
             else { selectedTarget=rt;selectedTarget->AddRef();selectedDrawPending=true; }
         }
     }
-    if(eye==0 && passStages && !selectedDrawOnly) {
+    if(compositeDepthPair && pixelHash==kCompositeFogPs) {
+        SaveStageShader(vs,hash,false,true);SaveStageShader(ps,pixelHash,true,true);
+    }
+    if(eye==0 && passStages && !selectedDrawOnly && !compositeDepthPair) {
         if(stageTarget!=rt) {
             FlushStage(dev); ReleaseStage(); stageTarget=rt; if(stageTarget) stageTarget->AddRef();
         }
@@ -718,7 +762,7 @@ static void MatchedCaptureDraw(IDirect3DDevice9* dev,int eye,bool worldDiffuseAp
             SaveStageShader(vs,hash,false,lighting); SaveStageShader(ps,pixelHash,true,lighting);
         }
     }
-    if(passStages && !selectedDrawOnly && (eye==0 || shadowPair))
+    if(passStages && !selectedDrawOnly && (eye==0 || shadowPair || compositeDepthPair))
         CapturePostInputs(dev,draws[eye]-1,hash,pixelHash,eye);
     DWORD cull=0,scissor=0;RECT clip{};
     dev->GetRenderState(D3DRS_CULLMODE,&cull);dev->GetRenderState(D3DRS_SCISSORTESTENABLE,&scissor);dev->GetScissorRect(&clip);

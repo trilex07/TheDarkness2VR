@@ -484,6 +484,62 @@ class MatchedCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incomplete paired shadow stages"):
             validate(self.folder)
 
+    def add_composite_depth_pair(self):
+        request = self.add_shadow_pair()
+        request.clear()
+        request.update(kind="composite_depth_pair_request", frame=7, ps_hash=0x33DE98C1, sampler=2)
+        for record in list(self.records):
+            kind = record["kind"]
+            eye = record.get("eye")
+            if kind == "shadow_blend" or (kind == "pass_stage" and record["phase"] != "before_draw_input"):
+                self.records.remove(record)
+            elif kind in ("pass_stage", "post_input"):
+                record.update(ps_hash=0x33DE98C1, sampler=2)
+            elif kind == "shadow_copy_constants_restore":
+                record["kind"] = "composite_copy_constants_restore"
+                self.records.insert(self.records.index(record),
+                                    dict(kind="composite_depth_sampler", frame=7, eye=eye, draw=1,
+                                         valid=True, min_mag_mip_address_u_v=[1, 1, 0, 3, 3]))
+            elif kind == "shadow_depth_copy":
+                record["kind"] = "composite_depth_copy"
+            elif kind == "draw_ps" and record["draw"] == 1:
+                record["shader_hash"] = 0x33DE98C1
+                self.records.insert(self.records.index(record) + 1,
+                                    dict(kind="composite_depth_consumer_return", frame=7, eye=eye, draw=1, hr=0))
+        for prefix, shader in (("vs", 0x68EECC9C), ("ps", 0x33DE98C1)):
+            name = f"{prefix}-{shader:08X}.bin"
+            payload = struct.pack("<I", shader)
+            (self.folder / name).write_bytes(payload)
+            self.records.insert(3, dict(kind="stage_shader", frame=7, pixel=prefix == "ps", declared_hash=shader,
+                                        actual_hash=shader, saved=True, file=name, sha256=hashlib.sha256(payload).hexdigest()))
+
+    def test_composite_depth_pair_accepts_both_exact_intz_sampler_two_copies(self):
+        self.add_composite_depth_pair()
+        self.save()
+        self.assertEqual(validate(self.folder)["frame"], 7)
+
+    def test_composite_depth_pair_rejects_foreign_depth_producer(self):
+        self.add_composite_depth_pair()
+        right = next(r for r in self.records if r["kind"] == "depth_attachment" and r["eye"] == 1)
+        right["surface"] = "different-rendered-depth"
+        self.save()
+        with self.assertRaisesRegex(ValueError, "missing native composite depth producer"):
+            validate(self.folder)
+
+    def test_composite_depth_pair_requires_actual_sampler_and_draw_return(self):
+        self.add_composite_depth_pair()
+        sampler = next(r for r in self.records if r["kind"] == "composite_depth_sampler" and r["eye"] == 1)
+        sampler["valid"] = False
+        self.save()
+        with self.assertRaisesRegex(ValueError, "mismatched paired composite depth consumer"):
+            validate(self.folder)
+        sampler["valid"] = True
+        draw_return = next(r for r in self.records if r["kind"] == "composite_depth_consumer_return" and r["eye"] == 0)
+        draw_return["hr"] = -1
+        self.save()
+        with self.assertRaisesRegex(ValueError, "mismatched paired composite depth consumer"):
+            validate(self.folder)
+
     def test_same_frame_shadow_audit_projects_into_the_other_eye(self):
         from audit_shadow_temporal import compare
 
