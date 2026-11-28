@@ -85,8 +85,9 @@ static void* __fastcall QueryThrowTarget(void* fire,void*,void* result,void* ava
     __try {answer=query(fire,result,avatarReference,scoped ? 12.f : cone,range,flags,detail,mode);}
     __finally {g_throwTargetScope=previous;}
     if(scoped) {
-        bool selected=false;
-        selected=ThrowTargetNpc(answer);
+        // CB0040 returns the result slot. Its value is the retained reference
+        // used by 84BBA0, and only that reference contains the avatar pointer.
+        const bool selected=answer && answer==result && ThrowTargetNpc(*static_cast<void**>(answer));
         AcquireSRWLockExclusive(&g_nativeThrowLock);
         if(g_nativeThrowToken.sequence==scope.sequence)g_nativeThrowToken.targetSelected=selected;
         ReleaseSRWLockExclusive(&g_nativeThrowLock);

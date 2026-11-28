@@ -207,6 +207,7 @@ static void CharacterCases(){
     CHECK(!(Step(400,0,.34f,0).wButtons&XINPUT_GAMEPAD_LEFT_SHOULDER));CHECK(!g_nativeThrowToken.until);
 }
 static bool targetFound=false,queryScoped=false,queryThrows=false;
+static BodyRef queryTargetRef{},queryEmptyRef{};
 static unsigned sorted=0;
 static void __cdecl FakeSort(BYTE* first,BYTE* last,int,unsigned) {
     ++sorted;CHECK(last-first==0x60);
@@ -221,7 +222,8 @@ static void* __fastcall FakeQuery(void* self,void*,void* result,void*,float cone
               std::fabs(ray[10]-g_nativeThrowToken.direction[2])<1e-5f);
         if(queryThrows)RaiseException(0xE0001234,0,0,nullptr);
     }
-    *static_cast<void**>(result)=targetFound ? refs[0] : nullptr;
+    queryTargetRef.object=avatar;
+    *static_cast<void**>(result)=targetFound ? &queryTargetRef : &queryEmptyRef;
     return result;
 }
 static bool testNpc=true,testFilter=true;static unsigned filterCalls=0;
@@ -294,7 +296,7 @@ static void TargetCases() {
     CHECK(v[0]==3 && v[1]==4 && v[2]==0 && v[3]==.75f);
     Reset();Arm();targetFound=false;
     QueryThrowTarget(fire,nullptr,&result,nullptr,45,100,1,nullptr,1);
-    CHECK(queryScoped && !g_nativeThrowToken.targetApplied);
+    CHECK(queryScoped && !g_nativeThrowToken.targetSelected && !g_nativeThrowToken.targetApplied);
     CHECK(ResolveProtectedThrowVelocity(fire,v));
     CHECK(std::fabs(v[0]-5)<1e-5f && std::fabs(v[1])<1e-5f && std::fabs(v[2])<1e-5f && v[3]==.75f);
     Reset();Arm(); // An unavailable native selector also falls back to the stroke.

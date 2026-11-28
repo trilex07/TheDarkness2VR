@@ -22,6 +22,10 @@ assert len(block['calls']) == 124
 decoder = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
 contracts = {
     0x878B35: 'call 0xcb0040',
+    0x878B3A: 'push eax',
+    0x878B3F: 'call 0x84bba0',
+    0x84BBA5: 'mov esi, dword ptr [eax]',
+    0x84BBA7: 'inc dword ptr [esi + 4]',
     0x878D07: 'lea esi, [esp + 0xac]',
     0x878D0E: 'lea ecx, [esp + 0x34]',
     0x878D12: 'call 0xe0bca0',
@@ -39,6 +43,8 @@ contracts = {
     0xCB0A03: 'mov dword ptr [eax + 0x20], esi',
     0xCB0A13: 'add eax, 0x30',
     0xCB0FC5: 'call 0x4e4320',
+    0xCB17B1: 'mov eax, dword ptr [esi + 0x20]',
+    0xCB17B8: 'mov dword ptr [esi], eax',
     0xAEDC51: 'comiss xmm0, xmm1',
     0xAEDC54: 'movss dword ptr [esp + 0x20], xmm1',
     0xEC5AC5: 'push 0xf9b608',
