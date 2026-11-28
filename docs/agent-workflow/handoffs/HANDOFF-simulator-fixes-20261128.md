@@ -136,3 +136,42 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   INIs, save, settings and protected Steam/OpenXR state. The crane encounter
   was reached from the user's save. The after-Swifty ladder and affected villa
   lighting are still missing from current simulator evidence.
+
+## Full shadow-stage simulator captures
+
+- PID `39456` ran `36FBE77C`. The neutral and turned poses produced complete
+  shadow-stage captures `1401` / frame `42289` and `1402` / frame `42380`.
+  Both had a single projection world layer, successful OpenXR and original
+  D3D9 Present, and a verified readback provenance chain. Manifests are
+  `CA4EDEC5F6B3CE1A3CDF27EE9BC3C34AC10ECFF4C21FA36AF81811CB8BA5A6F0`
+  and `710BF92C70BA12208E453FFEDE09FFE76DFBE39415B8B2703B906FA59B3F3C8C`.
+  The recorder's third attempt, `1403` / frame `44622`, returned to cinema
+  during a capture at wider head yaw. The clock-difference fixture reproduced
+  a failure in the first fix when the arm frame and previous submission
+  shared a timer tick. Commit `7f97ce64` now uses integer milliseconds and
+  clamps the excluded time to the observed gap. The fixture failed before and
+  passes after. The x86 DiagnosticCapture build SHA-256 is
+  `247FCC4C94167FC47215FAE4828DEF790998D65D66F9B6628AF40FEAB0F7D109`.
+- `3775ce09` corrected the audits for the current capture format. The sampled
+  depth audit uses the R32F sampler 0 input and the corresponding draw bank.
+  The inverse-projection audit accepts the exact patched shader only after
+  its SHA-256 is verified. The replacement was reconstructed from the pinned
+  native shader and source constants, then compared byte for byte with the
+  captured `4CC96C08` shader. Eight real consuming draws had effective inverse
+  matrix error at most 0.00000144. Median reconstruction residual decreased
+  from 0.1092 to 0.0021 and from 0.1026 to 0.0065 units across the two captures.
+  There were 23,580 and 22,681 depth samples. These checks cover sampled
+  reconstruction. The two native light projections differed even at the same
+  body position, so the temporal test correctly refused to score the masks.
+- PID `39456` exited normally. The receipt confirms the original Steam
+  installation and protected player data were restored. Private evidence is
+  under `captures/simulator-20261128/shadow-timing-fix/`. Validator suite passed
+  42 tests. The archived villa capture lacks source images and cannot be
+  rerun through the current validator.
+- The A76 runtime exposes `grip` and `stick` through its low-level pointer
+  command, even though the older `interact` client rejects those labels.
+  Use an owned in-game capture and an explicitly released direct controller
+  action. Private `crane_controls.py` contains guarded hold, stroke and release
+  helpers prepared for testing. No propane throw or ladder dismount has been
+  confirmed. The ladder fix remains scoped to the verified native traversal
+  mode; reproducing the player report still requires the exact ladder.
