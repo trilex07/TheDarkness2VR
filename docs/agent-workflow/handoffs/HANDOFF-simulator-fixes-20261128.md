@@ -95,3 +95,44 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   Steam lab and expired while other leases were active. The final capture gate
   has build and regression evidence. Its real-game capture completion and the
   affected lighting scenes remain open.
+
+## Simulator follow-up
+
+- Crane-yard PID `36108` ran the `0987C95C` candidate. With the simulator
+  preview frusta matched to the submitted projection, both hands produced a
+  new bullet impact on concrete in both eyes. Before/after head, grip centers,
+  projection metadata and the corresponding beam poses agreed. The left-hand
+  impact centers were 3.32 and 3.13 pixels from the fitted red line, and the
+  right-hand centers were 2.33 and 3.41 pixels away in the 1600×856 preview.
+  This measures the visible impact and line for two shots at this wall.
+  `visual-candidate/aim-wall-audit.json` SHA-256
+  `C6D7CBBD94C491E86FD3835B98C178BA708C83349C54F876C111FC811D19F639`.
+- PID `38296` ran the separate opt-in diagnostic build `946D9722`, source
+  `0d59d6a3` in the detached shot-diagnosis worktree. One admitted native
+  right-hand shot at frame `20619` and the OpenXR pair shared display time.
+  The mapped center ray matched the final native consumer's axis to the
+  recorded precision, and the origin residual was 0.000000853 game units.
+  Native dispersion shifted that shot by 0.407 degrees. The raw native
+  camera and the selected render view matrices were inverse at recorded
+  precision. The right-hand quad data matched the shot's tracked aim pose,
+  with its log header missing. The wall-impact test gives independent visual
+  evidence for both hands. `shot-shadow-witness/shot-witness.log` SHA-256
+  `17BBD736112F85E141E93869F41FDEEF1A6B2CBDBE1F5C8FB74D48C6EF689BAC`.
+  The witness fixture passed 698 checks.
+- Capture submission diagnostics (`1f2adf5e`) exposed an additional failure.
+  With shadow stages enabled, frames `18962` and `22040` produced all usual
+  file stages but two cinema quads. Their logs show the world-activity timeout
+  firing on the exact readback frames, then recovering. With pass stages off,
+  frame `27907` validated through original Present with a single world layer
+  and two ammo quads. The diagnostic can leave gameplay if readback takes over
+  500 ms, even with a fresh native world camera.
+- `aa21597b` accounts for the active recorder's elapsed time in the world
+  heuristic when that same tracked frame still proves a world camera. The
+  fixture covers a 900 ms readback, its next frame, startup dwell, loss of
+  world observations and ordinary gaps. The x86 DiagnosticCapture build
+  succeeded with SHA-256
+  `36FBE77C4BC84F197EE962296798355D1E61EDA9A3D1BBFC33C55DA71380DBC5`.
+- Both completed sessions exited normally and restored original game DLL,
+  INIs, save, settings and protected Steam/OpenXR state. The crane encounter
+  was reached from the user's save. The after-Swifty ladder and affected villa
+  lighting are still missing from current simulator evidence.
