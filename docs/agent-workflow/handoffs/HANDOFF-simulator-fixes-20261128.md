@@ -519,3 +519,26 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   one after slot rotation was added. The updated test verifies the selected
   slots and both freshness checks. All top-level Python suites passed,
   93 on the task branch and 98 on the paired diagnostic branch.
+
+## Native ladder state-machine fixture
+
+- `test/native_ladder_contract.py` runs the exact Steam x86 instructions
+  for the mode-6 mount, movement input, ladder update and animation event
+  handler. The fixture supplies a synthetic actor, animation services and
+  rung-end events. It verifies neutral input, a downward rung and bottom
+  animation 14, four upward rungs and top animation 8. At the same upper
+  rung a reversed packet queues downward animation 12 instead. The native
+  `LadderDismountTopEnd` handler targets the mounted actor, enters
+  state 4 and the next update returns finished.
+- The eight host suites also passed again, including 65 checks of the
+  actual XR input route. At 180 degrees of head yaw a positive stick becomes
+  negative during ordinary walking and stays positive in traversal mode 6.
+  This gives a mechanical explanation for reversal on the ladder. The
+  fixture does not establish collision, camera behavior or the real scene's
+  animation timing at the top.
+- Reproduce with Python, pefile and Unicorn 2.1.4 using
+  `python -B test/native_ladder_contract.py "<Steam DarknessII.exe>"`.
+  Private `captures/simulator-20261128/native-ladder-contract-proof.json`
+  SHA-256 `94691D26A0E410210AC9AAE23FA3B0D010F534851403F2F41DF27C33FA64EE3A`.
+  The game executable was opened read-only. The shared reservation still
+  precluded an owned simulator session.
