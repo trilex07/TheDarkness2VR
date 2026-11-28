@@ -6890,9 +6890,7 @@ void SubmitXR(IDirect3DDevice9* dev) {
     AdaptiveStereoSubmitted(endR,havePixels,worldLayerCount);
 #ifdef D2VR_MATCHED_CAPTURE
     // The source/final eye textures never contain compositor ammo or aim quads.
-    matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && worldLayerCount==1 &&
-        layerCount==worldLayerCount+weaponLaserLayerCount+ammoLayerCount &&
-        g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
+    matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount);
 #endif
     g_trackedFrame.open = false;
     const ULONGLONG frameMs = GetTickCount64() - g_trackedFrame.startedMs;

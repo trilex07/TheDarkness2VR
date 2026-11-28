@@ -7,8 +7,9 @@ if(!$live.Contains('!d2vr_replay::SkipLightVolumeShift(d2vr_replay::g_activeVs)'
 $gateStart=$src.IndexOf('static bool SkipLightVolumeShift(')
 $gateEnd=$src.IndexOf('static int ActiveWvpRegister(',$gateStart)
 $gate=$src.Substring($gateStart,$gateEnd-$gateStart)
-$captureFinish=[regex]::Match($live,'(?ms)^    matched_capture::Finish\(XR_SUCCEEDED\(endR\).*?;')
-if(!$captureFinish.Success){throw 'Actual matched capture submission gate missing'}
+$capture=Get-Content (Join-Path $root 'src/matched_capture.inl') -Raw
+$captureFinish=[regex]::Match($capture,'(?ms)^static void FinishSubmission\(.*?^\}')
+if(!$captureFinish.Success -or !$live.Contains('matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount)')){throw 'Actual matched capture submission gate missing'}
 $start=$src.IndexOf('struct ShadowClipScope {')
 $end=$src.IndexOf('struct ReflectionEyeScope {',$start)
 if($start -lt 0 -or $end -le $start){throw 'Scope missing'}
@@ -18,6 +19,7 @@ New-Item -ItemType Directory -Force $out|Out-Null
 $prefix=@'
 #include <windows.h>
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <cstdio>
 struct IDirect3DDevice9 {bool fail=false;float current[4]={7,8,9,10};int reads=0;
@@ -26,7 +28,16 @@ bool g_shadowClipCoordinates=true,g_noInvProj=false;
 struct VsInfo {unsigned hash;};
 int g_skipLightVsShift=0;
 #define XR_SUCCEEDED(result) ((result)>=0)
-namespace matched_capture {bool complete=false;void Finish(bool value){complete=value;}}
+using XrResult=int;
+const bool g_had3DCameraThisFrame=true,g_pairSubmitMetaValid=true;
+const struct {unsigned id;} g_trackedFrame{41};const unsigned g_eyePairFrameId=g_trackedFrame.id;
+namespace matched_capture {
+bool complete=false,active=true;FILE* meta=nullptr;
+const unsigned long long frame=41;
+const unsigned mask=15,inputs=3,blits=3,projectionObserved=3;
+void Finish(bool value){complete=value;}
+ACTUAL_CAPTURE_FINISH
+}
 int g_replayEye=-1,g_projectionFix=3,g_lightingPreset=0,g_activePsInverse=27;
 const void* g_boundPs=nullptr;
 struct Metadata {bool shadowClip=true;} metadata;
@@ -40,9 +51,7 @@ $suffix=@'
 void run(IDirect3DDevice9& d,float expected){const float old[4]={7,8,9,10};memcpy(d.current,old,16);int before=g_orig.writes;{ShadowClipScope s(&d);assert(d.current[0]==expected);}assert(!memcmp(d.current,old,16));assert(g_orig.writes==before+2);}
 bool capture(unsigned worldLayerCount,unsigned weaponLaserLayerCount,unsigned ammoLayerCount,unsigned extra,int endR=0){
  const unsigned layerCount=worldLayerCount+weaponLaserLayerCount+ammoLayerCount+extra;
- const bool g_had3DCameraThisFrame=true,g_pairSubmitMetaValid=true;
- const struct {unsigned id;} g_trackedFrame{41};const unsigned g_eyePairFrameId=g_trackedFrame.id;
- ACTUAL_CAPTURE_FINISH
+ matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount);
  return matched_capture::complete;
 }
 int main(){IDirect3DDevice9 d;
@@ -65,7 +74,7 @@ int main(){IDirect3DDevice9 d;
  puts("PASS shadow scope, both-eye light-volume gate and matched capture with ammo/aim overlays");
 }
 '@
-[IO.File]::WriteAllText((Join-Path $out 'scope.cpp'),$prefix+$gate+$src.Substring($start,$end-$start)+$suffix.Replace('ACTUAL_CAPTURE_FINISH',$captureFinish.Value.Trim()))
+[IO.File]::WriteAllText((Join-Path $out 'scope.cpp'),$prefix.Replace('ACTUAL_CAPTURE_FINISH',$captureFinish.Value.Trim())+$gate+$src.Substring($start,$end-$start)+$suffix)
 $vs=& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 Push-Location $out

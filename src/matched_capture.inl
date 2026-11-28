@@ -180,6 +180,23 @@ static void Finish(bool submitted) {
     Log("[MatchedCapture] frame=%llu staged=%d awaiting-original-Present-return path=%s",frame,(int)pendingPresent,directory.c_str());
     active=false;
 }
+static void FinishSubmission(XrResult result, uint32_t worldLayers, uint32_t layers,
+                             uint32_t weaponLaserLayers, uint32_t ammoLayers) {
+    if (!active) return;
+    const bool world = g_had3DCameraThisFrame && worldLayers == 1;
+    const bool overlays = layers == worldLayers + weaponLaserLayers + ammoLayers;
+    const bool pair = g_pairSubmitMetaValid && g_eyePairFrameId == g_trackedFrame.id;
+    if (meta) {
+        fprintf(meta, "{\"kind\":\"submission_completion\",\"frame\":%llu,\"xr_result\":%d,"
+            "\"world_layers\":%u,\"layers\":%u,\"weapon_laser_layers\":%u,\"ammo_layers\":%u,"
+            "\"world_camera\":%s,\"current_pair\":%s,\"mask\":%u,\"inputs\":%u,"
+            "\"blits\":%u,\"projection_observed\":%u}\n",
+            frame, static_cast<int>(result), worldLayers, layers, weaponLaserLayers, ammoLayers,
+            g_had3DCameraThisFrame ? "true" : "false", pair ? "true" : "false",
+            mask, inputs, blits, projectionObserved);
+    }
+    Finish(XR_SUCCEEDED(result) && world && overlays && pair);
+}
 static void Begin() {
     if (pendingPresent) return; // do not overwrite a staged capture before its return
     if (active) { Reject("frame expired before complete submission"); Finish(false); }
