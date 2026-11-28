@@ -49,9 +49,9 @@ the caller return at frame +48. Stack-proof SHA-256
   `81457E44C0B15D5E0C217E11DD1BD3171925DEEFB1BA7B7F4D8D463674BC6A35`.
   The native observer used the inactive slot on the selected game thread
   and detached with zero register restoration failures.
-- Ladder and Villa height fog passed separately. See the ladder-specific and
-  fog-specific handoffs for those captures. Independent Villa shadow mask
-  verification and physical headset acceptance remain open.
+- Ladder, Villa height fog and a contributing Villa shadow passed in
+  separate private runs. See the ladder and Villa handoffs for the exact
+  captures. Physical headset acceptance remains open.
 
 ## Throw selection and stroke fallback
 
@@ -79,6 +79,36 @@ The live hostile trajectory result is still pending.
 - Protected release fixture passed 1,242 checks. This includes closest-angle
   ordering, target solver preservation, no-target stroke, absent selector
   stroke, speed and W preservation, and existing owner/input gates.
+
+### Native target result
+
+`c3a4db2a` fixes a second reference layer at the selector's return. The native
+filter takes a retained reference directly. The selector returns the address
+of a result slot containing a retained reference. Its NPC check previously
+received the slot. The exact consumer at `878B3A` passes that slot to
+`84BBA0`. The callee reads the reference and increments its count. The
+selector at `CB17B1` and `CB17B8` stores the same reference from the
+candidate record in the slot. The existing fixture now models both result
+layers and a native empty reference. It failed at the object identity check
+before the fix. The corrected fixture passes 1,242 checks. The full native
+selector audit passes 28 contracts and all 124 relocated calls.
+
+Integrated x86 build SHA-256
+`64E064E8A789B318BF26E95C77EF91DFFD3BDD723B0754C1775317214748E62D`.
+An owned private trial used the same fix with the private avatar recovery
+fixture and candidate tracing enabled. One no-target cylinder again went
+along the stroke at speed 100. The engine admitted a live NPC roughly
+4.2 degrees from the aim into its ordered list on one throw, then
+returned an empty reference. The reason for that refusal remains open.
+This trial establishes the scope reached the real encounter and preserves
+the stroke when the game refuses a candidate.
+
+- `chapter-private-throw-target-result/throw-target-trial.log`
+  SHA-256 `6CBF30DECD579F354F545BF4DC8C8CE723A0EABA5AD4B672EAAC5EF7541E88DD`.
+- `chapter-private-throw-target-result/result-exposed-target-stroke.json`
+  SHA-256 `00B8DEDE53B051A4E3DF9038729A2386F23B2B57BFDB64594CA0978A873087BF`.
+- `chapter-private-throw-target-result/result-second-cylinder-enemy.jpg`
+  SHA-256 `8986C3B3E0B5ACD38A51CF3FB4AB10A5BF13D2ACC213E67476A072A3CBD9039D`.
 
 Combined grab/fog/ladder build `ED168075` loaded the copied warehouse alley
 and reached the chain-link barrier at (116.957, -3.250, -20.500). That route
