@@ -265,3 +265,66 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
 - Checked historical named Continue backups and backup manifests from the
   retained worktrees. The available copies have the same SHA-256 as the
   current pre-crane checkpoint. No separate ladder or Villa save was found.
+
+## Cylinder acquisition and simulator motion
+
+- PID `37476` reached Swifty's crane using the corrected native-look control.
+  Native right-stick yaw and pitch put the illuminated cylinder near the
+  center of both eyes. The second sustained grip successfully attached the
+  red cylinder and lifted it off the ledge. The held-cylinder image
+  `stock-look-aligned-crane/native-centered-settled.jpg` has SHA-256
+  `311AD5FC9AF53EAC151BBC726488D6AB1A6DCB6ADBD057F84705ABF2E2C02CE1`.
+  With A76, stepping the controller pose through six acknowledged updates
+  and releasing the grip left the cylinder visibly attached. There was no
+  stock throw pulse. This separates acquisition from the failed throw.
+- The pinned A76 simulator samples controller velocity inside desktop input
+  polling. `SIMXR_AUTOMATION_ONLY=1` skips that block. The same runtime
+  advertises valid hand velocity to `xrLocateSpace`, so the mod takes the
+  reported zero instead of differentiating the located positions. The
+  original file-driven steps were also 7 to 11 frames apart, too sparse for
+  the recognizer's 35 ms coherent-motion window. Both conditions precede the
+  native throw path. No production grab or throw behavior was changed.
+- Simulator branch `codex/darkness2-simulator-motion-20261128`, source
+  `4609138`, isolated worktree `C:/Users/Trilex/Darkness2VR-sim-motion-20261128`.
+  The simulator now samples automation velocity after applying the current
+  pose and accepts a bounded grip stroke over successive frames followed by
+  a release at the endpoint. Win32 build and pointer lifecycle tests passed.
+  The process-local simulator DLL SHA-256 is
+  `99383EBA0224747C3E4D151A1F428E752B640ED4FDD0D0DFECFBCAD072360108`.
+  The existing A76 runtime remains frozen.
+- The close of PID `37476` restored the original DLL and all protected paths
+  and released the lease. Two further live shadow-stage captures from the
+  west wall, frames `22925` and `24185`, passed matched-files validation.
+  Their native light or shadow projections differ, so the temporal mask
+  audit rejected the comparison. This position does not provide a static
+  light for scoring visible shadow behavior.
+
+## Powered simulator throws at the live encounter
+
+- PID `36540` used the process-local motion runtime with the same
+  `4271BE0B` diagnostic. Stock camera alignment acquired two full-size
+  cylinders, both visible attached to the tentacle before throwing. Two
+  frame-paced gestures produced stock throw pulses and real releases. The
+  second emitted `NativeThrow APPLIED` for entity `427086A0`; the engine
+  supplied speed 76.704 and the mod's redirected velocity retained that
+  magnitude within the rounding of the logged components. Both throws
+  produced visible explosions. Crane completion and the ladder remained
+  beyond this session.
+- A hand-aim-only attempt earlier in the same run reached the getter with
+  local direction `(0.107587, 0.056418, 0.992594)` while the cylinder stayed
+  on its ledge. In the 94 complete witness frames the getter and selected
+  native render camera forward bases agreed, with camera origin within
+  0.000005 units. None of those probe frames showed an attached entity.
+  This does not isolate occlusion from candidate selection, and the route
+  moved between failed and successful requests. For a causal comparison,
+  hold the actor at one verified location and observe the acquisition
+  callback's result for both controller-only and stock-aligned inputs.
+- Private `stock-motion-crane/motion-native-proof.log` SHA-256
+  `83DE632F4A959D7308D09088689A00634967E5BAB020791BDB8F3494308F375E`.
+  `motion-throw-3-result.jpg` SHA-256
+  `8A288277EA82E04AF4E67D9367B15B96254F65561978C48F223B418802010555`.
+  The action receipt records a completed 12-frame gesture and observed
+  grip release. The simulator refused the earlier expired hold and the
+  next action deliberately re-armed the grip while the prop stayed attached.
+  The game exited normally. The retained-close receipt confirms verified
+  restoration of 15 paths and the shared Steam/OpenXR state, and lease release.
