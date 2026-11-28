@@ -98,7 +98,7 @@ inline bool SaveConfigIniW(const wchar_t* iniPath, const Config& cfg) noexcept {
     if (!WritePrivateProfileStringW(L"Optimization", L"TxrfgOptProfile", buf, iniPath)) ok = false;
     if (!WritePrivateProfileStringW(L"Optimization", L"TxrfgFrameGen", cfg.frameGenEnabled ? L"1" : L"0", iniPath)) ok = false;
     if (!WritePrivateProfileStringW(L"Optimization", L"TxrfgCrossGpu", cfg.crossGpuAuto ? L"1" : L"0", iniPath)) ok = false;
-    const float cleanBud = (std::isfinite(cfg.gpuBudgetMs) && cfg.gpuBudgetMs > 0.f) ? std::min(cfg.gpuBudgetMs, 10.f) : 0.f;
+    const float cleanBud = (std::isfinite(cfg.gpuBudgetMs) && cfg.gpuBudgetMs > 0.f) ? (std::min)(cfg.gpuBudgetMs, 10.f) : 0.f;
     swprintf_s(buf, L"%.1f", cleanBud);
     if (!WritePrivateProfileStringW(L"Optimization", L"TxrfgGpuBudgetMs", buf, iniPath)) ok = false;
     return ok;
@@ -114,7 +114,7 @@ public:
     void Configure(const Config& cfg) noexcept {
         cfg_ = cfg;
         cfg_.gpuBudgetMs = (std::isfinite(cfg_.gpuBudgetMs) && cfg_.gpuBudgetMs > 0.f)
-            ? std::min(cfg_.gpuBudgetMs, 10.f) : 0.f;
+            ? (std::min)(cfg_.gpuBudgetMs, 10.f) : 0.f;
         SyncRuntimeConfig();
     }
 
@@ -124,6 +124,19 @@ public:
     uint64_t PushedFrames() const noexcept { return pushed_; }
     uint64_t SynthesizedFrames() const noexcept { return synthesized_; }
     uint64_t FallbackFrames() const noexcept { return fallbacks_; }
+    float LastGpuMs() const noexcept { return lastGpuMs_; }
+    float AvgGpuMs() const noexcept { return gpuSamples_ ? static_cast<float>(gpuMsSum_ / static_cast<double>(gpuSamples_)) : 0.f; }
+
+    void ResetHistory() noexcept {
+        if (ctx_) txfg_reset(ctx_);
+    }
+
+    bool SetVisibilityMask(const txfg_visibility_mask_desc* desc) noexcept {
+        if (!ctx_) return false;
+        if (txfg_set_visibility_mask(ctx_, desc) != TXFG_OK) return false;
+        caps_.hasVisibilityMask = (desc != nullptr);
+        return true;
+    }
 
     bool Init(ID3D11Device* device, uint32_t eyeWidth, uint32_t eyeHeight, DXGI_FORMAT format) noexcept {
         if (!device || eyeWidth < 64u || eyeHeight < 64u) return false;
@@ -140,7 +153,7 @@ public:
         ci.height = eyeHeight;
         ci.color_format = static_cast<uint32_t>(format);
         ci.engine = TXFG_ENGINE_NATIVE;
-        ci.max_multiplier = 2; // 2x optical-flow only on D3D9Ex->D3D11 interop (no depth/MV)
+        ci.max_multiplier = 2;
         if (txfg_create(&ci, &ctx_) != TXFG_OK || !ctx_) {
             ctx_ = nullptr;
             return false;
@@ -180,14 +193,45 @@ public:
         txfg_synth_desc sd{};
         sd.struct_size = sizeof sd;
         sd.t = std::clamp(t, 0.05f, 0.95f);
-        sd.flags = 0u; // Optical-flow interpolation only (no depth/MV HSFG)
+        sd.flags = 0u;
         sd.out_color[0] = {outLeft, 0, 0};
         sd.out_color[1] = {outRight, 0, 0};
         txfg_synth_result res{};
         res.struct_size = sizeof res;
         const txfg_result r = txfg_synthesize(ctx_, dc, &sd, &res);
         if (outRes) *outRes = res;
-        if (r == TXFG_OK) {
+        if (r == TXFG_OK && res.quality_class == TXFG_QUALITY_SYNTHESIZED) {
+            if (res.gpu_ms_last > 0.f) {
+                lastGpuMs_ = res.gpu_ms_last;
+                gpuMsSum_ += static_cast<double>(res.gpu_ms_last);
+                ++gpuSamples_;
+            }
+            ++synthesized_;
+            return true;
+        }
+        ++fallbacks_;
+        return false;
+    }
+
+    bool SynthesizeExtrap(ID3D11DeviceContext* dc, ID3D11Texture2D* outLeft, ID3D11Texture2D* outRight,
+                          float t, txfg_synth_result* outRes = nullptr) noexcept {
+        if (!ctx_ || !dc || !outLeft || !outRight || !cfg_.frameGenEnabled) return false;
+        txfg_synth_desc sd{};
+        sd.struct_size = sizeof sd;
+        sd.t = std::clamp(t, 1.05f, 1.50f);
+        sd.flags = TXFG_SYNTH_EXTRAPOLATE_WORLD_ONLY;
+        sd.out_color[0] = {outLeft, 0, 0};
+        sd.out_color[1] = {outRight, 0, 0};
+        txfg_synth_result res{};
+        res.struct_size = sizeof res;
+        const txfg_result r = txfg_synthesize(ctx_, dc, &sd, &res);
+        if (outRes) *outRes = res;
+        if (r == TXFG_OK && res.quality_class == TXFG_QUALITY_SYNTHESIZED) {
+            if (res.gpu_ms_last > 0.f) {
+                lastGpuMs_ = res.gpu_ms_last;
+                gpuMsSum_ += static_cast<double>(res.gpu_ms_last);
+                ++gpuSamples_;
+            }
             ++synthesized_;
             return true;
         }
@@ -205,6 +249,10 @@ public:
         format_ = DXGI_FORMAT_UNKNOWN;
         appliedCrossGpu_ = -1;
         appliedBudgetMs_ = -1.f;
+        caps_.hasVisibilityMask = false;
+        lastGpuMs_ = 0.f;
+        gpuMsSum_ = 0.0;
+        gpuSamples_ = 0;
     }
 
 private:
@@ -228,7 +276,6 @@ private:
                 appliedBudgetMs_ = cfg_.gpuBudgetMs;
             }
         }
-        // Strictly ensure unsupported M10 Neural Repair stays OFF on D3D9Ex->D3D11 interop.
         (void)txfg_set_neural_repair_config(ctx_, nullptr);
         txfg_gpu_capabilities gc{};
         gc.struct_size = sizeof gc;
@@ -247,6 +294,9 @@ private:
     int appliedCrossGpu_{-1};
     float appliedBudgetMs_{-1.f};
     uint64_t pushed_{}, synthesized_{}, fallbacks_{};
+    float lastGpuMs_{0.f};
+    double gpuMsSum_{0.0};
+    uint64_t gpuSamples_{0};
 };
 
 } // namespace txrfg_interop

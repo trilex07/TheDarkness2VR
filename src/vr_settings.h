@@ -31,7 +31,8 @@ inline bool Neutral(bool tracked,uint16_t buttons,float lt,float rt,float lx,flo
         leftGrip>=0 && rightGrip>=0 && leftGrip<=.15f && rightGrip<=.15f &&
         std::hypot(lx,ly)<=.15f && std::hypot(rx,ry)<=.15f;
 }
-enum class Action {None,NisToggle,NisLess,NisMore,Supersample,Voice,Text};
+enum class Action {None,NisToggle,NisLess,NisMore,Supersample,Voice,Text,
+    TxrfgProfile,TxrfgFrameGen,TxrfgCrossGpu,TxrfgBudgetLess,TxrfgBudgetMore,TxrfgRestore};
 inline bool SupersampleFits(unsigned width,unsigned height,unsigned percent) {
     const uint64_t w=uint64_t(width)*percent/100,h=uint64_t(height)*percent/100;
     return w>0 && h>0 && w<=4096 && h<=4096 && w*h<=16000000;
@@ -45,8 +46,9 @@ struct Preferences {
     bool nis=true,polishVoice=true,polishText=true,pending=false,failed=false;
     uint64_t revision=1;
 };
-inline Rect TabRect(unsigned i){return {24+int(i)*200,66,192,42};}
+inline Rect TabRect(unsigned i){return {24+int(i)*150,66,144,42};}
 inline Rect SettingRect(unsigned i){return {24,120+int(i)*46,592,40};}
+inline Rect OptSettingRect(unsigned i){return {24,116+int(i)*38,592,34};}
 class Panel {
     d2vr_menu::Capture capture_;
     d2vr_menu::Navigation navigation_;
@@ -152,7 +154,7 @@ public:
         if(entry_){Toggle(entryHead_,surface_.space);return Action::None;}
         const auto hit=pointer_.hit;
         if(CloseRect.Contains(hit.x,hit.y)){Close();return Action::None;}
-        for(unsigned i=0;i<3;++i)if(TabRect(i).Contains(hit.x,hit.y)) {
+        for(unsigned i=0;i<4;++i)if(TabRect(i).Contains(hit.x,hit.y)) {
             preferences_.page=i;++preferences_.revision;return Action::None;
         }
         if(preferences_.page==0) {
@@ -162,6 +164,11 @@ public:
         } else if(preferences_.page==1) {
             if(SettingRect(0).Contains(hit.x,hit.y))return Action::Voice;
             if(SettingRect(1).Contains(hit.x,hit.y))return Action::Text;
+        } else if(preferences_.page==3) {
+            if(OptSettingRect(0).Contains(hit.x,hit.y))return Action::TxrfgProfile;
+            if(OptSettingRect(1).Contains(hit.x,hit.y))return hit.x<320?Action::TxrfgFrameGen:Action::TxrfgCrossGpu;
+            if(OptSettingRect(2).Contains(hit.x,hit.y))return hit.x<320?Action::TxrfgBudgetLess:Action::TxrfgBudgetMore;
+            if(OptSettingRect(3).Contains(hit.x,hit.y))return Action::TxrfgRestore;
         }
         return Action::None;
     }

@@ -97,8 +97,8 @@ struct VrSettingsRenderer {
             if(!Text(210,24,L"VR settings"))return false;
         } else {
             if(!Text(24,22,L"DARKNESS II VR settings"))return false;
-            const wchar_t* tabs[]={L"Obraz",L"J\u0119zyk",L"Sterowanie"};
-            for(unsigned i=0;i<3;++i)if(!button(TabRect(i),tabs[i],options.page==i))return false;
+            const wchar_t* tabs[]={L"Obraz",L"J\u0119zyk",L"Sterowanie",L"Optymalizacja"};
+            for(unsigned i=0;i<4;++i)if(!button(TabRect(i),tabs[i],options.page==i))return false;
             wchar_t label[160]{};
             if(options.page==0) {
                 if(!button(SettingRect(0),options.nis?L"NIS: W\u0141.":L"NIS: WY\u0141."))return false;
@@ -110,11 +110,32 @@ struct VrSettingsRenderer {
                 if(!button(SettingRect(0),options.polishVoice?L"Dubbing: polski":L"Dubbing: angielski") ||
                    !button(SettingRect(1),options.polishText?L"Tekst: polski":L"Tekst: angielski") ||
                    !Text(28,222,L"J\u0119zyk i supersampling: po restarcie gry."))return false;
-            } else {
+            } else if(options.page==2) {
                 if(!Text(28,120,L"Spust: wybierz    K\u00f3\u0142ko: powr\u00f3t") ||
                    !Text(28,151,L"2x tr\u00f3jk\u0105t: pauza    K\u00f3\u0142ko (1 s): cel misji") ||
                    !Text(28,182,L"L3+R3: centrowanie; przytrzymaj: kino / VR") ||
                    !Text(28,213,L"Ruch: lewa ga\u0142ka    Obr\u00f3t: prawa ga\u0142ka"))return false;
+            } else {
+                const auto tc=d2vr_txfg::LoadLive();
+                const wchar_t* pName=tc.profile==d2vr_txfg::ProfileQuality?L"Jako\u015b\u0107 (2x)":
+                    tc.profile==d2vr_txfg::ProfilePerformance?L"Wydajno\u015b\u0107 (2x)":
+                    tc.profile==d2vr_txfg::ProfileCustom?L"W\u0142asny":L"Zalecany (WY\u0141.)";
+                swprintf_s(label,L"Profil TXRFG: %s",pName);
+                if(!button(OptSettingRect(0),label,tc.frameGenEnabled))return false;
+                const Rect r1=OptSettingRect(1);
+                const Rect r1L{r1.x,r1.y,r1.w/2-4,r1.h}, r1R{r1.x+r1.w/2+4,r1.y,r1.w/2-4,r1.h};
+                if(!button(r1L,tc.frameGenEnabled?L"TXRFG 2x: W\u0141.":L"TXRFG 2x: WY\u0141.",tc.frameGenEnabled) ||
+                   !button(r1R,tc.crossGpuAuto?L"M12 Auto: W\u0141.":L"M12 Auto: WY\u0141.",tc.crossGpuAuto))return false;
+                if(tc.gpuBudgetTenthsMs<=0) swprintf_s(label,L"-   Limit GPU: AUTO                         +");
+                else swprintf_s(label,L"-   Limit GPU: %.1f ms                       +",tc.gpuBudgetTenthsMs/10.0);
+                if(!button(OptSettingRect(2),label))return false;
+                if(!button(OptSettingRect(3),L"Przywr\u00f3\u0107 zalecane (WY\u0141.)"))return false;
+                const bool act=d2vr_txfg::active.load(std::memory_order_relaxed);
+                if(act) swprintf_s(label,L"Status: %.0f+%.0f FPS  %.1f ms",
+                    d2vr_txfg::nativeFpsTenths.load()/10.0,d2vr_txfg::synthFpsTenths.load()/10.0,
+                    d2vr_txfg::gpuMsHundredths.load()/100.0);
+                else swprintf_s(label,L"Status: WY\u0141. (passthrough)");
+                if(!Text(24,250,label))return false;
             }
             if(!Text(24,280,options.failed?L"B\u0142\u0105d zapisu ustawie\u0144":
                 options.pending?L"Zapisano. Uruchom gr\u0119 ponownie.":L"INSERT: VR settings") ||

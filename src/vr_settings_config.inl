@@ -32,6 +32,7 @@ static void LoadVrPreferences(const char* ini) {
         (GetPrivateProfileIntA("VRSettings","AppliedPolishText",1,ini)!=0)!=o.polishText;
     o.failed=o.failed || GetPrivateProfileIntA("VRSettings","LanguageError",0,ini)!=0;
     ++o.revision;
+    d2vr_txfg::LoadDefaultIni();
     Log("[VRSettings] loaded NIS=%d strength=%u SS=%u source=%dx%d voicePL=%d textPL=%d",
         int(o.nis),o.nisPercent,o.supersample,g_renderW,g_renderH,int(o.polishVoice),int(o.polishText));
 }
@@ -79,6 +80,26 @@ static void ApplyVrSettingsAction(d2vr_settings::Action action) {
         if(action==Action::Voice){o.polishVoice=!o.polishVoice;ok=VrWrite("PolishVoice",o.polishVoice);}
         else {o.polishText=!o.polishText;ok=VrWrite("PolishText",o.polishText);}
         o.pending=true;break;}
+    case Action::TxrfgProfile: {
+        auto c=d2vr_txfg::LoadLive();
+        const int next=(c.profile+1)%4;
+        if(next==d2vr_txfg::ProfileCustom)c.profile=next;
+        else d2vr_txfg::ApplyProfilePreset(c,next);
+        d2vr_txfg::StoreLive(c);ok=d2vr_txfg::SaveDefaultIni(c);break;}
+    case Action::TxrfgFrameGen: {
+        auto c=d2vr_txfg::LoadLive();c.frameGenEnabled=!c.frameGenEnabled;c.profile=d2vr_txfg::ProfileCustom;
+        d2vr_txfg::StoreLive(c);ok=d2vr_txfg::SaveDefaultIni(c);break;}
+    case Action::TxrfgCrossGpu: {
+        auto c=d2vr_txfg::LoadLive();c.crossGpuAuto=!c.crossGpuAuto;c.profile=d2vr_txfg::ProfileCustom;
+        d2vr_txfg::StoreLive(c);ok=d2vr_txfg::SaveDefaultIni(c);break;}
+    case Action::TxrfgBudgetLess:case Action::TxrfgBudgetMore: {
+        auto c=d2vr_txfg::LoadLive();
+        c.gpuBudgetTenthsMs=std::clamp(c.gpuBudgetTenthsMs+(action==Action::TxrfgBudgetMore?5:-5),0,100);
+        c.profile=d2vr_txfg::ProfileCustom;
+        d2vr_txfg::StoreLive(c);ok=d2vr_txfg::SaveDefaultIni(c);break;}
+    case Action::TxrfgRestore: {
+        d2vr_txfg::LiveConfig c{};d2vr_txfg::ApplyProfilePreset(c,d2vr_txfg::ProfileRecommended);
+        d2vr_txfg::StoreLive(c);ok=d2vr_txfg::SaveDefaultIni(c);break;}
     default:break;
     }
     if(!ok)o=previous;

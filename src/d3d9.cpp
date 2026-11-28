@@ -1625,9 +1625,12 @@ XrSpace g_viewSpace = XR_NULL_HANDLE;    // VIEW space
 XrSystemId g_xrSystem = XR_NULL_SYSTEM_ID;
 ID3D11Device* g_dev11 = nullptr;
 ID3D11DeviceContext* g_ctx11 = nullptr;
+#include "txfg_runtime_state.h"
 #ifdef DARKNESS2_TXFG
-#include "txfg_d3d11_bridge.h"
-static txrfg_interop::D3D11Bridge g_txfgBridge;
+#include "txfg_xr_runtime.h"
+static d2vr_txfg::DirectOpenXrApi g_txfgXrApi;
+static d2vr_txfg::TxrfgXrRuntime<d2vr_txfg::DirectOpenXrApi> g_txfgRuntime;
+static void D2TxfgLogAdapter(const char* msg) { if (msg) Log("%s", msg); }
 #endif
 bool g_xrReady = false;
 bool g_xrRunning = false;
@@ -5855,6 +5858,9 @@ void PumpXR() {
                     }
                 }
             } else if (s->state == XR_SESSION_STATE_STOPPING) {
+#ifdef DARKNESS2_TXFG
+                g_txfgRuntime.Close();
+#endif
                 ReleaseVrSettingsRenderer();
                 ReleaseWeaponWheelRenderer();
                 d2vr::psvr2::SubmitBothOff(d2vr::psvr2::TriggerOffReason::SessionEnd);
@@ -6010,6 +6016,9 @@ bool EnsureSwapchains(UINT w, UINT h) {
     g_scW = w;
     g_scH = h;
     g_eyeCacheW=cacheW;g_eyeCacheH=cacheH;
+#ifdef DARKNESS2_TXFG
+    g_txfgRuntime.Configure(g_txfgXrApi, g_xrSession, g_dev11, g_ctx11, w, h, static_cast<DXGI_FORMAT>(fmt), D2TxfgLogAdapter);
+#endif
     Log("Stereo swapchains [0,1] %ux%u eyeCache=%ux%u count=(%u,%u)", w, h,cacheW,cacheH,g_scCount[0],g_scCount[1]);
     return true;
 }
@@ -6290,6 +6299,11 @@ void SubmitXR(IDirect3DDevice9* dev) {
     XrCompositionLayerProjectionView projViews[2]{};
 
     bool havePixels = false;
+#ifdef DARKNESS2_TXFG
+    bool txfgNativeFresh = false;
+    bool txfgSubstituted = false;
+    float txfgGpuMs = 0.0f;
+#endif
     // SubmitMode 4: also submit the completed same-frame pair while the runtime reports
     // shouldRender=false (SYNCHRONIZED). Evidence 2026-10-31 18:11: SteamVR kept the session
     // SYNCHRONIZED with the HMD worn while we submitted 0 layers at ~63/s ("Oczekiwanie").
@@ -6521,9 +6535,16 @@ void SubmitXR(IDirect3DDevice9* dev) {
                         }
                         layerCount=2;
                     }
+#ifdef DARKNESS2_TXFG
+                    g_txfgRuntime.NoteDiscontinuity();
+#endif
                 } else {
                     layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
                     layerCount = 1;
+#ifdef DARKNESS2_TXFG
+                    txfgNativeFresh = true;
+                    g_txfgRuntime.OnNativeStereoEyes(submitted[0], submitted[1], proj, fs.predictedDisplayTime);
+#endif
                 }
             }
         } else
@@ -6688,6 +6709,20 @@ void SubmitXR(IDirect3DDevice9* dev) {
     }
 
     ObserveNativeActionMovies(); // menus also exist before any 3D player view
+#ifdef DARKNESS2_TXFG
+    if (g_submitMode == 4 && !havePixels && layerCount == 0 && (fs.shouldRender || submitWhileHidden)) {
+        XrFrameEndInfo txfgFei{ XR_TYPE_FRAME_END_INFO };
+        txfgFei.displayTime = fs.predictedDisplayTime;
+        txfgFei.layerCount = 0;
+        txfgFei.layers = nullptr;
+        if (g_txfgRuntime.TrySubstituteSynthetic(fs.predictedDisplayTime, txfgFei, txfgGpuMs) &&
+            txfgFei.layerCount >= 1 && txfgFei.layers) {
+            layers[0] = txfgFei.layers[0];
+            layerCount = 1;
+            txfgSubstituted = true;
+        }
+    }
+#endif
     const uint32_t worldLayerCount=layerCount;
     bool settingsSubmitted=false;
     if(g_vrSettings.Visible()) {
@@ -6735,6 +6770,10 @@ void SubmitXR(IDirect3DDevice9* dev) {
 #endif
         endR=xrEndFrame(g_xrSession, &fei);
     }
+#ifdef DARKNESS2_TXFG
+    g_txfgRuntime.AfterEndFrame(endR == XR_SUCCESS, txfgNativeFresh, txfgSubstituted,
+                                txfgGpuMs, fs.predictedDisplayTime, static_cast<unsigned>(g_trackedFrame.id));
+#endif
     if(settingsSubmitted)g_vrSettings.Submitted(endR==XR_SUCCESS);
     AdaptiveStereoSubmitted(endR,havePixels,worldLayerCount);
 #ifdef D2VR_MATCHED_CAPTURE
