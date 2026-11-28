@@ -52,3 +52,35 @@ the caller return at frame +48. Stack-proof SHA-256
 - Ladder and Villa height fog passed separately. See the ladder-specific and
   fog-specific handoffs for those captures. Independent Villa shadow mask
   verification and physical headset acceptance remain open.
+
+## Throw selection and stroke fallback
+
+The protected release now retains two directions from the same valid request.
+Gaze or controller aim feeds native target selection, and the measured hand
+stroke feeds the free throw. A successful native target trajectory keeps
+its calculated velocity and spin. The existing optional solver-failure
+elevation setting remains available for that specific failure path.
+
+The private `chapter-private-throw-routing` run used candidate SHA-256
+`6A469FAA13F65EDD59DFC1EFB6302389C1D67CB3B39EE232FEECE2AD98C4F864`.
+The simulator independently aimed and moved the left controller with a
+49.44-degree separation. The first cylinder had no admitted target.
+The log reported `route=stroke`, native speed 100.000, and velocity
+(84.393, 30.492, -44.137), matching the measured stroke in the native
+world basis. The stereo capture shows the impact flash near the crane cab.
+The grapple released its held reference. The subsequent encounter killed
+the private avatar before the next cylinder could be used on a hostile.
+The live hostile trajectory result is still pending.
+
+- `free-stroke-held-stroke.json` SHA-256
+  `29A26DD3D78610EF998C8EEB2AA18929B5A07F54E059649EB02982BC1A5E43A7`.
+- `free-stroke-impact.jpg` SHA-256
+  `31759F28282C3358E5BE1ADD8ECE3B691D3FF85A0A6A243D68525A7AE8F076E8`.
+- Protected release fixture passed 1,242 checks. This includes closest-angle
+  ordering, target solver preservation, no-target stroke, absent selector
+  stroke, speed and W preservation, and existing owner/input gates.
+
+Combined grab/fog/ladder build `ED168075` loaded the copied warehouse alley
+and reached the chain-link barrier at (116.957, -3.250, -20.500). That route
+did not reach the ladder. The separate proven ladder run still applies to
+the exact same ladder implementation.

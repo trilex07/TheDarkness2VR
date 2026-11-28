@@ -39,7 +39,7 @@ static void PrepareProtectedThrowForCamera(void* camera) {
     if(!g_protectedThrowPrivateReady) {
         const bool targetReady=g_throwTargetAssist && PrepareThrowTarget();
         if(g_throwTargetAssist && !targetReady)
-            Log("[ThrowTarget] selector preparation refused; retain direct gaze/controller throw");
+            Log("[ThrowTarget] selector preparation refused; retain measured stroke release");
         if(!d2vr_native_clone::MatchesDigest(reinterpret_cast<void*>(0x1004FE4),
             (d2vr_native_clone::throwTableCount+1)*4,d2vr_native_clone::throwTableDigest))return;
         HMODULE self=nullptr;

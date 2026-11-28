@@ -279,7 +279,7 @@ static void TargetCases() {
     const float behind[3]={0,0,-2},nan[3]={NAN,0,2};
     CHECK(d2vr_throw_target::Score(origin,axis,behind)>1e10f);
     CHECK(d2vr_throw_target::Score(origin,axis,nan)>1e10f);
-    Reset();Arm();g_throwTargetAssist=true;g_throwTargetQuery=reinterpret_cast<ThrowTargetQuery>(FakeQuery);
+    Reset();g_throwTargetAssist=true;Arm();g_throwTargetQuery=reinterpret_cast<ThrowTargetQuery>(FakeQuery);
     g_throwTargetCode.entry=reinterpret_cast<void*>(FakeQuery);g_throwTargetSort=FakeSort;
     g_throwTargetTypeCheck=reinterpret_cast<ThrowTargetTypeCheck>(FakeType);
     g_throwTargetFilter=reinterpret_cast<ThrowTargetFilter>(FakeFilter);
@@ -295,7 +295,12 @@ static void TargetCases() {
     Reset();Arm();targetFound=false;
     QueryThrowTarget(fire,nullptr,&result,nullptr,45,100,1,nullptr,1);
     CHECK(queryScoped && !g_nativeThrowToken.targetApplied);
-    CHECK(ResolveProtectedThrowVelocity(fire,v));CHECK(std::fabs(v[0])<1e-5f && v[2]>4.99f);
+    CHECK(ResolveProtectedThrowVelocity(fire,v));
+    CHECK(std::fabs(v[0]-5)<1e-5f && std::fabs(v[1])<1e-5f && std::fabs(v[2])<1e-5f && v[3]==.75f);
+    Reset();Arm(); // An unavailable native selector also falls back to the stroke.
+    float noSelector[4]={0,3,4,1};
+    CHECK(ResolveProtectedThrowVelocity(fire,noSelector));
+    CHECK(std::fabs(noSelector[0]-5)<1e-5f && std::fabs(noSelector[2])<1e-5f && noSelector[3]==1);
     Reset();Arm();clockMs+=650;
     QueryThrowTarget(fire,nullptr,&result,nullptr,45,100,1,nullptr,1);CHECK(!queryScoped);
     Reset();Arm();g_throwTargetAssist=false;

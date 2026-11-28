@@ -12,7 +12,8 @@ struct NativeThrowToken {
     bool targetSolverFailed=false,swingElevationValid=false;
     float swingElevation=0; // normalized measured stroke Y; dimensionless
     float origin[3]{}; // reference-local metres; selector origin only
-    float direction[3]{}; // reference-local LH unit direction, independent of gaze
+    float direction[3]{}; // reference-local LH unit aiming direction
+    float swingDirection[3]{}; // reference-local LH unit direction of the measured stroke
 };
 static SRWLOCK g_nativeThrowLock=SRWLOCK_INIT;
 static NativeThrowToken g_nativeThrowToken;
@@ -65,8 +66,8 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
         const auto forward=RotVec(g_hands[0].aim.orientation,0,0,-1);
         aim={forward.x,forward.y,forward.z};
     }
-    // [EyeTracking] GazeThrow: aim the release at the gaze; the swing keeps
-    // (1-GazeThrowAssist) of the direction. Controller aim without gaze.
+    // Gaze or controller aim selects a target. Store the stroke separately
+    // so a release without a target follows the measured motion.
     float assist=g_throwTargetAssist ? 1.f : g_throwAimAssist;
     if(requested && g_gazeThrow) {
         XrVector3f gaze{};
@@ -91,15 +92,18 @@ static void PublishNativeThrow(bool context,bool newGrab,bool requested,d2vr_inp
        ReadNativeThrowTarget((void*)sample.grabFire,sample.grabEntity,protectedPath,character) &&
        sample.alternateHeldTarget==(character!=0)) {
         const auto& q=g_headGeometryReference.orientation;
-        const auto v=RotVec({-q.x,-q.y,-q.z,q.w},direction.x,direction.y,direction.z);
-        const auto from=RotVec({-q.x,-q.y,-q.z,q.w},origin.x-g_headGeometryReference.position.x,
+        const XrQuaternionf inverse={-q.x,-q.y,-q.z,q.w};
+        const auto v=RotVec(inverse,direction.x,direction.y,direction.z);
+        const float swingSpeed=d2vr_input::Length(velocity);
+        const auto swing=RotVec(inverse,velocity.x/swingSpeed,velocity.y/swingSpeed,velocity.z/swingSpeed);
+        const auto from=RotVec(inverse,origin.x-g_headGeometryReference.position.x,
             origin.y-g_headGeometryReference.position.y,origin.z-g_headGeometryReference.position.z);
         token.origin[0]=from.x;token.origin[1]=from.y;token.origin[2]=-from.z;
         token.direction[0]=v.x; token.direction[1]=v.y; token.direction[2]=-v.z;
+        token.swingDirection[0]=swing.x; token.swingDirection[1]=swing.y; token.swingDirection[2]=-swing.z;
         token.camera=sample.camera; token.inventory=sample.inventory;
         token.fire=sample.grabFire; token.entity=sample.grabEntity;
         token.character=character;
-        const float swingSpeed=d2vr_input::Length(velocity);
         token.swingElevationValid=std::isfinite(swingSpeed) && swingSpeed>=.8f && swingSpeed<=15.f;
         if(token.swingElevationValid)token.swingElevation=velocity.y/swingSpeed;
         token.until=GetTickCount64()+650;
@@ -122,6 +126,10 @@ static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0
     if(!CopyNativeGameplay(sample) || sample.camera!=token.camera || sample.inventory!=token.inventory) return false;
     __declspec(align(16)) float ray[16];
     float original[4],speed=0;
+    const bool solverElevation=g_throwSolverFailElevation && token.targetSolverFailed &&
+        !token.targetApplied && token.swingElevationValid;
+    const bool swingFallback=g_throwTargetAssist && !token.targetApplied && !solverElevation;
+    const float* releaseDirection=swingFallback ? token.swingDirection : token.direction;
     __try {
         if(!NativeThrowFireOwnerMatches((void*)token.camera,token.inventory,self,cameraVT,protectedPath))return false;
         DWORD character=0;
@@ -134,10 +142,10 @@ static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0
         } else if(character)return false;
         const float zero[3]{};
         float stableCamera[16];
-        if(!d2vr_aim::BuildRayMatrix(StabilizedCameraWorld(reinterpret_cast<const void*>(token.camera),stableCamera),zero,token.direction,ray)) return false;
+        if(!d2vr_aim::BuildRayMatrix(StabilizedCameraWorld(reinterpret_cast<const void*>(token.camera),stableCamera),zero,releaseDirection,ray)) return false;
         float directionLength=std::sqrt(ray[8]*ray[8]+ray[9]*ray[9]+ray[10]*ray[10]);
         if(!std::isfinite(directionLength) || directionLength<.5f || directionLength>2.f)return false;
-        if(g_throwSolverFailElevation && token.targetSolverFailed && !token.targetApplied && token.swingElevationValid) {
+        if(solverElevation) {
             d2vr_input::Vec3 fallback{};
             if(d2vr_input::AimAzimuthSwingElevation({ray[8],ray[9],ray[10]},token.swingElevation,fallback)) {
                 ray[8]=fallback.x;ray[9]=fallback.y;ray[10]=fallback.z;directionLength=1.f;
@@ -159,8 +167,9 @@ static bool TryNativeThrowVelocity(void* self,float velocity[4],DWORD cameraVT=0
         if(!token.targetApplied)
             for(int c=0;c<3;++c) velocity[c]=ray[8+c]/directionLength*speed;
     } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
-    Log("[NativeThrow] APPLIED request=%llu entity=%p character=%p stockVelocity=(%.3f,%.3f,%.3f) swingVelocity=(%.3f,%.3f,%.3f) nativeSpeed=%.3f",
-        token.sequence,(void*)token.entity,(void*)token.character,original[0],original[1],original[2],velocity[0],velocity[1],velocity[2],speed);
+    Log("[NativeThrow] APPLIED request=%llu entity=%p character=%p stockVelocity=(%.3f,%.3f,%.3f) swingVelocity=(%.3f,%.3f,%.3f) nativeSpeed=%.3f route=%s",
+        token.sequence,(void*)token.entity,(void*)token.character,original[0],original[1],original[2],velocity[0],velocity[1],velocity[2],speed,
+        token.targetApplied ? "target" : swingFallback ? "stroke" : solverElevation ? "solver-elevation" : "configured");
     return true;
 }
 static int NativeThrowCompareChecked(void* fire,float* velocity,const float* zero,float tolerance,DWORD cameraVT) {
