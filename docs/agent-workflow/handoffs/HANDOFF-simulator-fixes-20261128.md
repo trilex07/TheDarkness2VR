@@ -207,5 +207,35 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   same-frame native render view/projection submission during left squeeze.
   It preserves target selection, movement and gameplay. The private
   `session.py left-grab-witness` preset stages only that flag on the existing
-  profile. The x86 build passed. The exact cylinder acquisition on this
-  diagnostic remains untested.
+  profile. The x86 build passed.
+
+## Native left-grab witness at Swifty's crane
+
+- PID `36128` ran the separate `4271BE0B` diagnostic. Followed the shaded left
+  side of the arena, tested seven distinct A76 left-grip presses across
+  several viewpoints, and saw seven stock grab pulses. One grab reached a
+  real native held entity, `44C47290`, first observed on frame `8378`. Both
+  eyes show a metal rod on the tentacle and the red cylinder still on its
+  ledge. The six later presses did not reach a confirmed attachment. No
+  cylinder throw, stock throw pulse, or crane damage was observed.
+- The first probe's simulated ray and same-frame native getter output agree
+  to within 0.000003° in all 90 comparable samples after converting XR
+  handedness and applying the native camera basis. At the first observed
+  attachment the getter origin and the native render VP camera center differ
+  by 0.00000166 native units. The largest origin difference, 0.334 units,
+  occurred after the hold was empty. This measures the getter and render
+  camera at their recorded sites. It does not identify the native query's
+  candidate ranking or establish the hull and visibility of the cylinder.
+  No production aiming change was made from this probe.
+- Private evidence under `captures/simulator-20261128/left-grab-witness/`:
+  `left-grab-witness.log` SHA-256
+  `3E560255920B22417CDEF66E84C70BEF05CC14AD6C0E61B1F393F7C3B2AEDD8A`,
+  `probe-a-held.jpg` SHA-256
+  `1CFC841E9B7BD1BDA360758C6A8226BF4BB39985F3B888DB239C113CC0D92409`,
+  `probe-a-ray.json`, and `analysis.json`. The adjacent private
+  `analyze_left_grab_witness.py` recomputes the measurements. The session
+  closed normally with exit code zero, all 15 backed-up paths verified,
+  Steam/OpenXR state verified, and the lab lease released.
+- The first witness budget was consumed during the first hold. Future
+  acquisition diagnostics should budget by press and compare with the
+  same checkpoint using native gamepad look and the stock grab ray.
