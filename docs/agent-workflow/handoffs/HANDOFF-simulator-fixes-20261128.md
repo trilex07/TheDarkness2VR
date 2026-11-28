@@ -487,3 +487,9 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   direct launch and the fixture's chapter menu remain to be established
   in the simulator. Use `chapter_nav.py` to inspect the title and native
   menu without automatically choosing Continue.
+- The chapter launch also reached its seven-minute lease wait limit.
+  The same external reservation was still active, and no chapter game
+  process or session directory was created. The original
+  `CONTINUE.SAV`, installed DLL and both INIs still matched the retained
+  cleanup receipt. The offline protected-weapon fixture, both-eye
+  shadow-scope fixture and all 42 matched-capture tests passed.
