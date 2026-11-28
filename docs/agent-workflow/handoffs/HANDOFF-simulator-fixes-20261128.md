@@ -733,3 +733,40 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   branch, pending and held fields for the matched off-axis and stock-aligned
   grips. Keep candidate selection and actual attachment separate when deciding
   where the fix belongs. The live failure is still open.
+
+## Player-reported warehouse ladder
+
+- The actual Steam run captured 1,805 read-only samples across eight repeat
+  falls at ladder action 15, world origin `(122.42, -5, 18.37)`. On the first
+  fall the native mode changed from 6 to 0 with the camera at
+  `(122.520, 0.250, 18.370)`, followed by a fall to `Y=-2.842` over 0.664 s
+  with exactly zero horizontal displacement. The sample SHA-256 is
+  `08F880E7B13EA979813A4ED32B362EE9E18E9D70B1754F48F2A108CDECAF5F4A`.
+  After the player exited, the exact copied continue file
+  (`252845F395B767D1EB53A70D18EC210EFBEF6A838DEB88A067215034C566D6B0`)
+  loaded in a separate simulator profile from the alley before the ladder.
+- Private PID 5868 with `E23CDE3B` reached that exact ladder through the
+  normal level route. The native action advanced to rung 10 with positive
+  input and then from state 1 to state 4, releasing its actor. Its camera
+  stayed at the same horizontal coordinates and fell. The live mode-6
+  ascending input also advanced the camera by 0.7 m while the simulated head
+  was turned away from the ladder. The native action trace SHA-256 is
+  `0E00C8017F051D49D7A014E02B0D2A338701E93766ED933414575840E2C8DF5B`.
+  The private hardware observer detached cleanly and collected no breakpoint
+  events. The state changes were witnessed through read-only memory sampling.
+- The top-end event at `821381` calls `E09F40`. The selected actor's
+  `+2C4` path calls `4CC880 -> 603ED0`, which resolves the owner's camera
+  source object. Its `+78` slot calls `BBC800` to return `owner+30`.
+  The game's `D46710` inverts that matrix, and the end helper uses its
+  translation to prepare the native dismount transform. In the failing run
+  the returned source was the same object as the mod's stabilized camera
+  dispatch, and its inverse translation stayed on the ladder as the native
+  action completed. This establishes a dependency on camera composition in
+  the top-end action.
+- A comparison candidate on `codex/darkness2-ladder-dismount-20261128`
+  uses the original camera-source dispatch while the selected avatar is
+  in mode 6. It keeps the original native event and trajectory in charge
+  of placement. The x86 diagnostic build succeeded at SHA-256
+  `65BCC856F4545086D7FB1B45EA9C905832FB64F6474EC9219CA093DF8F73C262`.
+  The new owned simulator trial uses the same save, staged settings, and
+  exact game executable. No Steam deployment was performed.
