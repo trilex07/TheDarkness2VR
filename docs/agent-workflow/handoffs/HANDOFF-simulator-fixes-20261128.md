@@ -91,3 +91,7 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
 - Both sessions closed normally with exit code 0. Fresh save, settings, DLL
   and INI hashes were restored and the protected Steam/OpenXR state verified.
   Evidence under `captures/simulator-20261128/` remains local.
+- Two bounded attempts to launch the final capture build waited for the shared
+  Steam lab and expired while other leases were active. The final capture gate
+  has build and regression evidence. Its real-game capture completion and the
+  affected lighting scenes remain open.
