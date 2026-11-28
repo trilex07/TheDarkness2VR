@@ -95,6 +95,33 @@ static void PublishProtectedLeftAim(const XINPUT_GAMEPAD& gp) {
     AcquireSRWLockExclusive(&g_protectedAimRayLock);g_protectedAimRay=sample;
     ReleaseSRWLockExclusive(&g_protectedAimRayLock);
 }
+static bool ResolveProtectedActiveGrabAim(void* self,const float* base,float* output) {
+    if(!ResolveProtectedLeftAim(self,base,output))return false;
+    static unsigned reports=0;
+    if(++reports<=3 || reports%600==0)
+        Log("[ProtectedActiveGrab] selected camera=%p direction=%.5f,%.5f,%.5f; native grab selection",
+            self,output[8],output[9],output[10]);
+    return true;
+}
+static bool PrepareProtectedActiveGrabAim() {
+    const d2vr_native_clone::Block callers[]={
+        {reinterpret_cast<void*>(0xCC78D0),0x27a6,"c707848ff2a34c02c9d8bbecc3fe01361a548ddb3958e0e5b81d9f174aa4330c"},
+        {reinterpret_cast<void*>(0xC0BE93),0x53,"4d842f9a320cc446995aa67c22e543fa869d9142fdeeb27777a6c7a37799ae59"},
+        {reinterpret_cast<void*>(0xCE9A00),0x398,"f6f9386486e3db688198d0d2d8a5aa00be2944e71a130691236b6797939fe1f7"},
+        {reinterpret_cast<void*>(0xCB0040),0x18c1,"31561db14cd1d134a743f1b2777043ba39db984f05281196e7ed2a6e4501eb37"},
+        {reinterpret_cast<void*>(0x64FD90),0x6c,"6595addaf9deffa9ab30d8f63f0a5b33ca26b26e42f087032b1e7b4755ce0d58"},
+        {reinterpret_cast<void*>(0xBF2750),0x47,"650214ec7b36b1f3d16f5c42e79f6aa79789d8e534992deea3f20dee418e399b"},
+        {reinterpret_cast<void*>(0x7F9870),0x16,"8f64cce3250fbfc93882e98b1e1abfda346eab84dda0ca9271e1795aa2b7b55d"},
+    };
+    for(const auto& block:callers)
+        if(!d2vr_native_clone::MatchesDigest(block.source,block.bytes,block.sha256))return false;
+    __try {
+        if(*reinterpret_cast<const DWORD*>(0x1001630+0x240)!=0x7F9870 ||
+           *reinterpret_cast<const DWORD*>(0x1001630+0x2F8)!=0xC7C710 ||
+           *reinterpret_cast<const DWORD*>(0x1004FE8+0x68)!=0xCC78D0)return false;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
+    return d2vr_aim_getter::Bridge::ActiveGrab(ResolveProtectedActiveGrabAim,g_nativeImageGuard);
+}
 static bool PrepareProtectedAimCamera(void* camera) {
     if(!g_protectedLeftAim || !g_nativePlayerOwnerAdmitted || !g_nativeImageGuard.enabled)return false;
     if(ProtectedAimCameraOwned(camera))return true;
@@ -114,6 +141,8 @@ static bool PrepareProtectedAimCamera(void* camera) {
            !g_protectedAimTable.Prepare(reinterpret_cast<void**>(0xFFC7C0),71,0x9c/4,
                d2vr_aim_getter::Bridge::Entry(),g_nativeImageGuard,0x8c/4,
                g_dialogueCameraComfort?reinterpret_cast<void*>(DialogueCameraAngles):nullptr))return false;
+        const bool activeGrab=PrepareProtectedActiveGrabAim();
+        Log("[ProtectedActiveGrab] ready=%d; exact native input acquisition path",int(activeGrab));
         g_protectedAimPrivateReady=true;
     }
     const bool published=g_protectedAimTable.Publish(camera,g_nativeImageGuard);
