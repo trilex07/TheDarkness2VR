@@ -239,3 +239,29 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
 - The first witness budget was consumed during the first hold. Future
   acquisition diagnostics should budget by press and compare with the
   same checkpoint using native gamepad look and the stock grab ray.
+
+## Native-look control trial and recovery
+
+- The first control profile allowed native right-stick pitch and set
+  `ProtectedLeftAim=0`. The mod refused that configuration in DLL process
+  attach because the armed protected throw and tracked hands require the
+  protected aim feature. The title window did not appear and no simulator
+  input ran. Exact rejection log SHA-256
+  `5B1585DF3527705350EF58DBFB9218287F7EC432CFC10D61D169B93F265D4626`.
+- The automatic close path retained the lease because there was no title
+  window or retained process handle. The MAIN recovery verified three
+  independent process inventories and the exact current lease before
+  working from this session's fresh receipt. Verified all 15 original
+  paths, including the unchanged save, original DLL and both game INIs,
+  confirmed unchanged Steam/OpenXR state, and released the lease. Private
+  receipts: `stock-look-crane/manual-cleanup-verified.json` and
+  `stock-look-crane/manual-release-status.json`.
+- The revised private preset `stock-look-aligned-crane` keeps protected aim,
+  throw, and hands enabled and only permits stock right-stick pitch. With
+  the headset and hand aiming along the neutral reference, the private
+  witness can check that acquisition consumes the same origin and forward
+  direction as the native camera. This control awaits an available shared
+  simulator slot. There is no reason to relax the native startup guard.
+- Checked historical named Continue backups and backup manifests from the
+  retained worktrees. The available copies have the same SHA-256 as the
+  current pre-crane checkpoint. No separate ladder or Villa save was found.
