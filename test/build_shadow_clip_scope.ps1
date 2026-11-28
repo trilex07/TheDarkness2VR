@@ -1,6 +1,12 @@
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $src=Get-Content (Join-Path $root 'src/stereo_replay.inl') -Raw
+$live=Get-Content (Join-Path $root 'src/d3d9.cpp') -Raw
+if(!$live.Contains('!d2vr_replay::SkipLightVolumeShift(d2vr_replay::g_activeVs)') -or
+   !$src.Contains('!SkipLightVolumeShift(g_activeVs)')){throw 'Both eyes must use the same light-volume shift gate'}
+$gateStart=$src.IndexOf('static bool SkipLightVolumeShift(')
+$gateEnd=$src.IndexOf('static int ActiveWvpRegister(',$gateStart)
+$gate=$src.Substring($gateStart,$gateEnd-$gateStart)
 $start=$src.IndexOf('struct ShadowClipScope {')
 $end=$src.IndexOf('struct ReflectionEyeScope {',$start)
 if($start -lt 0 -or $end -le $start){throw 'Scope missing'}
@@ -15,6 +21,8 @@ $prefix=@'
 struct IDirect3DDevice9 {bool fail=false;float current[4]={7,8,9,10};int reads=0;
  HRESULT GetPixelShaderConstantF(unsigned r,float* out,unsigned n){assert(r==223&&n==1);++reads;if(fail)return E_FAIL;memcpy(out,current,16);return S_OK;}};
 bool g_shadowClipCoordinates=true,g_noInvProj=false;
+struct VsInfo {unsigned hash;};
+int g_skipLightVsShift=0;
 int g_replayEye=-1,g_projectionFix=3,g_lightingPreset=0,g_activePsInverse=27;
 const void* g_boundPs=nullptr;
 struct Metadata {bool shadowClip=true;} metadata;
@@ -27,6 +35,10 @@ struct Driver {int writes=0;HRESULT SetPixelShaderConstantF(IDirect3DDevice9* d,
 $suffix=@'
 void run(IDirect3DDevice9& d,float expected){const float old[4]={7,8,9,10};memcpy(d.current,old,16);int before=g_orig.writes;{ShadowClipScope s(&d);assert(d.current[0]==expected);}assert(!memcmp(d.current,old,16));assert(g_orig.writes==before+2);}
 int main(){IDirect3DDevice9 d;
+ VsInfo volume{0x68EEE79C},other{0x293F456B};
+ assert(!SkipLightVolumeShift(&volume));
+ g_skipLightVsShift=1;
+ assert(SkipLightVolumeShift(&volume) && !SkipLightVolumeShift(&other) && !SkipLightVolumeShift(nullptr));
  for(int eye=-1;eye<=1;++eye){g_replayEye=eye;run(d,1);params.mode=3;run(d,0);params.mode=0;params.headGeometry=false;run(d,0);params.headGeometry=true;}
  g_lightingPreset=-1;run(d,1);g_lightingPreset=0;
  g_noInvProj=true;run(d,0);g_noInvProj=false;g_projectionFix=1;run(d,0);g_projectionFix=3;
@@ -38,7 +50,7 @@ int main(){IDirect3DDevice9 d;
  puts("PASS actual draw scope: both eyes, cinema/native branch, incompatible settings, unknown shader, failed getter, exact constant restore, all four wrappers wired");
 }
 '@
-[IO.File]::WriteAllText((Join-Path $out 'scope.cpp'),$prefix+$src.Substring($start,$end-$start)+$suffix)
+[IO.File]::WriteAllText((Join-Path $out 'scope.cpp'),$prefix+$gate+$src.Substring($start,$end-$start)+$suffix)
 $vs=& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vc=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 Push-Location $out

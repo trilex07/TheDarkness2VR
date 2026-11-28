@@ -1233,6 +1233,10 @@ static bool IsShadowAtlasPass(IDirect3DDevice9* dev) {
     if(SUCCEEDED(a) && SUCCEEDED(b)) g_shadowPassState={dev,true,shadow};
     return shadow;
 }
+static bool SkipLightVolumeShift(const VsInfo* shader) {
+    return g_skipLightVsShift && shader && shader->hash == 0x68EEE79Cu;
+}
+
 // Returns true if the upload was modified (copies into caller buffer).
 // Register semantics (verified from captured runtime traces + extracted shader CTABs):
 //   1. Shader analysis / CTAB names: shift exactly the matrix block that feeds o0
@@ -2848,10 +2852,7 @@ static bool ReplayStream(IDirect3DDevice9* dev, int eye, const StereoParams& sp)
             // 68 vectors = 272 floats). The old size (17*4) overflowed the stack -> fail-fast.
             float tmp[kVertexStereoUploadRows * 4];
             UINT uploadStart=r.a[0],uploadCount=r.a[1];
-            bool lightVs = false;
-            if (g_skipLightVsShift && g_activeVs && g_activeVs->hash == 0x68EEE79Cu)
-                lightVs = true;   // candidate fix (Shift+F2): light volume in engine/world space
-            if (eye >= 0 && r.a[1] <= 68 && !lightVs && !IsShadowAtlasPass(dev)) {
+            if (eye >= 0 && r.a[1] <= 68 && !SkipLightVolumeShift(g_activeVs) && !IsShadowAtlasPass(dev)) {
                 if(const auto* prepared=PreparedVertexPacket(i,replayComplete)) {
                     if(prepared->effects.publish)PublishProjectionEstimate(prepared->effects.px,prepared->effects.py);
                     g_shiftCount+=prepared->effects.shiftCount;

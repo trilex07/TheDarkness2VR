@@ -7,6 +7,7 @@ $vs=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC
 if(!$vs){throw 'C++ tools unavailable'}
 $vcvars=Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
 $out=Join-Path $here '../../test-output/simulator-lab-20261103'
+New-Item -ItemType Directory -Force -Path $out | Out-Null
 $exe=Join-Path $out 'shadow-clip-test.exe'
 $obj=Join-Path $out 'shadow-clip-test.obj'
 Push-Location $out

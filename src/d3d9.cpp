@@ -343,7 +343,7 @@ int g_zeroCopyEnabled = 0;         // Config: Render.ZeroCopy (0 = CPU CopyFrame
 int g_projectionFix = 0;          // Rejected lighting/FOV experiment; opt-in diagnostics only.
 uint32_t g_diagnosticSkipVs = 0;
 int g_lightPosShift = 0;  // F5: shift the shadow-light PS c0 light position per eye
-int g_skipLightVsShift = 0;  // F6: do not shift the light-volume VS constants (world = depth frame)
+int g_skipLightVsShift = 0;  // Shift+F2: leave the light-volume VS constants native in both eyes.
 int g_noInvProj = 0;         // F7: no InverseProjection compensation (raw reconstruction)
 int g_lightingPreset = -1;  // -1 configured behavior; 0..9 = Shift+1..0 experiments.
 int g_pendingLightingPreset = -1;
@@ -2436,6 +2436,7 @@ __declspec(noinline) static HRESULT STDMETHODCALLTYPE Native_SetVertexShaderCons
     }
     if ((g_hookMask & 8) && g_submitMode == 4 && g_stereoMode >= 1 &&
         d2vr_replay::g_replayEye < 0 && pConstantData && Vector4fCount <= 68 &&
+        !d2vr_replay::SkipLightVolumeShift(d2vr_replay::g_activeVs) &&
         !d2vr_replay::IsShadowAtlasPass(dev)) {
         static thread_local float s_tmpConst[d2vr_replay::kVertexStereoUploadRows * 4];
         const d2vr_replay::StereoParams& eyeParams = EyeParamsRef(0);
