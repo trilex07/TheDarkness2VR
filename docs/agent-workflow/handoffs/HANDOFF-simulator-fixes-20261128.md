@@ -175,3 +175,27 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   helpers prepared for testing. No propane throw or ladder dismount has been
   confirmed. The ladder fix remains scoped to the verified native traversal
   mode; reproducing the player report still requires the exact ladder.
+
+## Integer-clock gameplay verification
+
+- PID `4700` ran `247FCC4C` from the existing Steam checkpoint in the A76
+  simulator. All four shadow-stage requests completed and validated through
+  OpenXR and original D3D9 Present, including the wider head turn that failed
+  on the first fix. The submission records show 812–5203 ms of capture time,
+  with a single world projection on each request. Frame `8378` directly
+  exercises arm and previous submission sharing a timer tick, with both the
+  world gap and excluded capture time at 812 ms.
+- The lighting audit observed sixteen `C4D1FB10` consuming draws with at most
+  0.00000188 absolute inverse-projection matrix error. The two native light
+  projections still changed even with body position and yaw held, so no visual
+  shadow temporal score is available. Full retained stage files and receipts
+  are in `captures/simulator-20261128/shadow-timing-ms/`.
+- Continued through the crane arena and visually identified the darkling's red
+  cylinder on the left ledge. A76 grip delivered multiple real native grab
+  pulses. One attempt reached `NativeGrab busy` transiently. The cylinder
+  remained visible on the ledge in both eyes, and no throw or damage to the
+  crane was confirmed. An exposed route respawned at the original checkpoint.
+  Compare the hand aim against the native prop-query camera before changing
+  its mapping. The later ladder climb/dismount and villa highlights remain
+  open. The simulator run closed normally with verified restoration of the
+  original DLL, INIs, saves and protected Steam/OpenXR state.
