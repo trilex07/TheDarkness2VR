@@ -328,3 +328,56 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   next action deliberately re-armed the grip while the prop stayed attached.
   The game exited normally. The retained-close receipt confirms verified
   restoration of 15 paths and the shared Steam/OpenXR state, and lease release.
+
+## Scoped grab candidate experiment
+
+- Experimental source `034edc92bb704bf03d719491638993d14d8d3572`
+  in `C:\Users\Trilex\Darkness2VR-grab-selector-20261128`, branch
+  `codex/darkness2-grab-selector-experiment-20261128`. Diagnostic build
+  SHA-256 `3705542199D131D6382C3D7CAB2F10043E463E91E024252D3EE70F3ACBEA70E4`.
+  The x86 getter ABI fixture passed 151,027 checks, including exact frame
+  ancestry and rejected return chains. The native getter and throw-selector
+  static contracts passed against the pinned Steam EXE.
+- The left-fire update calls the shared target selector at `00CC8B10`
+  (return `00CC8B15`) and stores a candidate reference at `+CF4`.
+  The experiment substitutes the tracked private camera transform only in
+  that caller's direct getter and two helper calls. It distinguishes the
+  release selector's separate caller and avoids executable-image writes.
+  Startup flags are `LeftGrabSelectorWitness=1` and `LeftGrabSelectorSteer=1` in
+  the staged diagnostic profile. The private launch preset is
+  `grab-selector-steer` in `captures/simulator-20261128/session.py`.
+- PID `28024` admitted the exact native getter. At frame 19236 the controller
+  direction was 57.4 degrees from the stock view (stock forward `(1,0,0)`),
+  the game entered the busy state, and both eyes showed attached rebar.
+  The native throw receipt for the rebar identifies entity `0195E9F0`.
+  A separate grip while pointing at the cylinder from the same side of the
+  yard kept an untyped candidate at `238A4280` without attaching anything.
+  A later grip from the wall with the stock view closer to the target
+  acquired a cylinder. The controller gesture redirected and released
+  entity `019626C0` at native speed 62.658 and the capture showed an explosion
+  by the cabin. The player died and the pre-fight checkpoint reloaded.
+  No same-position experiment-off result or cylinder-only steering proof
+  exists. The crane completion, ladder and Villa checks remain open.
+- Keep `+CF4` distinct from the `+558` and `+580` fields. The
+  `00D3A9F0` writer at `00D3AC4B` consumes `+D30` and `+D38`, whose
+  native metadata names are `mDemonicShieldType` and
+  `mDemonicShieldUpgradedType`. Follow the standard prop path instead,
+  starting at the `00AC0A90` caller near `00909759` and the live native
+  grab update. The next comparison needs two grip requests with the same
+  actor position, stock camera and controller ray, along with typed candidate
+  and actual attachment observations.
+- The private `grab-selector-steer/selector-native-proof.log` SHA-256 is
+  `13335CADA4982A32670E84DEFCD1D4243A472246A8CB1F2E848BABC0FE863604`.
+  The representative frames are `steer-held-2.jpg` SHA-256
+  `2B5EBB0EAA9D3095F93E3863131184A9C505C4E27971711D46366CC040262EAE` and
+  `wall-fine-held.jpg` SHA-256
+  `BCB7CE5B61F2563FA94198C088138792817282035389CC08AFB41AB0775F1767`.
+  `cabin-result.jpg` SHA-256 is
+  `A6A86F4ABAD9861D955D6F5F264F3361E2F2D1A62EA1CE159837E5173695E706`.
+  The same folder retains the ordered route captures and input receipts for
+  a control rerun. The private navigation guard used the native pause
+  transition, world activity and weapon publication because the movie flag
+  persisted after Continue. The owner and foreground guards still applied.
+  The game exited normally, all 15 protected paths passed post-restore
+  verification, the original DLL and both INIs matched, and the lease
+  was released.
