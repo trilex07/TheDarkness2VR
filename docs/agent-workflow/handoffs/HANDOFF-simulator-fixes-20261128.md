@@ -493,3 +493,22 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   `CONTINUE.SAV`, installed DLL and both INIs still matched the retained
   cleanup receipt. The offline protected-weapon fixture, both-eye
   shadow-scope fixture and all 42 matched-capture tests passed.
+
+## Same-frame shadow follow-up
+
+- The four retained crane frames expose eight pairs of actual shadow draws
+  with identical native light constants across the live eye and replay eye.
+  The before and after image hashes for the first draw agree in all four
+  frames. Start with the second draw when measuring the crane.
+- Diagnostic branch `codex/darkness2-shadow-pair-20261128`, commit
+  `39d9611abe9161334c84b2036ad6917456b82464`, captures the same native
+  shadow draw's before, depth and after targets in both eyes. Build SHA-256
+  `2B9842C7650DF1680A83C3DFABCC35F70F177863F5C37ACC88718A777D49345B`.
+  The 47 capture tests, both-eye scope fixture and isolated chapter
+  launch preflight passed. The separate branch handoff documents mode 5,
+  `CaptureDrawOrdinal` and the reprojection audit.
+- The private `world.py` helper accepts `shadow_capture(serial, 5, 1)`
+  inside the exact owned gameplay session. Use the paired DLL in
+  `C:/Users/Trilex/Darkness2VR-shadow-pair-20261128/d3d9.dll` for the
+  isolated chapter trial. The lab was still reserved, and the first live
+  ladder and Villa captures have not run.
