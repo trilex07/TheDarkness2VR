@@ -381,3 +381,50 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   The game exited normally, all 15 protected paths passed post-restore
   verification, the original DLL and both INIs matched, and the lease
   was released.
+
+## Same-pose control and steering comparison
+
+- Experimental follow-up `06ca0db65f9c64e14e532e3d2a7472777b93ceb8`,
+  diagnostic DLL SHA-256
+  `D9D7343C621E12365D704A836F4927536794A308DF3ACF10CD2A33DEC79CFE51`.
+  Built with `build.ps1 -DiagnosticCapture`. The existing native aim
+  getter contract and 151,027-check ABI fixture passed again. This build
+  enables mode changes only under the private diagnostic preset
+  `grab-selector-comparison` and records candidates, pending acquisition
+  and actual attachment separately. Both trial requests used PID `39612`
+  and the same controller pose. The native camera matrix and reconstructed
+  rays matched exactly in the logged precision at frames 9911 and 11407.
+  Both used a 66.0-degree offset from stock camera forward.
+- The two grips each reached the native LB handler. The barrel stayed on
+  the ledge in both trials. With steering active, `+CF4` populated at
+  frame 11531 with `4241ED80`, native vtable `00FFE800`. The pending and
+  attached fields stayed empty. With no intervening translation input,
+  stock pitch alignment let the game move one reference `01AA0490` from `+558` to
+  `+580` with vtable `00FE1CF8`. The same entity was released by the
+  tracked gesture and a cabin-area explosion was visible. After a death
+  and checkpoint reload, a second stock-aligned cylinder reached
+  attachment with the same vtable at a different position. The hold
+  ended during the encounter before a second launch in that attempt.
+- Keep the candidate steering experimental. The downstream `+CF4`
+  branches around `00CC8F48` resolve a world position written to `+D00`.
+  For actual attachment, the known left aim getter call at `00C6300F`
+  builds two ray endpoints for `00BE1DC0` at `00C63060`. The same routine
+  calls `00D3EE30` at `00C6314E` and `0099A2F0` at `00C631B8`.
+  Follow the native request and acceptance path beyond the getter and the
+  hover selector. `0090975C` assigns a retained candidate to `+558` and
+  follows an entity-dependent native threshold at `009096D6`. The static
+  call and field contracts are in the private `acquisition-live-writers-static.txt`.
+- Private `grab-selector-comparison/comparison-native-proof.log` SHA-256
+  `9F878FD669C8B63DCE2C08581380C19D24A04D9DF9A771A74A4BED6FF7A2BE9A`.
+  The controller input and both serialized camera/ray results are in
+  `same-pose-controller.json` and `comparison-pose-proof.json`. The
+  positive hit capture `first-cabin-impact.jpg` SHA-256 is
+  `16859208159DD8A6A44C276D57B9067A230498335B3D764CD7F640ACEA1550B1`.
+  Both experiment sessions exited with code 0, verified restoration of
+  15 protected paths and released the lab lease.
+- To reach the ladder, use the normal encounter route and account for a
+  second left-side cylinder before later spawns move to the right.
+  The game spawns bandits after the first hit. Preserve survival using
+  cover, crouch and available health restoration. The encounter and path
+  past the diner to the ladder are documented in
+  [Q and A, part 2](https://www.gamepressure.com/thedarknessii/q-and-a-p-2/z437d6).
