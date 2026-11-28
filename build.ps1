@@ -36,9 +36,18 @@ try {
     $observerSources = if ($DiagnosticCapture) {
         'third_party\minhook\src\buffer.c third_party\minhook\src\hook.c third_party\minhook\src\trampoline.c third_party\minhook\src\hde\hde32.c '
     } else { '' }
+    $txfgRoot = if ($env:TXFG_WIN32_DIR) { $env:TXFG_WIN32_DIR } else { 'D:\projekty\txfg-x86-d5f6df8' }
+    $txfgLib = Join-Path $txfgRoot 'build-win32-md\Release\txfg.lib'
+    $txfgFlags = ''
+    $txfgLink = ''
+    if (Test-Path $txfgLib) {
+        $txfgFlags = "/DDARKNESS2_TXFG=1 /I`"$txfgRoot\include`" "
+        $txfgLink = " `"$txfgLib`""
+        Write-Host "Darkness2VR: linking Win32 TXRFG from $txfgLib"
+    }
     $cmd = "`"$vcvars`" x86 && cl /nologo /LD /EHsc /W3 /O2 /Zi /MD /std:c++17 " +
-           $captureDefine + "/I`"$inc`" /I`"$here\src`" /Fe:d3d9.dll src\d3d9.cpp src\dlss\dlss_client.cpp src\dlss\dlss_gpu.cpp " + $observerSources +
-           "/link /DEBUG /OPT:REF /OPT:ICF /MAP:d3d9.map /DEF:d3d9.def /LIBPATH:`"$libDir`" openxr_loader.lib dxgi.lib d3d11.lib user32.lib gdi32.lib shell32.lib xinput.lib"
+           $captureDefine + $txfgFlags + "/I`"$inc`" /I`"$here\src`" /Fe:d3d9.dll src\d3d9.cpp src\dlss\dlss_client.cpp src\dlss\dlss_gpu.cpp " + $observerSources +
+           "/link /DEBUG /OPT:REF /OPT:ICF /MAP:d3d9.map /DEF:d3d9.def /LIBPATH:`"$libDir`" openxr_loader.lib dxgi.lib d3d11.lib user32.lib gdi32.lib shell32.lib xinput.lib$txfgLink"
     cmd /c $cmd
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
     Write-Host "Built: $(Join-Path $here 'd3d9.dll')"

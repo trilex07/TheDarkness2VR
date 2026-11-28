@@ -1625,6 +1625,10 @@ XrSpace g_viewSpace = XR_NULL_HANDLE;    // VIEW space
 XrSystemId g_xrSystem = XR_NULL_SYSTEM_ID;
 ID3D11Device* g_dev11 = nullptr;
 ID3D11DeviceContext* g_ctx11 = nullptr;
+#ifdef DARKNESS2_TXFG
+#include "txfg_d3d11_bridge.h"
+static txrfg_interop::D3D11Bridge g_txfgBridge;
+#endif
 bool g_xrReady = false;
 bool g_xrRunning = false;
 XrSessionState g_xrSessionState = XR_SESSION_STATE_UNKNOWN;
