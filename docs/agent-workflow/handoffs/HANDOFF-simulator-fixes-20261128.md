@@ -428,3 +428,36 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   cover, crouch and available health restoration. The encounter and path
   past the diner to the ladder are documented in
   [Q and A, part 2](https://www.gamepressure.com/thedarknessii/q-and-a-p-2/z437d6).
+
+## Private camera collision probe
+
+- In the native left-fire update, `00CC7AC3` calls the camera's `+84`
+  leaf. The leaf returns its Euler storage at `+110`. At `00CC7ACF`,
+  `00CE2940` builds the forward row from those angles in degrees. The
+  nested `00BF2750` call at `00CC7AE7` supplies ray position. The update
+  builds and submits the separate collision ray at `00CC7B49` before the
+  passive `+CF4` query. Its callback at `00C3A140` can retain a result in
+  `+F24`. That reference is distinct from pending acquisition and
+  attachment, and its role in attaching props is still unverified.
+- Experimental source `e3e7d1b172c564c72fb7f2e39e22a71b6c0696a6`
+  adds a private camera getter for the single Euler return address
+  `00CC7AC5`. The position is admitted only through the matching BF2750
+  call chain, same tracked frame and camera, after the Euler replacement
+  succeeds. Before steering, the probe requires the reconstructed stock
+  forward and the camera matrix forward to agree in the live call.
+  The optional collision comparison keeps the passive selector stock.
+  Source and flag changes remain on the experimental branch.
+- `build.ps1 -DiagnosticCapture` succeeded. The exact Steam executable
+  satisfied the static getter and collision call contract. The x86 fixture
+  passed 168,066 checks including both leaves, opposite and vertical
+  directions, private slots, native bytes, registers, FPU and SSE states.
+  Pinned test DLL is private
+  `captures/simulator-20261128/grab-collision-52F993AF39C8.dll`, SHA-256
+  `52F993AF39C80F62ED7F9005CC88CF194BE0643A90360F143D23E2F3F21E2EEC`.
+  The guarded launcher preset is `grab-collision-comparison`. It starts
+  with steering disabled and can toggle it after reaching gameplay.
+- Offline emulation executed the exact pinned native `00CE2940` routine
+  for 475 yaw and pitch pairs. The maximum forward-component residual was
+  `8.8112e-8`. Private `grab_native_angles_oracle.py` uses Unicorn 2.1.4.
+  The result `grab-native-angles-proof.json` SHA-256 is
+  `65B0D897886479CED95DE4ECB097C1CBB1E134B011142B2BAAB672432F2D48A3`.
