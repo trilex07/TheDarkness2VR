@@ -542,3 +542,30 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   SHA-256 `94691D26A0E410210AC9AAE23FA3B0D010F534851403F2F41DF27C33FA64EE3A`.
   The game executable was opened read-only. The shared reservation still
   precluded an owned simulator session.
+
+## Composite fog reconstruction
+
+- Retained crane frames 8195, 8286, 8378 and 8474 have the same native
+  camera projection and view-projection. Both eyes in all four frames
+  exercised PS `33DE98C1` with effective inverse-projection constants at
+  c10–13. The captured DOF-only shader `A69BDC80` still multiplies both
+  screen clip coordinates by sampler 2 depth before reconstructing height.
+  Its recorded vertex shader `24E3903D` exports those coordinates directly
+  from clip X and Y. `tools/audit_composite_fog.py` verifies both original
+  captured shader digests and the relevant disassembled instructions.
+- Across 9,327 synthetic geometry points visible at all eight recorded eye
+  poses, the maximum reconstructed height spread was 0.02605 game units.
+  Unscaled X and Y reduced it to 0.00850, and also normalizing the world
+  viewport's depth range reduced it to 0.000203. This controls the native
+  camera and measures the recorded shader arithmetic. Exact sampler 2
+  depth pixels and the reported fog region still need an in-game capture.
+  No rendering code changed.
+- Run `python -B tools/audit_composite_fog.py <matched frame directories>`.
+  Private `captures/simulator-20261128/composite-fog-height-proof.json`
+  SHA-256 `FABC61CA08CEA93C4EF7B7B20A4A78C3B8F2A06145B4AD39D5FDE7E1F9CDFEF7`.
+- The paired chapter launch passed its isolated-profile preflight and
+  expired after six minutes waiting for the same external lab reservation.
+  The private navigation helper `capture_shadow_pair(serial, ordinal)`
+  now verifies the game PID, capture serial, frame, build and temp path
+  before running the audit. Its offline checks covered successful evidence,
+  duplicate serials, a foreign build and a rejected frame.
