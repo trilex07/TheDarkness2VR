@@ -637,3 +637,70 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
   after reload identified cover and a native pickup prompt, but did not
   establish the third cylinder or ladder. The closed private launches
   each restored the seven preexisting Steam/save paths and released the lab.
+- The same archive with its matched 3,512-byte settings file also failed
+  admission. Native startup removed both files inside the private profile
+  and the menu had no Continue. A fresh local campaign did produce an
+  accepted Continue, but a stock resume repeated the restaurant checkpoint.
+- The fallback build also let the simulator change difficulty in the copied
+  Crane profile from Gangster to Oprych. The native keyboard and tracked
+  throw trials could still lose the cylinder or restart the encounter.
+  The stock settings and checkpoint were restored on closure.
+- A private fixture on local branch `codex/darkness2-private-route-fixture-20261128`
+  and commit `b9084185eba1eb583edbaa3f5638f15d6301876b` uses the game's
+  admitted current/max health and setter to keep the disposable campaign
+  alive while navigating to target scenes. It requires the process-local
+  simulator and an owned marker file. The stage will be disabled before
+  testing ladder or Villa behavior. DLL SHA-256
+  `4C945F856CC88A8B4F10F89D196A52DD3A6BDDF39940132B4ACD6E3F1BE00DEA`.
+  The crane run produced 444 recovery receipts, confirmed two native
+  releases, and traversed the right lane. Its checkpoint remained at the
+  crane, so those releases do not prove the encounter was won. The marker
+  was disabled before the guarded close. Evidence is in
+  `chapter-private-crane-route/route-runtime-proof.log`.
+- The same fixture advanced a separate Dinner Out profile through the
+  first firefight and into the van checkpoint. The new private save had
+  SHA-256 `661B083FED859E7F5D237879BB372A1F21D62DB2A1F4ED0AF58A46C0C1F1A142`.
+  The later bar firefight did not reach Payback during this run. The
+  fixture was disabled and the owned game closed before preparing an
+  independent stock-weapon comparison from that private save.
+
+## Direct chapter loads and manual Steam handoff
+
+- A verified disposable Steam copy at `D:/Darkness2VR-chapter-lab-20261128`
+  used the normal retail map loader. The private menu fixture redirects only
+  the New Game callbacks to the game's existing map list after registering
+  the normal menu handlers. The exact Lua 5.1 closure capture words at byte
+  offsets `54474` and `54522` changed from `02000000` to `02800000`, binding
+  local slot 5 instead of 4. Both base and `PCPatchManifests` script archives
+  need the change. The menu script SHA-256 is
+  `5792767A9FB7C29EE8DF18438BE703B52D4F386CFB6B0307CFE421DFE489682F`.
+  The private receipt and reproduction script are
+  `private-level-script-archive-new-game.json` and `stage_map_selector_new_game.py`
+  in the simulator evidence directory. Native chapter assets and the Steam
+  installation stayed stock.
+- PID 34444 loaded `PokerWarehouse.level` with candidate `E23CDE3B`.
+  Jackie followed the darkling into the warehouse alley until a chain-link
+  gate blocked the way. The validated read-only native avatar witness still
+  reported mode 0 there. A grip request and a jump did not pass the gate.
+  The warehouse asset identifies two native grabbable gates and named ladder
+  actions. The actual ladder mount, ascent and roof dismount remain open.
+  `chapter-private-map-warehouse/warehouse-selected.jpg` has SHA-256
+  `2B9E97E722D115875753ED0171F44D35095A07B685ACA75CEA91DB6D9FC7B2A8`.
+  The run restored the staged DLL and released the lease.
+- PID 28720 loaded `PokerHub.level` at the Villa elevator with `E23CDE3B`.
+  The matched Villa fog-depth frame 10015 and paired shadow frame 10118
+  both passed capture validation. The shadow mask audit rejected frame
+  10118 because the selected draw supplied insufficient shadow contribution.
+  A second shadow ordinal requested from the lobby did not produce a complete
+  pair at frame 13298. The visible lobby capture and original capture files
+  are in `chapter-private-map-villa`, with before/after SHA-256 verification
+  in `retained-captures.json`. The lobby screenshot SHA-256 is
+  `F6A8AF5A474E00675EF43D7B3BCB1EB4EFD8CD5888EDC060DB465212027B8B71`.
+  The Villa rendering reports remain open. The stock install and player
+  save matched the pre-test hashes and the simulator lease was released.
+- At the user's request Steam started the installed build with the player's
+  real save available under Continue. The verified pre-play save is backed up
+  in `manual-steam-handoff-20261128`. Desktop presses did not activate Continue.
+  SteamVR reported an unfocused session and no active controller profiles.
+  The user takes over from the visible main menu. The manual play lease stays
+  active until the owned game exits normally.
