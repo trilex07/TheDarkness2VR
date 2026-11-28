@@ -58,11 +58,36 @@ indicator enabled. The diagnostic INI already enables the scoped shadow shader.
 
 ## Open gameplay gates
 
-The shared lab lease was occupied at the first launch attempt. Do not use
-another lease, change the installed player configuration or reload historical
-saves. Use a fresh lease with the existing retained-close and verified rollback
-lifecycle. Reproduce both-eye firing and compare the real shot and indicator
-in the same frame. Reach the after-Swifty ladder, look across and behind it,
-and verify ascent, descent and top dismount. Capture a fixed-head control and
-translated/yawed pairs for the reported spotlights and shadows, including a
-draw-level witness for any mismatched consumer. Headset acceptance remains open.
+- The leased baseline and `CD4F68E7` both reached the real crane-yard save.
+  Simulator controller primary advanced the title. Left-stick selection and
+  a separate right primary selected Continue from its visible red highlight.
+  Pointer hover alone moved the visual beam, while the native Flash COM lease
+  was refused. The title/Continue route used no Windows keyboard injection.
+- Candidate PID `21448` accepted an L3+R3 click at frame `13402`, queued the
+  displaced reference `(0.13, 1.7, 0)` at yaw 14.32 degrees, and kept stereo
+  gameplay running. Native right and left fire consumer stages 32 and 33
+  both reported applied, and both magazine counters decreased. Stick walking
+  progressed past the stairs and into the crane yard. The save is before the
+  reported after-Swifty ladder. Climbing and dismount still need an in-game run.
+- The simulator's asymmetric preview frusta differed from the submitted world
+  frusta by up to 0.244346 radians. Matching the simulator FOV to the submitted
+  projection reduced that difference to 0.000000059 radians, holding the two
+  beam poses and world submission unchanged. The visible left/right preview
+  displacement largely disappeared. Same-frame native impact versus indicator
+  and physical-headset alignment remain open.
+- Baseline shadow frames `13681` and `16031` each exposed both C4D1FB10 draws
+  per eye. The actual consuming c27..30 matched the respective successful
+  stereo inverse upload and c223 was `(1,0,0,0)` in all eight draws. Numeric
+  reconstruction residual peaked at 0.001634 game units across the sampled
+  stationary and turned poses. The scenes had different native light/camera
+  constants, so they do not support a visual temporal score.
+- Both shadow frames staged all four source/final images but failed the exact
+  layer-count check with the normal ammo HUD visible. Commit `3cac23cf` counts
+  actual grip-space ammo quads alongside aim quads, while requiring one world
+  layer and continuing to reject settings, wheels, gaze and cinema layers.
+  The production-gate fixture failed with two ammo layers before the change
+  and passes afterward. Protected-native build SHA-256
+  `0987C95C744DEEA08E78C3980294DE798F69494BE233F080383D1D00575815E1`.
+- Both sessions closed normally with exit code 0. Fresh save, settings, DLL
+  and INI hashes were restored and the protected Steam/OpenXR state verified.
+  Evidence under `captures/simulator-20261128/` remains local.
