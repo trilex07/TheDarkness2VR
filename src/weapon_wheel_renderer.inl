@@ -202,13 +202,16 @@ static void AppendGazeDot(const XrCompositionLayerBaseHeader** layers,uint32_t& 
 }
 
 // Called at frame end with the layers already chosen. Never displaces the
-// world projection layer; skipped when the runtime has no room.
-static void AppendWeaponWheelLayers(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,
-                                    uint32_t capacity,XrCompositionLayerQuad quads[5],bool shouldRender) {
-    if(!layerCount || !shouldRender || g_xrSessionState!=XR_SESSION_STATE_FOCUSED || !g_ctx11) return;
+// world projection layer; return the grip-space ammo layer count for capture.
+static uint32_t AppendWeaponWheelLayers(const XrCompositionLayerBaseHeader** layers,uint32_t& layerCount,
+                                       uint32_t capacity,XrCompositionLayerQuad quads[5],bool shouldRender) {
+    if(!layerCount || !shouldRender || g_xrSessionState!=XR_SESSION_STATE_FOCUSED || !g_ctx11)return 0;
     const uint32_t runtimeMax=std::max(g_wheelAtlas.maxLayers,g_ammoAtlas.maxLayers);
     const uint32_t limit=runtimeMax ? std::min(capacity,runtimeMax) : capacity;
     AppendWheelQuads(layers,layerCount,limit,quads);
+    const uint32_t beforeAmmo=layerCount;
     AppendAmmoQuads(layers,layerCount,limit,quads+2);
+    const uint32_t ammoLayers=layerCount-beforeAmmo;
     AppendGazeDot(layers,layerCount,limit,quads[4]);
+    return ammoLayers;
 }

@@ -37,7 +37,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session,const XrFrameEndInfo
 static void AdaptiveStereoSubmitted(XrResult result,bool pixels,uint32_t count){
     ++adaptiveCalls;CHECK(result==ended);CHECK(pixels);adaptiveLayers=count;
 }
-static void AppendWeaponWheelLayers(const XrCompositionLayerBaseHeader**,uint32_t&,unsigned,XrCompositionLayerQuad*,bool){}
+static uint32_t AppendWeaponWheelLayers(const XrCompositionLayerBaseHeader**,uint32_t&,unsigned,XrCompositionLayerQuad*,bool){return 0;}
 static void Actual(uint32_t layerCount,bool shouldRender){
     const XrCompositionLayerBaseHeader* layers[3]{};
     XrCompositionLayerProjection world{XR_TYPE_COMPOSITION_LAYER_PROJECTION};

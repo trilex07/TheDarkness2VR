@@ -6863,7 +6863,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
         } else if(settingsResult==VrSettingsRender::Pending)g_vrSettings.SuspendSurface();
         else g_vrSettings.Submitted(false);
     }
-    if(!settingsSubmitted)AppendWeaponWheelLayers(layers,layerCount,8,wheelQuads,fs.shouldRender);
+    [[maybe_unused]] const uint32_t ammoLayerCount=settingsSubmitted ? 0 :
+        AppendWeaponWheelLayers(layers,layerCount,8,wheelQuads,fs.shouldRender);
 #ifdef D2VR_MATCHED_CAPTURE
     AppendControllerMenuLaser(layers,layerCount,8,menuLaserQuads,fs.shouldRender);
 #endif
@@ -6888,7 +6889,10 @@ void SubmitXR(IDirect3DDevice9* dev) {
 #endif
     AdaptiveStereoSubmitted(endR,havePixels,worldLayerCount);
 #ifdef D2VR_MATCHED_CAPTURE
-    matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && layerCount==1+weaponLaserLayerCount && g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
+    // The source/final eye textures never contain compositor ammo or aim quads.
+    matched_capture::Finish(XR_SUCCEEDED(endR) && g_had3DCameraThisFrame && worldLayerCount==1 &&
+        layerCount==worldLayerCount+weaponLaserLayerCount+ammoLayerCount &&
+        g_pairSubmitMetaValid && g_eyePairFrameId==g_trackedFrame.id);
 #endif
     g_trackedFrame.open = false;
     const ULONGLONG frameMs = GetTickCount64() - g_trackedFrame.startedMs;
