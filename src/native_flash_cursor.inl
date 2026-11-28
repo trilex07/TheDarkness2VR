@@ -10,6 +10,9 @@ static d2vr_native_view::InstanceTable g_nativeFlashMouseTable;
 static d2vr_menu_external::ExternalMouse g_nativeFlashMouseAPI;
 static std::atomic<uint32_t> g_flashCursorMovie{0};
 static std::atomic<uint64_t> g_flashCursorXY{0},g_flashCursorTime{0};
+static bool NativeFlashCursorInstalled() {
+    return g_nativeFlashCursorInstalled.load(std::memory_order_acquire);
+}
 using FlashTransform=void(__thiscall*)(void*,int*,int*);
 static bool FlashRead(uint32_t address,uint32_t& value) {
     SIZE_T bytes=0;
@@ -18,7 +21,7 @@ static bool FlashRead(uint32_t address,uint32_t& value) {
 }
 static bool FlashRayPoint(uintptr_t movie,d2vr_flash_cursor::Point& point,
                           d2vr_flash_cursor::Point* raw=nullptr,uint32_t borrowedMouse=0) {
-    if(!g_nativeFlashRayCursor || !g_nativeFlashCursorInstalled.load(std::memory_order_acquire) || !ControllerMenuEnabled() ||
+    if(!g_nativeFlashRayCursor || !ControllerMenuEnabled() ||
        !(NativeVrMenuFlags()&d2vr_action_movies::Main) || GetForegroundWindow()!=g_renderSizeHwnd)return false;
     DWORD pid=0;
     if(GetWindowThreadProcessId(g_renderSizeHwnd,&pid)!=GetCurrentThreadId() || pid!=GetCurrentProcessId())return false;
@@ -140,7 +143,7 @@ static HRESULT STDMETHODCALLTYPE NativeFlashMouseDataImpl(void* device,uint32_t 
 D2VR_MOUSE_DATA_GATE(NativeFlashMouseData,NativeFlashMouseDataImpl)
 
 static bool InstallNativeFlashCursor() {
-    if(g_nativeFlashCursorInstalled.load(std::memory_order_acquire))return true;
+    if(NativeFlashCursorInstalled())return true;
     static bool attempted=false;if(!g_nativeFlashRayCursor || attempted)return false;attempted=true;
     bool valid=false;
     __try {

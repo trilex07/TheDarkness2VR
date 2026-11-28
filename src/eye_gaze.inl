@@ -183,17 +183,23 @@ static MenuSurface g_menuSurface;
 static std::atomic<uint64_t> g_controllerMenuCursorTime{0};
 static std::atomic<uint64_t> g_controllerMenuCursorXY{0};
 #ifdef D2VR_MATCHED_CAPTURE
+static bool NativeFlashCursorInstalled();
 static bool NativeFlashCursorReady();
 static bool InstallNativeFlashCursor();
 #else
+static bool NativeFlashCursorInstalled(){return false;}
 static bool NativeFlashCursorReady(){return false;}
 #endif
-static bool ControllerMenuEnabled() {
+static bool ControllerMenuEligible() {
     DWORD foreground=0;GetWindowThreadProcessId(GetForegroundWindow(),&foreground);
     return foreground==GetCurrentProcessId() && g_xrSessionState==XR_SESSION_STATE_FOCUSED && g_haveViews &&
         g_hands[1].aimValid && !g_vrSettings.Open() &&
         !(g_vrSettings.Entry() && g_vrSettings.Pointer().visible) &&
         NativeMenuPresentationActive() && !NativeActionMovies();
+}
+static bool ControllerMenuEnabled() {
+    // Keep native pad navigation available if the opt-in cursor hook was refused.
+    return (!g_nativeFlashRayCursor || NativeFlashCursorInstalled()) && ControllerMenuEligible();
 }
 static bool ControllerMenuHit(const MenuSurface& source,d2vr_menu::Surface& surface,d2vr_menu::Hit& hit) {
     const auto now=GetTickCount64();
@@ -278,8 +284,6 @@ static void ApplyGazeMenuCursor() {
     static ULONGLONG nextObserve=0; static uint32_t mouse=0; static bool contractOk=false, contractChecked=false;
     // The menu gate (pause / Flash cursor / no world) also drives A-confirm in
     // pause menus, so it runs even with GazeMenu off (user 01:01: gaze menu dropped).
-    const bool controllerFeature=ControllerMenuEnabled();
-    const bool cursorFeature=controllerFeature || (g_gazeMenu && g_eyeTrackingEnabled);
     const HWND window=g_renderSizeHwnd;
     DWORD pid=0;
     if(!window || GetWindowThreadProcessId(window,&pid)!=GetCurrentThreadId() || pid!=GetCurrentProcessId()) return;
@@ -324,6 +328,10 @@ static void ApplyGazeMenuCursor() {
         (void)gateLogged;
     }
     const bool gate=paused || cursorWanted || !g_in3DGameplayMode;
+    if(gate && g_nativeFlashRayCursor && !NativeFlashCursorInstalled() && ControllerMenuEligible())
+        InstallNativeFlashCursor();
+    const bool controllerFeature=ControllerMenuEnabled();
+    const bool cursorFeature=controllerFeature || (!g_nativeFlashRayCursor && g_gazeMenu && g_eyeTrackingEnabled);
     // Headset 00:53: relative mouse moves reached the native cursor exactly,
     // yet nothing highlighted: the top movie had cursorRequested=0 (pad mode,
     // mouse ignored). Request the cursor the way the game's own setter B072E0
@@ -358,7 +366,6 @@ static void ApplyGazeMenuCursor() {
     if(g_nativeFlashRayCursor) {
         // Route at the raw movie-input recipient; native transform stays native.
         filter.Reset();RestoreMenuClamp();
-        if(gate && controllerFeature)InstallNativeFlashCursor();
         return;
     }
     if(!gate || !cursorFeature) { filter.Reset(); RestoreMenuClamp(); return; }
