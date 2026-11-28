@@ -9,7 +9,7 @@ $gateEnd=$src.IndexOf('static int ActiveWvpRegister(',$gateStart)
 $gate=$src.Substring($gateStart,$gateEnd-$gateStart)
 $capture=Get-Content (Join-Path $root 'src/matched_capture.inl') -Raw
 $captureFinish=[regex]::Match($capture,'(?ms)^static void FinishSubmission\(.*?^\}')
-if(!$captureFinish.Success -or !$live.Contains('matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount)')){throw 'Actual matched capture submission gate missing'}
+if(!$captureFinish.Success -or !$live.Contains('matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount,')){throw 'Actual matched capture submission gate missing'}
 $start=$src.IndexOf('struct ShadowClipScope {')
 $end=$src.IndexOf('struct ReflectionEyeScope {',$start)
 if($start -lt 0 -or $end -le $start){throw 'Scope missing'}
@@ -53,20 +53,24 @@ $suffix=@'
 void run(IDirect3DDevice9& d,float expected){const float old[4]={7,8,9,10};memcpy(d.current,old,16);int before=g_orig.writes;{ShadowClipScope s(&d);assert(d.current[0]==expected);}assert(!memcmp(d.current,old,16));assert(g_orig.writes==before+2);}
 bool capture(unsigned worldLayerCount,unsigned weaponLaserLayerCount,unsigned ammoLayerCount,unsigned extra,int endR=0){
  const unsigned layerCount=worldLayerCount+weaponLaserLayerCount+ammoLayerCount+extra;
- matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount);
+ matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount,915,900);
  return matched_capture::complete;
 }
 void testCaptureWorldActivity() {
  d2vr_input::WorldActivity world;
- assert(!world.Update(true,1.0));
- assert(!world.Update(true,1.81,.8)); // capture time does not satisfy startup dwell
- assert(world.Update(true,1.97));
- assert(world.Update(true,2.90,.9)); // a verified world frame spent 900ms capturing
- assert(world.Update(true,2.92));   // the following frame also stays in gameplay
- assert(!world.Update(false,3.50,.5)); // genuine loss of world observations expires
- assert(!world.Update(true,3.51));
- assert(world.Update(true,3.70));
- assert(!world.Update(true,4.40)); // a genuine gap still requires renewed dwell
+ assert(!world.Update(true,1000));
+ assert(!world.Update(true,1810,800)); // capture time does not satisfy startup dwell
+ assert(world.Update(true,1970));
+ assert(world.Update(true,2900,900)); // a verified world frame spent 900ms capturing
+ assert(world.Update(true,2920));   // the following frame also stays in gameplay
+ assert(!world.Update(false,3500,500)); // genuine loss of world observations expires
+ assert(!world.Update(true,3510));
+ assert(world.Update(true,3700));
+ assert(!world.Update(true,4400)); // a genuine gap still requires renewed dwell
+ d2vr_input::WorldActivity sameTick;
+ assert(!sameTick.Update(true,1000000));
+ assert(sameTick.Update(true,1000190));
+ assert(sameTick.Update(true,1000990,800)); // arm and previous submission shared a tick
 }
 int main(){IDirect3DDevice9 d;
  testCaptureWorldActivity();

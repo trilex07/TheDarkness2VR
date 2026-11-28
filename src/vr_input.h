@@ -29,20 +29,21 @@ inline Vec3 Difference(Vec3 a, Vec3 b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 // This is render activity, NOT proof of native gameplay/pause/cutscene state.
 struct WorldActivity {
     bool active=false, observing=false;
-    double first=0,last=0;
-    bool Update(bool world, double time, double observationDelay=0) {
+    uint64_t firstMs=0,lastMs=0;
+    bool Update(bool world, uint64_t nowMs, uint64_t observationDelayMs=0) {
         // An opt-in readback can hold a verified world frame past the timeout.
         // Move both timestamps so the readback counts toward neither timeout nor dwell.
-        if(observing && world && observationDelay>0 && observationDelay<=time-last) {
-            first+=observationDelay;
-            last+=observationDelay;
+        if(observing && world && observationDelayMs && nowMs>=lastMs) {
+            const uint64_t elapsed=std::min(observationDelayMs,nowMs-lastMs);
+            firstMs+=elapsed;
+            lastMs+=elapsed;
         }
-        if(observing && (time<last || time-last>.5)) { observing=false; active=false; }
+        if(observing && (nowMs<lastMs || nowMs-lastMs>500)) { observing=false; active=false; }
         if(world) {
-            if(!observing) { first=time; observing=true; }
-            last=time;
-            if(time-first>=.15) active=true;
-        } else if(active && (!observing || time-last>.5)) active=false;
+            if(!observing) { firstMs=nowMs; observing=true; }
+            lastMs=nowMs;
+            if(nowMs-firstMs>=150) active=true;
+        } else if(active && (!observing || nowMs-lastMs>500)) active=false;
         return active;
     }
 };

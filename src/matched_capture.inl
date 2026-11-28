@@ -181,7 +181,8 @@ static void Finish(bool submitted) {
     active=false;
 }
 static void FinishSubmission(XrResult result, uint32_t worldLayers, uint32_t layers,
-                             uint32_t weaponLaserLayers, uint32_t ammoLayers) {
+                             uint32_t weaponLaserLayers, uint32_t ammoLayers,
+                             uint64_t worldGapMs, uint64_t captureDelayMs) {
     if (!active) return;
     const bool world = g_had3DCameraThisFrame && worldLayers == 1;
     const bool overlays = layers == worldLayers + weaponLaserLayers + ammoLayers;
@@ -190,17 +191,17 @@ static void FinishSubmission(XrResult result, uint32_t worldLayers, uint32_t lay
         fprintf(meta, "{\"kind\":\"submission_completion\",\"frame\":%llu,\"xr_result\":%d,"
             "\"world_layers\":%u,\"layers\":%u,\"weapon_laser_layers\":%u,\"ammo_layers\":%u,"
             "\"world_camera\":%s,\"current_pair\":%s,\"mask\":%u,\"inputs\":%u,"
-            "\"blits\":%u,\"projection_observed\":%u}\n",
+            "\"blits\":%u,\"projection_observed\":%u,\"world_gap_ms\":%llu,\"capture_delay_ms\":%llu}\n",
             frame, static_cast<int>(result), worldLayers, layers, weaponLaserLayers, ammoLayers,
             g_had3DCameraThisFrame ? "true" : "false", pair ? "true" : "false",
-            mask, inputs, blits, projectionObserved);
+            mask, inputs, blits, projectionObserved, worldGapMs, captureDelayMs);
     }
     Finish(XR_SUCCEEDED(result) && world && overlays && pair);
 }
 static ULONGLONG captureStartedMs;
-static double WorldObservationDelay(ULONGLONG now) {
+static ULONGLONG WorldObservationDelayMs(ULONGLONG now) {
     if (!active || frame!=g_trackedFrame.id || now<captureStartedMs) return 0;
-    return (now-captureStartedMs)*.001;
+    return now-captureStartedMs;
 }
 static void Begin() {
     if (pendingPresent) return; // do not overwrite a staged capture before its return

@@ -6406,11 +6406,13 @@ void SubmitXR(IDirect3DDevice9* dev) {
     const bool wasWorldActive=g_in3DGameplayMode;
     const auto now=GetTickCount64();
 #ifdef D2VR_MATCHED_CAPTURE
-    const double observationDelay=matched_capture::WorldObservationDelay(now);
+    const auto observationDelay=matched_capture::WorldObservationDelayMs(now);
+    const auto worldGap=g_worldActivity.observing && now>=g_worldActivity.lastMs ?
+        now-g_worldActivity.lastMs : 0;
 #else
-    const double observationDelay=0;
+    const uint64_t observationDelay=0;
 #endif
-    g_in3DGameplayMode=g_worldActivity.Update(g_had3DCameraThisFrame,now*.001,observationDelay);
+    g_in3DGameplayMode=g_worldActivity.Update(g_had3DCameraThisFrame,now,observationDelay);
     if(g_in3DGameplayMode!=wasWorldActive) {
         g_vrRefValid=false; g_lockedHeadValid=false; InvalidateHeadGeometryReference();
         ResetPoseInput();
@@ -6896,7 +6898,8 @@ void SubmitXR(IDirect3DDevice9* dev) {
     AdaptiveStereoSubmitted(endR,havePixels,worldLayerCount);
 #ifdef D2VR_MATCHED_CAPTURE
     // The source/final eye textures never contain compositor ammo or aim quads.
-    matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount);
+    matched_capture::FinishSubmission(endR,worldLayerCount,layerCount,weaponLaserLayerCount,ammoLayerCount,
+                                      worldGap,observationDelay);
 #endif
     g_trackedFrame.open = false;
     const ULONGLONG frameMs = GetTickCount64() - g_trackedFrame.startedMs;
