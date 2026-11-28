@@ -54,6 +54,7 @@ struct NativeGameplaySample {
     DWORD grabFire=0,grabEntity=0;
 #ifdef D2VR_MATCHED_CAPTURE
     DWORD avatarSkinResource=0; // fast hint only; full ownership checked at the packer
+    bool nativeTraversal=false;
 #endif
     // Character/weapon holds do not use the ordinary prop throw path.
     bool alternateHeldTarget=false;
@@ -240,6 +241,11 @@ static bool CaptureNativeGameplay(void* self) {
             if(entity && (*(DWORD*)entity==0xFD6BC0 || ProtectedWeaponModelOwned(entity))) s.entities[hand]=(DWORD)(uintptr_t)entity;
         }
 #ifdef D2VR_MATCHED_CAPTURE
+        // On the admitted Steam executable D2LadderAction's mount (824036)
+        // sets avatar+540 to 6 through 999010. In this traversal mode the
+        // native action consumes the stick axes in its own basis.
+        if(g_nativePlayerOwnerAdmitted)
+            s.nativeTraversal=*reinterpret_cast<const DWORD*>(avatar+0x540)==6;
         __try {
             auto parent=**(BYTE***)(avatar+0x1F8C);
             auto actor=parent && *(DWORD*)parent==0xFFC300 ? **(BYTE***)(parent+0xF8):nullptr;

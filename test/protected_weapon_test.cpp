@@ -89,6 +89,7 @@ static void Reset(){
     g_hands[0].aim={{0,0,0,1},{-.4f,.2f,-.3f}};g_hands[1].aim={{0,0,0,1},{.5f,.3f,-.4f}};
     g_hands[0].aimValid=g_hands[1].aimValid=true;CHECK(CaptureNativeGameplay(camera));
     CHECK(g_nativeGameplay.entities[0]==Ptr(models[0]) && g_nativeGameplay.entities[1]==Ptr(models[1]));
+    CHECK(!g_nativeGameplay.nativeTraversal);
 }
 template<class Mutation> static void Reject(Mutation change) {
     Reset();change();alignas(16) float out[16],before[16];Matrix(out,7,8,9);memcpy(before,out,64);
@@ -148,6 +149,11 @@ int main(int argc,char** argv) {
     CHECK(g_protectedWeaponModelTable.Prepare(modelTable,131,0xF0/4,d2vr_weapon_bridge::Bridge::ModelEntry(),g_nativeImageGuard));
     CHECK(g_protectedWeaponFireTable.Prepare(fireTable,33,0x64/4,d2vr_weapon_bridge::Bridge::FireEntry(),g_nativeImageGuard));
     g_protectedWeaponReady=true;
+    Reset();
+    Word(avatar,0x540,6);CHECK(CaptureNativeGameplay(camera) && g_nativeGameplay.nativeTraversal);
+    Word(avatar,0x540,0);CHECK(CaptureNativeGameplay(camera) && !g_nativeGameplay.nativeTraversal);
+    Word(avatar,0x540,6);g_nativePlayerOwnerAdmitted=false;
+    CHECK(CaptureNativeGameplay(camera) && !g_nativeGameplay.nativeTraversal);
     Reset();Word(guns[0],0xA64,1);CHECK(CaptureNativeGameplay(camera));
     CHECK(g_nativeGameplay.camera==Ptr(camera) && !(g_nativeGameplay.shotOwnedMask&1));
     CHECK(g_nativeGameplay.grab==d2vr_input::GrabFeedback::Empty);

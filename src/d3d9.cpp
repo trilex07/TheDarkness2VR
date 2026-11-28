@@ -5154,8 +5154,12 @@ bool SyncOpenXRGamepad(XINPUT_STATE* out) {
        g_in3DGameplayMode && NativeJackieInputAllowed() && !MenuConfirmActive() &&
        !CinemaSceneThisFrame() && g_headGeometry && g_headGeometryReferenceValid &&
        g_trackedFrame.renderTrackingValid && g_haveViews && !g_wheelGate.open) {
+        NativeGameplaySample movementOwner;
+        // A stale selected-player sample cannot rule out a mount transition.
+        const bool nativeOwnsAxes=g_nativePlayerOwnerAdmitted &&
+            (!CopyNativeGameplay(movementOwner) || movementOwner.nativeTraversal);
         float moveX=lx,moveY=ly;
-        if(d2vr_gameplay::HeadMovement(g_headGeometryReference,
+        if(!nativeOwnsAxes && d2vr_gameplay::HeadMovement(g_headGeometryReference,
            HeadCenterPose(g_eyePose[0],g_eyePose[1]),moveX,moveY)) {
             gp.sThumbLX=StickShort(moveX);gp.sThumbLY=StickShort(moveY);
         }
